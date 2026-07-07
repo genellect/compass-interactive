@@ -64,6 +64,37 @@ Recommended checks:
 6. Ensure the compass-interactive private repository is included in repository access.
 ```
 
+## SPA Routes
+
+The app uses React Router routes such as `/join`, `/lecture`, `/display`, and
+`/admin`.
+
+Cloudflare Direct Upload may reject a catch-all `_redirects` rule such as:
+
+```text
+/* /index.html 200
+```
+
+because some deploy paths detect it as a possible infinite loop. For that
+reason this project does not rely on `public/_redirects`.
+
+Instead, the production build runs:
+
+```text
+node scripts/create-route-entrypoints.mjs
+```
+
+This copies `dist/index.html` into:
+
+```text
+dist/join/index.html
+dist/lecture/index.html
+dist/admin/index.html
+dist/display/index.html
+```
+
+Those files allow direct access to the main routes without a redirect rule.
+
 ## Emergency Fallback: Direct Upload
 
 Direct Upload can deploy without GitHub integration, but it is not the preferred long-term path.
