@@ -1,0 +1,5 @@
+export { mockCompassRepository } from './mockCompassRepository'
+export type { CommentRepository } from './commentRepository'
+export type { LectureRepository } from './lectureRepository'
+export type { ParticipantRepository } from './participantRepository'
+export type { PollRepository } from './pollRepository'

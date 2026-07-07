@@ -1,0 +1,40 @@
+:root {
+  color: #f5f8fb;
+  font-family:
+    Inter, "Helvetica Neue", Arial, "Hiragino Sans", "Yu Gothic", Meiryo,
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  line-height: 1.65;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #020812;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(115, 231, 255, 0.16), transparent 34rem),
+    linear-gradient(180deg, #061426 0%, #020812 100%);
+  margin: 0;
+  min-width: 320px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea {
+  letter-spacing: 0;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #73e7ff;
+  outline-offset: 3px;
+}
