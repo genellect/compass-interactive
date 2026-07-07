@@ -12,6 +12,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
+    "deploy:cloudflare:direct": "npm run build && npx wrangler@latest pages deploy dist --project-name compass-interactive --branch main",
     "format": "prettier --write ."
   },
   "dependencies": {
