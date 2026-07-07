@@ -1,20 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
+const supabasePublishableKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
 
-function requireEnvValue(value: string | undefined, name: string) {
-  if (!value) {
-    throw new Error(`${name} is not set. Check .env.local.`)
+const fallbackSupabaseUrl = 'https://example.supabase.co'
+const fallbackSupabasePublishableKey = 'missing-publishable-key'
+
+export const supabaseConfigError =
+  !supabaseUrl || !supabasePublishableKey
+    ? 'Cloudflare PagesにVITE_SUPABASE_URLとVITE_SUPABASE_PUBLISHABLE_KEYを設定し、再デプロイしてください。'
+    : null
+
+export function assertSupabaseConfigured() {
+  if (supabaseConfigError) {
+    throw new Error(supabaseConfigError)
   }
-
-  return value
 }
 
 export const supabase = createClient(
-  requireEnvValue(supabaseUrl, 'VITE_SUPABASE_URL'),
-  requireEnvValue(
-    supabasePublishableKey,
-    'VITE_SUPABASE_PUBLISHABLE_KEY',
-  ),
+  supabaseUrl || fallbackSupabaseUrl,
+  supabasePublishableKey || fallbackSupabasePublishableKey,
 )

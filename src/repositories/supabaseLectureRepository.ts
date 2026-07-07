@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabaseClient'
+import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { LectureStatus } from '../types'
 
@@ -47,6 +47,8 @@ function mapJoinedLecture(row: JoinLectureByCodeRow): JoinedLectureSession {
 
 export const supabaseLectureRepository = {
   async joinLectureByCode(lectureCode: string): Promise<JoinedLectureSession> {
+    assertSupabaseConfigured()
+
     const trimmedCode = lectureCode.trim()
 
     if (!trimmedCode) {
