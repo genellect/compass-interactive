@@ -137,7 +137,7 @@ export function PollCard({
 
       {existingResponse && !displayMode ? (
         <p className="success-note">
-          回答済みです。結果はRealtimeで更新されます。
+          回答済みです。結果は数秒ごとに更新されます。
         </p>
       ) : null}
 

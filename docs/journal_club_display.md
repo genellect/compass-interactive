@@ -21,13 +21,13 @@ Display用PCや共有ブラウザでは、最初に `/join` でJournal Clubコ�
 
 commentsはSupabaseからvisible commentsのみ取得します。Realtime subscriptionにより、新規commentはリロードなしで表示されます。
 
-likesはcomment_likesの取得値とRealtime INSERTを使って表示します。同じparticipantのlikeはstate mergeで二重加算しません。
+likesはcomment_likesの取得値を約5秒ごとに再取得して表示します。同じparticipantのlikeはDB制約で重複防止します。
 
 ## polls / poll results
 
 open pollsとpoll_optionsをSupabaseから取得し、poll resultsは `get_open_poll_results` RPCの集計値を表示します。
 
-poll responsesのRealtimeはJC-4では未実装です。Display画面では15秒ごとにpoll resultsを再取得し、発表中の共有画面で古い結果が残り続けないようにしています。
+poll responsesのRealtimeは使いません。Display画面では約5秒ごとにpoll resultsを再取得し、発表中の共有画面で古い結果が残り続けないようにしています。
 
 ## AI transcript placeholder
 

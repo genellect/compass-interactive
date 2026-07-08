@@ -1,7 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { LiveBoard } from '../components/LiveBoard'
+import { useAdaptiveLiveSync } from '../hooks/useAdaptiveLiveSync'
 import { useCompassState } from '../hooks/useCompassState'
-import { supabaseAdminRepository } from '../repositories/supabaseAdminRepository'
+import {
+  type AdminLecture,
+  supabaseAdminRepository,
+} from '../repositories/supabaseAdminRepository'
 import {
   type DisplayMode,
   type DisplayState,
@@ -41,6 +45,7 @@ export function AdminPage() {
     participants,
     polls,
     pollResponses,
+    selectLectureSession,
     setPollStatus,
     toggleCommentPinned,
     toggleCommentVisibility,
@@ -57,9 +62,68 @@ export function AdminPage() {
   const [displayPageInput, setDisplayPageInput] = useState('1')
   const [displayModeInput, setDisplayModeInput] =
     useState<DisplayMode>('normal')
+  const [lectures, setLectures] = useState<AdminLecture[]>([])
+  const [lecturesError, setLecturesError] = useState<string | null>(null)
+  const [lecturesLoading, setLecturesLoading] = useState(false)
+  const [newLectureTitle, setNewLectureTitle] = useState('Journal Club')
+  const [newLectureStartsAt, setNewLectureStartsAt] = useState('')
+  const [newLectureEndsAt, setNewLectureEndsAt] = useState('')
 
   function nextPollStatus(currentStatus: PollStatus): PollStatus {
     return currentStatus === 'open' ? 'closed' : 'open'
+  }
+
+  function toDatetimeLocalValue(value: string | null) {
+    if (!value) {
+      return ''
+    }
+
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      return ''
+    }
+
+    const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    return offsetDate.toISOString().slice(0, 16)
+  }
+
+  function fromDatetimeLocalValue(value: string) {
+    return value ? new Date(value).toISOString() : null
+  }
+
+  function makeJoinedLecture(lectureRow: AdminLecture) {
+    return {
+      id: lectureRow.id,
+      status: lectureRow.status,
+      title: lectureRow.title,
+      ...(lectureRow.startsAt ? { startsAt: lectureRow.startsAt } : {}),
+      ...(lectureRow.endsAt ? { endsAt: lectureRow.endsAt } : {}),
+    }
+  }
+
+  async function refreshLectures(token = adminToken) {
+    if (!token) {
+      return
+    }
+
+    setLecturesLoading(true)
+    setLecturesError(null)
+
+    try {
+      const nextLectures = await supabaseAdminRepository.manageLectures({
+        action: 'list',
+        adminToken: token,
+      })
+      setLectures(nextLectures)
+    } catch (error) {
+      setLecturesError(
+        error instanceof Error
+          ? `講義一覧の取得に失敗しました: ${error.message}`
+          : '講義一覧の取得に失敗しました。',
+      )
+    } finally {
+      setLecturesLoading(false)
+    }
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
@@ -78,12 +142,23 @@ export function AdminPage() {
       setAdminToken(verifiedAdminToken)
       setIsAuthenticated(true)
       setPin('')
+      await refreshLectures(verifiedAdminToken)
     } catch {
       setAuthError('PINを確認できませんでした。入力内容を確認してください。')
     } finally {
       setIsVerifying(false)
     }
   }
+
+  useEffect(() => {
+    if (!isAuthenticated || !adminToken) {
+      setLectures([])
+      setLecturesError(null)
+      return
+    }
+
+    void refreshLectures(adminToken)
+  }, [adminToken, isAuthenticated])
 
   function handleLogout() {
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
@@ -93,48 +168,40 @@ export function AdminPage() {
     setPin('')
   }
 
+  const loadDisplayState = useCallback(async () => {
+    if (!activeLectureSessionId) {
+      return
+    }
+
+    try {
+      const remoteDisplayState =
+        await supabaseDisplayStateRepository.getDisplayState(
+          activeLectureSessionId,
+        )
+      setDisplayState(remoteDisplayState)
+      setDisplayPageInput(String(remoteDisplayState.currentPdfPage))
+      setDisplayModeInput(remoteDisplayState.displayMode)
+      setDisplayStateError(null)
+    } catch (error) {
+      setDisplayStateError(
+        error instanceof Error
+          ? `表示画面の状態取得に失敗しました: ${error.message}`
+          : '表示画面の状態取得に失敗しました。',
+      )
+    }
+  }, [activeLectureSessionId])
+
   useEffect(() => {
     if (!isAuthenticated || !activeLectureSessionId) {
       setDisplayState(null)
       setDisplayStateError(null)
-      return
     }
-
-    async function loadDisplayState() {
-      if (!activeLectureSessionId) {
-        return
-      }
-
-      try {
-        const remoteDisplayState =
-          await supabaseDisplayStateRepository.getDisplayState(
-            activeLectureSessionId,
-          )
-        setDisplayState(remoteDisplayState)
-        setDisplayPageInput(String(remoteDisplayState.currentPdfPage))
-        setDisplayModeInput(remoteDisplayState.displayMode)
-        setDisplayStateError(null)
-      } catch (error) {
-        setDisplayStateError(
-          error instanceof Error
-            ? `表示画面の状態取得に失敗しました: ${error.message}`
-            : '表示画面の状態取得に失敗しました。',
-        )
-      }
-    }
-
-    void loadDisplayState()
-
-    return supabaseDisplayStateRepository.subscribeDisplayState({
-      lectureSessionId: activeLectureSessionId,
-      onStateChange: (nextDisplayState) => {
-        setDisplayState(nextDisplayState)
-        setDisplayPageInput(String(nextDisplayState.currentPdfPage))
-        setDisplayModeInput(nextDisplayState.displayMode)
-        setDisplayStateError(null)
-      },
-    })
   }, [activeLectureSessionId, isAuthenticated])
+
+  useAdaptiveLiveSync({
+    enabled: Boolean(isAuthenticated && activeLectureSessionId),
+    onSync: loadDisplayState,
+  })
 
   async function updateDisplayState(
     action: 'next' | 'previous' | 'goToPage' | 'setDisplayMode',
@@ -203,6 +270,78 @@ export function AdminPage() {
     }
   }
 
+  async function handleCreateLecture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!adminToken) {
+      setLecturesError('管理者認証の有効期限が切れました。再度ログインしてください。')
+      return
+    }
+
+    setLecturesLoading(true)
+    setLecturesError(null)
+
+    try {
+      const nextLectures = await supabaseAdminRepository.manageLectures({
+        action: 'create',
+        adminToken,
+        endsAt: fromDatetimeLocalValue(newLectureEndsAt),
+        startsAt: fromDatetimeLocalValue(newLectureStartsAt),
+        title: newLectureTitle,
+      })
+      setLectures(nextLectures)
+      const createdLecture = nextLectures[0]
+      if (createdLecture) {
+        selectLectureSession(makeJoinedLecture(createdLecture))
+      }
+      setNewLectureTitle('Journal Club')
+      setNewLectureStartsAt('')
+      setNewLectureEndsAt('')
+    } catch (error) {
+      setLecturesError(
+        error instanceof Error
+          ? `講義作成に失敗しました: ${error.message}`
+          : '講義作成に失敗しました。',
+      )
+    } finally {
+      setLecturesLoading(false)
+    }
+  }
+
+  async function updateLectureStatus(
+    action: 'start' | 'close',
+    lectureSessionId: string,
+  ) {
+    if (!adminToken) {
+      setLecturesError('管理者認証の有効期限が切れました。再度ログインしてください。')
+      return
+    }
+
+    setLecturesLoading(true)
+    setLecturesError(null)
+
+    try {
+      const nextLectures = await supabaseAdminRepository.manageLectures({
+        action,
+        adminToken,
+        lectureSessionId,
+      })
+      setLectures(nextLectures)
+      const updatedLecture = nextLectures.find((item) => item.id === lectureSessionId)
+      if (updatedLecture && activeLectureSessionId === lectureSessionId) {
+        selectLectureSession(makeJoinedLecture(updatedLecture))
+      }
+    } catch (error) {
+      setLecturesError(
+        error instanceof Error
+          ? `講義状態の更新に失敗しました: ${error.message}`
+          : '講義状態の更新に失敗しました。',
+      )
+    } finally {
+      setLecturesLoading(false)
+    }
+  }
+
   function handleGoToPage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextPage = Number(displayPageInput)
@@ -265,6 +404,122 @@ export function AdminPage() {
           <button className="secondary-button" onClick={handleLogout} type="button">
             ログアウト
           </button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">講義管理</p>
+            <h2>Lecture作成・開始・終了</h2>
+          </div>
+          <button
+            className="secondary-button"
+            disabled={lecturesLoading}
+            onClick={() => void refreshLectures()}
+            type="button"
+          >
+            再読み込み
+          </button>
+        </div>
+
+        <form className="lecture-create-form" onSubmit={handleCreateLecture}>
+          <label className="field compact-field">
+            <span>講義タイトル</span>
+            <input
+              disabled={lecturesLoading}
+              onChange={(event) => setNewLectureTitle(event.target.value)}
+              type="text"
+              value={newLectureTitle}
+            />
+          </label>
+          <label className="field compact-field">
+            <span>開始予定</span>
+            <input
+              disabled={lecturesLoading}
+              onChange={(event) => setNewLectureStartsAt(event.target.value)}
+              type="datetime-local"
+              value={newLectureStartsAt}
+            />
+          </label>
+          <label className="field compact-field">
+            <span>終了予定</span>
+            <input
+              disabled={lecturesLoading}
+              onChange={(event) => setNewLectureEndsAt(event.target.value)}
+              type="datetime-local"
+              value={newLectureEndsAt}
+            />
+          </label>
+          <button
+            className="primary-button compact"
+            disabled={lecturesLoading || newLectureTitle.trim().length === 0}
+            type="submit"
+          >
+            講義コードを発行
+          </button>
+        </form>
+
+        {lecturesError ? <p className="error-note">{lecturesError}</p> : null}
+        {lecturesLoading ? <p className="note">講義情報を更新しています。</p> : null}
+
+        <div className="table-like lecture-table">
+          {lectures.length > 0 ? (
+            lectures.map((lectureRow) => {
+              const isActive = activeLectureSessionId === lectureRow.id
+
+              return (
+                <div
+                  className={`table-row lecture-admin-row ${isActive ? 'is-active' : ''}`}
+                  key={lectureRow.id}
+                >
+                  <span>
+                    <strong>{lectureRow.title}</strong>
+                    <small>
+                      {lectureRow.startsAt
+                        ? `開始 ${toDatetimeLocalValue(lectureRow.startsAt).replace('T', ' ')}`
+                        : '開始未設定'}
+                      {' / '}
+                      {lectureRow.endsAt
+                        ? `終了 ${toDatetimeLocalValue(lectureRow.endsAt).replace('T', ' ')}`
+                        : '終了未設定'}
+                    </small>
+                  </span>
+                  <code>{lectureRow.lectureCode || '未発行'}</code>
+                  <span className={`status-pill ${lectureRow.status}`}>
+                    {getStatusLabel(lectureRow.status)}
+                  </span>
+                  <div className="lecture-row-actions">
+                    <button
+                      className="secondary-button"
+                      onClick={() => selectLectureSession(makeJoinedLecture(lectureRow))}
+                      type="button"
+                    >
+                      {isActive ? '操作対象' : '選択'}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      disabled={lecturesLoading || lectureRow.status !== 'draft'}
+                      onClick={() => void updateLectureStatus('start', lectureRow.id)}
+                      type="button"
+                    >
+                      開始
+                    </button>
+                    <button
+                      className="secondary-button danger-button"
+                      disabled={lecturesLoading || lectureRow.status !== 'open'}
+                      onClick={() => void updateLectureStatus('close', lectureRow.id)}
+                      type="button"
+                    >
+                      終了
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <p className="note">まだ講義がありません。講義コードを発行してください。</p>
+          )}
         </div>
       </section>
 

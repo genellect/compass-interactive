@@ -8,7 +8,10 @@ import { JoinPage } from './pages/JoinPage'
 import { LecturePage } from './pages/LecturePage'
 import './App.css'
 
-const publicNavItems = [{ to: '/join', label: '参加' }]
+const publicNavItems = [
+  { to: '/join', label: '参加' },
+  { to: '/admin', label: '管理者' },
+]
 
 const joinedNavItems = [
   { to: '/lecture', label: '参加画面' },
@@ -52,6 +55,7 @@ function AppShell() {
       <Routes>
         <Route element={<Navigate replace to="/join" />} path="/" />
         <Route element={<JoinPage />} path="/join" />
+        <Route element={<AdminPage />} path="/admin" />
         <Route
           element={
             <RequireJoinedLecture>
@@ -59,14 +63,6 @@ function AppShell() {
             </RequireJoinedLecture>
           }
           path="/lecture"
-        />
-        <Route
-          element={
-            <RequireJoinedLecture>
-              <AdminPage />
-            </RequireJoinedLecture>
-          }
-          path="/admin"
         />
         <Route
           element={

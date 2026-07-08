@@ -129,52 +129,6 @@ export const supabaseCommentRepository = {
     }
   },
 
-  subscribeToCommentLikeInserts({
-    lectureSessionId,
-    onLike,
-    onStatusChange,
-  }: {
-    lectureSessionId: string
-    onLike: (like: CommentLikeRow) => void
-    onStatusChange?: (status: RealtimeCommentStatus) => void
-  }) {
-    onStatusChange?.('connecting')
-
-    const channel = supabase
-      .channel(`comment-likes-inserts:${lectureSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          filter: `lecture_session_id=eq.${lectureSessionId}`,
-          schema: 'public',
-          table: 'comment_likes',
-        },
-        (payload) => {
-          onLike(payload.new as CommentLikeRow)
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          onStatusChange?.('connected')
-          return
-        }
-
-        if (
-          status === 'CHANNEL_ERROR' ||
-          status === 'TIMED_OUT' ||
-          status === 'CLOSED'
-        ) {
-          onStatusChange?.('disconnected')
-        }
-      })
-
-    return () => {
-      onStatusChange?.('disconnected')
-      void supabase.removeChannel(channel)
-    }
-  },
-
   async ensureAnonymousParticipant({
     lectureSessionId,
     participantId,

@@ -46,6 +46,25 @@ function mapJoinedLecture(row: JoinLectureByCodeRow): JoinedLectureSession {
 }
 
 export const supabaseLectureRepository = {
+  async getLectureSessionState(
+    lectureSessionId: string,
+  ): Promise<JoinedLectureSession | null> {
+    assertSupabaseConfigured()
+
+    const { data, error } = await supabase.rpc('get_lecture_session_state', {
+      target_lecture_session_id: lectureSessionId,
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const rows = (data ?? []) as JoinLectureByCodeRow[]
+    const row = rows[0]
+
+    return row ? mapJoinedLecture(row) : null
+  },
+
   async joinLectureByCode(lectureCode: string): Promise<JoinedLectureSession> {
     assertSupabaseConfigured()
 

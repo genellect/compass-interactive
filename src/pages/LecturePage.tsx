@@ -12,6 +12,7 @@ export function LecturePage() {
     commentsLoading,
     hasJoinedLectureSession,
     isSubmittingComment,
+    isSessionSyncPaused,
     lecture,
     openPolls,
     pollResults,
@@ -19,6 +20,9 @@ export function LecturePage() {
     pollResultsError,
     pollsError,
     pollsLoading,
+    resumeSessionSync,
+    sessionSyncMessage,
+    sessionSyncPauseReason,
     submitPollResponse,
     toggleCommentLike,
     visibleComments,
@@ -37,6 +41,26 @@ export function LecturePage() {
         </div>
       </section>
 
+      {isSessionSyncPaused ? (
+        <section className="panel warning-panel">
+          <p className="eyebrow">
+            {sessionSyncPauseReason === 'lectureClosed' ? '講義終了' : '同期停止'}
+          </p>
+          <h2>{sessionSyncMessage ?? '同期を停止しています。'}</h2>
+          {sessionSyncPauseReason !== 'lectureClosed' ? (
+            <button
+              className="primary-button compact"
+              onClick={() => void resumeSessionSync()}
+              type="button"
+            >
+              講義に戻る
+            </button>
+          ) : (
+            <p className="note">新しい講義コードが案内された場合は、参加画面から入り直してください。</p>
+          )}
+        </section>
+      ) : null}
+
       {commentsError ? (
         <p className="error-note">コメントの取得または投稿に失敗しました。時間をおいて再度お試しください。</p>
       ) : null}
@@ -53,7 +77,7 @@ export function LecturePage() {
       {pollsLoading ? <p className="note">投票を読み込んでいます。</p> : null}
 
       <CommentInput
-        disabled={!isJoined || commentsLoading}
+        disabled={!isJoined || commentsLoading || isSessionSyncPaused}
         isSubmitting={isSubmittingComment}
         onSubmit={addComment}
       />

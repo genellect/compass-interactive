@@ -1,14 +1,12 @@
-import { useEffect } from 'react'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DisplayView } from '../components/DisplayView'
+import { useAdaptiveLiveSync } from '../hooks/useAdaptiveLiveSync'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   createDefaultDisplayState,
   type DisplayState,
   supabaseDisplayStateRepository,
 } from '../repositories/supabaseDisplayStateRepository'
-
-const DISPLAY_POLL_REFRESH_MS = 15_000
 
 export function DisplayPage() {
   const {
@@ -22,27 +20,33 @@ export function DisplayPage() {
     pollResultsError,
     pollsError,
     pollsLoading,
-    realtimeCommentLikesStatus,
-    realtimeCommentsStatus,
-    realtimePollResultsStatus,
-    refreshPollResults,
+    isSessionSyncPaused,
+    sessionSyncMessage,
     visibleComments,
   } = useCompassState()
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadDisplayState = useCallback(async () => {
     if (!activeLectureSessionId) {
       return
     }
 
-    void refreshPollResults()
-    const intervalId = window.setInterval(() => {
-      void refreshPollResults()
-    }, DISPLAY_POLL_REFRESH_MS)
-
-    return () => window.clearInterval(intervalId)
-  }, [activeLectureSessionId, refreshPollResults])
+    try {
+      const remoteDisplayState =
+        await supabaseDisplayStateRepository.getDisplayState(
+          activeLectureSessionId,
+        )
+      setDisplayState(remoteDisplayState)
+      setDisplayStateError(null)
+    } catch (error) {
+      setDisplayStateError(
+        error instanceof Error
+          ? `表示画面の状態取得に失敗しました: ${error.message}`
+          : '表示画面の状態取得に失敗しました。',
+      )
+    }
+  }, [activeLectureSessionId])
 
   useEffect(() => {
     if (!activeLectureSessionId) {
@@ -52,38 +56,16 @@ export function DisplayPage() {
     }
 
     setDisplayState(createDefaultDisplayState(activeLectureSessionId))
-
-    async function loadDisplayState() {
-      if (!activeLectureSessionId) {
-        return
-      }
-
-      try {
-        const remoteDisplayState =
-          await supabaseDisplayStateRepository.getDisplayState(
-            activeLectureSessionId,
-          )
-        setDisplayState(remoteDisplayState)
-        setDisplayStateError(null)
-      } catch (error) {
-        setDisplayStateError(
-          error instanceof Error
-            ? `Display state fetch failed: ${error.message}`
-            : 'Display state fetch failed.',
-        )
-      }
-    }
-
-    void loadDisplayState()
-
-    return supabaseDisplayStateRepository.subscribeDisplayState({
-      lectureSessionId: activeLectureSessionId,
-      onStateChange: (nextDisplayState) => {
-        setDisplayState(nextDisplayState)
-        setDisplayStateError(null)
-      },
-    })
   }, [activeLectureSessionId])
+
+  useAdaptiveLiveSync({
+    enabled: Boolean(
+      activeLectureSessionId &&
+        lecture.status === 'open' &&
+        !isSessionSyncPaused,
+    ),
+    onSync: loadDisplayState,
+  })
 
   return (
     <DisplayView
@@ -94,15 +76,14 @@ export function DisplayPage() {
       displayState={displayState}
       displayStateError={displayStateError}
       hasJoinedLectureSession={hasJoinedLectureSession}
+      isSessionSyncPaused={isSessionSyncPaused}
       lecture={lecture}
       pollResults={pollResults}
       pollResultsError={pollResultsError}
       polls={openPolls}
       pollsError={pollsError}
       pollsLoading={pollsLoading}
-      realtimeCommentLikesStatus={realtimeCommentLikesStatus}
-      realtimeCommentsStatus={realtimeCommentsStatus}
-      realtimePollResultsStatus={realtimePollResultsStatus}
+      sessionSyncMessage={sessionSyncMessage}
     />
   )
 }

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
+import type { LectureStatus } from '../types'
 
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 
@@ -44,6 +45,42 @@ type UpdateDisplayStateRequest =
       action: 'setDisplayMode'
       adminToken: string
       displayMode: DisplayMode
+      lectureSessionId: string
+    }
+
+export type AdminLecture = {
+  createdAt: string
+  endsAt: string | null
+  id: string
+  lectureCode: string
+  startsAt: string | null
+  status: LectureStatus
+  title: string
+  updatedAt: string
+}
+
+type ManageLecturesResponse = {
+  lecture?: AdminLecture
+  lectures?: AdminLecture[]
+  message?: string
+  ok?: boolean
+}
+
+type ManageLecturesRequest =
+  | {
+      action: 'list'
+      adminToken: string
+    }
+  | {
+      action: 'create'
+      adminToken: string
+      endsAt?: string | null
+      startsAt?: string | null
+      title: string
+    }
+  | {
+      action: 'start' | 'close'
+      adminToken: string
       lectureSessionId: string
     }
 
@@ -127,5 +164,24 @@ export const supabaseAdminRepository = {
     }
 
     return toAdminDisplayState(data.displayState)
+  },
+
+  async manageLectures(request: ManageLecturesRequest): Promise<AdminLecture[]> {
+    const { data, error } =
+      await supabase.functions.invoke<ManageLecturesResponse>('manage-lectures', {
+        body: request,
+      })
+
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Lecture operation failed.'),
+      )
+    }
+
+    if (!data?.ok || !data.lectures) {
+      throw new Error(data?.message ?? 'Lecture operation failed.')
+    }
+
+    return data.lectures
   },
 }

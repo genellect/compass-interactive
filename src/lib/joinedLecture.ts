@@ -34,10 +34,17 @@ export function restoreJoinedLectureSession(): JoinedLectureSession | null {
     return null
   }
 
+  const title = window.localStorage.getItem(LECTURE_TITLE_STORAGE_KEY)
+  const status = window.localStorage.getItem(LECTURE_STATUS_STORAGE_KEY)
+  const startsAt = window.localStorage.getItem(LECTURE_STARTS_AT_STORAGE_KEY)
+  const endsAt = window.localStorage.getItem(LECTURE_ENDS_AT_STORAGE_KEY)
+
   return {
     id,
-    status: 'open',
-    title: '参加中の講義',
+    status: status === 'draft' || status === 'closed' ? status : 'open',
+    title: title || '参加中の講義',
+    ...(startsAt ? { startsAt } : {}),
+    ...(endsAt ? { endsAt } : {}),
   }
 }
 
@@ -47,6 +54,28 @@ export function persistJoinedLectureSession(lecture: JoinedLectureSession) {
   }
 
   window.localStorage.setItem(LECTURE_SESSION_ID_STORAGE_KEY, lecture.id)
+  window.localStorage.setItem(LECTURE_TITLE_STORAGE_KEY, lecture.title)
+  window.localStorage.setItem(LECTURE_STATUS_STORAGE_KEY, lecture.status)
+
+  if (lecture.startsAt) {
+    window.localStorage.setItem(LECTURE_STARTS_AT_STORAGE_KEY, lecture.startsAt)
+  } else {
+    window.localStorage.removeItem(LECTURE_STARTS_AT_STORAGE_KEY)
+  }
+
+  if (lecture.endsAt) {
+    window.localStorage.setItem(LECTURE_ENDS_AT_STORAGE_KEY, lecture.endsAt)
+  } else {
+    window.localStorage.removeItem(LECTURE_ENDS_AT_STORAGE_KEY)
+  }
+}
+
+export function clearJoinedLectureSession() {
+  if (!canUseLocalStorage()) {
+    return
+  }
+
+  window.localStorage.removeItem(LECTURE_SESSION_ID_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_TITLE_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_STATUS_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_STARTS_AT_STORAGE_KEY)

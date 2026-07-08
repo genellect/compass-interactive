@@ -8,13 +8,6 @@ export type PollResultSummary = {
   responseCount: number
 }
 
-export type RealtimePollResultStatus =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'disconnected'
-  | 'unavailable'
-
 type PollRow = {
   id: string
   lecture_session_id: string
@@ -35,12 +28,6 @@ type PollResultRow = {
   option_id: string
   poll_id: string
   response_count: number
-}
-
-type PollResultRefreshEventRow = {
-  created_at: string
-  lecture_session_id: string
-  poll_id: string
 }
 
 function mapPollRow(row: PollRow, optionRows: PollOptionRow[]): Poll {
@@ -168,56 +155,4 @@ export const supabasePollRepository = {
     return { alreadyAnswered: error?.code === '23505' }
   },
 
-  subscribeToPollResultRefreshEvents({
-    lectureSessionId,
-    onRefresh,
-    onStatusChange,
-  }: {
-    lectureSessionId: string
-    onRefresh: (event: PollResultRefreshEventRow) => void
-    onStatusChange?: (status: RealtimePollResultStatus) => void
-  }) {
-    onStatusChange?.('connecting')
-
-    const channel = supabase
-      .channel(`poll-result-refresh:${lectureSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          filter: `lecture_session_id=eq.${lectureSessionId}`,
-          schema: 'public',
-          table: 'poll_result_refresh_events',
-        },
-        (payload) => {
-          const nextEvent = payload.new as PollResultRefreshEventRow | null
-
-          if (!nextEvent) {
-            return
-          }
-
-          onRefresh(nextEvent)
-        },
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          onStatusChange?.('connected')
-          return
-        }
-
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          onStatusChange?.('unavailable')
-          return
-        }
-
-        if (status === 'CLOSED') {
-          onStatusChange?.('disconnected')
-        }
-      })
-
-    return () => {
-      void supabase.removeChannel(channel)
-      onStatusChange?.('disconnected')
-    }
-  },
 }

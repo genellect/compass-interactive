@@ -51,37 +51,4 @@ export const supabaseDisplayStateRepository = {
     return data ? toDisplayState(data) : createDefaultDisplayState(lectureSessionId)
   },
 
-  subscribeDisplayState({
-    lectureSessionId,
-    onStateChange,
-  }: {
-    lectureSessionId: string
-    onStateChange: (displayState: DisplayState) => void
-  }) {
-    const channel = supabase
-      .channel(`lecture-display-state:${lectureSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          filter: `lecture_session_id=eq.${lectureSessionId}`,
-          schema: 'public',
-          table: 'lecture_display_state',
-        },
-        (payload) => {
-          const nextRow = payload.new as DisplayStateRow | null
-
-          if (!nextRow) {
-            return
-          }
-
-          onStateChange(toDisplayState(nextRow))
-        },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  },
 }

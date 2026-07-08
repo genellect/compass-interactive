@@ -8,14 +8,14 @@ import type {
   PollStatus,
 } from '../types'
 import type { RealtimeCommentStatus } from '../repositories/supabaseCommentRepository'
-import type {
-  PollResultSummary,
-  RealtimePollResultStatus,
-} from '../repositories/supabasePollRepository'
+import type { PollResultSummary } from '../repositories/supabasePollRepository'
+import type { JoinedLectureSession } from '../lib/joinedLecture'
 
 export type JoinResult =
   | { ok: true; participantId: string }
   | { ok: false; message: string }
+
+export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
 
 export type CompassStateValue = {
   lecture: LectureSession
@@ -39,8 +39,12 @@ export type CompassStateValue = {
   pollsLoading: boolean
   isSubmittingComment: boolean
   realtimeCommentsStatus: RealtimeCommentStatus
-  realtimeCommentLikesStatus: RealtimeCommentStatus
-  realtimePollResultsStatus: RealtimePollResultStatus
+  isSessionSyncPaused: boolean
+  lastActivityAt: number
+  resumeSessionSync: () => Promise<void>
+  selectLectureSession: (lecture: JoinedLectureSession) => void
+  sessionSyncMessage: string | null
+  sessionSyncPauseReason: SessionSyncPauseReason
   joinLecture: (lectureCode: string) => Promise<JoinResult>
   addComment: (body: string) => Promise<boolean>
   refreshComments: () => Promise<void>

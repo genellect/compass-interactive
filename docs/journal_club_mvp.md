@@ -37,7 +37,7 @@
 - `comments` は visible comments の取得・投稿を Supabase に接続済み
 - `comments` INSERT Realtime は実装済み
 - `comment_likes` は取得・追加を Supabase に接続済み
-- `comment_likes` INSERT Realtime は実装済み
+- `comment_likes` は5秒同期で集計表示
 - `polls` / `poll_options` は open poll の取得を Supabase に接続済み
 - `poll_responses` は INSERT のみ Supabase に接続済み
 - `poll_responses` SELECT は開けていない
@@ -49,7 +49,7 @@ SQL は自動実行せず、Supabase SQL Editor で手動実行する運用で�
 
 - `supabase/migrations/001_initial_schema.sql`: 初期 schema / RLS
 - `supabase/manual/enable_comment_likes_select_policy.sql`: visible comments に限定した likes SELECT policy
-- `supabase/manual/enable_realtime_comment_likes.sql`: comment_likes Realtime publication
+- `supabase/manual/disable_non_comment_realtime.sql`: comments以外のRealtime publication整理
 - `supabase/manual/create_poll_results_rpc.sql`: poll results aggregate RPC
 - `supabase/manual/reopen_dev_lecture.sql`: development lecture の再 open 用
 
@@ -80,7 +80,7 @@ Journal Club MVP 前に特に確認すべき SQL は、`create_poll_results_rpc.
 - anonymous comments を投稿できる
 - comments が複数端末へ Realtime 反映される
 - comments に like できる
-- like 数が複数端末へ Realtime 反映される
+- like 数が複数端末へ最大5秒程度で反映される
 - open poll に回答できる
 - poll 結果の集計値を表示できる
 - 発表・討論用 Display を使える
@@ -94,7 +94,7 @@ Journal Club MVP に含めるものは以下です。
 - anonymous comments
 - comments Realtime
 - comment likes
-- comment likes Realtime
+- comment likes 5秒同期
 - polls
 - poll responses
 - poll results

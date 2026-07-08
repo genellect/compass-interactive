@@ -1,0 +1,5 @@
+export const LIVE_SYNC_INTERVAL_MS = 5_000
+export const BACKGROUND_LIVE_SYNC_INTERVAL_MS = 30_000
+export const IDLE_SYNC_TIMEOUT_MS = 30 * 60 * 1000
+export const HIDDEN_SYNC_STOP_MS = 10 * 60 * 1000
+

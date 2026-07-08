@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Admin-side Display Control lets the Admin browser control the Display browser's PDF page and display mode in realtime.
+Admin-side Display Control lets the Admin browser control the Display browser's PDF page and display mode with lightweight polling.
 
 Only display state is synchronized:
 
@@ -36,7 +36,7 @@ lecture_display_state
 - updated_at
 ```
 
-RLS is enabled. Public frontend clients may `SELECT` this table so Display can subscribe to changes. Public frontend clients should not directly `INSERT`, `UPDATE`, or `DELETE`.
+RLS is enabled. Public frontend clients may `SELECT` this table so Display can poll changes every few seconds. Public frontend clients should not directly `INSERT`, `UPDATE`, or `DELETE`.
 
 The Edge Function uses `service_role` for Admin mutations. The table therefore needs explicit `service_role` table privileges:
 
@@ -76,9 +76,9 @@ Do not put these values in React, `.env.local`, or any frontend file.
 1. Display PC opens `/join` and joins the active lecture.
 2. Display PC opens `/display`.
 3. Display PC selects the local PDF file.
-4. Display subscribes to `lecture_display_state` Realtime changes.
+4. Display polls `lecture_display_state` about every 5 seconds.
 5. Admin changes page or mode from `/admin`.
-6. Display receives the updated page and mode without reload.
+6. Display receives the updated page and mode without reload, usually within 5 seconds.
 
 ## Admin Controls
 
@@ -122,3 +122,11 @@ slideOnly: PDF only
 ## Known MVP Limitation
 
 Admin does not know the PDF's total page count because the PDF file is local to the Display browser. If Admin sends a page number beyond the loaded PDF's range, the Display viewer ignores it safely.
+
+## Realtime Reduction
+
+Journal Club MVP keeps Supabase Realtime only for new board comments. Display state is intentionally synchronized by polling to reduce long-lived realtime subscriptions. If old Realtime publications are still enabled in Supabase, review and manually run:
+
+```text
+supabase/manual/disable_non_comment_realtime.sql
+```

@@ -597,6 +597,67 @@ input:disabled {
   grid-template-columns: minmax(0, 1fr) 120px 92px 100px;
 }
 
+.lecture-create-form {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr) auto;
+  margin-top: 18px;
+}
+
+.lecture-create-form .field {
+  margin: 0;
+  max-width: none;
+}
+
+.lecture-table {
+  margin-top: 20px;
+}
+
+.lecture-admin-row {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 130px 92px minmax(260px, auto);
+}
+
+.lecture-admin-row.is-active {
+  background: rgba(115, 231, 255, 0.08);
+  border-radius: 14px;
+  padding-inline: 12px;
+}
+
+.lecture-admin-row strong,
+.lecture-admin-row small {
+  display: block;
+}
+
+.lecture-admin-row small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.lecture-admin-row code {
+  background: rgba(115, 231, 255, 0.12);
+  border: 1px solid rgba(115, 231, 255, 0.24);
+  border-radius: 999px;
+  color: var(--text);
+  font-weight: 900;
+  padding: 7px 10px;
+  text-align: center;
+}
+
+.lecture-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.danger-button {
+  border-color: rgba(251, 113, 133, 0.38);
+  color: #fecdd3;
+}
+
 .display-control-grid {
   display: grid;
   gap: 16px;
@@ -898,7 +959,9 @@ input:disabled {
   }
 
   .table-row,
-  .poll-admin-row {
+  .poll-admin-row,
+  .lecture-admin-row,
+  .lecture-create-form {
     grid-template-columns: 1fr;
   }
 

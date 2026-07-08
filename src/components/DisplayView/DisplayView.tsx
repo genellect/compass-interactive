@@ -15,15 +15,14 @@ type DisplayViewProps = {
   displayState: DisplayState | null
   displayStateError: string | null
   hasJoinedLectureSession: boolean
+  isSessionSyncPaused: boolean
   lecture: LectureSession
   pollResults: PollResultSummary[]
   pollResultsError: string | null
   polls: Poll[]
   pollsError: string | null
   pollsLoading: boolean
-  realtimeCommentLikesStatus: string
-  realtimeCommentsStatus: string
-  realtimePollResultsStatus: string
+  sessionSyncMessage: string | null
 }
 
 export function DisplayView({
@@ -34,12 +33,14 @@ export function DisplayView({
   displayState,
   displayStateError,
   hasJoinedLectureSession,
+  isSessionSyncPaused,
   lecture,
   pollResults,
   pollResultsError,
   polls,
   pollsError,
   pollsLoading,
+  sessionSyncMessage,
 }: DisplayViewProps) {
   const presentationRef = useRef<HTMLDivElement | null>(null)
   const {
@@ -85,6 +86,13 @@ export function DisplayView({
         </section>
       ) : null}
 
+      {isSessionSyncPaused ? (
+        <section className="display-warning">
+          <p className="eyebrow">講義状態</p>
+          <h2>{sessionSyncMessage ?? '同期を停止しています。'}</h2>
+        </section>
+      ) : null}
+
       <div
         className={`display-layout display-mode-${displayMode}`}
         ref={presentationRef}
@@ -113,7 +121,7 @@ export function DisplayView({
           <div className="display-poll-heading">
             <p className="eyebrow">投票結果</p>
             <h2>ディスカッション Poll</h2>
-            <p className="note">回答が入ると、結果が自動で更新されます。</p>
+            <p className="note">結果は約5秒ごとに更新されます。</p>
           </div>
           {pollsError ? (
             <p className="error-note">投票の取得に失敗しました。</p>

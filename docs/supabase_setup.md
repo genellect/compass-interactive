@@ -201,6 +201,46 @@ enabled in Supabase Realtime. The manual SQL is:
 supabase/manual/enable_realtime_comment_likes.sql
 ```
 
+## Journal Club Realtime Reduction
+
+Journal Club MVP now keeps Supabase Realtime only for new board comments.
+`comment_likes`, poll results, and display state are synchronized by frontend
+polling every 5 seconds while the tab is active, and every 30 seconds while the
+tab is hidden.
+
+To reduce server-side Realtime load further, manually review and run:
+
+```text
+supabase/manual/disable_non_comment_realtime.sql
+```
+
+This keeps `comments` Realtime untouched and removes unnecessary Realtime
+publication entries for likes, poll refresh events, and display state. It also
+stops the poll result refresh event trigger so poll responses do not create an
+extra event row.
+
+## Lecture Lifecycle Support
+
+Admin-side lecture creation and lecture start/end require this manual SQL:
+
+```text
+supabase/manual/create_lecture_lifecycle_support.sql
+```
+
+It creates an admin-only `lecture_admin_codes` table and a minimal
+`get_lecture_session_state` RPC. The RPC returns only lecture id, title,
+starts_at, ends_at, and status; it does not expose `code_hash`.
+
+After running the SQL, deploy:
+
+```text
+supabase/functions/manage-lectures
+```
+
+This Edge Function uses `ADMIN_SESSION_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`
+server-side. Do not put service role keys or Admin PIN values in React or
+Cloudflare Pages frontend variables.
+
 Do not change RLS, do not open `participants` SELECT, and do not add DELETE.
 
 ## Phase 2-H Poll Backend
