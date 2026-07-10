@@ -78,7 +78,7 @@
 .brand-mark::before {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
-  content: "";
+  content: '';
   inset: 9px;
   position: absolute;
 }
@@ -86,7 +86,7 @@
 .brand-mark::after {
   background: linear-gradient(var(--gold), var(--accent));
   border-radius: 999px;
-  content: "";
+  content: '';
   height: 26px;
   left: 18px;
   position: absolute;
@@ -131,7 +131,11 @@
 
 .join-card {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.07)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.07)
+    ),
     rgba(6, 20, 38, 0.86);
   border: 1px solid var(--border);
   border-radius: 24px;
@@ -372,7 +376,11 @@ input:disabled {
 .panel,
 .stat-card {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.045)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.045)
+    ),
     rgba(6, 20, 38, 0.76);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -387,6 +395,29 @@ input:disabled {
 .warning-panel {
   background: rgba(72, 53, 18, 0.72);
   border-color: rgba(246, 199, 104, 0.38);
+}
+
+.demo-mode-panel {
+  align-items: center;
+  background: rgba(16, 75, 79, 0.58);
+  border-color: rgba(115, 231, 255, 0.34);
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.demo-mode-panel h2,
+.demo-mode-panel p {
+  margin: 0;
+}
+
+.demo-mode-panel h2 {
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.demo-mode-panel p:not(.eyebrow) {
+  color: var(--text-soft);
 }
 
 .stat-card {
@@ -601,7 +632,10 @@ input:disabled {
   align-items: end;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(
+      180px,
+      0.8fr
+    ) auto;
   margin-top: 18px;
 }
 
@@ -681,9 +715,12 @@ input:disabled {
 
 .display-shell {
   background:
-    radial-gradient(circle at top left, rgba(115, 231, 255, 0.12), transparent 34rem),
-    linear-gradient(180deg, var(--bg-1), var(--bg-0)),
-    var(--bg-0);
+    radial-gradient(
+      circle at top left,
+      rgba(115, 231, 255, 0.12),
+      transparent 34rem
+    ),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0)), var(--bg-0);
   min-height: 100vh;
   padding: 24px;
 }
@@ -714,8 +751,8 @@ input:disabled {
   display: grid;
   gap: 20px;
   grid-template-areas:
-    "stage board"
-    "poll poll";
+    'stage board'
+    'poll poll';
   grid-template-columns: minmax(720px, 1fr) 420px;
   margin: 0 auto;
   max-width: 1760px;
@@ -744,7 +781,11 @@ input:disabled {
 .display-placeholder,
 .display-warning {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.045)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(255, 255, 255, 0.045)
+    ),
     rgba(6, 20, 38, 0.8);
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -889,7 +930,7 @@ input:disabled {
 }
 
 .display-layout.display-mode-slideOnly {
-  grid-template-areas: "stage";
+  grid-template-areas: 'stage';
   grid-template-columns: 1fr;
 }
 
@@ -902,9 +943,9 @@ input:disabled {
 @media (max-width: 1180px) {
   .display-layout {
     grid-template-areas:
-      "stage"
-      "board"
-      "poll";
+      'stage'
+      'board'
+      'poll';
     grid-template-columns: 1fr;
   }
 
@@ -930,7 +971,8 @@ input:disabled {
   }
 
   .page-header,
-  .panel-heading {
+  .panel-heading,
+  .demo-mode-panel {
     flex-direction: column;
   }
 
@@ -976,11 +1018,10 @@ input:disabled {
 .display-layout:fullscreen {
   align-items: start;
   background:
-    linear-gradient(135deg, rgba(5, 12, 28, 0.98), rgba(2, 6, 23, 1)),
-    #020617;
+    linear-gradient(135deg, rgba(5, 12, 28, 0.98), rgba(2, 6, 23, 1)), #020617;
   box-sizing: border-box;
   gap: 22px;
-  grid-template-areas: "stage board";
+  grid-template-areas: 'stage board';
   grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
   height: 100vh;
   margin: 0;
@@ -995,7 +1036,7 @@ input:disabled {
 }
 
 .display-layout.display-mode-slideOnly:fullscreen {
-  grid-template-areas: "stage";
+  grid-template-areas: 'stage';
   grid-template-columns: 1fr;
 }
 

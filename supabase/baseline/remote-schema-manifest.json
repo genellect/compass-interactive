@@ -1,0 +1,42 @@
+{
+  "capturedAt": "2026-07-10T10:45:00+09:00",
+  "projectRef": "pfvedtqccblecuyjlfqh",
+  "postgresMajor": 17,
+  "postgrestVersion": "14.5",
+  "migrationVersion": "20260710104958",
+  "tables": [
+    "comment_likes",
+    "comments",
+    "lecture_admin_codes",
+    "lecture_display_state",
+    "lecture_sessions",
+    "participants",
+    "poll_options",
+    "poll_responses",
+    "poll_result_refresh_events",
+    "polls"
+  ],
+  "publicRpcs": [
+    "get_lecture_session_state(uuid)",
+    "get_open_poll_results(uuid)",
+    "join_lecture_by_code(text)"
+  ],
+  "internalFunctionsCurrentlyInPublic": [
+    "emit_poll_result_refresh_event()",
+    "is_lecture_open(uuid)",
+    "is_poll_open(uuid)",
+    "participant_belongs_to_lecture(uuid,uuid)",
+    "set_updated_at()",
+    "validate_poll_response_option_ids()"
+  ],
+  "realtimeTables": ["comments"],
+  "platformManagedObjectsExcludedFromBaseline": [
+    "public.rls_auto_enable()",
+    "event trigger ensure_rls"
+  ],
+  "edgeFunctions": [
+    { "name": "manage-lectures", "version": 1, "verifyJwt": true },
+    { "name": "update-display-state", "version": 1, "verifyJwt": true },
+    { "name": "verify-admin-pin", "version": 8, "verifyJwt": true }
+  ]
+}

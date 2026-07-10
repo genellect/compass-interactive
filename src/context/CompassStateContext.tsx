@@ -1,5 +1,13 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useLocation } from 'react-router-dom'
+import { demoRepository, type DemoSnapshot } from '../demo/demoRepository'
+import { DEMO_LECTURE_CODE } from '../demo/demoSeedData'
 import { mockPollResponses, mockPolls } from '../lib/mockData'
 import {
   createParticipantId,
@@ -31,7 +39,10 @@ import type {
 } from '../types'
 import { createOrUpdateParticipant } from '../services/compassActions'
 import { useAdaptiveLiveSync } from '../hooks/useAdaptiveLiveSync'
-import { CompassStateContext, type CompassStateValue } from './CompassStateValue'
+import {
+  CompassStateContext,
+  type CompassStateValue,
+} from './CompassStateValue'
 
 const LEGACY_LOCAL_POLL_RESPONSE_STORAGE_PREFIX =
   'compass-interactive-local-poll-responses'
@@ -77,7 +88,9 @@ function mergeLocalPollResponse({
   return [
     ...currentResponses.filter(
       (response) =>
-        !(response.pollId === pollId && response.participantId === participantId),
+        !(
+          response.pollId === pollId && response.participantId === participantId
+        ),
     ),
     nextResponse,
   ]
@@ -189,14 +202,19 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [joinedLectureSession, setJoinedLectureSession] =
     useState<JoinedLectureSession | null>(getInitialJoinedLectureSession)
   const activeLectureSessionId = joinedLectureSession?.id ?? ''
+  const runtimeMode = joinedLectureSession?.runtimeMode ?? 'live'
   const hasActiveLectureSessionId = activeLectureSessionId.length > 0
   const lecture = useMemo<LectureSession>(
     () =>
       joinedLectureSession
         ? {
             ...baseLecture,
-            codeLabel: JOURNAL_CLUB_MVP_CODE,
-            expectedParticipants: 20,
+            codeLabel:
+              joinedLectureSession.runtimeMode === 'demo'
+                ? DEMO_LECTURE_CODE
+                : JOURNAL_CLUB_MVP_CODE,
+            expectedParticipants:
+              joinedLectureSession.runtimeMode === 'demo' ? 1 : 20,
             expiresAt: joinedLectureSession.endsAt,
             id: joinedLectureSession.id,
             startsAt: joinedLectureSession.startsAt,
@@ -211,15 +229,23 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [polls, setPolls] = useState<Poll[]>([])
   const [pollResults, setPollResults] = useState<PollResultSummary[]>([])
   const [pollResponses, setPollResponses] = useState<PollResponse[]>([])
-  const [currentParticipantId, setCurrentParticipantId] = useState<string | null>(
-    () =>
-      activeLectureSessionId
-        ? restoreLocalParticipantId(activeLectureSessionId)
-        : restoreLocalParticipantId(),
-  )
+  const [currentParticipantId, setCurrentParticipantId] = useState<
+    string | null
+  >(() => {
+    const restoredSession = restoreJoinedLectureSession()
+    if (restoredSession?.runtimeMode === 'demo') {
+      return demoRepository.getSnapshot().participant.id
+    }
+
+    return activeLectureSessionId
+      ? restoreLocalParticipantId(activeLectureSessionId)
+      : restoreLocalParticipantId()
+  })
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentsError, setCommentsError] = useState<string | null>(null)
-  const [commentLikesError, setCommentLikesError] = useState<string | null>(null)
+  const [commentLikesError, setCommentLikesError] = useState<string | null>(
+    null,
+  )
   const [pollsError, setPollsError] = useState<string | null>(null)
   const [pollResultsError, setPollResultsError] = useState<string | null>(null)
   const [pollsLoading, setPollsLoading] = useState(false)
@@ -233,35 +259,81 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const isLectureOpen = joinedLectureSession?.status === 'open'
   const isSessionSyncPaused = sessionSyncPauseReason !== null
   const canRunLiveSync =
-    hasActiveLectureSessionId && isLectureOpen && !isSessionSyncPaused
+    runtimeMode === 'live' &&
+    hasActiveLectureSessionId &&
+    isLectureOpen &&
+    !isSessionSyncPaused
+  const canInteract =
+    runtimeMode === 'demo'
+      ? hasActiveLectureSessionId && isLectureOpen
+      : canRunLiveSync
   const isLectureRoute = location.pathname === '/lecture'
+
+  const applyDemoSnapshot = useCallback((snapshot: DemoSnapshot) => {
+    setJoinedLectureSession(snapshot.session)
+    setCurrentParticipantId(snapshot.participant.id)
+    setParticipants([snapshot.participant])
+    setComments(snapshot.comments)
+    setPolls(snapshot.polls)
+    setPollResponses(snapshot.pollResponses)
+    setPollResults(snapshot.pollResults)
+    setUsingSupabasePolls(false)
+    setCommentsError(null)
+    setCommentLikesError(null)
+    setPollsError(null)
+    setPollResultsError(null)
+    setSessionSyncPauseReason(null)
+    setRealtimeCommentsStatus('idle')
+  }, [])
+
+  const hydrateDemo = useCallback(() => {
+    const snapshot = demoRepository.getSnapshot()
+    persistJoinedLectureSession(snapshot.session)
+    applyDemoSnapshot(snapshot)
+    return snapshot
+  }, [applyDemoSnapshot])
 
   const recordSessionActivity = useCallback(() => {
     setLastActivityAt(Date.now())
   }, [])
 
-  const selectLectureSession = useCallback((nextLecture: JoinedLectureSession) => {
-    persistJoinedLectureSession(nextLecture)
-    setJoinedLectureSession(nextLecture)
-    setCurrentParticipantId(restoreLocalParticipantId(nextLecture.id))
-    setSessionSyncPauseReason(nextLecture.status === 'closed' ? 'lectureClosed' : null)
-    setComments([])
-    setPolls([])
-    setPollResults([])
-    setPollResponses([])
-    setCommentsError(null)
-    setCommentLikesError(null)
-    setPollsError(null)
-    setPollResultsError(null)
-  }, [])
+  const selectLectureSession = useCallback(
+    (nextLecture: JoinedLectureSession) => {
+      persistJoinedLectureSession(nextLecture)
+      setJoinedLectureSession(nextLecture)
+      setCurrentParticipantId(
+        nextLecture.runtimeMode === 'demo'
+          ? demoRepository.getSnapshot().participant.id
+          : restoreLocalParticipantId(nextLecture.id),
+      )
+      setSessionSyncPauseReason(
+        nextLecture.status === 'closed' ? 'lectureClosed' : null,
+      )
+      setComments([])
+      setPolls([])
+      setPollResults([])
+      setPollResponses([])
+      setCommentsError(null)
+      setCommentLikesError(null)
+      setPollsError(null)
+      setPollResultsError(null)
+    },
+    [],
+  )
 
   const refreshLectureSessionState = useCallback(async () => {
     if (!hasActiveLectureSessionId) {
       return null
     }
 
+    if (runtimeMode === 'demo') {
+      return hydrateDemo().session
+    }
+
     const latestLecture =
-      await supabaseLectureRepository.getLectureSessionState(activeLectureSessionId)
+      await supabaseLectureRepository.getLectureSessionState(
+        activeLectureSessionId,
+      )
 
     if (!latestLecture) {
       return null
@@ -277,7 +349,12 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     }
 
     return latestLecture
-  }, [activeLectureSessionId, hasActiveLectureSessionId])
+  }, [
+    activeLectureSessionId,
+    hasActiveLectureSessionId,
+    hydrateDemo,
+    runtimeMode,
+  ])
 
   const refreshComments = useCallback(async () => {
     if (!hasActiveLectureSessionId) {
@@ -292,13 +369,20 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (runtimeMode === 'demo') {
+      hydrateDemo()
+      return
+    }
+
     setCommentsLoading(true)
     setCommentsError(null)
     setCommentLikesError(null)
 
     try {
       const remoteComments =
-        await supabaseCommentRepository.listVisibleComments(activeLectureSessionId)
+        await supabaseCommentRepository.listVisibleComments(
+          activeLectureSessionId,
+        )
 
       try {
         const remoteLikes =
@@ -323,7 +407,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     } finally {
       setCommentsLoading(false)
     }
-  }, [activeLectureSessionId, hasActiveLectureSessionId, isLectureOpen])
+  }, [
+    activeLectureSessionId,
+    hasActiveLectureSessionId,
+    hydrateDemo,
+    isLectureOpen,
+    runtimeMode,
+  ])
 
   const refreshCommentLikes = useCallback(async () => {
     if (!hasActiveLectureSessionId) {
@@ -333,6 +423,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
     if (!isLectureOpen) {
       setCommentLikesError(null)
+      return
+    }
+
+    if (runtimeMode === 'demo') {
+      hydrateDemo()
       return
     }
 
@@ -350,7 +445,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           : 'いいね数の更新に失敗しました。',
       )
     }
-  }, [activeLectureSessionId, hasActiveLectureSessionId, isLectureOpen])
+  }, [
+    activeLectureSessionId,
+    hasActiveLectureSessionId,
+    hydrateDemo,
+    isLectureOpen,
+    runtimeMode,
+  ])
 
   useEffect(() => {
     void refreshComments()
@@ -369,10 +470,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    if (runtimeMode === 'demo') {
+      hydrateDemo()
+      return
+    }
+
     try {
-      const remotePollResults = await supabasePollRepository.listOpenPollResults(
-        activeLectureSessionId,
-      )
+      const remotePollResults =
+        await supabasePollRepository.listOpenPollResults(activeLectureSessionId)
       setPollResults(remotePollResults)
       setPollResultsError(null)
     } catch (error) {
@@ -383,74 +488,100 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           : 'Poll結果RPCの取得に失敗しました。',
       )
     }
-  }, [activeLectureSessionId, hasActiveLectureSessionId, isLectureOpen])
+  }, [
+    activeLectureSessionId,
+    hasActiveLectureSessionId,
+    hydrateDemo,
+    isLectureOpen,
+    runtimeMode,
+  ])
 
-  const refreshPolls = useCallback(async ({
-    resetResponses = false,
-    showLoading = false,
-  }: {
-    resetResponses?: boolean
-    showLoading?: boolean
-  } = {}) => {
-    if (!hasActiveLectureSessionId) {
-      setPolls([])
-      setPollResponses([])
-      setPollsError(null)
-      return
-    }
-
-    if (!isLectureOpen) {
-      setPolls([])
-      setPollResponses([])
-      setPollsError(null)
-      return
-    }
-
-    if (showLoading) {
-      setPollsLoading(true)
-    }
-
-    setPollsError(null)
-
-    try {
-      const remotePolls =
-        await supabasePollRepository.listOpenPolls(activeLectureSessionId)
-      setPolls(remotePolls)
-      setUsingSupabasePolls(true)
-
-      if (resetResponses) {
-        setPollResponses(
-          restoreLocalPollResponses(),
-        )
-      }
-    } catch (error) {
-      setUsingSupabasePolls(false)
-      setPolls(mockPolls)
-
-      if (resetResponses) {
-        setPollResponses(mockPollResponses)
+  const refreshPolls = useCallback(
+    async ({
+      resetResponses = false,
+      showLoading = false,
+    }: {
+      resetResponses?: boolean
+      showLoading?: boolean
+    } = {}) => {
+      if (!hasActiveLectureSessionId) {
+        setPolls([])
+        setPollResponses([])
+        setPollsError(null)
+        return
       }
 
-      setPollsError(
-        error instanceof Error
-          ? `Pollの取得に失敗しました。mock Pollを表示しています: ${error.message}`
-          : 'Pollの取得に失敗しました。mock Pollを表示しています。',
-      )
-    } finally {
+      if (!isLectureOpen) {
+        setPolls([])
+        setPollResponses([])
+        setPollsError(null)
+        return
+      }
+
+      if (runtimeMode === 'demo') {
+        hydrateDemo()
+        return
+      }
+
       if (showLoading) {
-        setPollsLoading(false)
+        setPollsLoading(true)
       }
-    }
-  }, [activeLectureSessionId, hasActiveLectureSessionId, isLectureOpen])
+
+      setPollsError(null)
+
+      try {
+        const remotePolls = await supabasePollRepository.listOpenPolls(
+          activeLectureSessionId,
+        )
+        setPolls(remotePolls)
+        setUsingSupabasePolls(true)
+
+        if (resetResponses) {
+          setPollResponses(restoreLocalPollResponses())
+        }
+      } catch (error) {
+        setUsingSupabasePolls(false)
+        setPolls(mockPolls)
+
+        if (resetResponses) {
+          setPollResponses(mockPollResponses)
+        }
+
+        setPollsError(
+          error instanceof Error
+            ? `Pollの取得に失敗しました。mock Pollを表示しています: ${error.message}`
+            : 'Pollの取得に失敗しました。mock Pollを表示しています。',
+        )
+      } finally {
+        if (showLoading) {
+          setPollsLoading(false)
+        }
+      }
+    },
+    [
+      activeLectureSessionId,
+      hasActiveLectureSessionId,
+      hydrateDemo,
+      isLectureOpen,
+      runtimeMode,
+    ],
+  )
 
   useEffect(() => {
-    if (!hasActiveLectureSessionId || !isLectureOpen || !isLectureRoute) {
+    if (
+      runtimeMode !== 'live' ||
+      !hasActiveLectureSessionId ||
+      !isLectureOpen ||
+      !isLectureRoute
+    ) {
       return
     }
 
     const events = ['keydown', 'pointerdown', 'touchstart'] as const
     for (const eventName of events) {
-      window.addEventListener(eventName, recordSessionActivity, { passive: true })
+      window.addEventListener(eventName, recordSessionActivity, {
+        passive: true,
+      })
     }
 
     return () => {
@@ -458,13 +589,20 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         window.removeEventListener(eventName, recordSessionActivity)
       }
     }
-  }, [hasActiveLectureSessionId, isLectureOpen, isLectureRoute, recordSessionActivity])
+  }, [
+    hasActiveLectureSessionId,
+    isLectureOpen,
+    isLectureRoute,
+    recordSessionActivity,
+    runtimeMode,
+  ])
 
   useEffect(() => {
     if (
       !hasActiveLectureSessionId ||
       !isLectureOpen ||
       !isLectureRoute ||
+      runtimeMode !== 'live' ||
       isSessionSyncPaused
     ) {
       return
@@ -491,10 +629,16 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     isLectureRoute,
     isSessionSyncPaused,
     lastActivityAt,
+    runtimeMode,
   ])
 
   useEffect(() => {
-    if (!hasActiveLectureSessionId || !isLectureOpen || isSessionSyncPaused) {
+    if (
+      runtimeMode !== 'live' ||
+      !hasActiveLectureSessionId ||
+      !isLectureOpen ||
+      isSessionSyncPaused
+    ) {
       return
     }
 
@@ -532,10 +676,19 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     isLectureOpen,
     isSessionSyncPaused,
     recordSessionActivity,
+    runtimeMode,
   ])
 
   const resumeSessionSync = useCallback(async () => {
-    if (!hasActiveLectureSessionId || sessionSyncPauseReason === 'lectureClosed') {
+    if (
+      !hasActiveLectureSessionId ||
+      sessionSyncPauseReason === 'lectureClosed'
+    ) {
+      return
+    }
+
+    if (runtimeMode === 'demo') {
+      hydrateDemo()
       return
     }
 
@@ -560,6 +713,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     refreshLectureSessionState,
     refreshPollResults,
     refreshPolls,
+    hydrateDemo,
+    runtimeMode,
     sessionSyncPauseReason,
   ])
 
@@ -599,7 +754,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!canRunLiveSync) {
-      setRealtimeCommentsStatus('unavailable')
+      setRealtimeCommentsStatus(runtimeMode === 'demo' ? 'idle' : 'unavailable')
       return
     }
 
@@ -615,12 +770,29 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setRealtimeCommentsStatus('unavailable')
       return
     }
-  }, [activeLectureSessionId, canRunLiveSync])
+  }, [activeLectureSessionId, canRunLiveSync, runtimeMode])
+
+  useEffect(() => {
+    if (runtimeMode !== 'demo') {
+      return
+    }
+
+    return demoRepository.subscribe(hydrateDemo)
+  }, [hydrateDemo, runtimeMode])
 
   const visibleComments =
     mockCompassRepository.comment.listVisibleComments(comments)
   const openPolls = mockCompassRepository.poll.listOpenPolls(polls)
   const hiddenCommentCount = comments.length - visibleComments.length
+  const resetDemoLecture = useCallback(() => {
+    if (runtimeMode !== 'demo') {
+      return
+    }
+
+    const snapshot = demoRepository.reset()
+    persistJoinedLectureSession(snapshot.session)
+    applyDemoSnapshot(snapshot)
+  }, [applyDemoSnapshot, runtimeMode])
 
   const value = useMemo<CompassStateValue>(
     () => ({
@@ -636,7 +808,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       currentParticipantId,
       activeLectureSessionId: activeLectureSessionId || null,
       hasJoinedLectureSession: Boolean(joinedLectureSession),
-      expectedLectureCode: JOURNAL_CLUB_MVP_CODE,
+      runtimeMode,
+      expectedLectureCode:
+        runtimeMode === 'demo' ? DEMO_LECTURE_CODE : JOURNAL_CLUB_MVP_CODE,
       commentsLoading,
       commentsError,
       commentLikesError,
@@ -648,6 +822,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       isSessionSyncPaused,
       lastActivityAt,
       resumeSessionSync,
+      resetDemoLecture,
       selectLectureSession,
       sessionSyncMessage: getSessionPauseMessage(sessionSyncPauseReason),
       sessionSyncPauseReason,
@@ -655,6 +830,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       refreshPollResults,
       joinLecture: async (lectureCode) => {
         try {
+          if (lectureCode.trim().toUpperCase() === DEMO_LECTURE_CODE) {
+            const snapshot = demoRepository.getSnapshot()
+            persistJoinedLectureSession(snapshot.session)
+            applyDemoSnapshot(snapshot)
+            recordSessionActivity()
+            return { ok: true, participantId: snapshot.participant.id }
+          }
+
           const joinedLecture =
             await supabaseLectureRepository.joinLectureByCode(lectureCode)
           const restoredParticipantId = restoreLocalParticipantId(
@@ -686,12 +869,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
           setJoinedLectureSession(joinedLecture)
           setCurrentParticipantId(participantId)
-          setParticipants((current) =>
-            createOrUpdateParticipant({
-              lecture: joinedLectureForParticipant,
-              participantId,
-              participants: current,
-            }).participants,
+          setParticipants(
+            (current) =>
+              createOrUpdateParticipant({
+                lecture: joinedLectureForParticipant,
+                participantId,
+                participants: current,
+              }).participants,
           )
           setCommentsError(null)
           setPollsError(null)
@@ -719,7 +903,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           return false
         }
 
-        if (!canRunLiveSync) {
+        if (!canInteract) {
           setCommentsError(
             getSessionPauseMessage(sessionSyncPauseReason) ??
               '同期停止中のため、コメントできません。',
@@ -732,6 +916,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         recordSessionActivity()
 
         try {
+          if (runtimeMode === 'demo') {
+            applyDemoSnapshot(demoRepository.addComment(body))
+            return true
+          }
+
           const createdComment =
             await supabaseCommentRepository.createVisibleComment({
               body,
@@ -762,7 +951,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        if (!canRunLiveSync) {
+        if (!canInteract) {
           setCommentLikesError(
             getSessionPauseMessage(sessionSyncPauseReason) ??
               '同期停止中のため、いいねできません。',
@@ -770,13 +959,17 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        const targetComment = comments.find((comment) => comment.id === commentId)
+        const targetComment = comments.find(
+          (comment) => comment.id === commentId,
+        )
 
         if (!targetComment || targetComment.status !== 'visible') {
           return
         }
 
-        if (targetComment.likedByParticipantIds.includes(currentParticipantId)) {
+        if (
+          targetComment.likedByParticipantIds.includes(currentParticipantId)
+        ) {
           setCommentLikesError('いいね取消はPhase 2-Fでは未実装です。')
           return
         }
@@ -785,6 +978,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         recordSessionActivity()
 
         try {
+          if (runtimeMode === 'demo') {
+            applyDemoSnapshot(demoRepository.addCommentLike(commentId))
+            return
+          }
+
           await supabaseCommentRepository.addCommentLike({
             commentId,
             lectureSessionId: activeLectureSessionId,
@@ -831,7 +1029,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        if (!canRunLiveSync) {
+        if (!canInteract) {
           setPollsError(
             getSessionPauseMessage(sessionSyncPauseReason) ??
               '同期停止中のため、Pollに回答できません。',
@@ -854,7 +1052,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         )
 
         if (alreadyAnswered) {
-          setPollsError('このPollは回答済みです。再回答はPhase 2-Hでは未実装です。')
+          setPollsError(
+            'このPollは回答済みです。再回答はPhase 2-Hでは未実装です。',
+          )
+          return
+        }
+
+        if (runtimeMode === 'demo') {
+          setPollsError(null)
+          recordSessionActivity()
+          applyDemoSnapshot(
+            demoRepository.submitPollResponse(pollId, normalizedOptionIds),
+          )
           return
         }
 
@@ -906,7 +1115,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       commentsError,
       commentsLoading,
       commentLikesError,
-      canRunLiveSync,
+      canInteract,
       currentParticipantId,
       hasActiveLectureSessionId,
       hiddenCommentCount,
@@ -925,6 +1134,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       isSessionSyncPaused,
       lastActivityAt,
       recordSessionActivity,
+      resetDemoLecture,
       resumeSessionSync,
       selectLectureSession,
       sessionSyncPauseReason,
@@ -932,6 +1142,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       refreshPollResults,
       usingSupabasePolls,
       visibleComments,
+      runtimeMode,
+      applyDemoSnapshot,
     ],
   )
 

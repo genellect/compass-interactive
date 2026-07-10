@@ -57,7 +57,9 @@ export function AdminPage() {
   const [authError, setAuthError] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
-  const [displayStateError, setDisplayStateError] = useState<string | null>(null)
+  const [displayStateError, setDisplayStateError] = useState<string | null>(
+    null,
+  )
   const [displayStateLoading, setDisplayStateLoading] = useState(false)
   const [displayPageInput, setDisplayPageInput] = useState('1')
   const [displayModeInput, setDisplayModeInput] =
@@ -83,7 +85,9 @@ export function AdminPage() {
       return ''
     }
 
-    const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    const offsetDate = new Date(
+      date.getTime() - date.getTimezoneOffset() * 60000,
+    )
     return offsetDate.toISOString().slice(0, 16)
   }
 
@@ -94,6 +98,7 @@ export function AdminPage() {
   function makeJoinedLecture(lectureRow: AdminLecture) {
     return {
       id: lectureRow.id,
+      runtimeMode: 'live' as const,
       status: lectureRow.status,
       title: lectureRow.title,
       ...(lectureRow.startsAt ? { startsAt: lectureRow.startsAt } : {}),
@@ -216,7 +221,9 @@ export function AdminPage() {
     }
 
     if (!adminToken) {
-      setDisplayStateError('管理者認証の有効期限が切れました。再度ログインしてください。')
+      setDisplayStateError(
+        '管理者認証の有効期限が切れました。再度ログインしてください。',
+      )
       return
     }
 
@@ -250,14 +257,18 @@ export function AdminPage() {
       setDisplayModeInput(nextDisplayState.displayMode)
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '表示画面の更新に失敗しました。'
+        error instanceof Error
+          ? error.message
+          : '表示画面の更新に失敗しました。'
 
       if (message === 'Invalid Admin session.') {
         window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
         window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
         setAdminToken('')
         setIsAuthenticated(false)
-        setAuthError('管理者認証の有効期限が切れました。再度ログインしてください。')
+        setAuthError(
+          '管理者認証の有効期限が切れました。再度ログインしてください。',
+        )
       }
 
       setDisplayStateError(
@@ -274,7 +285,9 @@ export function AdminPage() {
     event.preventDefault()
 
     if (!adminToken) {
-      setLecturesError('管理者認証の有効期限が切れました。再度ログインしてください。')
+      setLecturesError(
+        '管理者認証の有効期限が切れました。再度ログインしてください。',
+      )
       return
     }
 
@@ -313,7 +326,9 @@ export function AdminPage() {
     lectureSessionId: string,
   ) {
     if (!adminToken) {
-      setLecturesError('管理者認証の有効期限が切れました。再度ログインしてください。')
+      setLecturesError(
+        '管理者認証の有効期限が切れました。再度ログインしてください。',
+      )
       return
     }
 
@@ -327,7 +342,9 @@ export function AdminPage() {
         lectureSessionId,
       })
       setLectures(nextLectures)
-      const updatedLecture = nextLectures.find((item) => item.id === lectureSessionId)
+      const updatedLecture = nextLectures.find(
+        (item) => item.id === lectureSessionId,
+      )
       if (updatedLecture && activeLectureSessionId === lectureSessionId) {
         selectLectureSession(makeJoinedLecture(updatedLecture))
       }
@@ -365,7 +382,7 @@ export function AdminPage() {
           <label className="field">
             <span>PIN</span>
             <input
-            aria-label="管理PIN"
+              aria-label="管理PIN"
               autoComplete="off"
               disabled={isVerifying}
               inputMode="numeric"
@@ -401,7 +418,11 @@ export function AdminPage() {
           <a className="secondary-link" href="/display" target="_blank">
             共有画面を開く
           </a>
-          <button className="secondary-button" onClick={handleLogout} type="button">
+          <button
+            className="secondary-button"
+            onClick={handleLogout}
+            type="button"
+          >
             ログアウト
           </button>
         </div>
@@ -461,7 +482,9 @@ export function AdminPage() {
         </form>
 
         {lecturesError ? <p className="error-note">{lecturesError}</p> : null}
-        {lecturesLoading ? <p className="note">講義情報を更新しています。</p> : null}
+        {lecturesLoading ? (
+          <p className="note">講義情報を更新しています。</p>
+        ) : null}
 
         <div className="table-like lecture-table">
           {lectures.length > 0 ? (
@@ -492,15 +515,21 @@ export function AdminPage() {
                   <div className="lecture-row-actions">
                     <button
                       className="secondary-button"
-                      onClick={() => selectLectureSession(makeJoinedLecture(lectureRow))}
+                      onClick={() =>
+                        selectLectureSession(makeJoinedLecture(lectureRow))
+                      }
                       type="button"
                     >
                       {isActive ? '操作対象' : '選択'}
                     </button>
                     <button
                       className="secondary-button"
-                      disabled={lecturesLoading || lectureRow.status !== 'draft'}
-                      onClick={() => void updateLectureStatus('start', lectureRow.id)}
+                      disabled={
+                        lecturesLoading || lectureRow.status !== 'draft'
+                      }
+                      onClick={() =>
+                        void updateLectureStatus('start', lectureRow.id)
+                      }
                       type="button"
                     >
                       開始
@@ -508,7 +537,9 @@ export function AdminPage() {
                     <button
                       className="secondary-button danger-button"
                       disabled={lecturesLoading || lectureRow.status !== 'open'}
-                      onClick={() => void updateLectureStatus('close', lectureRow.id)}
+                      onClick={() =>
+                        void updateLectureStatus('close', lectureRow.id)
+                      }
                       type="button"
                     >
                       終了
@@ -518,7 +549,9 @@ export function AdminPage() {
               )
             })
           ) : (
-            <p className="note">まだ講義がありません。講義コードを発行してください。</p>
+            <p className="note">
+              まだ講義がありません。講義コードを発行してください。
+            </p>
           )}
         </div>
       </section>
@@ -554,9 +587,7 @@ export function AdminPage() {
         </div>
 
         {!activeLectureSessionId ? (
-          <p className="note">
-            講義へ参加後、共有画面を操作できます。
-          </p>
+          <p className="note">講義へ参加後、共有画面を操作できます。</p>
         ) : (
           <div className="display-control-grid">
             <div className="display-control-actions">
@@ -655,7 +686,9 @@ export function AdminPage() {
               </span>
               <button
                 className="secondary-button"
-                onClick={() => setPollStatus(poll.id, nextPollStatus(poll.status))}
+                onClick={() =>
+                  setPollStatus(poll.id, nextPollStatus(poll.status))
+                }
                 type="button"
               >
                 {poll.status === 'open' ? '締め切る' : '開始する'}

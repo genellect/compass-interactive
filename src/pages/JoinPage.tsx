@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCompassState } from '../hooks/useCompassState'
 
 export function JoinPage() {
@@ -8,6 +8,30 @@ export function JoinPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [isJoining, setIsJoining] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const didAutoJoin = useRef(false)
+
+  useEffect(() => {
+    const directCode = searchParams.get('code')?.trim()
+    if (!directCode || didAutoJoin.current) {
+      return
+    }
+
+    didAutoJoin.current = true
+    setLectureCode(directCode)
+    setIsJoining(true)
+
+    void joinLecture(directCode).then((result) => {
+      setIsJoining(false)
+      if (!result.ok) {
+        setErrorMessage(result.message)
+        return
+      }
+
+      setErrorMessage('')
+      navigate('/lecture', { replace: true })
+    })
+  }, [joinLecture, navigate, searchParams])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -30,6 +54,10 @@ export function JoinPage() {
         <p className="eyebrow">COMPASS Interactive</p>
         <h1>講義に参加する</h1>
         <p>教員から案内された講義コードを入力してください。</p>
+        <p className="note">
+          <code>DEMO</code>{' '}
+          と入力すると、Supabaseへ接続しない端末内デモを開始できます。
+        </p>
 
         {hasJoinedLectureSession ? (
           <div className="joined-summary">
