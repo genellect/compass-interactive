@@ -736,6 +736,17 @@ input:disabled {
   max-width: 220px;
 }
 
+.pdf-document-control .compact-field {
+  max-width: 460px;
+  min-width: min(100%, 320px);
+}
+
+.student-pdf-panel {
+  margin-bottom: 20px;
+  overflow: hidden;
+  padding: 0;
+}
+
 .table-row:last-child {
   border-bottom: 0;
 }
@@ -865,6 +876,20 @@ input:disabled {
   gap: 12px;
   justify-content: space-between;
   padding: 14px 16px 0;
+}
+
+.pdf-toolbar > div:first-child {
+  min-width: 220px;
+}
+
+.pdf-toolbar > div:first-child .eyebrow {
+  margin-bottom: 4px;
+}
+
+.synced-pdf-viewer > .note,
+.synced-pdf-viewer > .error-note {
+  margin-left: 16px;
+  margin-right: 16px;
 }
 
 .pdf-file-button {

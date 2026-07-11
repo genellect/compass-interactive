@@ -13,6 +13,7 @@ type DisplayStateRow = {
   current_pdf_page: number
   display_mode: DisplayMode
   lecture_session_id: string
+  pdf_document_id: string | null
   updated_at: string
 }
 
@@ -20,6 +21,7 @@ export type AdminDisplayState = {
   currentPdfPage: number
   displayMode: DisplayMode
   lectureSessionId: string
+  pdfDocumentId: string | null
   updatedAt: string
 }
 
@@ -46,6 +48,12 @@ type UpdateDisplayStateRequest =
       adminToken: string
       displayMode: DisplayMode
       lectureSessionId: string
+    }
+  | {
+      action: 'setDocument'
+      adminToken: string
+      lectureSessionId: string
+      pdfDocumentId: string | null
     }
 
 export type AdminLecture = {
@@ -134,6 +142,7 @@ function toAdminDisplayState(row: DisplayStateRow): AdminDisplayState {
     currentPdfPage: row.current_pdf_page,
     displayMode: row.display_mode,
     lectureSessionId: row.lecture_session_id,
+    pdfDocumentId: row.pdf_document_id,
     updatedAt: row.updated_at,
   }
 }

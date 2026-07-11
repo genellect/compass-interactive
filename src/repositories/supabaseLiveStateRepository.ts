@@ -30,7 +30,7 @@ export type LiveSnapshot = {
     items: LiveComment[]
     mode: 'delta' | 'initial'
   } | null
-  display: (DisplayState & { pdfAssetId: string | null }) | null
+  display: DisplayState | null
   lecture: JoinedLectureSession
   likeTotals: CommentLikeTotal[] | null
   pollResponses: PollResponse[] | null
@@ -93,7 +93,7 @@ type RawSnapshot = {
     current_pdf_page: number
     display_mode: DisplayState['displayMode']
     lecture_session_id: string
-    pdf_asset_id: string | null
+    pdf_document_id: string | null
     updated_at: string
   } | null
   lecture: {
@@ -181,7 +181,7 @@ function mapSnapshot(raw: RawSnapshot, participantId: string | null): LiveSnapsh
           currentPdfPage: raw.display.current_pdf_page,
           displayMode: raw.display.display_mode,
           lectureSessionId: raw.display.lecture_session_id,
-          pdfAssetId: raw.display.pdf_asset_id,
+          pdfDocumentId: raw.display.pdf_document_id,
           updatedAt: raw.display.updated_at,
         }
       : null,

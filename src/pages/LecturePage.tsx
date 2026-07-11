@@ -1,5 +1,6 @@
 import { CommentInput, LiveBoard } from '../components/LiveBoard'
 import { LivePoll } from '../components/LivePoll'
+import { SyncedPdfViewer } from '../components/DisplayView'
 import { useCompassState } from '../hooks/useCompassState'
 
 export function LecturePage() {
@@ -10,6 +11,8 @@ export function LecturePage() {
     commentLikesError,
     commentsError,
     commentsLoading,
+    displayState,
+    displayStateError,
     hasJoinedLectureSession,
     isSubmittingComment,
     isSessionSyncPaused,
@@ -110,6 +113,18 @@ export function LecturePage() {
         </p>
       ) : null}
       {pollsLoading ? <p className="note">投票を読み込んでいます。</p> : null}
+
+      {runtimeMode === 'live' ? (
+        <section className="panel student-pdf-panel">
+          {displayStateError ? (
+            <p className="error-note">PDF同期の更新に失敗しました。</p>
+          ) : null}
+          <SyncedPdfViewer
+            documentId={displayState?.pdfDocumentId ?? null}
+            remotePage={displayState?.currentPdfPage ?? null}
+          />
+        </section>
+      ) : null}
 
       <CommentInput
         disabled={!isJoined || commentsLoading || isSessionSyncPaused}

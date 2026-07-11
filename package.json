@@ -13,6 +13,7 @@
     "test:demo": "node --experimental-strip-types scripts/test-demo-repository.mjs",
     "test:live-state": "node --experimental-strip-types scripts/test-live-state.mjs",
     "test:admin-lifecycle": "node --experimental-strip-types scripts/test-admin-lifecycle.mjs",
+    "test:pdf-sync": "node scripts/test-pdf-sync.mjs",
     "test:supabase:static": "node scripts/test-supabase-baseline.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",

@@ -200,6 +200,7 @@ export type Database = {
           display_version: number
           lecture_session_id: string
           likes_version: number
+          pdf_document_id: string | null
           polls_version: number
           state_version: number
           updated_at: string
@@ -211,6 +212,7 @@ export type Database = {
           display_version?: number
           lecture_session_id: string
           likes_version?: number
+          pdf_document_id?: string | null
           polls_version?: number
           state_version?: number
           updated_at?: string
@@ -222,6 +224,7 @@ export type Database = {
           display_version?: number
           lecture_session_id?: string
           likes_version?: number
+          pdf_document_id?: string | null
           polls_version?: number
           state_version?: number
           updated_at?: string
@@ -547,6 +550,23 @@ export type Database = {
           target_status: string
         }
         Returns: boolean
+      }
+      admin_update_pdf_display: {
+        Args: {
+          target_current_pdf_page: number
+          target_display_mode: string
+          target_lecture_session_id: string
+          target_pdf_document_id: string | null
+        }
+        Returns: {
+          current_pdf_page: number
+          display_mode: string
+          display_version: number
+          lecture_session_id: string
+          pdf_document_id: string | null
+          state_version: number
+          updated_at: string
+        }[]
       }
       get_lecture_live_snapshot: {
         Args: {
