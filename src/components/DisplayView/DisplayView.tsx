@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { LiveBoard } from '../LiveBoard'
 import { LivePoll } from '../LivePoll'
-import { LocalPdfViewer } from './LocalPdfViewer'
+import { SyncedPdfViewer } from './SyncedPdfViewer'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
@@ -99,7 +99,11 @@ export function DisplayView({
       >
         <section className="display-main-stage">
           <div className="display-placeholder slide-placeholder">
-            <LocalPdfViewer remotePage={remotePdfPage} />
+            <SyncedPdfViewer
+              documentId={displayState?.pdfDocumentId ?? null}
+              presenterLocked
+              remotePage={remotePdfPage}
+            />
           </div>
 
           <div className="display-placeholder transcript-placeholder">

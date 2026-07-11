@@ -1,0 +1,89 @@
+{
+  "capturedAt": "2026-07-11T20:50:14+09:00",
+  "validationProject": {
+    "name": "compass-interactive-m2-validation",
+    "ref": "vhzrimtscafflfvxouge",
+    "status": "ACTIVE_HEALTHY",
+    "retainedPendingDeletionApproval": true
+  },
+  "productionProject": {
+    "ref": "pfvedtqccblecuyjlfqh",
+    "writesPerformed": false,
+    "secretsReadOrChanged": false,
+    "cloudflareProductionChanged": false
+  },
+  "schema": {
+    "migration": "20260711111834_pdf_sync.sql",
+    "appliedToValidationWithoutHistory": true,
+    "validationMigrationHistoryChanged": false,
+    "pdfDocumentIdColumn": true,
+    "pdfMetadataTableCreated": false,
+    "liveStateRlsEnabled": true,
+    "adminRpc": {
+      "name": "admin_update_pdf_display(uuid,text,integer,text)",
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true
+    },
+    "snapshotRpc": {
+      "anonExecute": true,
+      "authenticatedExecute": true,
+      "securityDefiner": true,
+      "fixedSearchPath": true,
+      "privateCorePublicExecute": false,
+      "privateCoreAnonExecute": false,
+      "privateCoreAuthenticatedExecute": false,
+      "privateCoreServiceRoleExecute": false
+    }
+  },
+  "edgeFunction": {
+    "name": "update-display-state",
+    "status": "ACTIVE",
+    "verifyJwt": true,
+    "version": 3,
+    "validationProjectOnly": true
+  },
+  "checks": {
+    "pdfSyncPgTap": { "passed": 31, "failed": 0 },
+    "hostedSignedTokenE2e": {
+      "status": "passed",
+      "adminSecrets": "validation-only-random-values",
+      "lectureCreated": true,
+      "lectureStarted": true,
+      "documentSelected": "m4-sample-v1",
+      "pageChanged": 2,
+      "displayMode": "presentation",
+      "outOfRangePageRejected": true,
+      "snapshotDisplayVersion": 3,
+      "snapshotMatched": true,
+      "lectureClosed": true
+    },
+    "staticAsset": {
+      "path": "/lecture-assets/m4-sample-v1.pdf",
+      "pageCount": 3,
+      "pdfHeaderValid": true,
+      "visualReview": "passed"
+    },
+    "lint": "passed",
+    "typecheck": "passed",
+    "demoRegression": "passed",
+    "liveStateRegression": "passed",
+    "adminLifecycleRegression": "passed",
+    "pdfSyncStatic": "passed",
+    "baselineStatic": "passed",
+    "productionBuild": "pending final environment run"
+  },
+  "advisors": {
+    "newM4AdminRpcWarnings": [],
+    "snapshotPublicRpcWarning": "expected: public snapshot access is required by the M2-M4 design",
+    "preExistingFindingsRetained": true,
+    "securityCount": 23,
+    "performanceCount": 20
+  },
+  "notes": [
+    "The M4 SQL was applied to the retained validation database without registering migration history.",
+    "Only the validation update-display-state function and validation-only dummy Admin Secrets were changed.",
+    "The hosted E2E used verify-admin-pin through lecture close and left its identifiable test lecture closed.",
+    "No Supabase table stores PDF bytes, paths, titles, page counts, or other document metadata."
+  ]
+}

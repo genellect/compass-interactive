@@ -1,13 +1,8 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-} from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useFullscreen } from '../../hooks/useFullscreen'
+import { getLecturePdfAsset } from '../../pdf/lectureAssets'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
@@ -17,22 +12,28 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 const DEFAULT_PAGE_ASPECT_RATIO = 16 / 9
 const MAX_RENDER_SCALE = 5
 const MIN_QUALITY_SCALE = 2
-const STAGE_INSET = 0
 
-type LocalPdfViewerProps = {
+type SyncedPdfViewerProps = {
+  documentId: string | null
+  presenterLocked?: boolean
   remotePage?: number | null
 }
 
-export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
+export function SyncedPdfViewer({
+  documentId,
+  presenterLocked = false,
+  remotePage,
+}: SyncedPdfViewerProps) {
+  const asset = getLecturePdfAsset(documentId)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const renderTaskRef = useRef<ReturnType<
     Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']
   > | null>(null)
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
-  const [fileName, setFileName] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
+  const [followPresenter, setFollowPresenter] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [pageAspectRatio, setPageAspectRatio] = useState(
@@ -49,7 +50,6 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
     async (pageNumber: number, document: PDFDocumentProxy) => {
       const canvas = canvasRef.current
       const stage = stageRef.current
-
       if (!canvas || !stage) {
         return
       }
@@ -58,13 +58,10 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
       const page = await document.getPage(pageNumber)
       const baseViewport = page.getViewport({ scale: 1 })
       setPageAspectRatio(baseViewport.width / baseViewport.height)
-
       const stageRect = stage.getBoundingClientRect()
-      const availableWidth = Math.max(stageRect.width - STAGE_INSET, 320)
-      const availableHeight = Math.max(stageRect.height - STAGE_INSET, 180)
       const displayScale = Math.min(
-        availableWidth / baseViewport.width,
-        availableHeight / baseViewport.height,
+        Math.max(stageRect.width, 320) / baseViewport.width,
+        Math.max(stageRect.height, 180) / baseViewport.height,
       )
       const renderScale = Math.min(
         MAX_RENDER_SCALE,
@@ -73,7 +70,6 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
       const displayViewport = page.getViewport({ scale: displayScale })
       const renderViewport = page.getViewport({ scale: renderScale })
       const context = canvas.getContext('2d', { alpha: false })
-
       if (!context) {
         throw new Error('Canvas rendering context is unavailable.')
       }
@@ -91,7 +87,6 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
         viewport: renderViewport,
       })
       renderTaskRef.current = renderTask
-
       try {
         await renderTask.promise
       } catch (error) {
@@ -106,151 +101,128 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
     [],
   )
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+  const moveToPage = useCallback(
+    async (nextPage: number, manual = false) => {
+      if (!pdfDocument || nextPage < 1 || nextPage > totalPages) {
+        return
+      }
+      if (manual && !presenterLocked) {
+        setFollowPresenter(false)
+      }
+      setCurrentPage(nextPage)
+      setErrorMessage('')
+      try {
+        await renderPage(nextPage, pdfDocument)
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? `PDFページの描画に失敗しました: ${error.message}`
+            : 'PDFページの描画に失敗しました。',
+        )
+      }
+    },
+    [pdfDocument, presenterLocked, renderPage, totalPages],
+  )
 
-    if (!file) {
-      return
-    }
+  useEffect(() => {
+    let active = true
+    setPdfDocument(null)
+    setCurrentPage(1)
+    setTotalPages(0)
+    setFollowPresenter(true)
+    setPageAspectRatio(DEFAULT_PAGE_ASPECT_RATIO)
+    setErrorMessage('')
 
-    if (file.type !== 'application/pdf') {
-      setErrorMessage('PDFファイルを選択してください。')
-      return
+    if (!asset) {
+      setIsLoading(false)
+      return () => {
+        active = false
+      }
     }
 
     setIsLoading(true)
-    setErrorMessage('')
+    const loadingTask = pdfjsLib.getDocument({ url: asset.url })
+    void loadingTask.promise
+      .then(async (loadedPdf) => {
+        if (!active) {
+          return
+        }
+        const initialPage = 1
+        setPdfDocument(loadedPdf)
+        setCurrentPage(initialPage)
+        setTotalPages(loadedPdf.numPages)
+        await renderPage(initialPage, loadedPdf)
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return
+        }
+        setErrorMessage(
+          error instanceof Error
+            ? `PDFの読み込みに失敗しました: ${error.message}`
+            : 'PDFの読み込みに失敗しました。',
+        )
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false)
+        }
+      })
 
-    try {
-      const buffer = await file.arrayBuffer()
-      const loadedPdf = await pdfjsLib.getDocument({ data: buffer }).promise
-      const initialPage =
-        remotePage && remotePage >= 1 && remotePage <= loadedPdf.numPages
-          ? remotePage
-          : 1
-      setPdfDocument(loadedPdf)
-      setFileName(file.name)
-      setCurrentPage(initialPage)
-      setTotalPages(loadedPdf.numPages)
-      await renderPage(initialPage, loadedPdf)
-    } catch (error) {
-      setPdfDocument(null)
-      setFileName('')
-      setCurrentPage(1)
-      setTotalPages(0)
-      setPageAspectRatio(DEFAULT_PAGE_ASPECT_RATIO)
-      setErrorMessage(
-        error instanceof Error
-          ? `PDFの読み込みに失敗しました: ${error.message}`
-          : 'PDFの読み込みに失敗しました。',
-      )
-    } finally {
-      setIsLoading(false)
+    return () => {
+      active = false
+      renderTaskRef.current?.cancel()
+      void loadingTask.destroy()
+    }
+  }, [asset, renderPage])
+
+  useEffect(() => {
+    if (!pdfDocument || !remotePage || (!followPresenter && !presenterLocked)) {
+      return
+    }
+    if (remotePage === currentPage || remotePage > totalPages) {
+      return
+    }
+    void moveToPage(remotePage)
+  }, [
+    currentPage,
+    followPresenter,
+    moveToPage,
+    pdfDocument,
+    presenterLocked,
+    remotePage,
+    totalPages,
+  ])
+
+  useEffect(() => {
+    if (!pdfDocument) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void renderPage(currentPage, pdfDocument)
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [currentPage, isPdfFullscreen, pdfDocument, renderPage])
+
+  async function resumePresenterFollow() {
+    setFollowPresenter(true)
+    if (remotePage) {
+      await moveToPage(remotePage)
     }
   }
 
-  const moveToPage = useCallback(async (nextPage: number) => {
-    if (!pdfDocument || nextPage < 1 || nextPage > totalPages) {
-      return
-    }
-
-    setCurrentPage(nextPage)
-    setErrorMessage('')
-
-    try {
-      await renderPage(nextPage, pdfDocument)
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? `PDFページの描画に失敗しました: ${error.message}`
-          : 'PDFページの描画に失敗しました。',
-      )
-    }
-  }, [pdfDocument, renderPage, totalPages])
-
-  useEffect(() => {
-    if (!pdfDocument) {
-      return
-    }
-    const document = pdfDocument
-
-    function handleResize() {
-      void renderPage(currentPage, document)
-    }
-
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [currentPage, pdfDocument, renderPage])
-
-  useEffect(() => {
-    if (!pdfDocument) {
-      return
-    }
-
-    const resizeTimer = window.setTimeout(() => {
-      void renderPage(currentPage, pdfDocument)
-    }, 120)
-
-    return () => window.clearTimeout(resizeTimer)
-  }, [currentPage, isPdfFullscreen, pdfDocument, renderPage])
-
-  useEffect(() => {
-    if (!isPdfFullscreen || !pdfDocument) {
-      return
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault()
-        void moveToPage(currentPage - 1)
-      }
-
-      if (event.key === 'ArrowRight') {
-        event.preventDefault()
-        void moveToPage(currentPage + 1)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentPage, isPdfFullscreen, moveToPage, pdfDocument])
-
-  useEffect(() => {
-    if (!pdfDocument || !remotePage) {
-      return
-    }
-
-    if (remotePage < 1 || remotePage > totalPages || remotePage === currentPage) {
-      return
-    }
-
-    void moveToPage(remotePage)
-  }, [currentPage, moveToPage, pdfDocument, remotePage, totalPages])
-
-  useEffect(
-    () => () => {
-      renderTaskRef.current?.cancel()
-    },
-    [],
-  )
-
   return (
-    <div className="local-pdf-viewer">
+    <div className="local-pdf-viewer synced-pdf-viewer">
       <div className="pdf-toolbar">
-        <label className="secondary-button pdf-file-button">
-          PDFを選択
-          <input
-            accept="application/pdf"
-            aria-label="PDFファイル"
-            onChange={handleFileChange}
-            type="file"
-          />
-        </label>
+        <div>
+          <p className="eyebrow">PDF資料</p>
+          <strong>{asset?.title ?? '資料未選択'}</strong>
+        </div>
         <div className="pdf-page-controls">
           <button
             className="secondary-button"
             disabled={!pdfDocument || currentPage <= 1 || isLoading}
-            onClick={() => void moveToPage(currentPage - 1)}
+            onClick={() => void moveToPage(currentPage - 1, true)}
             type="button"
           >
             前へ
@@ -261,15 +233,25 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
           <button
             className="secondary-button"
             disabled={!pdfDocument || currentPage >= totalPages || isLoading}
-            onClick={() => void moveToPage(currentPage + 1)}
+            onClick={() => void moveToPage(currentPage + 1, true)}
             type="button"
           >
             次へ
           </button>
         </div>
+        {!presenterLocked ? (
+          <button
+            className="secondary-button"
+            disabled={!pdfDocument || followPresenter}
+            onClick={() => void resumePresenterFollow()}
+            type="button"
+          >
+            発表ページへ戻る
+          </button>
+        ) : null}
         <button
           className="secondary-button"
-          disabled={!isFullscreenSupported || isLoading}
+          disabled={!isFullscreenSupported || !pdfDocument || isLoading}
           onClick={() => void toggleFullscreen()}
           type="button"
         >
@@ -277,7 +259,19 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
         </button>
       </div>
 
-      {fileName ? <p className="note pdf-file-name">{fileName}</p> : null}
+      {!presenterLocked && pdfDocument ? (
+        <p className="note">
+          {followPresenter
+            ? '発表者のページに追従しています。'
+            : '手動閲覧中です。発表ページへ戻ると追従を再開します。'}
+        </p>
+      ) : null}
+      {asset && asset.pageCount !== totalPages && pdfDocument ? (
+        <p className="error-note">PDFのページ数がasset catalogと一致しません。</p>
+      ) : null}
+      {!asset && documentId ? (
+        <p className="error-note">指定されたPDF資料が見つかりません。</p>
+      ) : null}
       {errorMessage ? <p className="error-note">{errorMessage}</p> : null}
       {fullscreenErrorMessage ? (
         <p className="error-note">{fullscreenErrorMessage}</p>
@@ -294,8 +288,8 @@ export function LocalPdfViewer({ remotePage }: LocalPdfViewerProps) {
         ) : (
           <div>
             <p className="eyebrow">スライド</p>
-            <h2>PDFスライドを表示</h2>
-            <p>PowerPointをPDF化したスライドをここに表示します。</p>
+            <h2>{asset ? 'PDFを読み込んでいます' : 'PDF資料は未選択です'}</h2>
+            <p>Adminが資料を選択すると、5秒snapshotでここへ反映されます。</p>
             <span>0 / 0</span>
           </div>
         )}

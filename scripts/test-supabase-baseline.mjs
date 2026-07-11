@@ -10,12 +10,18 @@ const manualDir = join(supabaseDir, 'manual')
 const baselineName = '20260710104958_remote_baseline.sql'
 const liveStateMigrationName = '20260711020445_live_state_integration.sql'
 const adminLifecycleMigrationName = '20260711080712_admin_lifecycle.sql'
+const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 
 assert.deepEqual(
   readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')),
-  [baselineName, liveStateMigrationName, adminLifecycleMigrationName],
+  [
+    baselineName,
+    liveStateMigrationName,
+    adminLifecycleMigrationName,
+    pdfSyncMigrationName,
+  ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
 assert.equal(

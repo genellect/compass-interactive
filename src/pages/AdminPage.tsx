@@ -10,6 +10,10 @@ import {
   type DisplayMode,
   type DisplayState,
 } from '../repositories/supabaseDisplayStateRepository'
+import {
+  getLecturePdfAsset,
+  lecturePdfAssets,
+} from '../pdf/lectureAssets'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
@@ -59,6 +63,7 @@ export function AdminPage() {
   )
   const [displayStateLoading, setDisplayStateLoading] = useState(false)
   const [displayPageInput, setDisplayPageInput] = useState('1')
+  const [pdfDocumentInput, setPdfDocumentInput] = useState('')
   const [displayModeInput, setDisplayModeInput] =
     useState<DisplayMode>('normal')
   const [lectures, setLectures] = useState<AdminLecture[]>([])
@@ -73,6 +78,7 @@ export function AdminPage() {
   const [newPollQuestion, setNewPollQuestion] = useState('')
   const [newPollType, setNewPollType] = useState<AdminPoll['type']>('single')
   const [newPollOptions, setNewPollOptions] = useState('賛成\n反対')
+  const selectedPdfAsset = getLecturePdfAsset(displayState?.pdfDocumentId)
 
   function toDatetimeLocalValue(value: string | null) {
     if (!value) {
@@ -228,6 +234,7 @@ export function AdminPage() {
     if (liveDisplayState) {
       setDisplayPageInput(String(liveDisplayState.currentPdfPage))
       setDisplayModeInput(liveDisplayState.displayMode)
+      setPdfDocumentInput(liveDisplayState.pdfDocumentId ?? '')
     }
   }, [
     activeLectureSessionId,
@@ -237,10 +244,16 @@ export function AdminPage() {
   ])
 
   async function updateDisplayState(
-    action: 'next' | 'previous' | 'goToPage' | 'setDisplayMode',
+    action:
+      | 'next'
+      | 'previous'
+      | 'goToPage'
+      | 'setDisplayMode'
+      | 'setDocument',
     options: {
       currentPdfPage?: number
       displayMode?: DisplayMode
+      pdfDocumentId?: string | null
     } = {},
   ) {
     if (!activeLectureSessionId) {
@@ -259,30 +272,42 @@ export function AdminPage() {
     setDisplayStateError(null)
 
     try {
-      const nextDisplayState =
-        action === 'goToPage'
-          ? await supabaseAdminRepository.updateDisplayState({
-              action,
-              adminToken,
-              currentPdfPage: options.currentPdfPage ?? 1,
-              lectureSessionId: activeLectureSessionId,
-            })
-          : action === 'setDisplayMode'
-            ? await supabaseAdminRepository.updateDisplayState({
-                action,
-                adminToken,
-                displayMode: options.displayMode ?? 'normal',
-                lectureSessionId: activeLectureSessionId,
-              })
-            : await supabaseAdminRepository.updateDisplayState({
-                action,
-                adminToken,
-                lectureSessionId: activeLectureSessionId,
-              })
+      let nextDisplayState: Awaited<
+        ReturnType<typeof supabaseAdminRepository.updateDisplayState>
+      >
+      if (action === 'goToPage') {
+        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
+          action,
+          adminToken,
+          currentPdfPage: options.currentPdfPage ?? 1,
+          lectureSessionId: activeLectureSessionId,
+        })
+      } else if (action === 'setDisplayMode') {
+        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
+          action,
+          adminToken,
+          displayMode: options.displayMode ?? 'normal',
+          lectureSessionId: activeLectureSessionId,
+        })
+      } else if (action === 'setDocument') {
+        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
+          action,
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+          pdfDocumentId: options.pdfDocumentId ?? null,
+        })
+      } else {
+        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
+          action,
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+      }
 
       setDisplayState(nextDisplayState)
       setDisplayPageInput(String(nextDisplayState.currentPdfPage))
       setDisplayModeInput(nextDisplayState.displayMode)
+      setPdfDocumentInput(nextDisplayState.pdfDocumentId ?? '')
     } catch (error) {
       const message =
         error instanceof Error
@@ -486,8 +511,17 @@ export function AdminPage() {
     event.preventDefault()
     const nextPage = Number(displayPageInput)
 
-    if (!Number.isInteger(nextPage) || nextPage < 1) {
-      setDisplayStateError('ページ番号は1以上の整数で入力してください。')
+    if (
+      !Number.isInteger(nextPage) ||
+      nextPage < 1 ||
+      !selectedPdfAsset ||
+      nextPage > selectedPdfAsset.pageCount
+    ) {
+      setDisplayStateError(
+        selectedPdfAsset
+          ? `ページ番号は1〜${selectedPdfAsset.pageCount}で入力してください。`
+          : '先にPDF資料を選択してください。',
+      )
       return
     }
 
@@ -725,10 +759,47 @@ export function AdminPage() {
           <p className="note">講義へ参加後、共有画面を操作できます。</p>
         ) : (
           <div className="display-control-grid">
-            <div className="display-control-actions">
+            <div className="display-control-form pdf-document-control">
+              <label className="field compact-field">
+                <span>PDF資料</span>
+                <select
+                  disabled={displayStateLoading || lecture.status === 'closed'}
+                  onChange={(event) =>
+                    setPdfDocumentInput(event.target.value)
+                  }
+                  value={pdfDocumentInput}
+                >
+                  <option value="">資料を表示しない</option>
+                  {lecturePdfAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.title}（{asset.pageCount}ページ）
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 className="secondary-button"
                 disabled={displayStateLoading || lecture.status === 'closed'}
+                onClick={() =>
+                  void updateDisplayState('setDocument', {
+                    pdfDocumentId: pdfDocumentInput || null,
+                  })
+                }
+                type="button"
+              >
+                PDFを反映
+              </button>
+            </div>
+
+            <div className="display-control-actions">
+              <button
+                className="secondary-button"
+                disabled={
+                  displayStateLoading ||
+                  lecture.status === 'closed' ||
+                  !selectedPdfAsset ||
+                  (displayState?.currentPdfPage ?? 1) <= 1
+                }
                 onClick={() => void updateDisplayState('previous')}
                 type="button"
               >
@@ -736,7 +807,13 @@ export function AdminPage() {
               </button>
               <button
                 className="primary-button"
-                disabled={displayStateLoading || lecture.status === 'closed'}
+                disabled={
+                  displayStateLoading ||
+                  lecture.status === 'closed' ||
+                  !selectedPdfAsset ||
+                  (displayState?.currentPdfPage ?? 1) >=
+                    selectedPdfAsset.pageCount
+                }
                 onClick={() => void updateDisplayState('next')}
                 type="button"
               >
@@ -749,6 +826,7 @@ export function AdminPage() {
                 <span>ページ番号</span>
                 <input
                   disabled={displayStateLoading || lecture.status === 'closed'}
+                  max={selectedPdfAsset?.pageCount ?? 1}
                   min={1}
                   onChange={(event) => setDisplayPageInput(event.target.value)}
                   type="number"
@@ -757,7 +835,11 @@ export function AdminPage() {
               </label>
               <button
                 className="secondary-button"
-                disabled={displayStateLoading || lecture.status === 'closed'}
+                disabled={
+                  displayStateLoading ||
+                  lecture.status === 'closed' ||
+                  !selectedPdfAsset
+                }
                 type="submit"
               >
                 移動
@@ -799,7 +881,7 @@ export function AdminPage() {
           <p className="error-note">{displayStateError}</p>
         ) : null}
         <p className="note">
-          共有画面にはページ番号と表示モードのみを同期します。PDFファイル本体はブラウザ内で扱います。
+          PDF本体はCloudflareの静的アセットから取得し、document ID・ページ・表示モードだけを5秒snapshotで同期します。
         </p>
       </section>
 

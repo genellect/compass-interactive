@@ -1,22 +1,30 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { getPdfAsset } from '../_shared/pdfAssets.ts'
 import { jsonResponse } from '../_shared/responses.ts'
 
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 
 type UpdateDisplayStateRequest = {
-  action?: 'next' | 'previous' | 'goToPage' | 'setDisplayMode'
+  action?:
+    | 'next'
+    | 'previous'
+    | 'goToPage'
+    | 'setDisplayMode'
+    | 'setDocument'
   adminToken?: string
   currentPdfPage?: number
   displayMode?: DisplayMode
   lectureSessionId?: string
+  pdfDocumentId?: string | null
 }
 
 type DisplayStateRow = {
   current_pdf_page: number
   display_mode: DisplayMode
   lecture_session_id: string
+  pdf_document_id: string | null
   updated_at: string
 }
 
@@ -104,8 +112,10 @@ Deno.serve(async (request) => {
   }
 
   const { data: currentState, error: selectError } = await supabase
-    .from('lecture_display_state')
-    .select('lecture_session_id,current_pdf_page,display_mode,updated_at')
+    .from('lecture_live_state')
+    .select(
+      'lecture_session_id,pdf_document_id,current_pdf_page,display_mode,updated_at',
+    )
     .eq('lecture_session_id', body.lectureSessionId)
     .maybeSingle<DisplayStateRow>()
 
@@ -113,22 +123,33 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, message: selectError.message }, 500)
   }
 
-  const existingState = currentState ?? {
-    current_pdf_page: 1,
-    display_mode: 'normal' as DisplayMode,
-    lecture_session_id: body.lectureSessionId,
-    updated_at: new Date().toISOString(),
+  if (!currentState) {
+    return jsonResponse(
+      { ok: false, message: 'Lecture live state is unavailable.' },
+      409,
+    )
   }
+
+  const existingState = currentState
+  let nextDocumentId = existingState.pdf_document_id
   let nextPage = existingState.current_pdf_page
   let nextDisplayMode = existingState.display_mode
 
   try {
     if (body.action === 'next') {
+      const asset = getPdfAsset(nextDocumentId)
+      if (!asset || nextPage >= asset.pageCount) {
+        throw new Error('The PDF is already on its last page.')
+      }
       nextPage += 1
     } else if (body.action === 'previous') {
       nextPage = Math.max(1, nextPage - 1)
     } else if (body.action === 'goToPage') {
       nextPage = normalizePage(body.currentPdfPage)
+      const asset = getPdfAsset(nextDocumentId)
+      if (!asset || nextPage > asset.pageCount) {
+        throw new Error('currentPdfPage exceeds the PDF page count.')
+      }
     } else if (body.action === 'setDisplayMode') {
       if (
         !body.displayMode ||
@@ -137,6 +158,13 @@ Deno.serve(async (request) => {
         throw new Error('A valid displayMode is required.')
       }
       nextDisplayMode = body.displayMode
+    } else if (body.action === 'setDocument') {
+      const documentId = body.pdfDocumentId?.trim() || null
+      if (documentId && !getPdfAsset(documentId)) {
+        throw new Error('The selected PDF document is not registered.')
+      }
+      nextDocumentId = documentId
+      nextPage = 1
     }
   } catch (error) {
     return jsonResponse(
@@ -149,17 +177,12 @@ Deno.serve(async (request) => {
   }
 
   const { data: updatedState, error: updateError } = await supabase
-    .from('lecture_display_state')
-    .upsert(
-      {
-        current_pdf_page: nextPage,
-        display_mode: nextDisplayMode,
-        lecture_session_id: body.lectureSessionId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'lecture_session_id' },
-    )
-    .select('lecture_session_id,current_pdf_page,display_mode,updated_at')
+    .rpc('admin_update_pdf_display', {
+      target_current_pdf_page: nextPage,
+      target_display_mode: nextDisplayMode,
+      target_lecture_session_id: body.lectureSessionId,
+      target_pdf_document_id: nextDocumentId,
+    })
     .single<DisplayStateRow>()
 
   if (updateError) {
