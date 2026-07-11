@@ -513,6 +513,41 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_create_lecture: {
+        Args: {
+          lecture_code: string
+          lecture_code_hash: string
+          lecture_ends_at?: string
+          lecture_starts_at?: string
+          lecture_title: string
+        }
+        Returns: string
+      }
+      admin_create_poll: {
+        Args: {
+          option_labels: string[]
+          poll_question: string
+          poll_type: string
+          target_lecture_session_id: string
+        }
+        Returns: string
+      }
+      admin_set_lecture_status: {
+        Args: {
+          target_action: string
+          target_lecture_session_id: string
+          transition_at?: string
+        }
+        Returns: boolean
+      }
+      admin_set_poll_status: {
+        Args: {
+          target_lecture_session_id: string
+          target_poll_id: string
+          target_status: string
+        }
+        Returns: boolean
+      }
       get_lecture_live_snapshot: {
         Args: {
           comment_cursor_created_at?: string

@@ -1,22 +1,12 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Origin': '*',
-}
-
-const textEncoder = new TextEncoder()
-const textDecoder = new TextDecoder()
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import { handleCors } from '../_shared/cors.ts'
+import { jsonResponse } from '../_shared/responses.ts'
 
 type LectureStatus = 'draft' | 'open' | 'closed'
 
 type ManageLecturesRequest =
-  | {
-      action: 'list'
-      adminToken?: string
-    }
+  | { action: 'list'; adminToken?: string }
   | {
       action: 'create'
       adminToken?: string
@@ -31,130 +21,18 @@ type ManageLecturesRequest =
     }
 
 type LectureRow = {
-  id: string
-  title: string
-  status: LectureStatus
-  starts_at: string | null
-  ends_at: string | null
   created_at: string
+  ends_at: string | null
+  id: string
+  starts_at: string | null
+  status: LectureStatus
+  title: string
   updated_at: string
 }
 
 type LectureCodeRow = {
   lecture_code: string
   lecture_session_id: string
-}
-
-function jsonResponse(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-    },
-    status,
-  })
-}
-
-function base64UrlToBytes(value: string) {
-  const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
-  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-  const binary = atob(padded)
-  const bytes = new Uint8Array(binary.length)
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-
-  return bytes
-}
-
-function base64UrlToString(value: string) {
-  return textDecoder.decode(base64UrlToBytes(value))
-}
-
-function base64UrlEncode(value: Uint8Array) {
-  let binary = ''
-
-  for (const byte of value) {
-    binary += String.fromCharCode(byte)
-  }
-
-  return btoa(binary)
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replaceAll('=', '')
-}
-
-async function signToken(payload: string, secret: string) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    textEncoder.encode(secret),
-    { hash: 'SHA-256', name: 'HMAC' },
-    false,
-    ['sign'],
-  )
-  const signature = await crypto.subtle.sign('HMAC', key, textEncoder.encode(payload))
-
-  return base64UrlEncode(new Uint8Array(signature))
-}
-
-function timingSafeEqual(left: string, right: string) {
-  if (left.length !== right.length) {
-    return false
-  }
-
-  let mismatch = 0
-  for (let index = 0; index < left.length; index += 1) {
-    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index)
-  }
-
-  return mismatch === 0
-}
-
-async function verifyAdminToken(token: string, secret: string) {
-  const [payload, signature] = token.split('.')
-
-  if (!payload || !signature) {
-    return false
-  }
-
-  const expectedSignature = await signToken(payload, secret)
-
-  if (!timingSafeEqual(signature, expectedSignature)) {
-    return false
-  }
-
-  const parsedPayload = JSON.parse(base64UrlToString(payload)) as {
-    exp?: number
-    scope?: string
-  }
-
-  if (parsedPayload.scope !== 'display-admin') {
-    return false
-  }
-
-  return Boolean(parsedPayload.exp && parsedPayload.exp > Date.now() / 1000)
-}
-
-async function sha256Hex(value: string) {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    textEncoder.encode(value.trim().toUpperCase()),
-  )
-
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function generateLectureCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(6))
-  const suffix = Array.from(bytes)
-    .map((byte) => alphabet[byte % alphabet.length])
-    .join('')
-
-  return `JC-${suffix}`
 }
 
 function normalizeTimestamp(value: string | null | undefined) {
@@ -164,7 +42,7 @@ function normalizeTimestamp(value: string | null | undefined) {
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
-    throw new Error('日時の形式を確認してください。')
+    throw new Error('Invalid lecture timestamp.')
   }
 
   return date.toISOString()
@@ -183,9 +61,31 @@ function mapLecture(row: LectureRow, codeByLectureId: Map<string, string>) {
   }
 }
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value.trim().toUpperCase()),
+  )
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+function generateLectureCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(6))
+  const suffix = Array.from(bytes)
+    .map((byte) => alphabet[byte % alphabet.length])
+    .join('')
+
+  return `JC-${suffix}`
+}
+
 Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  const corsResponse = handleCors(request)
+  if (corsResponse) {
+    return corsResponse
   }
 
   if (request.method !== 'POST') {
@@ -194,12 +94,9 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const adminPin = Deno.env.get('ADMIN_PIN')
-  const tokenSecret = Deno.env.get('ADMIN_SESSION_SECRET') ?? adminPin
-
-  if (!supabaseUrl || !serviceRoleKey || !tokenSecret) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(
-      { ok: false, message: 'Lecture management function is not configured.' },
+      { ok: false, message: 'Lecture management is not configured.' },
       500,
     )
   }
@@ -211,7 +108,23 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
   }
 
-  if (!body.adminToken || !(await verifyAdminToken(body.adminToken, tokenSecret))) {
+  let tokenSecret: string
+  try {
+    tokenSecret = getAdminTokenSecret()
+  } catch (error) {
+    return jsonResponse(
+      {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Admin auth failed.',
+      },
+      500,
+    )
+  }
+
+  if (
+    !body.adminToken ||
+    !(await verifyAdminToken(body.adminToken, tokenSecret))
+  ) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
 
@@ -230,7 +143,8 @@ Deno.serve(async (request) => {
       throw new Error(lectureError.message)
     }
 
-    const lectureIds = ((lectureRows ?? []) as LectureRow[]).map((lecture) => lecture.id)
+    const rows = (lectureRows ?? []) as LectureRow[]
+    const lectureIds = rows.map((lecture) => lecture.id)
     const codeByLectureId = new Map<string, string>()
 
     if (lectureIds.length > 0) {
@@ -248,9 +162,7 @@ Deno.serve(async (request) => {
       }
     }
 
-    return ((lectureRows ?? []) as LectureRow[]).map((lecture) =>
-      mapLecture(lecture, codeByLectureId),
-    )
+    return rows.map((lecture) => mapLecture(lecture, codeByLectureId))
   }
 
   try {
@@ -261,125 +173,75 @@ Deno.serve(async (request) => {
     if (body.action === 'create') {
       const title = body.title?.trim()
       if (!title) {
-        return jsonResponse({ ok: false, message: '講義タイトルを入力してください。' }, 400)
+        return jsonResponse(
+          { ok: false, message: 'Lecture title is required.' },
+          400,
+        )
       }
 
       const startsAt = normalizeTimestamp(body.startsAt)
       const endsAt = normalizeTimestamp(body.endsAt)
       if (startsAt && endsAt && new Date(startsAt) >= new Date(endsAt)) {
         return jsonResponse(
-          { ok: false, message: '終了時刻は開始時刻より後にしてください。' },
+          { ok: false, message: 'Lecture end must be after its start.' },
           400,
         )
       }
 
-      let lectureCode = generateLectureCode()
-      let codeHash = await sha256Hex(lectureCode)
-
+      let created = false
       for (let attempt = 0; attempt < 4; attempt += 1) {
-        const { data: existingCode } = await supabase
-          .from('lecture_admin_codes')
-          .select('lecture_session_id')
-          .eq('lecture_code', lectureCode)
-          .maybeSingle()
+        const lectureCode = generateLectureCode()
+        const { error } = await supabase.rpc('admin_create_lecture', {
+          lecture_code: lectureCode,
+          lecture_code_hash: await sha256Hex(lectureCode),
+          lecture_ends_at: endsAt,
+          lecture_starts_at: startsAt,
+          lecture_title: title,
+        })
 
-        if (!existingCode) {
+        if (!error) {
+          created = true
           break
         }
 
-        lectureCode = generateLectureCode()
-        codeHash = await sha256Hex(lectureCode)
+        if (error.code !== '23505') {
+          throw new Error(error.message)
+        }
       }
 
-      const { data: lectureRow, error: lectureError } = await supabase
-        .from('lecture_sessions')
-        .insert({
-          code_hash: codeHash,
-          ends_at: endsAt,
-          starts_at: startsAt,
-          status: 'draft',
-          title,
-        })
-        .select('id,title,status,starts_at,ends_at,created_at,updated_at')
-        .single<LectureRow>()
-
-      if (lectureError) {
-        throw new Error(lectureError.message)
+      if (!created) {
+        throw new Error('Could not generate a unique lecture code.')
       }
 
-      const { error: codeError } = await supabase.from('lecture_admin_codes').insert({
-        lecture_code: lectureCode,
-        lecture_session_id: lectureRow.id,
-      })
-
-      if (codeError) {
-        throw new Error(codeError.message)
-      }
-
-      await supabase.from('lecture_display_state').upsert(
-        {
-          current_pdf_page: 1,
-          display_mode: 'normal',
-          lecture_session_id: lectureRow.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'lecture_session_id' },
-      )
-
-      const codeByLectureId = new Map([[lectureRow.id, lectureCode]])
-      return jsonResponse({
-        lecture: mapLecture(lectureRow, codeByLectureId),
-        lectures: await listLectures(),
-        ok: true,
-      })
+      return jsonResponse({ lectures: await listLectures(), ok: true })
     }
 
     if (body.action === 'start' || body.action === 'close') {
       if (!body.lectureSessionId) {
-        return jsonResponse({ ok: false, message: 'lectureSessionId is required.' }, 400)
-      }
-
-      const { data: currentLecture, error: currentLectureError } = await supabase
-        .from('lecture_sessions')
-        .select('id,status')
-        .eq('id', body.lectureSessionId)
-        .maybeSingle<{ id: string; status: LectureStatus }>()
-
-      if (currentLectureError) {
-        throw new Error(currentLectureError.message)
-      }
-
-      if (!currentLecture) {
-        return jsonResponse({ ok: false, message: '講義が見つかりません。' }, 404)
-      }
-
-      if (body.action === 'start' && currentLecture.status !== 'draft') {
         return jsonResponse(
-          { ok: false, message: '開始できるのは準備中の講義だけです。' },
+          { ok: false, message: 'lectureSessionId is required.' },
           400,
         )
       }
 
-      if (body.action === 'close' && currentLecture.status !== 'open') {
-        return jsonResponse(
-          { ok: false, message: '終了できるのは受付中の講義だけです。' },
-          400,
-        )
+      const { data: changed, error } = await supabase.rpc(
+        'admin_set_lecture_status',
+        {
+          target_action: body.action,
+          target_lecture_session_id: body.lectureSessionId,
+          transition_at: new Date().toISOString(),
+        },
+      )
+
+      if (error) {
+        throw new Error(error.message)
       }
 
-      const nextStatus: LectureStatus = body.action === 'start' ? 'open' : 'closed'
-      const patch =
-        body.action === 'start'
-          ? { starts_at: new Date().toISOString(), status: nextStatus }
-          : { ends_at: new Date().toISOString(), status: nextStatus }
-
-      const { error: updateError } = await supabase
-        .from('lecture_sessions')
-        .update(patch)
-        .eq('id', body.lectureSessionId)
-
-      if (updateError) {
-        throw new Error(updateError.message)
+      if (!changed) {
+        return jsonResponse(
+          { ok: false, message: 'Lecture status transition is not allowed.' },
+          409,
+        )
       }
 
       return jsonResponse({ lectures: await listLectures(), ok: true })
@@ -390,7 +252,8 @@ Deno.serve(async (request) => {
     return jsonResponse(
       {
         ok: false,
-        message: error instanceof Error ? error.message : 'Lecture operation failed.',
+        message:
+          error instanceof Error ? error.message : 'Lecture operation failed.',
       },
       500,
     )

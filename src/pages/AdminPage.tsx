@@ -3,13 +3,13 @@ import { LiveBoard } from '../components/LiveBoard'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   type AdminLecture,
+  type AdminPoll,
   supabaseAdminRepository,
 } from '../repositories/supabaseAdminRepository'
 import {
   type DisplayMode,
   type DisplayState,
 } from '../repositories/supabaseDisplayStateRepository'
-import type { PollStatus } from '../types'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
@@ -43,10 +43,7 @@ export function AdminPage() {
     hiddenCommentCount,
     lecture,
     participants,
-    polls,
-    pollResponses,
     selectLectureSession,
-    setPollStatus,
     toggleCommentPinned,
     toggleCommentVisibility,
     visibleComments,
@@ -70,10 +67,12 @@ export function AdminPage() {
   const [newLectureTitle, setNewLectureTitle] = useState('Journal Club')
   const [newLectureStartsAt, setNewLectureStartsAt] = useState('')
   const [newLectureEndsAt, setNewLectureEndsAt] = useState('')
-
-  function nextPollStatus(currentStatus: PollStatus): PollStatus {
-    return currentStatus === 'open' ? 'closed' : 'open'
-  }
+  const [adminPolls, setAdminPolls] = useState<AdminPoll[]>([])
+  const [adminPollsError, setAdminPollsError] = useState<string | null>(null)
+  const [adminPollsLoading, setAdminPollsLoading] = useState(false)
+  const [newPollQuestion, setNewPollQuestion] = useState('')
+  const [newPollType, setNewPollType] = useState<AdminPoll['type']>('single')
+  const [newPollOptions, setNewPollOptions] = useState('賛成\n反対')
 
   function toDatetimeLocalValue(value: string | null) {
     if (!value) {
@@ -131,6 +130,38 @@ export function AdminPage() {
     }
   }
 
+  async function refreshAdminPolls(
+    lectureSessionId = activeLectureSessionId,
+    token = adminToken,
+  ) {
+    if (!lectureSessionId || !token) {
+      setAdminPolls([])
+      setAdminPollsError(null)
+      return
+    }
+
+    setAdminPollsLoading(true)
+    setAdminPollsError(null)
+
+    try {
+      setAdminPolls(
+        await supabaseAdminRepository.managePolls({
+          action: 'list',
+          adminToken: token,
+          lectureSessionId,
+        }),
+      )
+    } catch (error) {
+      setAdminPollsError(
+        error instanceof Error
+          ? `Poll一覧の取得に失敗しました: ${error.message}`
+          : 'Poll一覧の取得に失敗しました。',
+      )
+    } finally {
+      setAdminPollsLoading(false)
+    }
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsVerifying(true)
@@ -165,12 +196,24 @@ export function AdminPage() {
     void refreshLectures(adminToken)
   }, [adminToken, isAuthenticated])
 
+  useEffect(() => {
+    if (!isAuthenticated || !adminToken || !activeLectureSessionId) {
+      setAdminPolls([])
+      setAdminPollsError(null)
+      return
+    }
+
+    void refreshAdminPolls(activeLectureSessionId, adminToken)
+  }, [activeLectureSessionId, adminToken, isAuthenticated])
+
   function handleLogout() {
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
     window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
     setIsAuthenticated(false)
     setAdminToken('')
     setPin('')
+    setAdminPolls([])
+    setAdminPollsError(null)
   }
 
   useEffect(() => {
@@ -310,6 +353,15 @@ export function AdminPage() {
     action: 'start' | 'close',
     lectureSessionId: string,
   ) {
+    if (
+      action === 'close' &&
+      !window.confirm(
+        '講義を終了します。学生の同期と書き込みが停止します。よろしいですか？',
+      )
+    ) {
+      return
+    }
+
     if (!adminToken) {
       setLecturesError(
         '管理者認証の有効期限が切れました。再度ログインしてください。',
@@ -332,6 +384,7 @@ export function AdminPage() {
       )
       if (updatedLecture && activeLectureSessionId === lectureSessionId) {
         selectLectureSession(makeJoinedLecture(updatedLecture))
+        await refreshAdminPolls(lectureSessionId, adminToken)
       }
     } catch (error) {
       setLecturesError(
@@ -341,6 +394,91 @@ export function AdminPage() {
       )
     } finally {
       setLecturesLoading(false)
+    }
+  }
+
+  async function handleCreatePoll(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!adminToken || !activeLectureSessionId) {
+      setAdminPollsError('先に管理対象の講義を選択してください。')
+      return
+    }
+
+    const optionLabels = newPollOptions
+      .split('\n')
+      .map((option) => option.trim())
+      .filter(Boolean)
+
+    if (!newPollQuestion.trim() || optionLabels.length < 2) {
+      setAdminPollsError('質問と2件以上の選択肢を入力してください。')
+      return
+    }
+
+    setAdminPollsLoading(true)
+    setAdminPollsError(null)
+    try {
+      setAdminPolls(
+        await supabaseAdminRepository.managePolls({
+          action: 'create',
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+          optionLabels,
+          question: newPollQuestion.trim(),
+          type: newPollType,
+        }),
+      )
+      setNewPollQuestion('')
+      setNewPollOptions('賛成\n反対')
+    } catch (error) {
+      setAdminPollsError(
+        error instanceof Error
+          ? `Poll作成に失敗しました: ${error.message}`
+          : 'Poll作成に失敗しました。',
+      )
+    } finally {
+      setAdminPollsLoading(false)
+    }
+  }
+
+  async function updatePollStatus(poll: AdminPoll) {
+    if (!adminToken || !activeLectureSessionId) {
+      return
+    }
+
+    const action = poll.status === 'open' ? 'close' : 'open'
+    setAdminPollsLoading(true)
+    setAdminPollsError(null)
+    try {
+      setAdminPolls(
+        await supabaseAdminRepository.managePolls({
+          action,
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+          pollId: poll.id,
+        }),
+      )
+    } catch (error) {
+      setAdminPollsError(
+        error instanceof Error
+          ? `Poll状態の更新に失敗しました: ${error.message}`
+          : 'Poll状態の更新に失敗しました。',
+      )
+    } finally {
+      setAdminPollsLoading(false)
+    }
+  }
+
+  async function copyLectureCode(lectureCode: string) {
+    if (!lectureCode) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(lectureCode)
+      setLecturesError(null)
+    } catch {
+      setLecturesError('講義コードをコピーできませんでした。')
     }
   }
 
@@ -493,7 +631,19 @@ export function AdminPage() {
                         : '終了未設定'}
                     </small>
                   </span>
-                  <code>{lectureRow.lectureCode || '未発行'}</code>
+                  <span className="lecture-code-cell">
+                    <code>{lectureRow.lectureCode || '未発行'}</code>
+                    <button
+                      className="secondary-button compact"
+                      disabled={!lectureRow.lectureCode}
+                      onClick={() =>
+                        void copyLectureCode(lectureRow.lectureCode)
+                      }
+                      type="button"
+                    >
+                      コピー
+                    </button>
+                  </span>
                   <span className={`status-pill ${lectureRow.status}`}>
                     {getStatusLabel(lectureRow.status)}
                   </span>
@@ -578,7 +728,7 @@ export function AdminPage() {
             <div className="display-control-actions">
               <button
                 className="secondary-button"
-                disabled={displayStateLoading}
+                disabled={displayStateLoading || lecture.status === 'closed'}
                 onClick={() => void updateDisplayState('previous')}
                 type="button"
               >
@@ -586,7 +736,7 @@ export function AdminPage() {
               </button>
               <button
                 className="primary-button"
-                disabled={displayStateLoading}
+                disabled={displayStateLoading || lecture.status === 'closed'}
                 onClick={() => void updateDisplayState('next')}
                 type="button"
               >
@@ -598,7 +748,7 @@ export function AdminPage() {
               <label className="field compact-field">
                 <span>ページ番号</span>
                 <input
-                  disabled={displayStateLoading}
+                  disabled={displayStateLoading || lecture.status === 'closed'}
                   min={1}
                   onChange={(event) => setDisplayPageInput(event.target.value)}
                   type="number"
@@ -607,7 +757,7 @@ export function AdminPage() {
               </label>
               <button
                 className="secondary-button"
-                disabled={displayStateLoading}
+                disabled={displayStateLoading || lecture.status === 'closed'}
                 type="submit"
               >
                 移動
@@ -618,7 +768,7 @@ export function AdminPage() {
               <label className="field compact-field">
                 <span>表示モード</span>
                 <select
-                  disabled={displayStateLoading}
+                  disabled={displayStateLoading || lecture.status === 'closed'}
                   onChange={(event) =>
                     setDisplayModeInput(event.target.value as DisplayMode)
                   }
@@ -631,7 +781,7 @@ export function AdminPage() {
               </label>
               <button
                 className="secondary-button"
-                disabled={displayStateLoading}
+                disabled={displayStateLoading || lecture.status === 'closed'}
                 onClick={() =>
                   void updateDisplayState('setDisplayMode', {
                     displayMode: displayModeInput,
@@ -659,27 +809,106 @@ export function AdminPage() {
             <p className="eyebrow">投票</p>
             <h2>Poll管理</h2>
           </div>
-          <span className="metric">回答 {pollResponses.length}件</span>
+          <button
+            className="secondary-button"
+            disabled={adminPollsLoading || !activeLectureSessionId}
+            onClick={() => void refreshAdminPolls()}
+            type="button"
+          >
+            再読み込み
+          </button>
         </div>
+
+        <form
+          className="lecture-create-form poll-create-form"
+          onSubmit={handleCreatePoll}
+        >
+          <label className="field">
+            <span>質問</span>
+            <input
+              disabled={adminPollsLoading || lecture.status === 'closed'}
+              maxLength={300}
+              onChange={(event) => setNewPollQuestion(event.target.value)}
+              type="text"
+              value={newPollQuestion}
+            />
+          </label>
+          <label className="field compact-field">
+            <span>回答形式</span>
+            <select
+              disabled={adminPollsLoading || lecture.status === 'closed'}
+              onChange={(event) =>
+                setNewPollType(event.target.value as AdminPoll['type'])
+              }
+              value={newPollType}
+            >
+              <option value="single">単一選択</option>
+              <option value="multiple">複数選択</option>
+            </select>
+          </label>
+          <label className="field poll-options-field">
+            <span>選択肢（1行に1件、2～8件）</span>
+            <textarea
+              disabled={adminPollsLoading || lecture.status === 'closed'}
+              onChange={(event) => setNewPollOptions(event.target.value)}
+              rows={4}
+              value={newPollOptions}
+            />
+          </label>
+          <button
+            className="primary-button compact"
+            disabled={
+              adminPollsLoading ||
+              lecture.status === 'closed' ||
+              !activeLectureSessionId ||
+              newPollQuestion.trim().length === 0
+            }
+            type="submit"
+          >
+            Pollを作成
+          </button>
+        </form>
+
+        {adminPollsError ? (
+          <p className="error-note">{adminPollsError}</p>
+        ) : null}
+        {adminPollsLoading ? (
+          <p className="note">Poll情報を更新中です。</p>
+        ) : null}
+
         <div className="table-like">
-          {polls.map((poll) => (
+          {adminPolls.map((poll) => (
             <div className="table-row poll-admin-row" key={poll.id}>
-              <span>{poll.question}</span>
+              <span>
+                <strong>{poll.question}</strong>
+                <small>
+                  {poll.options
+                    .map(
+                      (option) => `${option.label}: ${option.responseCount}件`,
+                    )
+                    .join(' / ')}
+                </small>
+              </span>
               <span>{poll.type === 'single' ? '単一選択' : '複数選択'}</span>
               <span className={`status-pill ${poll.status}`}>
                 {getStatusLabel(poll.status)}
               </span>
               <button
                 className="secondary-button"
-                onClick={() =>
-                  setPollStatus(poll.id, nextPollStatus(poll.status))
+                disabled={
+                  adminPollsLoading ||
+                  (poll.status !== 'open' && lecture.status !== 'open')
                 }
+                onClick={() => void updatePollStatus(poll)}
                 type="button"
               >
                 {poll.status === 'open' ? '締め切る' : '開始する'}
               </button>
             </div>
           ))}
+          {!adminPollsLoading && adminPolls.length === 0 ? (
+            <p className="note">この講義にはPollがありません。</p>
+          ) : null}
         </div>
       </section>
 

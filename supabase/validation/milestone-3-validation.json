@@ -1,0 +1,54 @@
+{
+  "capturedAt": "2026-07-11T17:32:16+09:00",
+  "validationProject": {
+    "name": "compass-interactive-m2-validation",
+    "ref": "vhzrimtscafflfvxouge",
+    "retainedPendingDeletionApproval": true
+  },
+  "productionProject": {
+    "ref": "pfvedtqccblecuyjlfqh",
+    "writesPerformed": false,
+    "secretsChanged": false
+  },
+  "schema": {
+    "migration": "20260711080712_admin_lifecycle.sql",
+    "appliedToValidationWithoutHistory": true,
+    "newRoutines": [
+      "admin_create_lecture(text,text,text,timestamptz,timestamptz)",
+      "admin_set_lecture_status(uuid,text,timestamptz)",
+      "admin_create_poll(uuid,text,text,text[])",
+      "admin_set_poll_status(uuid,uuid,text)"
+    ],
+    "allNewRoutinesSecurityInvoker": true,
+    "allNewRoutinesFixedSearchPath": true,
+    "anonExecute": false,
+    "authenticatedExecute": false,
+    "serviceRoleExecute": true,
+    "generatedTypesDifference": []
+  },
+  "edgeFunctions": [
+    { "name": "manage-lectures", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "manage-polls", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "update-display-state", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "verify-admin-pin", "status": "ACTIVE", "verifyJwt": true }
+  ],
+  "checks": {
+    "baselineRegressionPgTap": { "passed": 19, "failed": 0 },
+    "liveStateRegressionPgTap": { "passed": 22, "failed": 0 },
+    "adminLifecyclePgTap": { "passed": 34, "failed": 0 },
+    "adminTokenUnit": "passed",
+    "edgeDeploymentCompilation": "passed",
+    "edgeGatewaySmoke": { "function": "manage-polls", "status": 400 },
+    "edgeAuthenticatedLifecycle": "not-run-no-validation-admin-secrets",
+    "staticChecks": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "newAdvisorWarnings": []
+  },
+  "notes": [
+    "The gateway 400 is the expected Invalid JSON response from the deployed function when called without a request body.",
+    "Validation project Admin secrets were not changed; token signing and expiry are covered by local unit tests, while DB lifecycle authorization and transitions are covered by pgTAP.",
+    "Advisor findings are unchanged baseline/M2 items; Milestone 3 introduced no new security or performance warning."
+  ]
+}

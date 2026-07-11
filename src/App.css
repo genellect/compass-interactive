@@ -632,10 +632,9 @@ input:disabled {
   align-items: end;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(
-      180px,
-      0.8fr
-    ) auto;
+  grid-template-columns:
+    minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr)
+    auto;
   margin-top: 18px;
 }
 
@@ -678,6 +677,34 @@ input:disabled {
   font-weight: 900;
   padding: 7px 10px;
   text-align: center;
+}
+
+.lecture-code-cell {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lecture-code-cell .secondary-button {
+  font-size: 0.76rem;
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
+.poll-create-form {
+  grid-template-columns: minmax(240px, 1fr) 160px minmax(220px, 0.8fr) auto;
+}
+
+.poll-admin-row strong,
+.poll-admin-row small {
+  display: block;
+}
+
+.poll-admin-row small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 4px;
 }
 
 .lecture-row-actions {
