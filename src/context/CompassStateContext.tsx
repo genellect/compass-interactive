@@ -966,15 +966,6 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }),
         )
       },
-      setPollStatus: (pollId, status) => {
-        setPolls((current) =>
-          mockCompassRepository.poll.setStatus({
-            pollId,
-            polls: current,
-            status,
-          }),
-        )
-      },
       submitPollResponse: async (pollId, optionIds) => {
         if (!currentParticipantId) {
           return

@@ -383,6 +383,9 @@ verify_jwt = true
 [functions.manage-lectures]
 verify_jwt = true
 
+[functions.manage-polls]
+verify_jwt = true
+
 [functions.update-display-state]
 verify_jwt = true
 

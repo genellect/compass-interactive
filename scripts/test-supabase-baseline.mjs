@@ -9,13 +9,14 @@ const migrationsDir = join(supabaseDir, 'migrations')
 const manualDir = join(supabaseDir, 'manual')
 const baselineName = '20260710104958_remote_baseline.sql'
 const liveStateMigrationName = '20260711020445_live_state_integration.sql'
+const adminLifecycleMigrationName = '20260711080712_admin_lifecycle.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 
 assert.deepEqual(
   readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')),
-  [baselineName, liveStateMigrationName],
-  'The immutable baseline must be followed by the Milestone 2 migration.',
+  [baselineName, liveStateMigrationName, adminLifecycleMigrationName],
+  'The immutable baseline must be followed by additive milestone migrations.',
 )
 assert.equal(
   readdirSync(manualDir).filter((name) => name.endsWith('.sql')).length,
@@ -64,6 +65,7 @@ assert.match(config, /\[db\.seed\][\s\S]*?enabled = false/)
 for (const functionName of [
   'verify-admin-pin',
   'manage-lectures',
+  'manage-polls',
   'update-display-state',
 ]) {
   const sourcePath = join(supabaseDir, 'functions', functionName, 'index.ts')

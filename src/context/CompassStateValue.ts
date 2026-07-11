@@ -5,7 +5,6 @@ import type {
   Participant,
   Poll,
   PollResponse,
-  PollStatus,
   LectureRuntimeMode,
 } from '../types'
 import type { RealtimeCommentStatus } from '../repositories/supabaseCommentRepository'
@@ -57,7 +56,6 @@ export type CompassStateValue = {
   toggleCommentLike: (commentId: string) => Promise<void>
   toggleCommentVisibility: (commentId: string) => void
   toggleCommentPinned: (commentId: string) => void
-  setPollStatus: (pollId: string, status: PollStatus) => void
   submitPollResponse: (pollId: string, optionIds: string[]) => Promise<void>
 }
 

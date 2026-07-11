@@ -1,0 +1,70 @@
+{
+  "capturedAt": "2026-07-11T18:33:54+09:00",
+  "validationProject": {
+    "name": "compass-interactive-m2-validation",
+    "ref": "vhzrimtscafflfvxouge",
+    "retainedPendingDeletionApproval": true
+  },
+  "productionProject": {
+    "ref": "pfvedtqccblecuyjlfqh",
+    "writesPerformed": false,
+    "secretsChanged": false
+  },
+  "schema": {
+    "migration": "20260711080712_admin_lifecycle.sql",
+    "appliedToValidationWithoutHistory": true,
+    "newRoutines": [
+      "admin_create_lecture(text,text,text,timestamptz,timestamptz)",
+      "admin_set_lecture_status(uuid,text,timestamptz)",
+      "admin_create_poll(uuid,text,text,text[])",
+      "admin_set_poll_status(uuid,uuid,text)"
+    ],
+    "allNewRoutinesSecurityInvoker": true,
+    "allNewRoutinesFixedSearchPath": true,
+    "anonExecute": false,
+    "authenticatedExecute": false,
+    "serviceRoleExecute": true,
+    "generatedTypesDifference": []
+  },
+  "edgeFunctions": [
+    { "name": "manage-lectures", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "manage-polls", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "update-display-state", "status": "ACTIVE", "verifyJwt": true },
+    { "name": "verify-admin-pin", "status": "ACTIVE", "verifyJwt": true }
+  ],
+  "checks": {
+    "baselineRegressionPgTap": { "passed": 19, "failed": 0 },
+    "liveStateRegressionPgTap": { "passed": 22, "failed": 0 },
+    "adminLifecyclePgTap": { "passed": 34, "failed": 0 },
+    "adminTokenUnit": "passed",
+    "edgeDeploymentCompilation": "passed",
+    "edgeGatewaySmoke": { "function": "manage-polls", "status": 400 },
+    "edgeAuthenticatedLifecycle": {
+      "status": "passed",
+      "adminSecrets": "validation-only-random-values",
+      "adminTokenLength": 123,
+      "lectureCreated": true,
+      "lectureStarted": true,
+      "pollCreated": true,
+      "pollOpened": true,
+      "pollOptionCount": 2,
+      "snapshotLectureStatus": "open",
+      "snapshotContainsPoll": true,
+      "snapshotPollStatus": "open",
+      "snapshotStateVersion": 5,
+      "snapshotPollsVersion": 4,
+      "lectureClosed": true
+    },
+    "staticChecks": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "newAdvisorWarnings": []
+  },
+  "notes": [
+    "The gateway 400 is the expected Invalid JSON response from the deployed function when called without a request body.",
+    "Validation-only random ADMIN_PIN and ADMIN_SESSION_SECRET values were configured; no production secret was read or changed.",
+    "The hosted signed-token E2E covered verify-admin-pin, lecture creation and start, manage-polls creation and open, snapshot read-back, and lecture close.",
+    "Advisor findings are unchanged baseline/M2 items; Milestone 3 introduced no new security or performance warning."
+  ]
+}

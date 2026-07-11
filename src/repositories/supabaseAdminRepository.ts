@@ -59,6 +59,24 @@ export type AdminLecture = {
   updatedAt: string
 }
 
+export type AdminPollOption = {
+  id: string
+  label: string
+  order: number
+  responseCount: number
+}
+
+export type AdminPoll = {
+  createdAt: string
+  id: string
+  lectureSessionId: string
+  options: AdminPollOption[]
+  question: string
+  status: 'draft' | 'open' | 'closed'
+  type: 'single' | 'multiple'
+  updatedAt: string
+}
+
 type ManageLecturesResponse = {
   lecture?: AdminLecture
   lectures?: AdminLecture[]
@@ -84,6 +102,33 @@ type ManageLecturesRequest =
       lectureSessionId: string
     }
 
+type ManagePollsResponse = {
+  message?: string
+  ok?: boolean
+  polls?: AdminPoll[]
+}
+
+export type ManagePollsRequest =
+  | {
+      action: 'list'
+      adminToken: string
+      lectureSessionId: string
+    }
+  | {
+      action: 'create'
+      adminToken: string
+      lectureSessionId: string
+      optionLabels: string[]
+      question: string
+      type: 'single' | 'multiple'
+    }
+  | {
+      action: 'open' | 'close'
+      adminToken: string
+      lectureSessionId: string
+      pollId: string
+    }
+
 function toAdminDisplayState(row: DisplayStateRow): AdminDisplayState {
   return {
     currentPdfPage: row.current_pdf_page,
@@ -93,7 +138,10 @@ function toAdminDisplayState(row: DisplayStateRow): AdminDisplayState {
   }
 }
 
-async function getFunctionErrorMessage(error: unknown, fallbackMessage: string) {
+async function getFunctionErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
   if (!(error instanceof Error)) {
     return fallbackMessage
   }
@@ -120,15 +168,18 @@ export const supabaseAdminRepository = {
       throw new Error('Admin PIN is required.')
     }
 
-    const { data, error } = await supabase.functions.invoke<VerifyAdminPinResponse>(
-      'verify-admin-pin',
-      {
-        body: { pin: trimmedPin },
-      },
-    )
+    const { data, error } =
+      await supabase.functions.invoke<VerifyAdminPinResponse>(
+        'verify-admin-pin',
+        {
+          body: { pin: trimmedPin },
+        },
+      )
 
     if (error) {
-      throw new Error(await getFunctionErrorMessage(error, 'Admin PIN check failed.'))
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Admin PIN check failed.'),
+      )
     }
 
     if (!data?.ok) {
@@ -166,11 +217,16 @@ export const supabaseAdminRepository = {
     return toAdminDisplayState(data.displayState)
   },
 
-  async manageLectures(request: ManageLecturesRequest): Promise<AdminLecture[]> {
+  async manageLectures(
+    request: ManageLecturesRequest,
+  ): Promise<AdminLecture[]> {
     const { data, error } =
-      await supabase.functions.invoke<ManageLecturesResponse>('manage-lectures', {
-        body: request,
-      })
+      await supabase.functions.invoke<ManageLecturesResponse>(
+        'manage-lectures',
+        {
+          body: request,
+        },
+      )
 
     if (error) {
       throw new Error(
@@ -183,5 +239,24 @@ export const supabaseAdminRepository = {
     }
 
     return data.lectures
+  },
+
+  async managePolls(request: ManagePollsRequest): Promise<AdminPoll[]> {
+    const { data, error } =
+      await supabase.functions.invoke<ManagePollsResponse>('manage-polls', {
+        body: request,
+      })
+
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Poll operation failed.'),
+      )
+    }
+
+    if (!data?.ok || !data.polls) {
+      throw new Error(data?.message ?? 'Poll operation failed.')
+    }
+
+    return data.polls
   },
 }
