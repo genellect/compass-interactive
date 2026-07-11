@@ -1,0 +1,60 @@
+{
+  "capturedAt": "2026-07-11T08:40:00+09:00",
+  "validationProject": {
+    "name": "compass-interactive-m2-validation",
+    "ref": "vhzrimtscafflfvxouge",
+    "region": "ap-northeast-1",
+    "planCostUsdMonthly": 0,
+    "retainedPendingDeletionApproval": true
+  },
+  "productionProject": {
+    "ref": "pfvedtqccblecuyjlfqh",
+    "writesPerformed": false,
+    "migrationHistoryAfterValidation": []
+  },
+  "appliedValidationMigrations": [
+    "remote_baseline",
+    "live_state_integration",
+    "m2_index_completion"
+  ],
+  "note": "m2_index_completion only adds the three indexes now included in the local Milestone 2 migration; the resulting schema matches a fresh two-file rebuild.",
+  "schemaManifest": {
+    "tables": [
+      "comment_like_totals",
+      "comment_likes",
+      "comments",
+      "lecture_admin_codes",
+      "lecture_display_state",
+      "lecture_live_state",
+      "lecture_sessions",
+      "participants",
+      "poll_option_totals",
+      "poll_options",
+      "poll_responses",
+      "poll_result_refresh_events",
+      "polls"
+    ],
+    "newPrivateFunctions": [
+      "bump_lecture_live_state(uuid,text)",
+      "sync_legacy_display_live_state()",
+      "track_comment_like_total()",
+      "track_comment_live_state()",
+      "track_lecture_session_live_state()",
+      "track_poll_definition_live_state()",
+      "track_poll_response_total()"
+    ],
+    "newPublicRpc": "get_lecture_live_snapshot(uuid,uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)",
+    "realtimeTables": ["comments"],
+    "rlsEnabledOnAllPublicTables": true,
+    "schemaDifferenceFromLocalMigrations": []
+  },
+  "checks": {
+    "baselinePgTap": { "passed": 19, "failed": 0 },
+    "milestone2PgTap": { "passed": 22, "failed": 0 },
+    "restSnapshotRpc": { "status": 200, "role": "anon" },
+    "generatedTypesDifferenceAfterCorrection": [],
+    "newAggregateForeignKeyIndexWarnings": [],
+    "realtimePublicationDifference": [],
+    "productionWrites": 0
+  }
+}

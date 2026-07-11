@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '../types/database'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
 const supabasePublishableKey =
@@ -18,7 +19,7 @@ export function assertSupabaseConfigured() {
   }
 }
 
-export const supabase = createClient(
+export const supabase = createClient<Database>(
   supabaseUrl || fallbackSupabaseUrl,
   supabasePublishableKey || fallbackSupabasePublishableKey,
 )

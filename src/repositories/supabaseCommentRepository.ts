@@ -13,12 +13,6 @@ type CommentRow = {
   updated_at: string
 }
 
-export type CommentLikeRow = {
-  comment_id: string
-  lecture_session_id: string
-  participant_id: string
-}
-
 export type RealtimeCommentStatus =
   | 'idle'
   | 'connecting'
@@ -45,45 +39,15 @@ function isVisibleCommentRow(row: CommentRow) {
 }
 
 export const supabaseCommentRepository = {
-  async listVisibleComments(lectureSessionId: string): Promise<LiveComment[]> {
-    const { data, error } = await supabase
-      .from('comments')
-      .select(
-        'id, lecture_session_id, participant_id, body, status, is_pinned, created_at, updated_at',
-      )
-      .eq('lecture_session_id', lectureSessionId)
-      .eq('status', 'visible')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    return (data ?? []).map((row) => mapCommentRow(row as CommentRow))
-  },
-
-  async listCommentLikesForVisibleComments(
-    lectureSessionId: string,
-  ): Promise<CommentLikeRow[]> {
-    const { data, error } = await supabase
-      .from('comment_likes')
-      .select('comment_id, lecture_session_id, participant_id')
-      .eq('lecture_session_id', lectureSessionId)
-
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    return (data ?? []).map((row) => row as CommentLikeRow)
-  },
-
   subscribeToVisibleCommentInserts({
     lectureSessionId,
     onComment,
+    onConnected,
     onStatusChange,
   }: {
     lectureSessionId: string
     onComment: (comment: LiveComment) => void
+    onConnected?: () => void
     onStatusChange?: (status: RealtimeCommentStatus) => void
   }) {
     onStatusChange?.('connecting')
@@ -111,6 +75,7 @@ export const supabaseCommentRepository = {
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           onStatusChange?.('connected')
+          onConnected?.()
           return
         }
 
@@ -166,8 +131,6 @@ export const supabaseCommentRepository = {
       throw new Error('コメントを入力してください。')
     }
 
-    await this.ensureAnonymousParticipant({ lectureSessionId, participantId })
-
     const { data, error } = await supabase
       .from('comments')
       .insert({
@@ -198,8 +161,6 @@ export const supabaseCommentRepository = {
     lectureSessionId: string
     participantId: string
   }) {
-    await this.ensureAnonymousParticipant({ lectureSessionId, participantId })
-
     const { error } = await supabase.from('comment_likes').insert({
       comment_id: commentId,
       lecture_session_id: lectureSessionId,

@@ -6,14 +6,15 @@ import type {
   Poll,
   PollResponse,
   PollStatus,
+  LectureRuntimeMode,
 } from '../types'
 import type { RealtimeCommentStatus } from '../repositories/supabaseCommentRepository'
 import type { PollResultSummary } from '../repositories/supabasePollRepository'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
+import type { DisplayState } from '../repositories/supabaseDisplayStateRepository'
 
 export type JoinResult =
-  | { ok: true; participantId: string }
-  | { ok: false; message: string }
+  { ok: true; participantId: string } | { ok: false; message: string }
 
 export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
 
@@ -30,6 +31,7 @@ export type CompassStateValue = {
   currentParticipantId: string | null
   activeLectureSessionId: string | null
   hasJoinedLectureSession: boolean
+  runtimeMode: LectureRuntimeMode
   expectedLectureCode: string
   commentsLoading: boolean
   commentsError: string | null
@@ -37,11 +39,14 @@ export type CompassStateValue = {
   pollsError: string | null
   pollResultsError: string | null
   pollsLoading: boolean
+  displayState: DisplayState | null
+  displayStateError: string | null
   isSubmittingComment: boolean
   realtimeCommentsStatus: RealtimeCommentStatus
   isSessionSyncPaused: boolean
   lastActivityAt: number
   resumeSessionSync: () => Promise<void>
+  resetDemoLecture: () => void
   selectLectureSession: (lecture: JoinedLectureSession) => void
   sessionSyncMessage: string | null
   sessionSyncPauseReason: SessionSyncPauseReason

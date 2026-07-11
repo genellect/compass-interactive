@@ -38,6 +38,7 @@ function getJoinErrorMessage(message: string) {
 function mapJoinedLecture(row: JoinLectureByCodeRow): JoinedLectureSession {
   return {
     id: row.lecture_session_id,
+    runtimeMode: 'live',
     status: row.status,
     title: row.title,
     endsAt: row.ends_at ?? undefined,

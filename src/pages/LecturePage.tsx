@@ -21,6 +21,8 @@ export function LecturePage() {
     pollsError,
     pollsLoading,
     resumeSessionSync,
+    resetDemoLecture,
+    runtimeMode,
     sessionSyncMessage,
     sessionSyncPauseReason,
     submitPollResponse,
@@ -41,10 +43,31 @@ export function LecturePage() {
         </div>
       </section>
 
+      {runtimeMode === 'demo' ? (
+        <section className="panel demo-mode-panel">
+          <div>
+            <p className="eyebrow">端末内デモ</p>
+            <h2>これはこの端末内だけで動作するデモです</h2>
+            <p>
+              コメント、いいね、Poll回答はlocalStorageだけに保存され、Supabaseへは送信されません。
+            </p>
+          </div>
+          <button
+            className="secondary-button danger-button"
+            onClick={resetDemoLecture}
+            type="button"
+          >
+            デモをリセット
+          </button>
+        </section>
+      ) : null}
+
       {isSessionSyncPaused ? (
         <section className="panel warning-panel">
           <p className="eyebrow">
-            {sessionSyncPauseReason === 'lectureClosed' ? '講義終了' : '同期停止'}
+            {sessionSyncPauseReason === 'lectureClosed'
+              ? '講義終了'
+              : '同期停止'}
           </p>
           <h2>{sessionSyncMessage ?? '同期を停止しています。'}</h2>
           {sessionSyncPauseReason !== 'lectureClosed' ? (
@@ -56,23 +79,35 @@ export function LecturePage() {
               講義に戻る
             </button>
           ) : (
-            <p className="note">新しい講義コードが案内された場合は、参加画面から入り直してください。</p>
+            <p className="note">
+              新しい講義コードが案内された場合は、参加画面から入り直してください。
+            </p>
           )}
         </section>
       ) : null}
 
       {commentsError ? (
-        <p className="error-note">コメントの取得または投稿に失敗しました。時間をおいて再度お試しください。</p>
+        <p className="error-note">
+          コメントの取得または投稿に失敗しました。時間をおいて再度お試しください。
+        </p>
       ) : null}
       {commentLikesError ? (
-        <p className="error-note">いいねの反映に失敗しました。画面を再読み込みしてください。</p>
+        <p className="error-note">
+          いいねの反映に失敗しました。画面を再読み込みしてください。
+        </p>
       ) : null}
-      {commentsLoading ? <p className="note">コメントを読み込んでいます。</p> : null}
+      {commentsLoading ? (
+        <p className="note">コメントを読み込んでいます。</p>
+      ) : null}
       {pollsError ? (
-        <p className="error-note">投票の取得に失敗しました。画面を再読み込みしてください。</p>
+        <p className="error-note">
+          投票の取得に失敗しました。画面を再読み込みしてください。
+        </p>
       ) : null}
       {pollResultsError ? (
-        <p className="error-note">投票結果の更新に失敗しました。回答は保存されている可能性があります。</p>
+        <p className="error-note">
+          投票結果の更新に失敗しました。回答は保存されている可能性があります。
+        </p>
       ) : null}
       {pollsLoading ? <p className="note">投票を読み込んでいます。</p> : null}
 

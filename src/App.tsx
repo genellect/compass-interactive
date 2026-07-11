@@ -55,6 +55,10 @@ function AppShell() {
       <Routes>
         <Route element={<Navigate replace to="/join" />} path="/" />
         <Route element={<JoinPage />} path="/join" />
+        <Route
+          element={<Navigate replace to="/join?code=DEMO" />}
+          path="/demo"
+        />
         <Route element={<AdminPage />} path="/admin" />
         <Route
           element={
