@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { LiveBoard } from '../components/LiveBoard'
-import { useAdaptiveLiveSync } from '../hooks/useAdaptiveLiveSync'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   type AdminLecture,
@@ -9,7 +8,6 @@ import {
 import {
   type DisplayMode,
   type DisplayState,
-  supabaseDisplayStateRepository,
 } from '../repositories/supabaseDisplayStateRepository'
 import type { PollStatus } from '../types'
 
@@ -40,6 +38,8 @@ export function AdminPage() {
   const {
     activeLectureSessionId,
     comments,
+    displayState: liveDisplayState,
+    displayStateError: liveDisplayStateError,
     hiddenCommentCount,
     lecture,
     participants,
@@ -173,40 +173,25 @@ export function AdminPage() {
     setPin('')
   }
 
-  const loadDisplayState = useCallback(async () => {
-    if (!activeLectureSessionId) {
-      return
-    }
-
-    try {
-      const remoteDisplayState =
-        await supabaseDisplayStateRepository.getDisplayState(
-          activeLectureSessionId,
-        )
-      setDisplayState(remoteDisplayState)
-      setDisplayPageInput(String(remoteDisplayState.currentPdfPage))
-      setDisplayModeInput(remoteDisplayState.displayMode)
-      setDisplayStateError(null)
-    } catch (error) {
-      setDisplayStateError(
-        error instanceof Error
-          ? `表示画面の状態取得に失敗しました: ${error.message}`
-          : '表示画面の状態取得に失敗しました。',
-      )
-    }
-  }, [activeLectureSessionId])
-
   useEffect(() => {
     if (!isAuthenticated || !activeLectureSessionId) {
       setDisplayState(null)
       setDisplayStateError(null)
+      return
     }
-  }, [activeLectureSessionId, isAuthenticated])
 
-  useAdaptiveLiveSync({
-    enabled: Boolean(isAuthenticated && activeLectureSessionId),
-    onSync: loadDisplayState,
-  })
+    setDisplayState(liveDisplayState)
+    setDisplayStateError(liveDisplayStateError)
+    if (liveDisplayState) {
+      setDisplayPageInput(String(liveDisplayState.currentPdfPage))
+      setDisplayModeInput(liveDisplayState.displayMode)
+    }
+  }, [
+    activeLectureSessionId,
+    isAuthenticated,
+    liveDisplayState,
+    liveDisplayStateError,
+  ])
 
   async function updateDisplayState(
     action: 'next' | 'previous' | 'goToPage' | 'setDisplayMode',

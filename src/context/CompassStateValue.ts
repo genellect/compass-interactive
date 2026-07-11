@@ -11,6 +11,7 @@ import type {
 import type { RealtimeCommentStatus } from '../repositories/supabaseCommentRepository'
 import type { PollResultSummary } from '../repositories/supabasePollRepository'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
+import type { DisplayState } from '../repositories/supabaseDisplayStateRepository'
 
 export type JoinResult =
   { ok: true; participantId: string } | { ok: false; message: string }
@@ -38,6 +39,8 @@ export type CompassStateValue = {
   pollsError: string | null
   pollResultsError: string | null
   pollsLoading: boolean
+  displayState: DisplayState | null
+  displayStateError: string | null
   isSubmittingComment: boolean
   realtimeCommentsStatus: RealtimeCommentStatus
   isSessionSyncPaused: boolean

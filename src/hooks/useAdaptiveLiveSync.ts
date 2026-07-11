@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import {
   BACKGROUND_LIVE_SYNC_INTERVAL_MS,
+  getLiveSyncBackoffDelay,
+  getLiveSyncJitter,
   LIVE_SYNC_INTERVAL_MS,
 } from '../lib/liveSync'
 
@@ -39,6 +41,7 @@ export function useAdaptiveLiveSync({
     }
 
     let disposed = false
+    let failureCount = 0
     let running = false
     let timeoutId: number | null = null
 
@@ -72,11 +75,20 @@ export function useAdaptiveLiveSync({
 
       try {
         await onSync()
+        failureCount = 0
       } catch {
-        // Keep the lightweight sync loop alive even when one request fails.
+        failureCount += 1
       } finally {
         running = false
-        scheduleNextSync()
+        scheduleNextSync(
+          document.visibilityState === 'hidden'
+            ? backgroundIntervalMs
+            : getLiveSyncBackoffDelay({
+                backgroundIntervalMs,
+                failureCount,
+                foregroundIntervalMs,
+              }),
+        )
       }
     }
 
@@ -92,9 +104,12 @@ export function useAdaptiveLiveSync({
     }
 
     if (runImmediately) {
-      void runSync()
+      scheduleNextSync(getLiveSyncJitter())
     } else {
-      scheduleNextSync()
+      scheduleNextSync(getCurrentInterval({
+        backgroundIntervalMs,
+        foregroundIntervalMs,
+      }) + getLiveSyncJitter())
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 

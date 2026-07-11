@@ -8,13 +8,14 @@ const supabaseDir = join(root, 'supabase')
 const migrationsDir = join(supabaseDir, 'migrations')
 const manualDir = join(supabaseDir, 'manual')
 const baselineName = '20260710104958_remote_baseline.sql'
+const liveStateMigrationName = '20260711020445_live_state_integration.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 
 assert.deepEqual(
   readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')),
-  [baselineName],
-  'Milestone 0 must have exactly one baseline migration.',
+  [baselineName, liveStateMigrationName],
+  'The immutable baseline must be followed by the Milestone 2 migration.',
 )
 assert.equal(
   readdirSync(manualDir).filter((name) => name.endsWith('.sql')).length,

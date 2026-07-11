@@ -11,6 +11,7 @@
     "build": "tsc -b && vite build && node scripts/create-route-entrypoints.mjs",
     "lint": "oxlint",
     "test:demo": "node --experimental-strip-types scripts/test-demo-repository.mjs",
+    "test:live-state": "node --experimental-strip-types scripts/test-live-state.mjs",
     "test:supabase:static": "node scripts/test-supabase-baseline.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",

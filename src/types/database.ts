@@ -14,6 +14,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      comment_like_totals: {
+        Row: {
+          comment_id: string
+          lecture_session_id: string
+          like_count: number
+          updated_at: string
+        }
+        Insert: {
+          comment_id: string
+          lecture_session_id: string
+          like_count?: number
+          updated_at?: string
+        }
+        Update: {
+          comment_id?: string
+          lecture_session_id?: string
+          like_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'comment_like_totals_comment_id_lecture_session_id_fkey'
+            columns: ['comment_id', 'lecture_session_id']
+            isOneToOne: false
+            referencedRelation: 'comments'
+            referencedColumns: ['id', 'lecture_session_id']
+          },
+        ]
+      }
       comment_likes: {
         Row: {
           comment_id: string
@@ -163,6 +192,50 @@ export type Database = {
           },
         ]
       }
+      lecture_live_state: {
+        Row: {
+          comments_version: number
+          current_pdf_page: number
+          display_mode: string
+          display_version: number
+          lecture_session_id: string
+          likes_version: number
+          polls_version: number
+          state_version: number
+          updated_at: string
+        }
+        Insert: {
+          comments_version?: number
+          current_pdf_page?: number
+          display_mode?: string
+          display_version?: number
+          lecture_session_id: string
+          likes_version?: number
+          polls_version?: number
+          state_version?: number
+          updated_at?: string
+        }
+        Update: {
+          comments_version?: number
+          current_pdf_page?: number
+          display_mode?: string
+          display_version?: number
+          lecture_session_id?: string
+          likes_version?: number
+          polls_version?: number
+          state_version?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'lecture_live_state_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
+            isOneToOne: true
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       lecture_sessions: {
         Row: {
           code_hash: string
@@ -263,6 +336,45 @@ export type Database = {
           },
           {
             foreignKeyName: 'poll_options_poll_id_lecture_session_id_fkey'
+            columns: ['poll_id', 'lecture_session_id']
+            isOneToOne: false
+            referencedRelation: 'polls'
+            referencedColumns: ['id', 'lecture_session_id']
+          },
+        ]
+      }
+      poll_option_totals: {
+        Row: {
+          lecture_session_id: string
+          option_id: string
+          poll_id: string
+          response_count: number
+          updated_at: string
+        }
+        Insert: {
+          lecture_session_id: string
+          option_id: string
+          poll_id: string
+          response_count?: number
+          updated_at?: string
+        }
+        Update: {
+          lecture_session_id?: string
+          option_id?: string
+          poll_id?: string
+          response_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'poll_option_totals_option_id_poll_id_fkey'
+            columns: ['option_id', 'poll_id']
+            isOneToOne: false
+            referencedRelation: 'poll_options'
+            referencedColumns: ['id', 'poll_id']
+          },
+          {
+            foreignKeyName: 'poll_option_totals_poll_id_lecture_session_id_fkey'
             columns: ['poll_id', 'lecture_session_id']
             isOneToOne: false
             referencedRelation: 'polls'
@@ -401,6 +513,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_lecture_live_snapshot: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          known_comments_version?: number
+          known_display_version?: number
+          known_likes_version?: number
+          known_polls_version?: number
+          known_state_version?: number
+          target_lecture_session_id: string
+          target_participant_id?: string
+        }
+        Returns: Json
+      }
       get_lecture_session_state: {
         Args: { target_lecture_session_id: string }
         Returns: {
