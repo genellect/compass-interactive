@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-11T17:32:16+09:00",
+  "capturedAt": "2026-07-11T18:33:54+09:00",
   "validationProject": {
     "name": "compass-interactive-m2-validation",
     "ref": "vhzrimtscafflfvxouge",
@@ -39,7 +39,22 @@
     "adminTokenUnit": "passed",
     "edgeDeploymentCompilation": "passed",
     "edgeGatewaySmoke": { "function": "manage-polls", "status": 400 },
-    "edgeAuthenticatedLifecycle": "not-run-no-validation-admin-secrets",
+    "edgeAuthenticatedLifecycle": {
+      "status": "passed",
+      "adminSecrets": "validation-only-random-values",
+      "adminTokenLength": 123,
+      "lectureCreated": true,
+      "lectureStarted": true,
+      "pollCreated": true,
+      "pollOpened": true,
+      "pollOptionCount": 2,
+      "snapshotLectureStatus": "open",
+      "snapshotContainsPoll": true,
+      "snapshotPollStatus": "open",
+      "snapshotStateVersion": 5,
+      "snapshotPollsVersion": 4,
+      "lectureClosed": true
+    },
     "staticChecks": "passed",
     "typecheck": "passed",
     "lint": "passed",
@@ -48,7 +63,8 @@
   },
   "notes": [
     "The gateway 400 is the expected Invalid JSON response from the deployed function when called without a request body.",
-    "Validation project Admin secrets were not changed; token signing and expiry are covered by local unit tests, while DB lifecycle authorization and transitions are covered by pgTAP.",
+    "Validation-only random ADMIN_PIN and ADMIN_SESSION_SECRET values were configured; no production secret was read or changed.",
+    "The hosted signed-token E2E covered verify-admin-pin, lecture creation and start, manage-polls creation and open, snapshot read-back, and lecture close.",
     "Advisor findings are unchanged baseline/M2 items; Milestone 3 introduced no new security or performance warning."
   ]
 }
