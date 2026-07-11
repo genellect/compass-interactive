@@ -7,6 +7,12 @@ export type LecturePdfAsset = {
 
 export const lecturePdfAssets = [
   {
+    id: 'why-learn-english-v1',
+    pageCount: 15,
+    title: '翻訳できる時代に、なぜ英語を学ぶのか。',
+    url: '/lecture-assets/why-learn-english-v1.pdf',
+  },
+  {
     id: 'm4-sample-v1',
     pageCount: 3,
     title: 'Milestone 4 PDF Sync Sample',

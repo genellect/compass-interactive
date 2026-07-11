@@ -4,6 +4,7 @@ export type PdfAsset = {
 }
 
 export const pdfAssets = [
+  { id: 'why-learn-english-v1', pageCount: 15 },
   { id: 'm4-sample-v1', pageCount: 3 },
 ] as const satisfies readonly PdfAsset[]
 

@@ -15,6 +15,10 @@ const adminPage = read('src/pages/AdminPage.tsx')
 const lecturePage = read('src/pages/LecturePage.tsx')
 const displayView = read('src/components/DisplayView/DisplayView.tsx')
 const pdfPath = join(root, 'public/lecture-assets/m4-sample-v1.pdf')
+const demoPdfPath = join(
+  root,
+  'public/lecture-assets/why-learn-english-v1.pdf',
+)
 
 assert.match(migration, /add column pdf_document_id text null/)
 assert.match(migration, /create function public\.admin_update_pdf_display/)
@@ -33,8 +37,14 @@ assert.doesNotMatch(updateDisplay, /from\('lecture_display_state'\)/)
 for (const catalog of [edgeCatalog, frontendCatalog]) {
   assert.match(catalog, /id: 'm4-sample-v1'/)
   assert.match(catalog, /pageCount: 3/)
+  assert.match(catalog, /id: 'why-learn-english-v1'/)
+  assert.match(catalog, /pageCount: 15/)
 }
 assert.match(frontendCatalog, /url: '\/lecture-assets\/m4-sample-v1\.pdf'/)
+assert.match(
+  frontendCatalog,
+  /url: '\/lecture-assets\/why-learn-english-v1\.pdf'/,
+)
 
 assert.equal(existsSync(pdfPath), true, 'static PDF asset must exist')
 assert.ok(statSync(pdfPath).size > 1_000, 'static PDF asset must not be empty')
@@ -42,6 +52,14 @@ assert.equal(
   readFileSync(pdfPath).subarray(0, 5).toString('ascii'),
   '%PDF-',
   'static asset must be a PDF',
+)
+
+assert.equal(existsSync(demoPdfPath), true, 'demo PDF asset must exist')
+assert.ok(statSync(demoPdfPath).size > 1_000, 'demo PDF asset must not be empty')
+assert.equal(
+  readFileSync(demoPdfPath).subarray(0, 5).toString('ascii'),
+  '%PDF-',
+  'demo asset must be a PDF',
 )
 
 assert.match(viewer, /getDocument\(\{ url: asset\.url \}\)/)
