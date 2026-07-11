@@ -71,7 +71,11 @@
     "adminLifecycleRegression": "passed",
     "pdfSyncStatic": "passed",
     "baselineStatic": "passed",
-    "productionBuild": "pending final environment run"
+    "productionBuild": {
+      "status": "passed",
+      "builtPdfBytes": 3066,
+      "builtPdfHeaderValid": true
+    }
   },
   "advisors": {
     "newM4AdminRpcWarnings": [],
