@@ -1,17 +1,26 @@
 import type { LectureSession, LiveComment, Poll } from '../types/index.ts'
 import type { PollResultSummary } from '../repositories/supabasePollRepository.ts'
+import type { DisplayState } from '../repositories/supabaseDisplayStateRepository.ts'
 
 export const DEMO_LECTURE_CODE = 'DEMO'
 export const DEMO_LECTURE_ID = 'compass-demo-lecture'
 
 export const demoLecture: LectureSession = {
   id: DEMO_LECTURE_ID,
-  title: 'COMPASS Interactive デモ講義',
+  title: 'AI時代の英語と学び',
   codeLabel: DEMO_LECTURE_CODE,
   codeHash: '',
   status: 'open',
-  expectedParticipants: 1,
+  expectedParticipants: 218,
   createdAt: '2026-01-01T00:00:00.000Z',
+}
+
+export const demoDisplayState: DisplayState = {
+  lectureSessionId: DEMO_LECTURE_ID,
+  pdfDocumentId: 'why-learn-english-v1',
+  currentPdfPage: 6,
+  displayMode: 'normal',
+  updatedAt: '2026-01-01T00:05:00.000Z',
 }
 
 export const demoSeedComments: LiveComment[] = [
@@ -19,8 +28,8 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-1',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-1',
-    body: 'この画面では匿名コメント、いいね、Poll回答を端末内だけで試せます。',
-    likeCount: 4,
+    body: '翻訳結果が正しいか判断するには、自分にも基礎が必要だと思いました。',
+    likeCount: 27,
     likedByParticipantIds: [
       'demo-seed-like-1',
       'demo-seed-like-2',
@@ -35,8 +44,8 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-2',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-2',
-    body: '質問を投稿すると、この一覧へすぐに追加されます。',
-    likeCount: 2,
+    body: '海外の研究者と直接話す力は、翻訳だけでは補いにくそうです。',
+    likeCount: 18,
     likedByParticipantIds: ['demo-seed-like-5', 'demo-seed-like-6'],
     status: 'visible',
     isPinned: false,
@@ -46,8 +55,8 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-3',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-3',
-    body: 'ページを再読み込みしても、この端末の操作結果は保持されます。',
-    likeCount: 1,
+    body: '英語を学ぶ目的を、点数以外で初めて考えました。',
+    likeCount: 9,
     likedByParticipantIds: ['demo-seed-like-7'],
     status: 'visible',
     isPinned: false,
@@ -59,7 +68,7 @@ export const demoPolls: Poll[] = [
   {
     id: 'demo-poll-1',
     lectureId: DEMO_LECTURE_ID,
-    question: 'このデモで最初に試したい機能は？',
+    question: '翻訳AIが使える今、英語を学ぶ価値として最も大きいものは？',
     type: 'single',
     status: 'open',
     createdAt: '2026-01-01T00:04:00.000Z',
@@ -67,25 +76,25 @@ export const demoPolls: Poll[] = [
       {
         id: 'demo-option-1',
         pollId: 'demo-poll-1',
-        label: '匿名コメント',
+        label: '原文から情報の確かさを判断できる',
         order: 1,
       },
       {
         id: 'demo-option-2',
         pollId: 'demo-poll-1',
-        label: 'コメントへのいいね',
+        label: '海外の人と直接関係を築ける',
         order: 2,
       },
       {
         id: 'demo-option-3',
         pollId: 'demo-poll-1',
-        label: 'Poll回答と集計',
+        label: '異なる文化や考え方に触れられる',
         order: 3,
       },
       {
         id: 'demo-option-4',
         pollId: 'demo-poll-1',
-        label: '再読み込み後の状態保持',
+        label: '試験や資格に役立つ',
         order: 4,
       },
     ],
@@ -93,8 +102,8 @@ export const demoPolls: Poll[] = [
 ]
 
 export const demoSeedPollResults: PollResultSummary[] = [
-  { pollId: 'demo-poll-1', optionId: 'demo-option-1', responseCount: 8 },
-  { pollId: 'demo-poll-1', optionId: 'demo-option-2', responseCount: 5 },
-  { pollId: 'demo-poll-1', optionId: 'demo-option-3', responseCount: 11 },
-  { pollId: 'demo-poll-1', optionId: 'demo-option-4', responseCount: 4 },
+  { pollId: 'demo-poll-1', optionId: 'demo-option-1', responseCount: 86 },
+  { pollId: 'demo-poll-1', optionId: 'demo-option-2', responseCount: 61 },
+  { pollId: 'demo-poll-1', optionId: 'demo-option-3', responseCount: 43 },
+  { pollId: 'demo-poll-1', optionId: 'demo-option-4', responseCount: 18 },
 ]

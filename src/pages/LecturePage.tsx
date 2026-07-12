@@ -1,6 +1,11 @@
 import { CommentInput, LiveBoard } from '../components/LiveBoard'
 import { LivePoll } from '../components/LivePoll'
 import { SyncedPdfViewer } from '../components/DisplayView'
+import { AppIcon } from '../components/AppIcon'
+import {
+  LectureSummaryPanel,
+  LiveCaptionPanel,
+} from '../components/LearningSupport'
 import { useCompassState } from '../hooks/useCompassState'
 
 export function LecturePage() {
@@ -18,6 +23,7 @@ export function LecturePage() {
     isSessionSyncPaused,
     lecture,
     openPolls,
+    participants,
     pollResults,
     pollResponses,
     pollResultsError,
@@ -37,30 +43,65 @@ export function LecturePage() {
   )
 
   return (
-    <main className="page-shell">
-      <section className="page-header lecture-header">
-        <div>
-          <p className="eyebrow">参加画面</p>
+    <main className="page-shell lecture-page">
+      <section className="lecture-hero">
+        <div className="lecture-title-group">
+          <div className="lecture-live-row">
+            <span className="live-badge">
+              <i /> LIVE
+            </span>
+            <span className="lecture-mode-label">
+              {runtimeMode === 'demo' ? '体験版' : '講義に参加中'}
+            </span>
+          </div>
           <h1>{lecture.title}</h1>
-          <p>質問、気づき、投票を匿名で共有できます。</p>
+          <p>気づいたことを残すたび、みんなの学びが少しずつ動き出します。</p>
+        </div>
+        <div className="lecture-metrics" aria-label="講義の現在状況">
+          <span>
+            <AppIcon name="users" size={18} />
+            <strong>
+              {runtimeMode === 'demo'
+                ? lecture.expectedParticipants
+                : participants.length}
+            </strong>
+            人参加
+          </span>
+          <span>
+            <AppIcon name="poll" size={18} />
+            <strong>{openPolls.length}</strong>
+            件受付中
+          </span>
+          <span>
+            <AppIcon name="message" size={18} />
+            <strong>{visibleComments.length}</strong>
+            件の声
+          </span>
         </div>
       </section>
 
       {runtimeMode === 'demo' ? (
-        <section className="panel demo-mode-panel">
-          <div>
-            <p className="eyebrow">端末内デモ</p>
-            <h2>これはこの端末内だけで動作するデモです</h2>
+        <section className="demo-journey" aria-label="デモ講義の体験ガイド">
+          <div className="demo-journey-copy">
+            <span className="support-icon">
+              <AppIcon name="sparkles" size={18} />
+            </span>
             <p>
-              コメント、いいね、Poll回答はlocalStorageだけに保存され、Supabaseへは送信されません。
+              <strong>本番に近い講義体験です</strong>
+              <span>資料をめくり、投票し、あなたの気づきを残してみてください。</span>
             </p>
           </div>
+          <ol className="demo-steps">
+            <li><span>1</span>資料を見る</li>
+            <li><span>2</span>投票する</li>
+            <li><span>3</span>質問を送る</li>
+          </ol>
           <button
-            className="secondary-button danger-button"
+            className="text-link-button muted"
             onClick={resetDemoLecture}
             type="button"
           >
-            デモをリセット
+            最初から試す
           </button>
         </section>
       ) : null}
@@ -79,11 +120,11 @@ export function LecturePage() {
               onClick={() => void resumeSessionSync()}
               type="button"
             >
-              講義に戻る
+              もう一度つなぐ
             </button>
           ) : (
             <p className="note">
-              新しい講義コードが案内された場合は、参加画面から入り直してください。
+              ご参加ありがとうございました。新しい講義は参加画面から入れます。
             </p>
           )}
         </section>
@@ -99,9 +140,7 @@ export function LecturePage() {
           いいねの反映に失敗しました。画面を再読み込みしてください。
         </p>
       ) : null}
-      {commentsLoading ? (
-        <p className="note">コメントを読み込んでいます。</p>
-      ) : null}
+      {commentsLoading ? <p className="note">みんなの声を読み込んでいます。</p> : null}
       {pollsError ? (
         <p className="error-note">
           投票の取得に失敗しました。画面を再読み込みしてください。
@@ -112,34 +151,27 @@ export function LecturePage() {
           投票結果の更新に失敗しました。回答は保存されている可能性があります。
         </p>
       ) : null}
-      {pollsLoading ? <p className="note">投票を読み込んでいます。</p> : null}
+      {pollsLoading ? <p className="note">ライブ投票を読み込んでいます。</p> : null}
 
-      {runtimeMode === 'live' ? (
-        <section className="panel student-pdf-panel">
+      <section className="lecture-live-grid">
+        <section className="panel student-pdf-panel lecture-material">
+          <div className="section-intro compact-intro">
+            <span className="section-icon"><AppIcon name="book" size={18} /></span>
+            <div>
+              <p className="eyebrow">LECTURE MATERIAL</p>
+              <h2>いま見ている資料</h2>
+            </div>
+          </div>
           {displayStateError ? (
-            <p className="error-note">PDF同期の更新に失敗しました。</p>
+            <p className="error-note">資料の更新に時間がかかっています。</p>
           ) : null}
           <SyncedPdfViewer
             documentId={displayState?.pdfDocumentId ?? null}
             remotePage={displayState?.currentPdfPage ?? null}
           />
         </section>
-      ) : null}
 
-      <CommentInput
-        disabled={!isJoined || commentsLoading || isSessionSyncPaused}
-        isSubmitting={isSubmittingComment}
-        onSubmit={addComment}
-      />
-
-      <div className="content-grid">
-        <LiveBoard
-          comments={visibleComments}
-          currentParticipantId={currentParticipantId}
-          onToggleLike={toggleCommentLike}
-        />
-
-        <section className="stack">
+        <aside className="lecture-poll-focus" id="lecture-poll">
           {openPolls.length > 0 ? (
             openPolls.map((poll) => (
               <LivePoll
@@ -152,13 +184,46 @@ export function LecturePage() {
               />
             ))
           ) : (
-            <section className="panel">
-              <p className="eyebrow">投票</p>
-              <h2>現在受付中の投票はありません。</h2>
-              <p className="note">投票が開始されると、ここに表示されます。</p>
+            <section className="panel quiet-state">
+              <span className="quiet-state-icon">
+                <AppIcon name="poll" size={24} />
+              </span>
+              <p className="eyebrow">LIVE POLL</p>
+              <h2>いまは講義に集中しましょう</h2>
+              <p>次の投票が始まると、ここに届きます。</p>
             </section>
           )}
-        </section>
+        </aside>
+      </section>
+
+      <LiveCaptionPanel compact isDemo={runtimeMode === 'demo'} />
+
+      <section className="lecture-participation">
+        <div className="participation-main">
+          <CommentInput
+            disabled={!isJoined || commentsLoading || isSessionSyncPaused}
+            isSubmitting={isSubmittingComment}
+            onSubmit={addComment}
+          />
+          <LiveBoard
+            comments={visibleComments}
+            currentParticipantId={currentParticipantId}
+            onToggleLike={toggleCommentLike}
+          />
+        </div>
+
+        <aside className="lecture-review-rail">
+          <LectureSummaryPanel isDemo={runtimeMode === 'demo'} />
+        </aside>
+      </section>
+
+      <div className="lecture-mobile-actions" aria-label="講義内ショートカット">
+        <a href="#lecture-question">
+          <AppIcon name="message" size={18} /> 質問する
+        </a>
+        <a href="#lecture-poll">
+          <AppIcon name="poll" size={18} /> 投票を見る
+        </a>
       </div>
     </main>
   )

@@ -30,10 +30,10 @@ export function PollResults({ poll, results = [], responses }: PollResultsProps)
       <div className="poll-result-header">
         <p className="note">
           {hasRpcResults
-            ? '回答結果を集計して表示しています。'
-            : '回答が入ると結果が表示されます。'}
+            ? 'みんなの回答'
+            : '最初の回答を待っています'}
         </p>
-        <span className="metric">回答 {denominator}件</span>
+        <span className="metric">{denominator}票</span>
       </div>
 
       {poll.options.map((option) => {
@@ -51,7 +51,7 @@ export function PollResults({ poll, results = [], responses }: PollResultsProps)
             <div className="poll-row">
               <span>{option.label}</span>
               <strong>
-                {count}件 / {percent}%
+                {percent}%
               </strong>
             </div>
             <div

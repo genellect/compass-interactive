@@ -22,6 +22,8 @@ const storage = new MemoryStorage()
 const initial = demoRepository.getSnapshot(storage)
 
 assert.equal(initial.session.runtimeMode, 'demo')
+assert.equal(initial.displayState.pdfDocumentId, 'why-learn-english-v1')
+assert.equal(initial.displayState.currentPdfPage, 6)
 assert.equal(initial.comments.length, 3)
 assert.equal(initial.pollResponses.length, 0)
 assert.ok(storage.getItem(DEMO_STORAGE_KEY))
@@ -32,7 +34,7 @@ assert.equal(withComment.comments[0]?.body, '端末内テストコメント')
 const liked = demoRepository.addCommentLike('demo-comment-2', storage)
 assert.equal(
   liked.comments.find((comment) => comment.id === 'demo-comment-2')?.likeCount,
-  3,
+  19,
 )
 
 const answered = demoRepository.submitPollResponse(
@@ -44,7 +46,7 @@ assert.equal(answered.pollResponses.length, 1)
 assert.equal(
   answered.pollResults.find((result) => result.optionId === 'demo-option-3')
     ?.responseCount,
-  12,
+  44,
 )
 
 assert.throws(

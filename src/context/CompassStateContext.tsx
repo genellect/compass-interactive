@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { useLocation } from 'react-router-dom'
 import { demoRepository, type DemoSnapshot } from '../demo/demoRepository'
-import { DEMO_LECTURE_CODE } from '../demo/demoSeedData'
+import { DEMO_LECTURE_CODE, demoLecture } from '../demo/demoSeedData'
 import {
   createParticipantId,
   isParticipantUuid,
@@ -221,7 +221,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
                 ? DEMO_LECTURE_CODE
                 : JOURNAL_CLUB_MVP_CODE,
             expectedParticipants:
-              joinedLectureSession.runtimeMode === 'demo' ? 1 : 20,
+              joinedLectureSession.runtimeMode === 'demo'
+                ? demoLecture.expectedParticipants
+                : 20,
             expiresAt: joinedLectureSession.endsAt,
             id: joinedLectureSession.id,
             startsAt: joinedLectureSession.startsAt,
@@ -294,7 +296,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setPolls(snapshot.polls)
     setPollResponses(snapshot.pollResponses)
     setPollResults(snapshot.pollResults)
-    setDisplayState(null)
+    setDisplayState(snapshot.displayState)
     setDisplayStateError(null)
     setCommentsError(null)
     setCommentLikesError(null)
@@ -725,6 +727,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     refreshLiveSnapshot,
     runtimeMode,
   ])
+
+  useEffect(() => {
+    if (runtimeMode !== 'demo' || !hasActiveLectureSessionId) {
+      return
+    }
+
+    hydrateDemo()
+  }, [hasActiveLectureSessionId, hydrateDemo, runtimeMode])
 
   useEffect(() => {
     if (runtimeMode !== 'demo') {

@@ -1,22 +1,39 @@
-import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { lazy, Suspense, type ReactNode } from 'react'
+import { AppIcon } from './components/AppIcon'
 import { CompassStateProvider } from './context/CompassStateContext'
 import { useCompassState } from './hooks/useCompassState'
-import { AdminPage } from './pages/AdminPage'
-import { DisplayPage } from './pages/DisplayPage'
-import { JoinPage } from './pages/JoinPage'
-import { LecturePage } from './pages/LecturePage'
 import './App.css'
 
+const AdminPage = lazy(() =>
+  import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })),
+)
+const DisplayPage = lazy(() =>
+  import('./pages/DisplayPage').then((module) => ({
+    default: module.DisplayPage,
+  })),
+)
+const JoinPage = lazy(() =>
+  import('./pages/JoinPage').then((module) => ({ default: module.JoinPage })),
+)
+const LecturePage = lazy(() =>
+  import('./pages/LecturePage').then((module) => ({
+    default: module.LecturePage,
+  })),
+)
+
 const publicNavItems = [
-  { to: '/join', label: '参加' },
-  { to: '/admin', label: '管理者' },
+  { to: '/demo', label: 'デモを体験', icon: 'sparkles' as const },
+  { to: '/admin', label: '教員用', icon: 'compass' as const },
 ]
 
 const joinedNavItems = [
-  { to: '/lecture', label: '参加画面' },
-  { to: '/display', label: '共有画面' },
-  { to: '/admin', label: '管理者' },
+  { to: '/lecture', label: '講義', icon: 'book' as const },
+  { to: '/display', label: '教室表示', icon: 'display' as const },
+]
+
+const adminNavItems = [
+  { to: '/join', label: '学生画面', icon: 'users' as const },
 ]
 
 function RequireJoinedLecture({ children }: { children: ReactNode }) {
@@ -29,9 +46,24 @@ function RequireJoinedLecture({ children }: { children: ReactNode }) {
   return children
 }
 
+function RouteFallback() {
+  return (
+    <main className="route-fallback" aria-live="polite">
+      <span className="route-loader" aria-hidden="true" />
+      <p>講義画面を整えています…</p>
+    </main>
+  )
+}
+
 function AppShell() {
   const { hasJoinedLectureSession } = useCompassState()
-  const navItems = hasJoinedLectureSession ? joinedNavItems : publicNavItems
+  const location = useLocation()
+  const isAdminRoute = location.pathname.startsWith('/admin')
+  const navItems = isAdminRoute
+    ? adminNavItems
+    : hasJoinedLectureSession
+      ? joinedNavItems
+      : publicNavItems
 
   return (
     <>
@@ -46,37 +78,40 @@ function AppShell() {
         <nav aria-label="画面切り替え">
           {navItems.map((item) => (
             <NavLink className="nav-link" key={item.to} to={item.to}>
+              <AppIcon name={item.icon} size={17} />
               {item.label}
             </NavLink>
           ))}
         </nav>
       </header>
 
-      <Routes>
-        <Route element={<Navigate replace to="/join" />} path="/" />
-        <Route element={<JoinPage />} path="/join" />
-        <Route
-          element={<Navigate replace to="/join?code=DEMO" />}
-          path="/demo"
-        />
-        <Route element={<AdminPage />} path="/admin" />
-        <Route
-          element={
-            <RequireJoinedLecture>
-              <LecturePage />
-            </RequireJoinedLecture>
-          }
-          path="/lecture"
-        />
-        <Route
-          element={
-            <RequireJoinedLecture>
-              <DisplayPage />
-            </RequireJoinedLecture>
-          }
-          path="/display"
-        />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route element={<Navigate replace to="/join" />} path="/" />
+          <Route element={<JoinPage />} path="/join" />
+          <Route
+            element={<Navigate replace to="/join?code=DEMO" />}
+            path="/demo"
+          />
+          <Route element={<AdminPage />} path="/admin" />
+          <Route
+            element={
+              <RequireJoinedLecture>
+                <LecturePage />
+              </RequireJoinedLecture>
+            }
+            path="/lecture"
+          />
+          <Route
+            element={
+              <RequireJoinedLecture>
+                <DisplayPage />
+              </RequireJoinedLecture>
+            }
+            path="/display"
+          />
+        </Routes>
+      </Suspense>
     </>
   )
 }
