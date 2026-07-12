@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
 
@@ -233,6 +233,14 @@ export function JoinPage() {
           </div>
         </div>
       </section>
+
+      <footer className="educator-entry">
+        <span>教員・講義運営者の方へ</span>
+        <Link to="/admin">
+          教員用コントロールを開く
+          <AppIcon name="arrow-right" size={15} />
+        </Link>
+      </footer>
     </main>
   )
 }

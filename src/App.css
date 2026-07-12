@@ -3098,6 +3098,800 @@ input:disabled {
   .prompt-suggestions { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .prompt-suggestions button { flex: 0 0 auto; }
   .composer-footer { justify-content: space-between; }
+  .join-card-heading { gap: 8px; }
+  .join-card-heading h2 { font-size: 1.28rem; }
+  .join-card-heading .privacy-badge { font-size: .64rem; padding: 5px 7px; }
+}
+
+/* --------------------------------------------------------------------------
+   Light learning theme
+   -------------------------------------------------------------------------- */
+
+.app-root {
+  min-height: 100vh;
+}
+
+.theme-light {
+  --bg-0: #f4f7fb;
+  --bg-1: #eef3f9;
+  --bg-2: #e7eef7;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-soft: #f0f5fa;
+  --border: #dce5ef;
+  --border-strong: #a8cfdf;
+  --text: #142033;
+  --text-soft: #4f6279;
+  --muted: #71839a;
+  --accent: #1677a8;
+  --accent-strong: #075d85;
+  --blue: #2f7df4;
+  --violet: #7658d6;
+  --gold: #c59a45;
+  --success: #138a68;
+  --warning: #c97918;
+  --danger: #d84e65;
+  --shadow: 0 24px 64px rgba(35, 64, 94, 0.13);
+  --shadow-soft: 0 10px 28px rgba(35, 64, 94, 0.08);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(90, 190, 220, 0.12), transparent 28rem),
+    linear-gradient(180deg, #f8fbfe 0%, #f3f7fb 100%);
+  color: var(--text);
+}
+
+.theme-light .app-header {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom-color: rgba(37, 74, 110, 0.1);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.theme-light .brand {
+  color: #10263c;
+}
+
+.theme-light .brand small {
+  color: #728398;
+}
+
+.theme-light .brand-mark {
+  background:
+    radial-gradient(circle at 48% 48%, rgba(255, 255, 255, 0.72), transparent 25%),
+    linear-gradient(145deg, rgba(22, 119, 168, 0.14), rgba(118, 88, 214, 0.08));
+  border-color: rgba(22, 119, 168, 0.3);
+  box-shadow: 0 8px 24px rgba(22, 119, 168, 0.12);
+}
+
+.theme-light .brand-mark::before {
+  border-color: rgba(15, 77, 111, 0.58);
+}
+
+.theme-light .nav-link {
+  color: #52667d;
+}
+
+.theme-light .nav-link.active,
+.theme-light .nav-link:hover {
+  background: #e9f4fa;
+  color: #075d85;
+}
+
+.theme-light .route-fallback {
+  color: var(--text-soft);
+}
+
+.theme-light .eyebrow {
+  color: #1677a8;
+}
+
+.theme-light .primary-button {
+  background: linear-gradient(120deg, #1677a8 0%, #218cb9 56%, #3b91c8 100%);
+  box-shadow: 0 12px 28px rgba(22, 119, 168, 0.2);
+  color: #ffffff;
+}
+
+.theme-light .secondary-button,
+.theme-light .secondary-link {
+  background: #ffffff;
+  border-color: #d5e0ea;
+  color: #294157;
+}
+
+.theme-light .secondary-button:not(:disabled):hover,
+.theme-light .secondary-link:hover {
+  background: #edf7fb;
+  border-color: #a7cfdf;
+  color: #075d85;
+}
+
+.theme-light .text-button,
+.theme-light .text-link-button {
+  color: #0876a1;
+}
+
+.theme-light .text-link-button.muted {
+  color: #60738a;
+}
+
+.theme-light input,
+.theme-light textarea,
+.theme-light select {
+  background: #f8fafc;
+  border-color: #ccd9e5;
+  color: #142033;
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #8b9bad;
+}
+
+.theme-light .field span {
+  color: #293d52;
+}
+
+.theme-light .note {
+  color: #6a7c91;
+}
+
+.theme-light .error-note {
+  color: #bd3e54;
+}
+
+.theme-light .metric {
+  background: #edf6fa;
+  border-color: #d0e5ee;
+  color: #3c5870;
+}
+
+.theme-light .panel,
+.theme-light .stat-card,
+.theme-light .display-placeholder,
+.theme-light .display-warning {
+  background: #ffffff;
+  border-color: #dce5ef;
+  box-shadow: var(--shadow-soft);
+}
+
+.theme-light .section-icon,
+.theme-light .support-icon,
+.theme-light .demo-entry-icon,
+.theme-light .joined-summary-icon {
+  background: #eaf5f9;
+  border-color: #cee5ed;
+  color: #1677a8;
+}
+
+.theme-light .section-icon.violet,
+.theme-light .support-icon.violet {
+  background: #f0edfb;
+  border-color: #ded7f5;
+  color: #6d52c8;
+}
+
+.theme-light .privacy-badge {
+  background: #eaf8f3;
+  border-color: #cbeade;
+  color: #117557;
+}
+
+.theme-light .support-state {
+  background: #f0f4f8;
+  border-color: #dce5ed;
+  color: #61748a;
+}
+
+.theme-light .support-state.preview {
+  background: #f0edfb;
+  border-color: #ded7f5;
+  color: #684fc0;
+}
+
+/* Light Join */
+
+.theme-light .join-experience {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(72, 182, 216, 0.14), transparent 28rem),
+    radial-gradient(circle at 84% 78%, rgba(118, 88, 214, 0.08), transparent 24rem),
+    linear-gradient(180deg, #f9fcfe 0%, #f1f6fb 100%);
+}
+
+.theme-light .hero-aurora::before {
+  background:
+    radial-gradient(circle at 82% 25%, rgba(47, 125, 244, 0.12), transparent 24%),
+    radial-gradient(circle at 18% 14%, rgba(72, 182, 216, 0.16), transparent 30%),
+    radial-gradient(circle at 66% 78%, rgba(118, 88, 214, 0.08), transparent 28%);
+}
+
+.theme-light .hero-stars {
+  background-image:
+    radial-gradient(circle, rgba(24, 107, 151, .34) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(118, 88, 214, .22) 0 1px, transparent 1.5px);
+  opacity: 0.16;
+}
+
+.theme-light .hero-orbit {
+  border-color: rgba(22, 119, 168, 0.1);
+}
+
+.theme-light .orbit-two {
+  border-color: rgba(197, 154, 69, 0.13);
+}
+
+.theme-light .hero-kicker {
+  color: #1677a8;
+}
+
+.theme-light .join-hero-copy > h1 {
+  color: #10263c;
+}
+
+.theme-light .join-hero-copy > h1 span {
+  background: linear-gradient(100deg, #14324c 4%, #1677a8 54%, #a77b27 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.theme-light .hero-lead {
+  color: #52667c;
+}
+
+.theme-light .hero-feature-row span {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: #d8e4ed;
+  box-shadow: 0 5px 16px rgba(40, 75, 106, 0.05);
+  color: #455d74;
+}
+
+.theme-light .hero-feature-row .app-icon {
+  color: #1677a8;
+}
+
+.theme-light .join-card {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: #d4e2eb;
+  box-shadow: 0 22px 58px rgba(37, 77, 111, 0.12);
+}
+
+.theme-light .join-card-heading h2 {
+  color: #142033;
+}
+
+.theme-light .input-with-action input {
+  background: #f6f9fc;
+}
+
+.theme-light .joined-summary {
+  background: #edf7fb;
+  border-color: #d0e7f0;
+}
+
+.theme-light .joined-summary strong {
+  color: #1b344a;
+}
+
+.theme-light .demo-entry p strong {
+  color: #263e54;
+}
+
+.theme-light .demo-entry p span {
+  color: #6d8095;
+}
+
+.theme-light .hero-lecture-preview {
+  --text: #f7fbff;
+  --text-soft: #c9d7e8;
+  --muted: #879bb3;
+  --accent: #5ee1ff;
+  --accent-strong: #89ebff;
+  --violet: #9d7cff;
+  --success: #4de2aa;
+}
+
+.theme-light .preview-window {
+  box-shadow:
+    0 34px 84px rgba(26, 54, 84, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.educator-entry {
+  align-items: center;
+  border-top: 1px solid rgba(74, 104, 133, 0.14);
+  display: flex;
+  gap: 10px;
+  grid-column: 1 / -1;
+  justify-content: center;
+  margin-top: 4px;
+  padding-top: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.educator-entry > span {
+  color: #8291a3;
+  font-size: 0.72rem;
+}
+
+.educator-entry a {
+  align-items: center;
+  color: #66788d;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 750;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.educator-entry a:hover,
+.educator-entry a:focus-visible {
+  color: #075d85;
+}
+
+/* Light student lecture */
+
+.theme-light .lecture-title-group h1 {
+  color: #142033;
+}
+
+.theme-light .lecture-title-group > p {
+  color: #5a6e84;
+}
+
+.theme-light .lecture-mode-label {
+  color: #71839a;
+}
+
+.theme-light .live-badge {
+  background: #e8f7f1;
+  border-color: #c9eadc;
+  color: #117557;
+}
+
+.theme-light .lecture-metrics > span {
+  background: #ffffff;
+  border-color: #dce5ef;
+  box-shadow: 0 4px 14px rgba(37, 74, 108, 0.04);
+  color: #64788e;
+}
+
+.theme-light .lecture-metrics strong {
+  color: #1d374e;
+}
+
+.theme-light .lecture-metrics .app-icon {
+  color: #1677a8;
+}
+
+.theme-light .demo-journey {
+  background:
+    linear-gradient(110deg, rgba(231, 246, 251, 0.92), rgba(243, 240, 252, 0.82)),
+    #ffffff;
+  border-color: #cfe4ed;
+  box-shadow: 0 8px 24px rgba(35, 75, 108, 0.05);
+}
+
+.theme-light .demo-journey-copy strong {
+  color: #19364d;
+}
+
+.theme-light .demo-journey-copy span,
+.theme-light .demo-steps li {
+  color: #60758b;
+}
+
+.theme-light .demo-steps li > span {
+  background: #ffffff;
+  border: 1px solid #d6e4ed;
+  color: #1677a8;
+}
+
+.theme-light .lecture-material {
+  background: #ffffff;
+}
+
+.theme-light .student-pdf-panel {
+  border-color: #d8e3ec;
+  box-shadow: 0 12px 32px rgba(35, 68, 99, 0.08);
+}
+
+.theme-light .pdf-title-group strong {
+  color: #263d52;
+}
+
+.theme-light .icon-button {
+  background: #f4f7fa;
+  border-color: #d6e1ea;
+  color: #314b62;
+}
+
+.theme-light .icon-button:not(:disabled):hover {
+  background: #eaf5fa;
+  border-color: #b9d8e5;
+}
+
+.theme-light .follow-button {
+  background: #f4f7fa;
+  border-color: #d6e1ea;
+  color: #52687e;
+}
+
+.theme-light .follow-button.is-following {
+  background: #e9f8f2;
+  border-color: #cbeadc;
+  color: #117557;
+}
+
+.theme-light .pdf-stage {
+  background: #e8edf3;
+  border-color: #d2dde7;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.theme-light .pdf-canvas {
+  box-shadow: 0 15px 34px rgba(34, 55, 77, 0.18);
+}
+
+.theme-light .poll-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(237, 246, 255, 0.9)),
+    #edf6ff;
+  border-color: #c9dfef;
+  box-shadow: 0 12px 34px rgba(36, 92, 131, 0.1);
+}
+
+.theme-light .lecture-poll-focus .poll-card:first-child {
+  border-color: #b7d8ea;
+  box-shadow:
+    0 15px 38px rgba(34, 92, 132, 0.12),
+    0 0 0 3px rgba(47, 125, 244, 0.035);
+}
+
+.theme-light .poll-card h2 {
+  color: #132b40;
+}
+
+.theme-light .poll-cue {
+  border-left-color: #7bb5d0;
+  color: #50677c;
+}
+
+.theme-light .choice-row {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #d4e2ec;
+  color: #263e54;
+}
+
+.theme-light .choice-row:hover {
+  background: #ffffff;
+  border-color: #9fc9dc;
+}
+
+.theme-light .choice-marker {
+  border-color: #9aabbc;
+}
+
+.theme-light .choice-row:has(input:checked) {
+  background: #e7f3ff;
+  border-color: #4f98d8;
+  box-shadow: 0 0 0 2px rgba(47, 125, 244, 0.08);
+}
+
+.theme-light .choice-row:has(input:checked) .choice-marker {
+  border-color: #2f7df4;
+}
+
+.theme-light .choice-row:has(input:checked) .choice-marker::after {
+  background: #2f7df4;
+}
+
+.theme-light .poll-result-locked {
+  color: #708196;
+}
+
+.theme-light .poll-bar {
+  background: #dce6ef;
+}
+
+.theme-light .success-note {
+  background: #e8f7f1;
+  border-color: #c9eadc;
+  color: #117557;
+}
+
+.theme-light .quiet-state {
+  background: #ffffff;
+}
+
+.theme-light .quiet-state h2 {
+  color: #213a50;
+}
+
+.theme-light .quiet-state > p:last-child {
+  color: #6d8095;
+}
+
+.theme-light .comment-composer textarea {
+  background: #f8fafc;
+  border-color: #ccd9e5;
+}
+
+.theme-light .prompt-suggestions button {
+  background: #edf6fa;
+  border-color: #d2e7ef;
+  color: #49667c;
+}
+
+.theme-light .prompt-suggestions button:not(:disabled):hover {
+  background: #e4f2f8;
+  border-color: #a8cfdf;
+  color: #075d85;
+}
+
+.theme-light .comment-card {
+  background: #f8fafc;
+  border-color: #e0e7ee;
+}
+
+.theme-light .comment-card:hover {
+  background: #ffffff;
+  border-color: #c8d9e5;
+  box-shadow: 0 7px 18px rgba(40, 73, 103, 0.06);
+}
+
+.theme-light .comment-card p {
+  color: #263c50;
+}
+
+.theme-light .comment-meta,
+.theme-light .comment-actions {
+  color: #718398;
+}
+
+.theme-light .anonymous-author i {
+  background: #e7f3f8;
+  color: #1677a8;
+}
+
+.theme-light .learning-support {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(118, 88, 214, 0.08), transparent 36%),
+    #ffffff;
+  border-color: #dedaf0;
+  box-shadow: 0 10px 28px rgba(67, 55, 120, 0.07);
+}
+
+.theme-light .learning-support-heading h2 {
+  color: #28364b;
+}
+
+.theme-light .caption-panel {
+  border-color: #cfe4ed;
+}
+
+.theme-light .caption-copy p {
+  color: #263c50;
+}
+
+.theme-light .caption-copy span,
+.theme-light .support-empty {
+  color: #718297;
+}
+
+.theme-light .caption-panel.is-compact .caption-copy,
+.theme-light .caption-panel.is-compact .support-empty {
+  border-color: #dce5ef;
+}
+
+.theme-light .summary-panel {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(118, 88, 214, 0.1), transparent 38%),
+    linear-gradient(160deg, #ffffff, #f8f6fd);
+}
+
+.theme-light .summary-lead {
+  color: #4f5c73;
+}
+
+.theme-light .summary-points li {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #ebe7f6;
+}
+
+.theme-light .summary-points p {
+  color: #4e5e72;
+}
+
+.theme-light .reflection-prompt {
+  background: linear-gradient(120deg, #f0edfb, #edf7fb);
+  border-color: #ded7f5;
+}
+
+.theme-light .reflection-prompt span {
+  color: #6d52c8;
+}
+
+.theme-light .reflection-prompt strong {
+  color: #2c3f55;
+}
+
+.theme-light .support-orbit {
+  border-color: #bdb0e9;
+}
+
+/* Light Admin */
+
+.theme-light .admin-login-icon {
+  background: linear-gradient(145deg, #e7f4f9, #f0edfb);
+  border-color: #cfe1eb;
+  color: #1677a8;
+}
+
+.theme-light .page-header h1,
+.theme-light .join-card h1 {
+  color: #142033;
+}
+
+.theme-light .page-header p,
+.theme-light .join-card p {
+  color: #5b6e83;
+}
+
+.theme-light .admin-workflow {
+  background: #ffffff;
+  border-color: #dce5ef;
+  box-shadow: 0 7px 22px rgba(38, 70, 99, 0.05);
+}
+
+.theme-light .admin-workflow a {
+  color: #566b80;
+}
+
+.theme-light .admin-workflow a + a {
+  border-left-color: #e0e7ee;
+}
+
+.theme-light .admin-workflow a > span {
+  background: #eaf5f9;
+  color: #1677a8;
+}
+
+.theme-light .admin-workflow strong,
+.theme-light .api-readiness-grid strong,
+.theme-light .stat-card strong,
+.theme-light .lecture-admin-row strong,
+.theme-light .poll-admin-row strong {
+  color: #21384d;
+}
+
+.theme-light .admin-workflow small,
+.theme-light .api-readiness-grid small,
+.theme-light .stat-card span,
+.theme-light .lecture-admin-row small,
+.theme-light .poll-admin-row small {
+  color: #718398;
+}
+
+.theme-light .table-row {
+  border-bottom-color: #e2e9ef;
+  color: #4f6378;
+}
+
+.theme-light .lecture-admin-row.is-active {
+  background: #edf7fb;
+}
+
+.theme-light .lecture-admin-row code {
+  background: #e9f5f9;
+  border-color: #cfe5ed;
+  color: #075d85;
+}
+
+.theme-light .api-readiness-grid article {
+  background: #f8fafc;
+  border-color: #dfe7ee;
+}
+
+.theme-light .display-control-grid {
+  color: #31495f;
+}
+
+.theme-light .warning-panel {
+  background: #fff8e8;
+  border-color: #efd9a7;
+}
+
+.theme-light .warning-panel p,
+.theme-light .warning-panel h2 {
+  color: #6a501b;
+}
+
+@media (max-width: 900px) {
+  .educator-entry {
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .theme-light .app-header {
+    box-shadow: 0 4px 18px rgba(41, 73, 101, 0.06);
+  }
+
+  .theme-light .lecture-hero {
+    gap: 16px;
+  }
+
+  .theme-light .lecture-metrics {
+    background: #ffffff;
+    border: 1px solid #dce5ef;
+    border-radius: 15px;
+    box-shadow: 0 6px 18px rgba(39, 71, 100, 0.05);
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .theme-light .lecture-metrics > span {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    flex: 1;
+    min-width: 0;
+    padding: 9px 4px;
+  }
+
+  .theme-light .lecture-metrics > span + span {
+    border-left: 1px solid #e2e9ef;
+  }
+
+  .theme-light .lecture-mobile-actions {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: #d6e1ea;
+    box-shadow: 0 -8px 28px rgba(37, 68, 96, 0.1);
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .theme-light .lecture-mobile-actions a {
+    color: #62758a;
+    position: relative;
+  }
+
+  .theme-light .lecture-mobile-actions a:first-child {
+    background: transparent;
+    color: #60758a;
+  }
+
+  .theme-light .lecture-mobile-actions a:nth-child(2) {
+    background: #e9f4fb;
+    color: #075d85;
+  }
+
+  .theme-light .lecture-mobile-actions a:nth-child(2)::after {
+    background: #2f7df4;
+    border-radius: 50%;
+    content: '';
+    height: 6px;
+    position: absolute;
+    right: 13px;
+    top: 7px;
+    width: 6px;
+  }
+
+  .theme-light .pdf-toolbar {
+    background: #ffffff;
+  }
+
+  .educator-entry {
+    align-items: center;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 0 0;
+  }
+
+  .educator-entry > span,
+  .educator-entry a {
+    font-size: 0.7rem;
+  }
 }
 
 .display-layout:fullscreen .transcript-placeholder {

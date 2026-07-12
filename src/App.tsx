@@ -24,7 +24,6 @@ const LecturePage = lazy(() =>
 
 const publicNavItems = [
   { to: '/demo', label: 'デモを体験', icon: 'sparkles' as const },
-  { to: '/admin', label: '教員用', icon: 'compass' as const },
 ]
 
 const joinedNavItems = [
@@ -59,6 +58,8 @@ function AppShell() {
   const { hasJoinedLectureSession } = useCompassState()
   const location = useLocation()
   const isAdminRoute = location.pathname.startsWith('/admin')
+  const isDisplayRoute = location.pathname.startsWith('/display')
+  const appTheme = isDisplayRoute ? 'theme-dark' : 'theme-light'
   const navItems = isAdminRoute
     ? adminNavItems
     : hasJoinedLectureSession
@@ -66,7 +67,7 @@ function AppShell() {
       : publicNavItems
 
   return (
-    <>
+    <div className={`app-root ${appTheme}`}>
       <header className="app-header">
         <a className="brand" href="/join" aria-label="COMPASS Interactive">
           <span className="brand-mark" aria-hidden="true" />
@@ -112,7 +113,7 @@ function AppShell() {
           />
         </Routes>
       </Suspense>
-    </>
+    </div>
   )
 }
 

@@ -154,7 +154,10 @@ export function LecturePage() {
       {pollsLoading ? <p className="note">ライブ投票を読み込んでいます。</p> : null}
 
       <section className="lecture-live-grid">
-        <section className="panel student-pdf-panel lecture-material">
+        <section
+          className="panel student-pdf-panel lecture-material"
+          id="lecture-material"
+        >
           <div className="section-intro compact-intro">
             <span className="section-icon"><AppIcon name="book" size={18} /></span>
             <div>
@@ -218,11 +221,14 @@ export function LecturePage() {
       </section>
 
       <div className="lecture-mobile-actions" aria-label="講義内ショートカット">
-        <a href="#lecture-question">
-          <AppIcon name="message" size={18} /> 質問する
+        <a href="#lecture-material">
+          <AppIcon name="book" size={18} /> 資料
         </a>
         <a href="#lecture-poll">
-          <AppIcon name="poll" size={18} /> 投票を見る
+          <AppIcon name="poll" size={18} /> 投票
+        </a>
+        <a href="#lecture-question">
+          <AppIcon name="message" size={18} /> 質問
         </a>
       </div>
     </main>
