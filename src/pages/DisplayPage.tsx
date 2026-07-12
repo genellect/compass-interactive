@@ -15,6 +15,7 @@ export function DisplayPage() {
     pollResultsError,
     pollsError,
     pollsLoading,
+    runtimeMode,
     isSessionSyncPaused,
     sessionSyncMessage,
     visibleComments,
@@ -36,6 +37,7 @@ export function DisplayPage() {
       polls={openPolls}
       pollsError={pollsError}
       pollsLoading={pollsLoading}
+      runtimeMode={runtimeMode}
       sessionSyncMessage={sessionSyncMessage}
     />
   )

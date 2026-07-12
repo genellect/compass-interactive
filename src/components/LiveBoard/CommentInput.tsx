@@ -1,6 +1,12 @@
 import { useState } from 'react'
+import { AppIcon } from '../AppIcon'
 
 const MAX_COMMENT_LENGTH = 120
+const promptSuggestions = [
+  'ここがまだ分からない',
+  'もう一度説明してほしい',
+  'この視点がおもしろい',
+]
 
 type CommentInputProps = {
   disabled?: boolean
@@ -29,17 +35,35 @@ export function CommentInput({
   }
 
   return (
-    <section className="panel">
+    <section className="panel comment-composer" id="lecture-question">
       <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Comment</p>
-          <h2>匿名コメントを投稿</h2>
+        <div className="section-intro">
+          <span className="section-icon">
+            <AppIcon name="message" size={18} />
+          </span>
+          <div>
+            <p className="eyebrow">SHARE YOUR THOUGHT</p>
+            <h2>気づき・質問を共有する</h2>
+          </div>
         </div>
-        <span className="metric">{remainingLength}字</span>
+        <span className="privacy-badge">名前は表示されません</span>
+      </div>
+
+      <div className="prompt-suggestions" aria-label="入力例">
+        {promptSuggestions.map((suggestion) => (
+          <button
+            disabled={disabled || isSubmitting}
+            key={suggestion}
+            onClick={() => setBody(suggestion)}
+            type="button"
+          >
+            + {suggestion}
+          </button>
+        ))}
       </div>
 
       <label className="field">
-        <span>コメント</span>
+        <span className="sr-only">質問や気づき</span>
         <textarea
           disabled={disabled}
           maxLength={MAX_COMMENT_LENGTH}
@@ -47,20 +71,26 @@ export function CommentInput({
           placeholder={
             disabled
               ? '講義に参加すると投稿できます。'
-              : '質問、気づき、議論したい点を書いてください。'
+              : '感じたことを、そのまま言葉にしてみてください。'
           }
           value={body}
         />
       </label>
 
-      <button
-        className="primary-button"
-        disabled={disabled || isSubmitting || body.trim().length === 0}
-        onClick={handleSubmit}
-        type="button"
-      >
-        {isSubmitting ? '投稿中...' : '投稿する'}
-      </button>
+      <div className="composer-footer">
+        <span className={remainingLength < 20 ? 'is-low' : ''}>
+          あと {remainingLength}字
+        </span>
+        <button
+          className="primary-button compact"
+          disabled={disabled || isSubmitting || body.trim().length === 0}
+          onClick={handleSubmit}
+          type="button"
+        >
+          {isSubmitting ? '送信中…' : 'みんなに共有'}
+          {!isSubmitting ? <AppIcon name="arrow-right" size={17} /> : null}
+        </button>
+      </div>
     </section>
   )
 }

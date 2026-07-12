@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { getLecturePdfAsset } from '../../pdf/lectureAssets'
+import { AppIcon } from '../AppIcon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
@@ -214,60 +215,66 @@ export function SyncedPdfViewer({
   return (
     <div className="local-pdf-viewer synced-pdf-viewer">
       <div className="pdf-toolbar">
-        <div>
-          <p className="eyebrow">PDF資料</p>
-          <strong>{asset?.title ?? '資料未選択'}</strong>
+        <div className="pdf-title-group">
+          <span className="section-icon"><AppIcon name="book" size={17} /></span>
+          <div>
+            <p className="eyebrow">MATERIAL</p>
+            <strong>{asset?.title ?? '資料を待っています'}</strong>
+          </div>
         </div>
         <div className="pdf-page-controls">
           <button
-            className="secondary-button"
+            aria-label="前のページ"
+            className="icon-button"
             disabled={!pdfDocument || currentPage <= 1 || isLoading}
             onClick={() => void moveToPage(currentPage - 1, true)}
             type="button"
           >
-            前へ
+            <AppIcon name="arrow-left" size={19} />
           </button>
           <span className="metric">
-            {pdfDocument ? `${currentPage} / ${totalPages}` : '0 / 0'}
+            {pdfDocument ? `${currentPage} / ${totalPages}` : '— / —'}
           </span>
           <button
-            className="secondary-button"
+            aria-label="次のページ"
+            className="icon-button"
             disabled={!pdfDocument || currentPage >= totalPages || isLoading}
             onClick={() => void moveToPage(currentPage + 1, true)}
             type="button"
           >
-            次へ
+            <AppIcon name="arrow-right" size={19} />
           </button>
         </div>
         {!presenterLocked ? (
           <button
-            className="secondary-button"
+            className={`follow-button ${followPresenter ? 'is-following' : ''}`}
             disabled={!pdfDocument || followPresenter}
             onClick={() => void resumePresenterFollow()}
             type="button"
           >
-            発表ページへ戻る
+            <span className="live-dot" />
+            {followPresenter ? '教員と同期中' : '教員のページに戻る'}
           </button>
         ) : null}
         <button
-          className="secondary-button"
+          className="secondary-button pdf-fullscreen-button"
           disabled={!isFullscreenSupported || !pdfDocument || isLoading}
           onClick={() => void toggleFullscreen()}
           type="button"
         >
-          {isPdfFullscreen ? '全画面を終了' : 'PDFを全画面表示'}
+          {isPdfFullscreen ? '全画面を終了' : '大きく表示'}
         </button>
       </div>
 
       {!presenterLocked && pdfDocument ? (
         <p className="note">
           {followPresenter
-            ? '発表者のページに追従しています。'
-            : '手動閲覧中です。発表ページへ戻ると追従を再開します。'}
+            ? '教員がページを進めると、自動で同じページに移動します。'
+            : 'いまは自分のペースで資料を見ています。'}
         </p>
       ) : null}
       {asset && asset.pageCount !== totalPages && pdfDocument ? (
-        <p className="error-note">PDFのページ数がasset catalogと一致しません。</p>
+        <p className="error-note">資料情報を更新できませんでした。</p>
       ) : null}
       {!asset && documentId ? (
         <p className="error-note">指定されたPDF資料が見つかりません。</p>
@@ -276,7 +283,7 @@ export function SyncedPdfViewer({
       {fullscreenErrorMessage ? (
         <p className="error-note">{fullscreenErrorMessage}</p>
       ) : null}
-      {isLoading ? <p className="note">PDFを読み込んでいます。</p> : null}
+      {isLoading ? <p className="note">講義資料を開いています…</p> : null}
 
       <div
         className="display-slide-frame pdf-stage"
@@ -287,10 +294,10 @@ export function SyncedPdfViewer({
           <canvas className="pdf-canvas" ref={canvasRef} />
         ) : (
           <div>
-            <p className="eyebrow">スライド</p>
-            <h2>{asset ? 'PDFを読み込んでいます' : 'PDF資料は未選択です'}</h2>
-            <p>Adminが資料を選択すると、5秒snapshotでここへ反映されます。</p>
-            <span>0 / 0</span>
+            <span className="empty-slide-icon"><AppIcon name="book" size={28} /></span>
+            <p className="eyebrow">LECTURE MATERIAL</p>
+            <h2>{asset ? '資料を開いています' : '教員からの資料を待っています'}</h2>
+            <p>資料が共有されると、この画面に自動で表示されます。</p>
           </div>
         )}
       </div>

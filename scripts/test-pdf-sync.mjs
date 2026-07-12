@@ -63,7 +63,7 @@ assert.equal(
 )
 
 assert.match(viewer, /getDocument\(\{ url: asset\.url \}\)/)
-assert.match(viewer, /発表ページへ戻る/)
+assert.match(viewer, /教員のページに戻る/)
 assert.doesNotMatch(viewer, /type="file"|arrayBuffer\(\)/)
 assert.match(adminPage, /lecturePdfAssets\.map/)
 assert.match(adminPage, /updateDisplayState\('setDocument'/)

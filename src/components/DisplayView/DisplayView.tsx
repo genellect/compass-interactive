@@ -3,9 +3,16 @@ import { LiveBoard } from '../LiveBoard'
 import { LivePoll } from '../LivePoll'
 import { SyncedPdfViewer } from './SyncedPdfViewer'
 import { useFullscreen } from '../../hooks/useFullscreen'
+import { AppIcon } from '../AppIcon'
+import { LiveCaptionPanel } from '../LearningSupport'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
-import type { LectureSession, LiveComment, Poll } from '../../types'
+import type {
+  LectureRuntimeMode,
+  LectureSession,
+  LiveComment,
+  Poll,
+} from '../../types'
 
 type DisplayViewProps = {
   activeLectureSessionId: string | null
@@ -22,6 +29,7 @@ type DisplayViewProps = {
   polls: Poll[]
   pollsError: string | null
   pollsLoading: boolean
+  runtimeMode: LectureRuntimeMode
   sessionSyncMessage: string | null
 }
 
@@ -40,6 +48,7 @@ export function DisplayView({
   polls,
   pollsError,
   pollsLoading,
+  runtimeMode,
   sessionSyncMessage,
 }: DisplayViewProps) {
   const presentationRef = useRef<HTMLDivElement | null>(null)
@@ -55,34 +64,38 @@ export function DisplayView({
   return (
     <main className="display-shell">
       <section className="display-hero">
-        <p className="eyebrow">共有画面</p>
-        <h1>{lecture.title}</h1>
-        <p>発表中のスライド、字幕、匿名コメント、投票結果を表示します。</p>
+        <div className="display-title-group">
+          <span className="live-badge"><i /> LIVE CLASSROOM</span>
+          <div>
+            <p className="eyebrow">COMPASS INTERACTIVE</p>
+            <h1>{lecture.title}</h1>
+          </div>
+        </div>
         <div className="display-status-row">
-          <span className="metric">コメント {comments.length}件</span>
-          <span className="metric">投票 {polls.length}件</span>
+          <span className="metric"><AppIcon name="message" size={16} /> {comments.length}件の声</span>
+          <span className="metric"><AppIcon name="poll" size={16} /> {polls.length}件受付中</span>
           <button
             className="secondary-button display-fullscreen-button"
             disabled={!isFullscreenSupported}
             onClick={() => void toggleFullscreen()}
             type="button"
           >
-            {isPresentationFullscreen ? '全画面を終了' : '共有画面を全画面表示'}
+            {isPresentationFullscreen ? '全画面を終了' : '教室表示を全画面にする'}
           </button>
         </div>
         {presentationFullscreenError ? (
           <p className="error-note">{presentationFullscreenError}</p>
         ) : null}
         {displayStateError ? (
-          <p className="error-note">表示画面の同期に失敗しました。</p>
+          <p className="error-note">教室表示の更新に時間がかかっています。</p>
         ) : null}
       </section>
 
       {!hasJoinedLectureSession || !activeLectureSessionId ? (
         <section className="display-warning">
-          <p className="eyebrow">未参加</p>
-          <h2>先に講義コードを入力してください。</h2>
-          <p>参加後に、共有画面用のデータが表示されます。</p>
+          <p className="eyebrow">READY TO START</p>
+          <h2>講義コードを入力すると、教室表示が始まります。</h2>
+          <p>資料、みんなの声、投票結果がここに集まります。</p>
         </section>
       ) : null}
 
@@ -106,11 +119,11 @@ export function DisplayView({
             />
           </div>
 
-          <div className="display-placeholder transcript-placeholder">
-            <p className="eyebrow">字幕</p>
-            <h2>発表字幕はここに表示されます</h2>
-            <p>音声書き起こしと翻訳支援は、後続Phaseで接続します。</p>
-          </div>
+          <LiveCaptionPanel
+            compact
+            isDemo={runtimeMode === 'demo'}
+            mode="display"
+          />
         </section>
 
         <aside className="display-side-rail">
@@ -123,9 +136,8 @@ export function DisplayView({
 
         <section className="display-poll-rail">
           <div className="display-poll-heading">
-            <p className="eyebrow">投票結果</p>
-            <h2>ディスカッション Poll</h2>
-            <p className="note">結果は約5秒ごとに更新されます。</p>
+            <p className="eyebrow">LIVE POLL</p>
+            <h2>みんなの考え</h2>
           </div>
           {pollsError ? (
             <p className="error-note">投票の取得に失敗しました。</p>
@@ -146,8 +158,9 @@ export function DisplayView({
             ))
           ) : (
             <section className="panel display-panel">
-              <p className="eyebrow">投票</p>
-              <h2>現在受付中の投票はありません。</h2>
+              <span className="quiet-state-icon"><AppIcon name="poll" size={24} /></span>
+              <p className="eyebrow">LIVE POLL</p>
+              <h2>次の問いを待っています</h2>
             </section>
           )}
         </section>

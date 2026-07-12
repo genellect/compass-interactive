@@ -1,5 +1,6 @@
 import {
   DEMO_LECTURE_ID,
+  demoDisplayState,
   demoLecture,
   demoPolls,
   demoSeedPollResults,
@@ -18,6 +19,7 @@ import type { Participant } from '../types/index.ts'
 
 export type DemoSnapshot = {
   comments: DemoLectureState['comments']
+  displayState: typeof demoDisplayState
   lecture: typeof demoLecture
   participant: Participant
   pollResponses: DemoLectureState['pollResponses']
@@ -47,6 +49,7 @@ function toSnapshot(state: DemoLectureState): DemoSnapshot {
 
   return {
     comments: state.comments,
+    displayState: demoDisplayState,
     lecture: demoLecture,
     participant: {
       id: state.participantId,

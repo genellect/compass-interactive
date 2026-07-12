@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { LiveBoard } from '../components/LiveBoard'
+import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   type AdminLecture,
@@ -160,8 +161,8 @@ export function AdminPage() {
     } catch (error) {
       setAdminPollsError(
         error instanceof Error
-          ? `Poll一覧の取得に失敗しました: ${error.message}`
-          : 'Poll一覧の取得に失敗しました。',
+          ? `投票一覧の取得に失敗しました: ${error.message}`
+          : '投票一覧の取得に失敗しました。',
       )
     } finally {
       setAdminPollsLoading(false)
@@ -458,8 +459,8 @@ export function AdminPage() {
     } catch (error) {
       setAdminPollsError(
         error instanceof Error
-          ? `Poll作成に失敗しました: ${error.message}`
-          : 'Poll作成に失敗しました。',
+          ? `投票の作成に失敗しました: ${error.message}`
+          : '投票の作成に失敗しました。',
       )
     } finally {
       setAdminPollsLoading(false)
@@ -486,8 +487,8 @@ export function AdminPage() {
     } catch (error) {
       setAdminPollsError(
         error instanceof Error
-          ? `Poll状態の更新に失敗しました: ${error.message}`
-          : 'Poll状態の更新に失敗しました。',
+          ? `投票状態の更新に失敗しました: ${error.message}`
+          : '投票状態の更新に失敗しました。',
       )
     } finally {
       setAdminPollsLoading(false)
@@ -532,9 +533,10 @@ export function AdminPage() {
     return (
       <main className="page-shell join-page">
         <form className="join-card" onSubmit={handleLogin}>
-          <p className="eyebrow">管理者</p>
-          <h1>管理PINを入力</h1>
-          <p>管理者用の操作画面を開きます。</p>
+          <span className="admin-login-icon"><AppIcon name="compass" size={25} /></span>
+          <p className="eyebrow">FOR EDUCATORS</p>
+          <h1>講義を運営する</h1>
+          <p>管理PINを入力して、講義コントロールを開きます。</p>
 
           <label className="field">
             <span>PIN</span>
@@ -556,7 +558,7 @@ export function AdminPage() {
             disabled={isVerifying || pin.trim().length === 0}
             type="submit"
           >
-            {isVerifying ? '確認中...' : '管理画面を開く'}
+            {isVerifying ? '確認中…' : '講義コントロールを開く'}
           </button>
         </form>
       </main>
@@ -567,9 +569,9 @@ export function AdminPage() {
     <main className="page-shell">
       <section className="page-header">
         <div>
-          <p className="eyebrow">管理画面</p>
+          <p className="eyebrow">LECTURE CONTROL</p>
           <h1>{lecture.title}</h1>
-          <p>コメント、投票、共有画面を確認・操作します。</p>
+          <p>講義の流れと、教室の反応をひとつの画面で。</p>
         </div>
         <div className="admin-actions">
           <a className="secondary-link" href="/display" target="_blank">
@@ -585,11 +587,17 @@ export function AdminPage() {
         </div>
       </section>
 
-      <section className="panel">
+      <nav className="admin-workflow" aria-label="講義運営の流れ">
+        <a href="#admin-prepare"><span>1</span><strong>準備</strong><small>講義と資料</small></a>
+        <a href="#admin-live"><span>2</span><strong>講義中</strong><small>投票と共有</small></a>
+        <a href="#admin-voices"><span>3</span><strong>振り返り</strong><small>みんなの声</small></a>
+      </nav>
+
+      <section className="panel" id="admin-prepare">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">講義管理</p>
-            <h2>Lecture作成・開始・終了</h2>
+            <p className="eyebrow">PREPARE</p>
+            <h2>講義を準備する</h2>
           </div>
           <button
             className="secondary-button"
@@ -634,7 +642,7 @@ export function AdminPage() {
             disabled={lecturesLoading || newLectureTitle.trim().length === 0}
             type="submit"
           >
-            講義コードを発行
+            新しい講義を作成
           </button>
         </form>
 
@@ -719,7 +727,7 @@ export function AdminPage() {
             })
           ) : (
             <p className="note">
-              まだ講義がありません。講義コードを発行してください。
+              まだ講義がありません。最初の講義を作成しましょう。
             </p>
           )}
         </div>
@@ -744,11 +752,11 @@ export function AdminPage() {
         </article>
       </section>
 
-      <section className="panel">
+      <section className="panel" id="admin-live">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">共有画面</p>
-            <h2>スライド操作</h2>
+            <p className="eyebrow">LIVE MATERIAL</p>
+            <h2>講義資料を操作する</h2>
           </div>
           <span className="metric">
             現在のページ: {displayState?.currentPdfPage ?? 1}
@@ -787,7 +795,7 @@ export function AdminPage() {
                 }
                 type="button"
               >
-                PDFを反映
+                この資料を表示
               </button>
             </div>
 
@@ -881,15 +889,43 @@ export function AdminPage() {
           <p className="error-note">{displayStateError}</p>
         ) : null}
         <p className="note">
-          PDF本体はCloudflareの静的アセットから取得し、document ID・ページ・表示モードだけを5秒snapshotで同期します。
+          学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。
         </p>
+      </section>
+
+      <section className="panel ai-readiness-panel">
+        <div className="panel-heading">
+          <div className="section-intro">
+            <span className="section-icon violet"><AppIcon name="sparkles" size={18} /></span>
+            <div>
+              <p className="eyebrow">LEARNING SUPPORT</p>
+              <h2>字幕・講義後レビュー</h2>
+            </div>
+          </div>
+          <span className="support-state preview">API接続待ち</span>
+        </div>
+        <p className="panel-description">
+          学生画面と教室表示の受け皿は準備されています。音声認識・要約APIを接続すると、ここから配信状態を確認できます。
+        </p>
+        <div className="api-readiness-grid">
+          <article>
+            <span className="support-icon"><AppIcon name="message" size={18} /></span>
+            <div><strong>リアルタイム字幕</strong><small>講義中に学生・教室へ表示</small></div>
+            <span className="readiness-dot" />
+          </article>
+          <article>
+            <span className="support-icon violet"><AppIcon name="sparkles" size={18} /></span>
+            <div><strong>講義後レビュー</strong><small>要点と次の問いを学生へ表示</small></div>
+            <span className="readiness-dot" />
+          </article>
+        </div>
       </section>
 
       <section className="panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">投票</p>
-            <h2>Poll管理</h2>
+            <p className="eyebrow">LIVE POLL</p>
+            <h2>ライブ投票をつくる</h2>
           </div>
           <button
             className="secondary-button"
@@ -947,7 +983,7 @@ export function AdminPage() {
             }
             type="submit"
           >
-            Pollを作成
+            投票を作成
           </button>
         </form>
 
@@ -955,7 +991,7 @@ export function AdminPage() {
           <p className="error-note">{adminPollsError}</p>
         ) : null}
         {adminPollsLoading ? (
-          <p className="note">Poll情報を更新中です。</p>
+          <p className="note">投票情報を更新しています。</p>
         ) : null}
 
         <div className="table-like">
@@ -989,17 +1025,19 @@ export function AdminPage() {
             </div>
           ))}
           {!adminPollsLoading && adminPolls.length === 0 ? (
-            <p className="note">この講義にはPollがありません。</p>
+            <p className="note">まだ投票はありません。講義の問いを作ってみましょう。</p>
           ) : null}
         </div>
       </section>
 
-      <LiveBoard
-        comments={comments}
-        mode="admin"
-        onTogglePinned={toggleCommentPinned}
-        onToggleVisibility={toggleCommentVisibility}
-      />
+      <div id="admin-voices">
+        <LiveBoard
+          comments={comments}
+          mode="admin"
+          onTogglePinned={toggleCommentPinned}
+          onToggleVisibility={toggleCommentVisibility}
+        />
+      </div>
     </main>
   )
 }

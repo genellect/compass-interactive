@@ -1,4 +1,5 @@
 import type { LiveComment } from '../../types'
+import { AppIcon } from '../AppIcon'
 
 type CommentCardProps = {
   comment: LiveComment
@@ -30,7 +31,10 @@ export function CommentCard({
       className={`comment-card ${comment.status === 'hidden' ? 'is-hidden' : ''}`}
     >
       <div className="comment-meta">
-        <span>匿名コメント</span>
+        <span className="anonymous-author">
+          <i aria-hidden="true">?</i>
+          匿名の参加者
+        </span>
         <span>{timeLabel}</span>
       </div>
 
@@ -46,7 +50,9 @@ export function CommentCard({
       <p>{comment.body}</p>
 
       <div className="comment-actions">
-        <span>いいね {comment.likeCount}件</span>
+        <span className="like-count">
+          <AppIcon name="heart" size={15} /> {comment.likeCount}
+        </span>
         {mode === 'student' && onToggleLike ? (
           <button
             className={`text-button ${hasLiked ? 'is-active' : ''}`}
@@ -56,7 +62,8 @@ export function CommentCard({
             }}
             type="button"
           >
-            {hasLiked ? 'いいね済み' : 'いいね'}
+            <AppIcon name="heart" size={15} />
+            {hasLiked ? '共感しました' : '共感する'}
           </button>
         ) : null}
       </div>

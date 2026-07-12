@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Poll, PollResponse } from '../../types'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
 import { PollResults } from './PollResults'
+import { AppIcon } from '../AppIcon'
 
 type PollCardProps = {
   currentParticipantId?: string | null
@@ -31,6 +32,10 @@ function getDiscussionCue(question: string) {
 
   if (question.startsWith('5.')) {
     return '倫理・臨床視点: 患者応用へ進むタイミングを考えます。'
+  }
+
+  if (question.includes('翻訳AI')) {
+    return '正解のない問いです。いまの自分に一番近い考えを選んでください。'
   }
 
   return '回答後、結果を見ながら短く議論します。'
@@ -63,6 +68,8 @@ export function PollCard({
     poll.status === 'open' &&
     Boolean(currentParticipantId) &&
     !existingResponse
+  const showResults =
+    displayMode || Boolean(existingResponse) || poll.status === 'closed'
 
   function toggleOption(optionId: string) {
     if (!canAnswer) {
@@ -98,15 +105,18 @@ export function PollCard({
   return (
     <section className={`panel poll-card ${displayMode ? 'display-panel' : ''}`}>
       <div className="panel-heading">
-        <div>
-          <p className="eyebrow">
-            {poll.type === 'single' ? '単一選択' : '複数選択'}
-          </p>
+        <div className="poll-heading-copy">
+          <div className="poll-label">
+            <span className="section-icon"><AppIcon name="poll" size={18} /></span>
+            <p className="eyebrow">LIVE POLL</p>
+          </div>
           <h2>{poll.question}</h2>
           <p className="poll-cue">{discussionCue}</p>
         </div>
         <span className={`status-pill ${poll.status}`}>
-          {poll.status === 'open' ? '受付中' : '締切'}
+          {poll.status === 'open' ? (
+            <><i /> 回答受付中</>
+          ) : '受付終了'}
         </span>
       </div>
 
@@ -121,6 +131,7 @@ export function PollCard({
                 onChange={() => toggleOption(option.id)}
                 type={poll.type === 'single' ? 'radio' : 'checkbox'}
               />
+              <span className="choice-marker" aria-hidden="true" />
               <span>{option.label}</span>
             </label>
           ))}
@@ -130,22 +141,29 @@ export function PollCard({
             onClick={submitResponse}
             type="button"
           >
-            回答する
+            この回答を送る
+            <AppIcon name="arrow-right" size={17} />
           </button>
         </div>
       ) : null}
 
       {existingResponse && !displayMode ? (
         <p className="success-note">
-          回答済みです。結果は数秒ごとに更新されます。
+          <AppIcon name="check" size={17} />
+          回答しました。みんなの考えを見てみましょう。
         </p>
       ) : null}
 
-      <PollResults poll={poll} results={results} responses={responses} />
+      {showResults ? (
+        <PollResults poll={poll} results={results} responses={responses} />
+      ) : (
+        <div className="poll-result-locked">
+          <span aria-hidden="true" />
+          <p>回答すると、みんなの考えが見られます。</p>
+        </div>
+      )}
 
-      <p className="note">
-        結果は匿名回答の集計値だけを表示しています。
-      </p>
+      {showResults ? <p className="note privacy-note">回答はすべて匿名です。</p> : null}
     </section>
   )
 }

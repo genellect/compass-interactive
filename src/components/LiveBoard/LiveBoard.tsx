@@ -1,4 +1,5 @@
 import type { LiveComment } from '../../types'
+import { AppIcon } from '../AppIcon'
 import { CommentCard } from './CommentCard'
 
 type LiveBoardProps = {
@@ -36,11 +37,16 @@ export function LiveBoard({
     mode === 'display' ? sortForDisplay(visibleComments) : visibleComments
 
   return (
-    <section className="panel">
+    <section className="panel live-board">
       <div className="panel-heading">
-        <div>
-          <p className="eyebrow">コメント</p>
-          <h2>匿名コメント</h2>
+        <div className="section-intro">
+          <span className="section-icon">
+            <AppIcon name="users" size={18} />
+          </span>
+          <div>
+            <p className="eyebrow">CLASS VOICES</p>
+            <h2>{mode === 'admin' ? 'みんなの声を管理' : 'みんなの声'}</h2>
+          </div>
         </div>
         <span className="metric">{displayedComments.length}件</span>
       </div>
@@ -59,7 +65,10 @@ export function LiveBoard({
             />
           ))
         ) : (
-          <p className="note">まだ表示できるコメントはありません。</p>
+          <div className="empty-comments">
+            <AppIcon name="message" size={24} />
+            <p>最初の気づきを共有してみませんか？</p>
+          </div>
         )}
       </div>
     </section>
