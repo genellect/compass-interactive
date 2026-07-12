@@ -9,6 +9,7 @@ import {
 import {
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
+  normalizeLiveSyncPathname,
 } from '../src/lib/liveSync.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -52,6 +53,10 @@ assert.equal(getLiveSyncBackoffDelay({ failureCount: 3 }), 30_000)
 assert.equal(getLiveSyncBackoffDelay({ failureCount: 99 }), 30_000)
 assert.equal(getLiveSyncJitter(-1), 0)
 assert.equal(getLiveSyncJitter(1), 1_000)
+assert.equal(normalizeLiveSyncPathname('/display'), '/display')
+assert.equal(normalizeLiveSyncPathname('/display/'), '/display')
+assert.equal(normalizeLiveSyncPathname('/lecture///'), '/lecture')
+assert.equal(normalizeLiveSyncPathname('/'), '/')
 
 const context = read('src/context/CompassStateContext.tsx')
 const displayPage = read('src/pages/DisplayPage.tsx')
