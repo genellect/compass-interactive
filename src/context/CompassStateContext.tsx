@@ -21,7 +21,11 @@ import {
   restoreJoinedLectureSession,
   type JoinedLectureSession,
 } from '../lib/joinedLecture'
-import { HIDDEN_SYNC_STOP_MS, IDLE_SYNC_TIMEOUT_MS } from '../lib/liveSync'
+import {
+  HIDDEN_SYNC_STOP_MS,
+  IDLE_SYNC_TIMEOUT_MS,
+  normalizeLiveSyncPathname,
+} from '../lib/liveSync'
 import {
   advanceLiveStateVersions,
   getRequestedLiveStateVersions,
@@ -266,8 +270,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     useState<CompassStateValue['sessionSyncPauseReason']>(null)
   const isLectureOpen = joinedLectureSession?.status === 'open'
   const isSessionSyncPaused = sessionSyncPauseReason !== null
+  const normalizedPathname = normalizeLiveSyncPathname(location.pathname)
   const isLiveSyncRoute = ['/admin', '/display', '/lecture'].includes(
-    location.pathname,
+    normalizedPathname,
   )
   const canRunLiveSync =
     runtimeMode === 'live' &&
@@ -279,7 +284,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     runtimeMode === 'demo'
       ? hasActiveLectureSessionId && isLectureOpen
       : canRunLiveSync
-  const isLectureRoute = location.pathname === '/lecture'
+  const isLectureRoute = normalizedPathname === '/lecture'
 
   const applyDemoSnapshot = useCallback((snapshot: DemoSnapshot) => {
     setJoinedLectureSession(snapshot.session)

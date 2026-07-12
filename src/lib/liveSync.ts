@@ -4,6 +4,11 @@ export const IDLE_SYNC_TIMEOUT_MS = 30 * 60 * 1000
 export const HIDDEN_SYNC_STOP_MS = 10 * 60 * 1000
 export const LIVE_SYNC_JITTER_MS = 1_000
 
+export function normalizeLiveSyncPathname(pathname: string) {
+  const normalized = pathname.replace(/\/+$/, '')
+  return normalized || '/'
+}
+
 export function getLiveSyncBackoffDelay({
   backgroundIntervalMs = BACKGROUND_LIVE_SYNC_INTERVAL_MS,
   failureCount,
