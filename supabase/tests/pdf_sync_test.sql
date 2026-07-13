@@ -42,20 +42,20 @@ SELECT ok(
   'service role can update PDF display state'
 );
 SELECT ok(
-  has_function_privilege(
+  NOT has_function_privilege(
     'anon',
-    'public.get_lecture_live_snapshot(uuid,uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
+    'public.get_lecture_live_snapshot(uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
     'EXECUTE'
   ),
-  'anonymous clients retain snapshot access'
+  'anonymous clients cannot execute the ownership-safe snapshot before Anonymous Auth'
 );
 SELECT ok(
   has_function_privilege(
     'authenticated',
-    'public.get_lecture_live_snapshot(uuid,uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
+    'public.get_lecture_live_snapshot(uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
     'EXECUTE'
   ),
-  'authenticated clients retain snapshot access'
+  'authenticated clients retain ownership-safe snapshot access'
 );
 SELECT ok(
   NOT has_function_privilege(
@@ -79,7 +79,7 @@ CREATE TEMP TABLE m4_fixture (
   display_version_before bigint,
   state_version_before bigint
 );
-GRANT SELECT, INSERT, UPDATE ON m4_fixture TO service_role, anon;
+GRANT SELECT, INSERT, UPDATE ON m4_fixture TO service_role, authenticated;
 
 SET LOCAL ROLE service_role;
 SELECT lives_ok(
@@ -156,7 +156,12 @@ SELECT is(
   'PDF selection advances state version once'
 );
 
-SET LOCAL ROLE anon;
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '44000000-0000-4000-8000-000000000001',
+  true
+);
 SELECT is(
   public.get_lecture_live_snapshot((SELECT lecture_id FROM m4_fixture))
     #>> '{display,pdf_document_id}',

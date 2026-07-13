@@ -88,9 +88,11 @@ SELECT ok(
 
 CREATE TEMP TABLE m3_fixture (
   lecture_id uuid,
-  poll_id uuid
+  poll_id uuid,
+  participant_id uuid,
+  option_id uuid
 );
-GRANT SELECT, INSERT, UPDATE ON m3_fixture TO service_role, anon;
+GRANT SELECT, INSERT, UPDATE ON m3_fixture TO service_role, authenticated;
 
 SET LOCAL ROLE service_role;
 
@@ -99,7 +101,7 @@ SELECT lives_ok(
     INSERT INTO m3_fixture (lecture_id)
     SELECT public.admin_create_lecture(
       'Milestone 3 lecture',
-      repeat('a', 64),
+      encode(extensions.digest(convert_to('M3-LIVE', 'UTF8'), 'sha256'), 'hex'),
       'M3-LIVE',
       null,
       null
@@ -179,6 +181,14 @@ SELECT is(
   'open',
   'poll transition is persisted'
 );
+UPDATE m3_fixture
+SET option_id = (
+  SELECT id
+  FROM public.poll_options
+  WHERE poll_id = m3_fixture.poll_id
+  ORDER BY display_order
+  LIMIT 1
+);
 SELECT ok(
   NOT public.admin_set_poll_status(
     (SELECT lecture_id FROM m3_fixture),
@@ -188,20 +198,21 @@ SELECT ok(
   'repeating the same poll transition is rejected'
 );
 
-SET LOCAL ROLE anon;
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '43000000-0000-4000-8000-000000000001',
+  true
+);
 SELECT lives_ok(
   $$
-    INSERT INTO public.participants (
-      id,
-      lecture_session_id,
-      participant_key
-    ) VALUES (
-      '43000000-0000-4000-8000-000000000001',
-      (SELECT lecture_id FROM m3_fixture),
-      'milestone-3-participant'
+    UPDATE m3_fixture
+    SET participant_id = (
+      SELECT participant_id
+      FROM public.join_lecture_by_code('M3-LIVE')
     )
   $$,
-  'participant can join after Admin starts lecture'
+  'authenticated participant can join after Admin starts lecture'
 );
 SELECT lives_ok(
   $$
@@ -213,14 +224,8 @@ SELECT lives_ok(
     ) VALUES (
       (SELECT lecture_id FROM m3_fixture),
       (SELECT poll_id FROM m3_fixture),
-      '43000000-0000-4000-8000-000000000001',
-      ARRAY[(
-        SELECT id
-        FROM public.poll_options
-        WHERE poll_id = (SELECT poll_id FROM m3_fixture)
-        ORDER BY display_order
-        LIMIT 1
-      )]
+      (SELECT participant_id FROM m3_fixture),
+      ARRAY[(SELECT option_id FROM m3_fixture)]
     )
   $$,
   'student response succeeds for Admin-opened poll'
@@ -228,8 +233,7 @@ SELECT lives_ok(
 SELECT is(
   (
     public.get_lecture_live_snapshot(
-      (SELECT lecture_id FROM m3_fixture),
-      '43000000-0000-4000-8000-000000000001'
+      (SELECT lecture_id FROM m3_fixture)
     ) #>> '{polls,0,options,0,response_count}'
   )::integer,
   1,
@@ -269,7 +273,7 @@ SELECT throws_ok(
   'closed lecture rejects new polls'
 );
 
-SET LOCAL ROLE anon;
+SET LOCAL ROLE authenticated;
 SELECT throws_ok(
   $$
     INSERT INTO public.comments (
@@ -278,7 +282,7 @@ SELECT throws_ok(
       body
     ) VALUES (
       (SELECT lecture_id FROM m3_fixture),
-      '43000000-0000-4000-8000-000000000001',
+      (SELECT participant_id FROM m3_fixture),
       'Comment after close'
     )
   $$,

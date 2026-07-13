@@ -96,12 +96,13 @@ SELECT ok(
   'set_updated_at has a fixed search_path'
 );
 SELECT ok(
-  (
-    SELECT proconfig IS NOT NULL
+  to_regprocedure('public.validate_poll_response_option_ids()') IS NULL
+  AND (
+    SELECT prosecdef AND proconfig IS NOT NULL
     FROM pg_proc
-    WHERE oid = 'public.validate_poll_response_option_ids()'::regprocedure
+    WHERE oid = 'private.validate_poll_response_option_ids()'::regprocedure
   ),
-  'poll option validation has a fixed search_path'
+  'poll option validation is private Definer code with a fixed search_path'
 );
 
 INSERT INTO public.lecture_sessions (

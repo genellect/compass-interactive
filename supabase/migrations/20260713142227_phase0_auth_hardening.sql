@@ -47,8 +47,13 @@ create index poll_result_refresh_events_poll_idx
 
 -- Trigger functions are never public RPCs. Fix their search_path and remove
 -- the PostgreSQL default PUBLIC EXECUTE privilege later in this migration.
+-- Poll response validation needs narrow internal reads after browser SELECT
+-- privileges on polls and poll_options are removed, so keep it private and
+-- Definer-owned while the table INSERT still remains protected by RLS.
 alter function public.set_updated_at() set search_path = '';
-alter function public.validate_poll_response_option_ids() set search_path = '';
+alter function public.validate_poll_response_option_ids() set schema private;
+alter function private.validate_poll_response_option_ids() security definer;
+alter function private.validate_poll_response_option_ids() set search_path = '';
 alter function public.emit_poll_result_refresh_event() set search_path = '';
 
 create or replace function private.is_lecture_open(
@@ -117,7 +122,7 @@ create or replace function private.join_lecture_by_code(
   lecture_code text
 )
 returns table (
-  lecture_session_id uuid,
+  joined_lecture_session_id uuid,
   participant_id uuid,
   title text,
   starts_at timestamptz,
