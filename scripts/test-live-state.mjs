@@ -61,14 +61,36 @@ assert.equal(normalizeLiveSyncPathname('/'), '/')
 const context = read('src/context/CompassStateContext.tsx')
 const displayPage = read('src/pages/DisplayPage.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
+const adaptiveSyncHook = read('src/hooks/useAdaptiveLiveSync.ts')
 const commentsRepository = read('src/repositories/supabaseCommentRepository.ts')
+const learningSupport = read('src/components/LearningSupport/LearningSupport.tsx')
 const pollsRepository = read('src/repositories/supabasePollRepository.ts')
 const migration = read('supabase/migrations/20260711020445_live_state_integration.sql')
 
 assert.match(context, /await refreshLiveSnapshot\(\)/)
 assert.doesNotMatch(context, /Promise\.allSettled/)
+assert.equal(
+  context.match(/supabaseLiveStateRepository\.getSnapshot/g)?.length,
+  1,
+  'All five-second live data must use one snapshot repository call.',
+)
+assert.equal(
+  context.match(/useAdaptiveLiveSync\(/g)?.length,
+  1,
+  'Only one adaptive live-sync loop may be mounted.',
+)
+assert.match(context, /liveSnapshotInFlightRef/)
+assert.match(context, /canShareInFlightRequest/)
+assert.match(adaptiveSyncHook, /if \(disposed \|\| running\)/)
+assert.match(adaptiveSyncHook, /BACKGROUND_LIVE_SYNC_INTERVAL_MS/)
 assert.doesNotMatch(displayPage, /useAdaptiveLiveSync|supabaseDisplayStateRepository/)
 assert.doesNotMatch(adminPage, /useAdaptiveLiveSync|supabaseDisplayStateRepository\./)
+assert.doesNotMatch(learningSupport, /supabase|fetch\(|\.rpc\(/i)
+assert.equal(
+  context.match(/ensureAnonymousParticipant\(/g)?.length,
+  1,
+  'Participant insertion is allowed only during lecture join.',
+)
 assert.doesNotMatch(
   commentsRepository.match(/async createVisibleComment[\s\S]*?\n  },/)?.[0] ?? '',
   /ensureAnonymousParticipant/,

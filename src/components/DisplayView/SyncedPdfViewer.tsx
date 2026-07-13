@@ -28,6 +28,8 @@ export function SyncedPdfViewer({
   const asset = getLecturePdfAsset(documentId)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const remotePageRef = useRef(remotePage)
+  remotePageRef.current = remotePage
   const renderTaskRef = useRef<ReturnType<
     Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']
   > | null>(null)
@@ -148,7 +150,10 @@ export function SyncedPdfViewer({
         if (!active) {
           return
         }
-        const initialPage = 1
+        const initialPage = Math.min(
+          Math.max(remotePageRef.current ?? 1, 1),
+          loadedPdf.numPages,
+        )
         setPdfDocument(loadedPdf)
         setCurrentPage(initialPage)
         setTotalPages(loadedPdf.numPages)
@@ -223,27 +228,40 @@ export function SyncedPdfViewer({
           </div>
         </div>
         <div className="pdf-page-controls">
-          <button
-            aria-label="前のページ"
-            className="icon-button"
-            disabled={!pdfDocument || currentPage <= 1 || isLoading}
-            onClick={() => void moveToPage(currentPage - 1, true)}
-            type="button"
-          >
-            <AppIcon name="arrow-left" size={19} />
-          </button>
-          <span className="metric">
-            {pdfDocument ? `${currentPage} / ${totalPages}` : '— / —'}
-          </span>
-          <button
-            aria-label="次のページ"
-            className="icon-button"
-            disabled={!pdfDocument || currentPage >= totalPages || isLoading}
-            onClick={() => void moveToPage(currentPage + 1, true)}
-            type="button"
-          >
-            <AppIcon name="arrow-right" size={19} />
-          </button>
+          {presenterLocked ? (
+            <>
+              <span className="presenter-sync-badge">
+                <i /> 教員同期
+              </span>
+              <span className="metric">
+                {pdfDocument ? `${currentPage} / ${totalPages}` : '— / —'}
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                aria-label="前のページ"
+                className="icon-button"
+                disabled={!pdfDocument || currentPage <= 1 || isLoading}
+                onClick={() => void moveToPage(currentPage - 1, true)}
+                type="button"
+              >
+                <AppIcon name="arrow-left" size={19} />
+              </button>
+              <span className="metric">
+                {pdfDocument ? `${currentPage} / ${totalPages}` : '— / —'}
+              </span>
+              <button
+                aria-label="次のページ"
+                className="icon-button"
+                disabled={!pdfDocument || currentPage >= totalPages || isLoading}
+                onClick={() => void moveToPage(currentPage + 1, true)}
+                type="button"
+              >
+                <AppIcon name="arrow-right" size={19} />
+              </button>
+            </>
+          )}
         </div>
         {!presenterLocked ? (
           <button
