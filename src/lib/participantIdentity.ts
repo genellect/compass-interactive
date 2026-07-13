@@ -15,10 +15,6 @@ function getStorageKey(baseKey: string, lectureSessionId?: string) {
   return lectureSessionId ? `${baseKey}:${lectureSessionId}` : baseKey
 }
 
-function createParticipantKey() {
-  return `participant-${createParticipantId()}`
-}
-
 function clearLegacyParticipantKeyStorage(lectureSessionId?: string) {
   window.localStorage.removeItem('compass-interactive-participant-key')
   window.localStorage.removeItem('compass-interactive-participant-key-owner')
@@ -48,19 +44,6 @@ export function restoreLocalParticipantId(lectureSessionId?: string) {
   }
 
   return storedParticipantId
-}
-
-export function getOrCreateLocalParticipantKey(
-  participantId: string,
-  lectureSessionId?: string,
-) {
-  if (isParticipantUuid(participantId)) {
-    clearLegacyParticipantKeyStorage(lectureSessionId)
-    return `participant-${participantId}`
-  }
-
-  clearLegacyParticipantKeyStorage(lectureSessionId)
-  return createParticipantKey()
 }
 
 export function persistLocalParticipantIdentity(

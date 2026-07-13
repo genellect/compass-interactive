@@ -1,13 +1,20 @@
 import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { LectureStatus } from '../types'
 
 type JoinLectureByCodeRow = {
   lecture_session_id: string
+  participant_id?: string
   title: string
   starts_at: string | null
   ends_at: string | null
   status: LectureStatus
+}
+
+export type JoinedLectureWithParticipant = {
+  lecture: JoinedLectureSession
+  participantId: string
 }
 
 function getJoinErrorMessage(message: string) {
@@ -51,6 +58,7 @@ export const supabaseLectureRepository = {
     lectureSessionId: string,
   ): Promise<JoinedLectureSession | null> {
     assertSupabaseConfigured()
+    await ensureAnonymousAuthSession()
 
     const { data, error } = await supabase.rpc('get_lecture_session_state', {
       target_lecture_session_id: lectureSessionId,
@@ -66,7 +74,9 @@ export const supabaseLectureRepository = {
     return row ? mapJoinedLecture(row) : null
   },
 
-  async joinLectureByCode(lectureCode: string): Promise<JoinedLectureSession> {
+  async joinLectureByCode(
+    lectureCode: string,
+  ): Promise<JoinedLectureWithParticipant> {
     assertSupabaseConfigured()
 
     const trimmedCode = lectureCode.trim()
@@ -74,6 +84,8 @@ export const supabaseLectureRepository = {
     if (!trimmedCode) {
       throw new Error('講義コードを入力してください。')
     }
+
+    await ensureAnonymousAuthSession()
 
     const { data, error } = await supabase.rpc('join_lecture_by_code', {
       lecture_code: trimmedCode,
@@ -90,6 +102,13 @@ export const supabaseLectureRepository = {
       throw new Error('講義コードが見つかりません。')
     }
 
-    return mapJoinedLecture(row)
+    if (!row.participant_id) {
+      throw new Error('参加者IDを発行できませんでした。')
+    }
+
+    return {
+      lecture: mapJoinedLecture(row),
+      participantId: row.participant_id,
+    }
   },
 }

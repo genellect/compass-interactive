@@ -274,6 +274,7 @@ export type Database = {
       }
       participants: {
         Row: {
+          auth_user_id: string | null
           id: string
           joined_at: string
           last_seen_at: string | null
@@ -281,6 +282,7 @@ export type Database = {
           participant_key: string
         }
         Insert: {
+          auth_user_id?: string | null
           id?: string
           joined_at?: string
           last_seen_at?: string | null
@@ -288,6 +290,7 @@ export type Database = {
           participant_key: string
         }
         Update: {
+          auth_user_id?: string | null
           id?: string
           joined_at?: string
           last_seen_at?: string | null
@@ -579,7 +582,6 @@ export type Database = {
           known_polls_version?: number
           known_state_version?: number
           target_lecture_session_id: string
-          target_participant_id?: string
         }
         Returns: Json
       }
@@ -611,6 +613,7 @@ export type Database = {
         Returns: {
           ends_at: string
           lecture_session_id: string
+          participant_id: string
           starts_at: string
           status: string
           title: string

@@ -17,10 +17,13 @@ const read = (path) => readFileSync(join(root, path), 'utf8')
 
 const current = { comments: 5, display: 2, likes: 3, polls: 4, state: 9 }
 assert.deepEqual(getRequestedLiveStateVersions(current), current)
-assert.deepEqual(getRequestedLiveStateVersions(current, { forceComments: true }), {
-  ...current,
-  comments: null,
-})
+assert.deepEqual(
+  getRequestedLiveStateVersions(current, { forceComments: true }),
+  {
+    ...current,
+    comments: null,
+  },
+)
 assert.deepEqual(getRequestedLiveStateVersions(current, { forceAll: true }), {
   comments: null,
   display: null,
@@ -63,9 +66,19 @@ const displayPage = read('src/pages/DisplayPage.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adaptiveSyncHook = read('src/hooks/useAdaptiveLiveSync.ts')
 const commentsRepository = read('src/repositories/supabaseCommentRepository.ts')
-const learningSupport = read('src/components/LearningSupport/LearningSupport.tsx')
+const liveStateRepository = read(
+  'src/repositories/supabaseLiveStateRepository.ts',
+)
+const learningSupport = read(
+  'src/components/LearningSupport/LearningSupport.tsx',
+)
 const pollsRepository = read('src/repositories/supabasePollRepository.ts')
-const migration = read('supabase/migrations/20260711020445_live_state_integration.sql')
+const migration = read(
+  'supabase/migrations/20260711020445_live_state_integration.sql',
+)
+const phase0Migration = read(
+  'supabase/migrations/20260713142227_phase0_auth_hardening.sql',
+)
 
 assert.match(context, /await refreshLiveSnapshot\(\)/)
 assert.doesNotMatch(context, /Promise\.allSettled/)
@@ -83,16 +96,22 @@ assert.match(context, /liveSnapshotInFlightRef/)
 assert.match(context, /canShareInFlightRequest/)
 assert.match(adaptiveSyncHook, /if \(disposed \|\| running\)/)
 assert.match(adaptiveSyncHook, /BACKGROUND_LIVE_SYNC_INTERVAL_MS/)
-assert.doesNotMatch(displayPage, /useAdaptiveLiveSync|supabaseDisplayStateRepository/)
-assert.doesNotMatch(adminPage, /useAdaptiveLiveSync|supabaseDisplayStateRepository\./)
-assert.doesNotMatch(learningSupport, /supabase|fetch\(|\.rpc\(/i)
-assert.equal(
-  context.match(/ensureAnonymousParticipant\(/g)?.length,
-  1,
-  'Participant insertion is allowed only during lecture join.',
+assert.doesNotMatch(
+  displayPage,
+  /useAdaptiveLiveSync|supabaseDisplayStateRepository/,
 )
 assert.doesNotMatch(
-  commentsRepository.match(/async createVisibleComment[\s\S]*?\n  },/)?.[0] ?? '',
+  adminPage,
+  /useAdaptiveLiveSync|supabaseDisplayStateRepository\./,
+)
+assert.doesNotMatch(learningSupport, /supabase|fetch\(|\.rpc\(/i)
+assert.doesNotMatch(
+  context,
+  /ensureAnonymousParticipant|subscribeToVisibleCommentInserts/,
+)
+assert.doesNotMatch(
+  commentsRepository.match(/async createVisibleComment[\s\S]*?\n  },/)?.[0] ??
+    '',
   /ensureAnonymousParticipant/,
 )
 assert.doesNotMatch(
@@ -100,7 +119,10 @@ assert.doesNotMatch(
   /ensureAnonymousParticipant/,
 )
 assert.doesNotMatch(pollsRepository, /ensureAnonymousParticipant|participants/)
-assert.match(commentsRepository, /onConnected\?\.\(\)/)
+assert.doesNotMatch(commentsRepository, /\.channel\(|postgres_changes/)
+assert.doesNotMatch(commentsRepository, /from\('participants'\)/)
+assert.doesNotMatch(liveStateRepository, /target_participant_id/)
+assert.match(liveStateRepository, /current_participant_id/)
 
 for (const objectName of [
   'lecture_live_state',
@@ -111,5 +133,9 @@ for (const objectName of [
   assert.match(migration, new RegExp(`public\\.${objectName}\\b`))
 }
 assert.doesNotMatch(migration, /alter publication supabase_realtime add table/)
+assert.match(
+  phase0Migration,
+  /alter publication supabase_realtime drop table public\.comments/,
+)
 
 console.log('Milestone 2 live-state unit and static checks passed.')

@@ -20,7 +20,7 @@ SELECT ok(
 );
 SELECT ok(
   to_regprocedure(
-    'public.get_lecture_live_snapshot(uuid,uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)'
+    'public.get_lecture_live_snapshot(uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)'
   ) IS NOT NULL,
   'versioned snapshot RPC exists'
 );
@@ -34,11 +34,11 @@ SELECT ok(
 );
 SELECT ok(
   has_function_privilege(
-    'anon',
-    'public.get_lecture_live_snapshot(uuid,uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
+    'authenticated',
+    'public.get_lecture_live_snapshot(uuid,bigint,bigint,bigint,bigint,bigint,timestamptz,uuid,integer)',
     'EXECUTE'
   ),
-  'anonymous clients can execute snapshot RPC'
+  'authenticated clients can execute snapshot RPC'
 );
 SELECT ok(
   NOT has_table_privilege('anon', 'public.lecture_live_state', 'SELECT'),
@@ -84,19 +84,20 @@ INSERT INTO public.lecture_display_state (
   'presentation'
 );
 
-SET LOCAL ROLE anon;
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '41000000-0000-4000-8000-000000000001',
+  true
+);
 
-SELECT lives_ok(
-  $$
-    INSERT INTO public.participants (
-      id, lecture_session_id, participant_key
-    ) VALUES (
-      '41000000-0000-4000-8000-000000000001',
-      '11000000-0000-4000-8000-000000000001',
-      'live-state-participant'
-    )
-  $$,
-  'participant is inserted once at join time'
+SELECT is(
+  (
+    SELECT count(*)::integer
+    FROM public.join_lecture_by_code('LIVE2')
+  ),
+  1,
+  'join RPC creates the Auth-owned participant'
 );
 
 SELECT lives_ok(
@@ -106,7 +107,12 @@ SELECT lives_ok(
     ) VALUES (
       '51000000-0000-4000-8000-000000000001',
       '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001',
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '11000000-0000-4000-8000-000000000001'
+      ),
       'First live comment',
       '2026-07-11 00:00:00+00'
     )
@@ -121,7 +127,12 @@ SELECT lives_ok(
     ) VALUES (
       '11000000-0000-4000-8000-000000000001',
       '51000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '11000000-0000-4000-8000-000000000001'
+      )
     )
   $$,
   'like insert passes RLS and aggregate trigger'
@@ -134,7 +145,12 @@ SELECT lives_ok(
     ) VALUES (
       '11000000-0000-4000-8000-000000000001',
       '21000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001',
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '11000000-0000-4000-8000-000000000001'
+      ),
       ARRAY['31000000-0000-4000-8000-000000000001'::uuid]
     )
   $$,
@@ -144,8 +160,7 @@ SELECT lives_ok(
 SELECT is(
   (
     public.get_lecture_live_snapshot(
-      '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      '11000000-0000-4000-8000-000000000001'
     ) #>> '{comments,items,0,body}'
   ),
   'First live comment',
@@ -154,8 +169,7 @@ SELECT is(
 SELECT is(
   (
     public.get_lecture_live_snapshot(
-      '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      '11000000-0000-4000-8000-000000000001'
     ) #>> '{like_totals,0,like_count}'
   )::integer,
   1,
@@ -164,8 +178,7 @@ SELECT is(
 SELECT is(
   (
     public.get_lecture_live_snapshot(
-      '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      '11000000-0000-4000-8000-000000000001'
     ) #>> '{polls,0,options,0,response_count}'
   )::integer,
   1,
@@ -174,8 +187,7 @@ SELECT is(
 SELECT is(
   (
     public.get_lecture_live_snapshot(
-      '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      '11000000-0000-4000-8000-000000000001'
     ) #>> '{display,current_pdf_page}'
   )::integer,
   3,
@@ -185,11 +197,10 @@ SELECT is(
 RESET ROLE;
 CREATE TEMP TABLE first_snapshot AS
 SELECT public.get_lecture_live_snapshot(
-  '11000000-0000-4000-8000-000000000001',
-  '41000000-0000-4000-8000-000000000001'
+  '11000000-0000-4000-8000-000000000001'
 ) AS payload;
-GRANT SELECT ON first_snapshot TO anon;
-SET LOCAL ROLE anon;
+GRANT SELECT ON first_snapshot TO authenticated;
+SET LOCAL ROLE authenticated;
 
 SELECT ok(
   (
@@ -201,7 +212,6 @@ SELECT ok(
     CROSS JOIN LATERAL (
       SELECT public.get_lecture_live_snapshot(
         '11000000-0000-4000-8000-000000000001',
-        '41000000-0000-4000-8000-000000000001',
         (first.payload #>> '{versions,state}')::bigint,
         (first.payload #>> '{versions,comments}')::bigint,
         (first.payload #>> '{versions,likes}')::bigint,
@@ -220,7 +230,12 @@ SELECT lives_ok(
     ) VALUES (
       '51000000-0000-4000-8000-000000000002',
       '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001',
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '11000000-0000-4000-8000-000000000001'
+      ),
       'Recovered after reconnect',
       '2026-07-11 00:00:01+00'
     )
@@ -235,7 +250,6 @@ SELECT is(
     CROSS JOIN LATERAL (
       SELECT public.get_lecture_live_snapshot(
         '11000000-0000-4000-8000-000000000001',
-        '41000000-0000-4000-8000-000000000001',
         (first.payload #>> '{versions,state}')::bigint,
         (first.payload #>> '{versions,comments}')::bigint,
         (first.payload #>> '{versions,likes}')::bigint,
@@ -258,8 +272,7 @@ SELECT ok(
       AND polls > 0
       AND display > 0
     FROM public.get_lecture_live_snapshot(
-      '11000000-0000-4000-8000-000000000001',
-      '41000000-0000-4000-8000-000000000001'
+      '11000000-0000-4000-8000-000000000001'
     ) snapshot,
     LATERAL jsonb_to_record(snapshot->'versions') AS versions(
       comments bigint,

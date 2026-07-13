@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
+import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 
 export type PollResultSummary = {
   optionId: string
@@ -18,6 +19,8 @@ export const supabasePollRepository = {
     participantId: string
     pollId: string
   }) {
+    await ensureAnonymousAuthSession()
+
     const { error } = await supabase.from('poll_responses').insert({
       lecture_session_id: lectureSessionId,
       option_ids: optionIds,

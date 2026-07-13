@@ -44,8 +44,8 @@ SELECT is(
 
 SELECT is(
   (SELECT count(*)::integer FROM pg_policies WHERE schemaname = 'public'),
-  10,
-  'baseline creates the remote policy set'
+  6,
+  'Phase 0 keeps only the current least-privilege policy set'
 );
 
 SELECT ok(
@@ -62,12 +62,12 @@ SELECT ok(
 );
 SELECT is(
   (
-    SELECT array_agg(tablename ORDER BY tablename)::text
+    SELECT count(*)::integer
     FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public'
   ),
-  ARRAY['comments']::text,
-  'Realtime publication contains comments only'
+  0,
+  'student tables are removed from the Realtime publication'
 );
 
 INSERT INTO public.lecture_sessions (
@@ -106,23 +106,27 @@ VALUES (
 
 SET LOCAL ROLE anon;
 
+SELECT ok(
+  NOT has_function_privilege(
+    'anon',
+    'public.join_lecture_by_code(text)',
+    'EXECUTE'
+  ),
+  'unauthenticated clients cannot join a lecture'
+);
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '40000000-0000-4000-8000-000000000001',
+  true
+);
+
 SELECT is(
   (SELECT count(*)::integer FROM public.join_lecture_by_code('SMOKE')),
   1,
-  'anonymous client can join an open lecture by code'
-);
-
-SELECT lives_ok(
-  $$
-    INSERT INTO public.participants (
-      id, lecture_session_id, participant_key
-    ) VALUES (
-      '40000000-0000-4000-8000-000000000001',
-      '10000000-0000-4000-8000-000000000001',
-      'smoke-participant-key'
-    )
-  $$,
-  'participant RLS accepts a join for an open lecture'
+  'authenticated join creates one server-owned participant'
 );
 
 SELECT lives_ok(
@@ -132,7 +136,12 @@ SELECT lives_ok(
     ) VALUES (
       '50000000-0000-4000-8000-000000000001',
       '10000000-0000-4000-8000-000000000001',
-      '40000000-0000-4000-8000-000000000001',
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '10000000-0000-4000-8000-000000000001'
+      ),
       'Smoke comment'
     )
   $$,
@@ -156,20 +165,24 @@ SELECT lives_ok(
     ) VALUES (
       '10000000-0000-4000-8000-000000000001',
       '50000000-0000-4000-8000-000000000001',
-      '40000000-0000-4000-8000-000000000001'
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '10000000-0000-4000-8000-000000000001'
+      )
     )
   $$,
   'comment-like RLS accepts a valid like'
 );
 
-SELECT is(
-  (
-    SELECT count(*)::integer
-    FROM public.comment_likes
-    WHERE comment_id = '50000000-0000-4000-8000-000000000001'
+SELECT ok(
+  NOT has_table_privilege(
+    'authenticated',
+    'public.comment_likes',
+    'SELECT'
   ),
-  1,
-  'comment likes can be read for a visible comment'
+  'raw comment likes are not readable'
 );
 
 SELECT lives_ok(
@@ -179,7 +192,12 @@ SELECT lives_ok(
     ) VALUES (
       '10000000-0000-4000-8000-000000000001',
       '20000000-0000-4000-8000-000000000001',
-      '40000000-0000-4000-8000-000000000001',
+      (
+        SELECT id
+        FROM public.participants
+        WHERE auth_user_id = auth.uid()
+          AND lecture_session_id = '10000000-0000-4000-8000-000000000001'
+      ),
       ARRAY['30000000-0000-4000-8000-000000000001'::uuid]
     )
   $$,
@@ -188,14 +206,12 @@ SELECT lives_ok(
 
 SELECT is(
   (
-    SELECT response_count::integer
-    FROM public.get_open_poll_results(
+    public.get_lecture_live_snapshot(
       '10000000-0000-4000-8000-000000000001'
-    )
-    WHERE option_id = '30000000-0000-4000-8000-000000000001'
-  ),
+    ) #>> '{polls,0,options,0,response_count}'
+  )::integer,
   1,
-  'poll results RPC returns the aggregate count'
+  'snapshot returns the aggregate poll count'
 );
 
 SELECT is(

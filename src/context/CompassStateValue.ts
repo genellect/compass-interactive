@@ -7,7 +7,6 @@ import type {
   PollResponse,
   LectureRuntimeMode,
 } from '../types'
-import type { RealtimeCommentStatus } from '../repositories/supabaseCommentRepository'
 import type { PollResultSummary } from '../repositories/supabasePollRepository'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { DisplayState } from '../repositories/supabaseDisplayStateRepository'
@@ -41,7 +40,6 @@ export type CompassStateValue = {
   displayState: DisplayState | null
   displayStateError: string | null
   isSubmittingComment: boolean
-  realtimeCommentsStatus: RealtimeCommentStatus
   isSessionSyncPaused: boolean
   lastActivityAt: number
   resumeSessionSync: () => Promise<void>

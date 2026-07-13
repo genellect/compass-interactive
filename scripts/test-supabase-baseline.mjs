@@ -11,6 +11,7 @@ const baselineName = '20260710104958_remote_baseline.sql'
 const liveStateMigrationName = '20260711020445_live_state_integration.sql'
 const adminLifecycleMigrationName = '20260711080712_admin_lifecycle.sql'
 const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
+const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 
@@ -21,6 +22,7 @@ assert.deepEqual(
     liveStateMigrationName,
     adminLifecycleMigrationName,
     pdfSyncMigrationName,
+    phase0MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -67,6 +69,26 @@ assert.doesNotMatch(
 )
 assert.match(config, /major_version = 17/)
 assert.match(config, /\[db\.seed\][\s\S]*?enabled = false/)
+assert.match(config, /enable_anonymous_sign_ins = true/)
+
+const phase0Migration = readFileSync(
+  join(migrationsDir, phase0MigrationName),
+  'utf8',
+)
+assert.match(phase0Migration, /add column auth_user_id uuid null/)
+assert.match(phase0Migration, /participants_lecture_auth_user_uidx/)
+assert.match(
+  phase0Migration,
+  /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to authenticated/,
+)
+assert.doesNotMatch(
+  phase0Migration,
+  /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to anon/,
+)
+assert.match(
+  phase0Migration,
+  /alter publication supabase_realtime drop table public\.comments/,
+)
 
 for (const functionName of [
   'verify-admin-pin',
