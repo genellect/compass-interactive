@@ -1,2 +1,11 @@
-export { LectureSummaryPanel, LiveCaptionPanel } from './LearningSupport'
-export type { CaptionContent } from './LearningSupport'
+export {
+  FiveMinuteRecapPanel,
+  LiveCaptionPanel,
+  MaterialSummaryPanel,
+} from './LearningSupport'
+export type {
+  CaptionContent,
+  FiveMinuteRecap,
+  MaterialSummaryContent,
+  MaterialSummaryPoint,
+} from './LearningSupport'

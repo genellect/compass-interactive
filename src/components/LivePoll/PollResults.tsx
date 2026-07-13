@@ -1,3 +1,4 @@
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { Poll, PollResponse } from '../../types'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
 
@@ -8,6 +9,7 @@ type PollResultsProps = {
 }
 
 export function PollResults({ poll, results = [], responses }: PollResultsProps) {
+  const [areBarsVisible, setAreBarsVisible] = useState(false)
   const pollResponses = responses.filter((response) => response.pollId === poll.id)
   const resultCountByOption = new Map(
     results
@@ -25,6 +27,12 @@ export function PollResults({ poll, results = [], responses }: PollResultsProps)
   const hasRpcResults = results.some((result) => result.pollId === poll.id)
   const denominator = hasRpcResults ? totalResultSelections : totalSelections
 
+  useEffect(() => {
+    setAreBarsVisible(false)
+    const timer = window.setTimeout(() => setAreBarsVisible(true), 80)
+    return () => window.clearTimeout(timer)
+  }, [denominator, poll.id])
+
   return (
     <div className="poll-options">
       <div className="poll-result-header">
@@ -36,7 +44,7 @@ export function PollResults({ poll, results = [], responses }: PollResultsProps)
         <span className="metric">{denominator}票</span>
       </div>
 
-      {poll.options.map((option) => {
+      {poll.options.map((option, optionIndex) => {
         const localCount = pollResponses.filter((response) =>
           response.optionIds.includes(option.id),
         ).length
@@ -58,7 +66,14 @@ export function PollResults({ poll, results = [], responses }: PollResultsProps)
               aria-label={`${option.label}: ${count}件、${percent}%`}
               className="poll-bar"
             >
-              <span style={{ width: `${percent}%` }} />
+              <span
+                style={
+                  {
+                    width: areBarsVisible ? `${percent}%` : '0%',
+                    '--poll-delay': `${optionIndex * 110}ms`,
+                  } as CSSProperties
+                }
+              />
             </div>
           </div>
         )

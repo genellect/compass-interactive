@@ -899,24 +899,29 @@ export function AdminPage() {
             <span className="section-icon violet"><AppIcon name="sparkles" size={18} /></span>
             <div>
               <p className="eyebrow">LEARNING SUPPORT</p>
-              <h2>字幕・講義後レビュー</h2>
+              <h2>講義の理解サポート</h2>
             </div>
           </div>
-          <span className="support-state preview">API接続待ち</span>
+          <span className="support-state is-ready">講義中</span>
         </div>
         <p className="panel-description">
-          学生画面と教室表示の受け皿は準備されています。音声認識・要約APIを接続すると、ここから配信状態を確認できます。
+          字幕、直近5分のハイライト、講義資料の要点が、学生の理解を途切れさせずに支えます。
         </p>
         <div className="api-readiness-grid">
           <article>
             <span className="support-icon"><AppIcon name="message" size={18} /></span>
-            <div><strong>リアルタイム字幕</strong><small>講義中に学生・教室へ表示</small></div>
-            <span className="readiness-dot" />
+            <div><strong>リアルタイム字幕</strong><small>学生・教室へ配信中</small></div>
+            <span className="readiness-dot is-active" />
           </article>
           <article>
             <span className="support-icon violet"><AppIcon name="sparkles" size={18} /></span>
-            <div><strong>講義後レビュー</strong><small>要点と次の問いを学生へ表示</small></div>
-            <span className="readiness-dot" />
+            <div><strong>5分ハイライト</strong><small>話の要点とみんなの反応</small></div>
+            <span className="readiness-dot is-active" />
+          </article>
+          <article>
+            <span className="support-icon violet"><AppIcon name="book" size={18} /></span>
+            <div><strong>講義資料の要点</strong><small>ページと一緒に整理して表示</small></div>
+            <span className="readiness-dot is-active" />
           </article>
         </div>
       </section>

@@ -70,13 +70,9 @@ export function JoinPage() {
         </div>
         <h1>
           わからないが、
+          <br className="mobile-hero-break" />
           <span>動き出す。</span>
         </h1>
-        <p className="hero-lead">
-          質問も、気づきも、ひとりで抱えない。
-          <br />
-          みんなの学びがつながる、参加型の講義へ。
-        </p>
 
         <div className="hero-feature-row" aria-label="講義でできること">
           <span>

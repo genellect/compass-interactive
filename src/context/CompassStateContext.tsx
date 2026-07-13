@@ -243,6 +243,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const liveStateVersionsRef = useRef<LiveStateVersions>(
     createEmptyLiveStateVersions(),
   )
+  const liveSnapshotInFlightRef = useRef<Promise<JoinedLectureSession | null> | null>(
+    null,
+  )
   const commentCursorRef = useRef<CommentCursor | null>(null)
   const [currentParticipantId, setCurrentParticipantId] = useState<
     string | null
@@ -368,6 +371,17 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       return hydrateDemo().session
     }
 
+    const canShareInFlightRequest =
+      !forceAll &&
+      !forceComments &&
+      !forceDisplay &&
+      !forceLikes &&
+      !forcePolls &&
+      !showLoading
+    if (canShareInFlightRequest && liveSnapshotInFlightRef.current) {
+      return liveSnapshotInFlightRef.current
+    }
+
     if (showLoading) {
       setCommentsLoading(true)
       setPollsLoading(true)
@@ -379,7 +393,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setPollResultsError(null)
     setDisplayStateError(null)
 
-    try {
+    const snapshotRequest = (async () => {
+      try {
       const knownVersions = liveStateVersionsRef.current
       const snapshot = await supabaseLiveStateRepository.getSnapshot({
         commentCursor: commentCursorRef.current,
@@ -445,20 +460,30 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         setRealtimeCommentsStatus('disconnected')
       }
 
-      return snapshot.lecture
-    } catch (error) {
-      const message = error instanceof Error
-        ? error.message
-        : 'live snapshotの取得に失敗しました。'
-      setCommentsError(message)
-      setPollsError(message)
-      setPollResultsError(message)
-      setDisplayStateError(message)
-      throw error
+        return snapshot.lecture
+      } catch (error) {
+        const message = error instanceof Error
+          ? error.message
+          : 'live snapshotの取得に失敗しました。'
+        setCommentsError(message)
+        setPollsError(message)
+        setPollResultsError(message)
+        setDisplayStateError(message)
+        throw error
+      } finally {
+        if (showLoading) {
+          setCommentsLoading(false)
+          setPollsLoading(false)
+        }
+      }
+    })()
+
+    liveSnapshotInFlightRef.current = snapshotRequest
+    try {
+      return await snapshotRequest
     } finally {
-      if (showLoading) {
-        setCommentsLoading(false)
-        setPollsLoading(false)
+      if (liveSnapshotInFlightRef.current === snapshotRequest) {
+        liveSnapshotInFlightRef.current = null
       }
     }
   }, [

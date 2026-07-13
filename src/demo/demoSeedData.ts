@@ -18,7 +18,7 @@ export const demoLecture: LectureSession = {
 export const demoDisplayState: DisplayState = {
   lectureSessionId: DEMO_LECTURE_ID,
   pdfDocumentId: 'why-learn-english-v1',
-  currentPdfPage: 6,
+  currentPdfPage: 3,
   displayMode: 'normal',
   updatedAt: '2026-01-01T00:05:00.000Z',
 }
@@ -76,7 +76,7 @@ export const demoPolls: Poll[] = [
       {
         id: 'demo-option-1',
         pollId: 'demo-poll-1',
-        label: '原文から情報の確かさを判断できる',
+        label: '世界中の仲間と一緒に挑戦できる',
         order: 1,
       },
       {

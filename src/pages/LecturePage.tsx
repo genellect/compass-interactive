@@ -1,10 +1,12 @@
+import { useEffect, useState } from 'react'
 import { CommentInput, LiveBoard } from '../components/LiveBoard'
 import { LivePoll } from '../components/LivePoll'
 import { SyncedPdfViewer } from '../components/DisplayView'
 import { AppIcon } from '../components/AppIcon'
 import {
-  LectureSummaryPanel,
+  FiveMinuteRecapPanel,
   LiveCaptionPanel,
+  MaterialSummaryPanel,
 } from '../components/LearningSupport'
 import { useCompassState } from '../hooks/useCompassState'
 
@@ -41,6 +43,28 @@ export function LecturePage() {
   const isJoined = Boolean(
     hasJoinedLectureSession && currentParticipantId && activeLectureSessionId,
   )
+  const [demoParticipantCount, setDemoParticipantCount] = useState(
+    lecture.expectedParticipants,
+  )
+
+  useEffect(() => {
+    setDemoParticipantCount(lecture.expectedParticipants)
+    if (runtimeMode !== 'demo') {
+      return
+    }
+
+    const changes = [1, 2, -1, 1, 1, -2, 2]
+    let changeIndex = 0
+    const timer = window.setInterval(() => {
+      setDemoParticipantCount((current) => {
+        const next = current + changes[changeIndex]
+        changeIndex = (changeIndex + 1) % changes.length
+        return Math.min(224, Math.max(216, next))
+      })
+    }, 2600)
+
+    return () => window.clearInterval(timer)
+  }, [lecture.expectedParticipants, runtimeMode])
 
   return (
     <main className="page-shell lecture-page">
@@ -60,9 +84,12 @@ export function LecturePage() {
         <div className="lecture-metrics" aria-label="講義の現在状況">
           <span>
             <AppIcon name="users" size={18} />
-            <strong>
+            <strong
+              className={runtimeMode === 'demo' ? 'participant-number' : undefined}
+              key={runtimeMode === 'demo' ? demoParticipantCount : undefined}
+            >
               {runtimeMode === 'demo'
-                ? lecture.expectedParticipants
+                ? demoParticipantCount
                 : participants.length}
             </strong>
             人参加
@@ -201,6 +228,8 @@ export function LecturePage() {
 
       <LiveCaptionPanel compact isDemo={runtimeMode === 'demo'} />
 
+      <FiveMinuteRecapPanel isDemo={runtimeMode === 'demo'} />
+
       <section className="lecture-participation">
         <div className="participation-main">
           <CommentInput
@@ -216,7 +245,7 @@ export function LecturePage() {
         </div>
 
         <aside className="lecture-review-rail">
-          <LectureSummaryPanel isDemo={runtimeMode === 'demo'} />
+          <MaterialSummaryPanel isDemo={runtimeMode === 'demo'} />
         </aside>
       </section>
 
@@ -226,6 +255,9 @@ export function LecturePage() {
         </a>
         <a href="#lecture-poll">
           <AppIcon name="poll" size={18} /> 投票
+        </a>
+        <a className="has-update" href="#lecture-recap">
+          <AppIcon name="sparkles" size={18} /> 要点
         </a>
         <a href="#lecture-question">
           <AppIcon name="message" size={18} /> 質問
