@@ -69,9 +69,9 @@ export function JoinPage() {
           COMPASS Interactive
         </div>
         <h1>
-          わからないが、
+          <span className="hero-line hero-primary-line">わからないが、</span>
           <br className="mobile-hero-break" />
-          <span>動き出す。</span>
+          <span className="hero-line hero-accent-line">動き出す。</span>
         </h1>
 
         <div className="hero-feature-row" aria-label="講義でできること">

@@ -51,8 +51,10 @@
 }
 
 .brand strong {
+  font-size: 0.9rem;
   font-weight: 950;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.055em;
+  white-space: nowrap;
 }
 
 .brand small {
@@ -1506,11 +1508,16 @@ input:disabled {
   margin: 0;
 }
 
-.join-hero-copy > h1 span {
+.join-hero-copy > h1 .hero-accent-line {
   background: linear-gradient(100deg, #ffffff 4%, #74e5ff 50%, #f2d48c 96%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.hero-primary-line {
+  color: inherit;
+  white-space: nowrap;
 }
 
 .mobile-hero-break {
@@ -3318,7 +3325,7 @@ input:disabled {
   .brand-mark { height: 34px; width: 34px; }
   .brand-mark::before { inset: 8px; }
   .brand-mark::after { height: 23px; left: 15px; top: 5px; }
-  .brand strong { font-size: .86rem; }
+  .brand strong { font-size: .78rem; }
   .brand small { font-size: .58rem; }
 
   .app-header nav {
@@ -3344,7 +3351,11 @@ input:disabled {
   }
 
   .join-hero-copy > h1 {
-    font-size: clamp(2.75rem, 14vw, 4rem);
+    font-size: clamp(2.35rem, 12vw, 3.35rem);
+  }
+
+  .join-hero-copy > h1 .hero-line {
+    display: inline-block;
   }
 
   .hero-lead br { display: none; }
@@ -3812,7 +3823,7 @@ input:disabled {
   color: #10263c;
 }
 
-.theme-light .join-hero-copy > h1 span {
+.theme-light .join-hero-copy > h1 .hero-accent-line {
   background: linear-gradient(100deg, #14324c 4%, #1677a8 54%, #a77b27 100%);
   -webkit-background-clip: text;
   background-clip: text;
