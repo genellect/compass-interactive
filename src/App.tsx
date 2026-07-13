@@ -72,8 +72,8 @@ function AppShell() {
         <a className="brand" href="/join" aria-label="COMPASS Interactive">
           <span className="brand-mark" aria-hidden="true" />
           <span>
-            <strong>COMPASS</strong>
-            <small>Interactive</small>
+            <strong>COMPASS Interactive</strong>
+            <small>Lecture Experience</small>
           </span>
         </a>
         <nav aria-label="画面切り替え">
