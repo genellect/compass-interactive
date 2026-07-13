@@ -14,6 +14,8 @@ const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
 const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
+const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
+const turnstilePath = join(root, 'src', 'lib', 'turnstile.ts')
 
 assert.deepEqual(
   readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')),
@@ -70,6 +72,16 @@ assert.doesNotMatch(
 assert.match(config, /major_version = 17/)
 assert.match(config, /\[db\.seed\][\s\S]*?enabled = false/)
 assert.match(config, /enable_anonymous_sign_ins = true/)
+
+const anonymousAuth = readFileSync(anonymousAuthPath, 'utf8')
+const turnstile = readFileSync(turnstilePath, 'utf8')
+assert.match(anonymousAuth, /getAnonymousSignInCaptchaToken/)
+assert.match(anonymousAuth, /options: \{ captchaToken \}/)
+assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
+assert.match(
+  turnstile,
+  /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,
+)
 
 const phase0Migration = readFileSync(
   join(migrationsDir, phase0MigrationName),

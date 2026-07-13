@@ -1,9 +1,13 @@
 import { assertSupabaseConfigured, supabase } from './supabaseClient'
+import { getAnonymousSignInCaptchaToken } from './turnstile'
 
 let anonymousSignInRequest: Promise<string> | null = null
 
 async function createAnonymousSession() {
-  const { data, error } = await supabase.auth.signInAnonymously()
+  const captchaToken = await getAnonymousSignInCaptchaToken()
+  const { data, error } = await supabase.auth.signInAnonymously(
+    captchaToken ? { options: { captchaToken } } : undefined,
+  )
 
   if (error) {
     throw new Error(`匿名セッションの開始に失敗しました: ${error.message}`)

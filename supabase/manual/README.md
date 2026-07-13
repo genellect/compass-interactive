@@ -14,15 +14,18 @@ Data repair and demo seed operations belong in reviewed scripts or
 
 Before deploying `20260713142227_phase0_auth_hardening.sql`:
 
-1. Enable Anonymous Sign-Ins in Supabase Dashboard > Authentication > Providers.
-2. Keep the anonymous-user IP rate limit at 30/hour or lower for the MVP.
-3. Configure Cloudflare Turnstile in Supabase Auth before sharing a public URL.
+1. Create a Cloudflare Turnstile widget for the production hostname and add its
+   public site key to Cloudflare Pages as `VITE_TURNSTILE_SITE_KEY`.
+2. Keep the Turnstile secret key only in Supabase Auth > Attack Protection.
+3. Keep the anonymous-user IP rate limit at 30/hour or lower for the MVP.
 4. Deploy the database migration before the matching frontend bundle. The old
    frontend sends `target_participant_id`; the new RPC intentionally rejects it.
-5. Run all SQL tests, then rerun Supabase Security and Performance Advisors.
-6. Verify two isolated browsers receive different participant IDs and cannot
+5. Enable Anonymous Sign-Ins and Turnstile protection during the same controlled
+   maintenance window, then immediately deploy the matching frontend bundle.
+6. Run all SQL tests, then rerun Supabase Security and Performance Advisors.
+7. Verify two isolated browsers receive different participant IDs and cannot
    write with the other browser's ID.
-7. Confirm `comments` is absent from `supabase_realtime` and the browser opens
+8. Confirm `comments` is absent from `supabase_realtime` and the browser opens
    no Postgres Changes channel.
 
 Do not add OpenAI, Cloudflare API, or billing secrets until this gate passes in

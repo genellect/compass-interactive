@@ -73,3 +73,35 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+/* Turnstile is shown only while a new anonymous Auth session is created. */
+.turnstile-challenge-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(3 8 20 / 72%);
+  backdrop-filter: blur(8px);
+}
+
+.turnstile-challenge-card {
+  width: min(100%, 420px);
+  padding: 20px;
+  border: 1px solid rgb(148 163 184 / 24%);
+  border-radius: 18px;
+  color: #e2e8f0;
+  background: #101827;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 42%);
+}
+
+.turnstile-challenge-card p {
+  margin: 0 0 14px;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.turnstile-challenge-widget {
+  min-height: 65px;
+}

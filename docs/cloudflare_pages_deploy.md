@@ -21,6 +21,7 @@ Production environment variables:
 ```text
 VITE_SUPABASE_URL
 VITE_SUPABASE_PUBLISHABLE_KEY
+VITE_TURNSTILE_SITE_KEY
 ```
 
 Do not set these in Cloudflare Pages frontend environment variables:
@@ -35,9 +36,13 @@ DATABASE_PASSWORD
 OPENAI_API_KEY
 VITE_ADMIN_PIN
 VITE_OPENAI_API_KEY
+VITE_TURNSTILE_SECRET_KEY
 ```
 
 Admin and service-role secrets belong in Supabase Edge Function Secrets, not in Cloudflare Pages.
+The Turnstile site key is public and belongs in Cloudflare Pages. The Turnstile
+secret key belongs only in Supabase Dashboard > Authentication > Attack
+Protection and must never use a `VITE_` prefix.
 
 ## If Cloudflare GitHub Login Fails
 
