@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import {
   BACKGROUND_LIVE_SYNC_INTERVAL_MS,
+  getHiddenLiveSyncDelay,
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
   LIVE_SYNC_INTERVAL_MS,
@@ -12,20 +13,6 @@ type UseAdaptiveLiveSyncOptions = {
   foregroundIntervalMs?: number
   onSync: () => Promise<void> | void
   runImmediately?: boolean
-}
-
-function getCurrentInterval({
-  backgroundIntervalMs,
-  foregroundIntervalMs,
-}: {
-  backgroundIntervalMs: number
-  foregroundIntervalMs: number
-}) {
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    return backgroundIntervalMs
-  }
-
-  return foregroundIntervalMs
 }
 
 export function useAdaptiveLiveSync({
@@ -42,6 +29,9 @@ export function useAdaptiveLiveSync({
 
     let disposed = false
     let failureCount = 0
+    let hiddenSince =
+      document.visibilityState === 'hidden' ? Date.now() : null
+    let hiddenSyncCompleted = false
     let running = false
     let timeoutId: number | null = null
 
@@ -52,21 +42,42 @@ export function useAdaptiveLiveSync({
       }
     }
 
-    function scheduleNextSync(delay = getCurrentInterval({
-      backgroundIntervalMs,
-      foregroundIntervalMs,
-    })) {
+    function scheduleSync(delay: number, countsAsHiddenSync: boolean) {
       if (disposed) {
         return
       }
 
       clearScheduledSync()
       timeoutId = window.setTimeout(() => {
-        void runSync()
+        void runSync(countsAsHiddenSync)
       }, delay)
     }
 
-    async function runSync() {
+    function scheduleHiddenSync() {
+      const elapsedHiddenMs = hiddenSince ? Date.now() - hiddenSince : 0
+      const delay = getHiddenLiveSyncDelay({
+        backgroundIntervalMs,
+        elapsedHiddenMs,
+        hiddenSyncCompleted,
+      })
+
+      if (delay !== null) {
+        scheduleSync(delay, true)
+      }
+    }
+
+    function scheduleForegroundSync() {
+      scheduleSync(
+        getLiveSyncBackoffDelay({
+          backgroundIntervalMs,
+          failureCount,
+          foregroundIntervalMs,
+        }) + getLiveSyncJitter(),
+        false,
+      )
+    }
+
+    async function runSync(countsAsHiddenSync = false) {
       if (disposed || running) {
         return
       }
@@ -80,15 +91,15 @@ export function useAdaptiveLiveSync({
         failureCount += 1
       } finally {
         running = false
-        scheduleNextSync(
-          document.visibilityState === 'hidden'
-            ? backgroundIntervalMs
-            : getLiveSyncBackoffDelay({
-                backgroundIntervalMs,
-                failureCount,
-                foregroundIntervalMs,
-              }),
-        )
+
+        if (document.visibilityState === 'hidden') {
+          if (countsAsHiddenSync) {
+            hiddenSyncCompleted = true
+          }
+          scheduleHiddenSync()
+        } else {
+          scheduleForegroundSync()
+        }
       }
     }
 
@@ -96,20 +107,23 @@ export function useAdaptiveLiveSync({
       clearScheduledSync()
 
       if (document.visibilityState === 'visible') {
+        hiddenSince = null
+        hiddenSyncCompleted = false
         void runSync()
         return
       }
 
-      scheduleNextSync(backgroundIntervalMs)
+      hiddenSince = Date.now()
+      hiddenSyncCompleted = false
+      scheduleHiddenSync()
     }
 
-    if (runImmediately) {
-      scheduleNextSync(getLiveSyncJitter())
+    if (document.visibilityState === 'hidden') {
+      scheduleHiddenSync()
+    } else if (runImmediately) {
+      scheduleSync(getLiveSyncJitter(), false)
     } else {
-      scheduleNextSync(getCurrentInterval({
-        backgroundIntervalMs,
-        foregroundIntervalMs,
-      }) + getLiveSyncJitter())
+      scheduleSync(foregroundIntervalMs + getLiveSyncJitter(), false)
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 

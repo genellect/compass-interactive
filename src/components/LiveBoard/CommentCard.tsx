@@ -35,7 +35,7 @@ export function CommentCard({
           <i aria-hidden="true">?</i>
           匿名の参加者
         </span>
-        <span>{timeLabel}</span>
+        <span>{comment.isPending ? '送信中…' : timeLabel}</span>
       </div>
 
       {mode === 'admin' && (comment.isPinned || comment.status === 'hidden') ? (
@@ -53,7 +53,7 @@ export function CommentCard({
         <span className="like-count">
           <AppIcon name="heart" size={15} /> {comment.likeCount}
         </span>
-        {mode === 'student' && onToggleLike ? (
+        {mode === 'student' && onToggleLike && !comment.isPending ? (
           <button
             className={`text-button ${hasLiked ? 'is-active' : ''}`}
             disabled={hasLiked}

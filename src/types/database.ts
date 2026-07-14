@@ -194,39 +194,51 @@ export type Database = {
       }
       lecture_live_state: {
         Row: {
+          caption_version: number
           comments_version: number
           current_pdf_page: number
           display_mode: string
           display_version: number
+          lecture_version: number
           lecture_session_id: string
           likes_version: number
           pdf_document_id: string | null
+          pdf_version: number
           polls_version: number
           state_version: number
+          summaries_version: number
           updated_at: string
         }
         Insert: {
+          caption_version?: number
           comments_version?: number
           current_pdf_page?: number
           display_mode?: string
           display_version?: number
+          lecture_version?: number
           lecture_session_id: string
           likes_version?: number
           pdf_document_id?: string | null
+          pdf_version?: number
           polls_version?: number
           state_version?: number
+          summaries_version?: number
           updated_at?: string
         }
         Update: {
+          caption_version?: number
           comments_version?: number
           current_pdf_page?: number
           display_mode?: string
           display_version?: number
+          lecture_version?: number
           lecture_session_id?: string
           likes_version?: number
           pdf_document_id?: string | null
+          pdf_version?: number
           polls_version?: number
           state_version?: number
+          summaries_version?: number
           updated_at?: string
         }
         Relationships: [
@@ -581,6 +593,35 @@ export type Database = {
           known_likes_version?: number
           known_polls_version?: number
           known_state_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      get_lecture_public_snapshot_v2: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          known_caption_version?: number
+          known_comments_version?: number
+          known_lecture_version?: number
+          known_likes_version?: number
+          known_pdf_version?: number
+          known_polls_version?: number
+          known_summaries_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      get_lecture_participant_state_v2: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
+      get_lecture_comment_history_v2: {
+        Args: {
+          before_comment_id: string
+          before_created_at: string
+          history_limit?: number
           target_lecture_session_id: string
         }
         Returns: Json

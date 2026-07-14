@@ -5,7 +5,10 @@ import { CommentCard } from './CommentCard'
 type LiveBoardProps = {
   comments: LiveComment[]
   currentParticipantId?: string | null
+  hasOlderComments?: boolean
+  isLoadingOlderComments?: boolean
   mode?: 'student' | 'admin' | 'display'
+  onLoadOlderComments?: () => void | Promise<void>
   onToggleLike?: (commentId: string) => void | Promise<void>
   onTogglePinned?: (commentId: string) => void
   onToggleVisibility?: (commentId: string) => void
@@ -23,7 +26,10 @@ function sortForDisplay(comments: LiveComment[]) {
 export function LiveBoard({
   comments,
   currentParticipantId,
+  hasOlderComments = false,
+  isLoadingOlderComments = false,
   mode = 'student',
+  onLoadOlderComments,
   onToggleLike,
   onTogglePinned,
   onToggleVisibility,
@@ -70,6 +76,20 @@ export function LiveBoard({
             <p>最初の気づきを共有してみませんか？</p>
           </div>
         )}
+        {hasOlderComments && onLoadOlderComments ? (
+          <button
+            className="secondary-button"
+            disabled={isLoadingOlderComments}
+            onClick={() => {
+              void onLoadOlderComments()
+            }}
+            type="button"
+          >
+            {isLoadingOlderComments
+              ? '過去のコメントを読み込み中…'
+              : '過去のコメントを表示'}
+          </button>
+        ) : null}
       </div>
     </section>
   )

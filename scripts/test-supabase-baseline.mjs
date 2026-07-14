@@ -12,10 +12,12 @@ const liveStateMigrationName = '20260711020445_live_state_integration.sql'
 const adminLifecycleMigrationName = '20260711080712_admin_lifecycle.sql'
 const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
 const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
+const phase1MigrationName = '20260714021129_phase1_sync_protocol_v2.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
 const turnstilePath = join(root, 'src', 'lib', 'turnstile.ts')
+const envExamplePath = join(root, '.env.local.example')
 
 assert.deepEqual(
   readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')),
@@ -25,6 +27,7 @@ assert.deepEqual(
     adminLifecycleMigrationName,
     pdfSyncMigrationName,
     phase0MigrationName,
+    phase1MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -75,9 +78,11 @@ assert.match(config, /enable_anonymous_sign_ins = true/)
 
 const anonymousAuth = readFileSync(anonymousAuthPath, 'utf8')
 const turnstile = readFileSync(turnstilePath, 'utf8')
+const envExample = readFileSync(envExamplePath, 'utf8')
 assert.match(anonymousAuth, /getAnonymousSignInCaptchaToken/)
 assert.match(anonymousAuth, /options: \{ captchaToken \}/)
 assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
+assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
 assert.match(
   turnstile,
   /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,
@@ -93,6 +98,27 @@ assert.match(
   phase0Migration,
   /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to authenticated/,
 )
+
+const phase1Migration = readFileSync(
+  join(migrationsDir, phase1MigrationName),
+  'utf8',
+)
+for (const versionColumn of [
+  'lecture_version',
+  'caption_version',
+  'summaries_version',
+  'pdf_version',
+]) {
+  assert.match(phase1Migration, new RegExp(`add column ${versionColumn}\\b`))
+}
+for (const rpc of [
+  'get_lecture_public_snapshot_v2',
+  'get_lecture_participant_state_v2',
+  'get_lecture_comment_history_v2',
+]) {
+  assert.match(phase1Migration, new RegExp(`public\\.${rpc}\\b`))
+}
+assert.doesNotMatch(phase1Migration, /drop function public\.get_lecture_live_snapshot/)
 assert.doesNotMatch(
   phase0Migration,
   /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to anon/,

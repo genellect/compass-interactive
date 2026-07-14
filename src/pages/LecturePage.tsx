@@ -21,9 +21,12 @@ export function LecturePage() {
     displayState,
     displayStateError,
     hasJoinedLectureSession,
+    hasOlderComments,
+    isLoadingOlderComments,
     isSubmittingComment,
     isSessionSyncPaused,
     lecture,
+    loadOlderComments,
     openPolls,
     participants,
     pollResults,
@@ -240,6 +243,9 @@ export function LecturePage() {
           <LiveBoard
             comments={visibleComments}
             currentParticipantId={currentParticipantId}
+            hasOlderComments={hasOlderComments}
+            isLoadingOlderComments={isLoadingOlderComments}
+            onLoadOlderComments={loadOlderComments}
             onToggleLike={toggleCommentLike}
           />
         </div>

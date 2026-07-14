@@ -32,6 +32,8 @@ export type CompassStateValue = {
   runtimeMode: LectureRuntimeMode
   expectedLectureCode: string
   commentsLoading: boolean
+  hasOlderComments: boolean
+  isLoadingOlderComments: boolean
   commentsError: string | null
   commentLikesError: string | null
   pollsError: string | null
@@ -50,6 +52,7 @@ export type CompassStateValue = {
   joinLecture: (lectureCode: string) => Promise<JoinResult>
   addComment: (body: string) => Promise<boolean>
   refreshComments: () => Promise<void>
+  loadOlderComments: () => Promise<void>
   refreshPollResults: () => Promise<void>
   toggleCommentLike: (commentId: string) => Promise<void>
   toggleCommentVisibility: (commentId: string) => void

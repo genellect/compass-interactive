@@ -9,5 +9,6 @@ export type LiveComment = {
   likedByParticipantIds: string[]
   status: LiveCommentStatus
   isPinned: boolean
+  isPending?: boolean
   createdAt: string
 }

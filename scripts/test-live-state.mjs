@@ -7,15 +7,32 @@ import {
   getRequestedLiveStateVersions,
 } from '../src/lib/liveSnapshot.ts'
 import {
+  getHiddenLiveSyncDelay,
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
   normalizeLiveSyncPathname,
 } from '../src/lib/liveSync.ts'
+import {
+  createOptimisticComment,
+  mergeInitialCommentsWithPending,
+  rollbackOptimisticComment,
+  settleOptimisticComment,
+} from '../src/lib/optimisticComments.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
 
-const current = { comments: 5, display: 2, likes: 3, polls: 4, state: 9 }
+const current = {
+  caption: 1,
+  comments: 5,
+  display: 2,
+  lecture: 8,
+  likes: 3,
+  pdf: 6,
+  polls: 4,
+  state: 9,
+  summaries: 7,
+}
 assert.deepEqual(getRequestedLiveStateVersions(current), current)
 assert.deepEqual(
   getRequestedLiveStateVersions(current, { forceComments: true }),
@@ -25,14 +42,28 @@ assert.deepEqual(
   },
 )
 assert.deepEqual(getRequestedLiveStateVersions(current, { forceAll: true }), {
+  caption: null,
   comments: null,
   display: null,
+  lecture: null,
   likes: null,
+  pdf: null,
   polls: null,
   state: null,
+  summaries: null,
 })
 
-const received = { comments: 8, display: 6, likes: 7, polls: 9, state: 12 }
+const received = {
+  caption: 2,
+  comments: 8,
+  display: null,
+  lecture: 9,
+  likes: 7,
+  pdf: 8,
+  polls: 9,
+  state: null,
+  summaries: 8,
+}
 assert.deepEqual(
   advanceLiveStateVersions(current, {
     comments: { hasMore: true, hasOlder: false, items: [], mode: 'delta' },
@@ -56,10 +87,49 @@ assert.equal(getLiveSyncBackoffDelay({ failureCount: 3 }), 30_000)
 assert.equal(getLiveSyncBackoffDelay({ failureCount: 99 }), 30_000)
 assert.equal(getLiveSyncJitter(-1), 0)
 assert.equal(getLiveSyncJitter(1), 1_000)
+assert.equal(
+  getHiddenLiveSyncDelay({ elapsedHiddenMs: 0, hiddenSyncCompleted: false }),
+  30_000,
+)
+assert.equal(
+  getHiddenLiveSyncDelay({
+    elapsedHiddenMs: 30_000,
+    hiddenSyncCompleted: true,
+  }),
+  null,
+)
+assert.equal(
+  getHiddenLiveSyncDelay({
+    elapsedHiddenMs: 60_000,
+    hiddenSyncCompleted: false,
+  }),
+  null,
+)
 assert.equal(normalizeLiveSyncPathname('/display'), '/display')
 assert.equal(normalizeLiveSyncPathname('/display/'), '/display')
 assert.equal(normalizeLiveSyncPathname('/lecture///'), '/lecture')
 assert.equal(normalizeLiveSyncPathname('/'), '/')
+
+const optimistic = createOptimisticComment({
+  body: '  queued question  ',
+  createdAt: '2026-07-14T00:00:01.000Z',
+  id: 'optimistic-test',
+  lectureId: 'lecture-1',
+  participantId: 'participant-1',
+})
+assert.equal(optimistic.body, 'queued question')
+assert.equal(optimistic.isPending, true)
+assert.deepEqual(
+  mergeInitialCommentsWithPending([optimistic], []),
+  [optimistic],
+  'An in-flight optimistic comment survives an initial snapshot refresh.',
+)
+const saved = { ...optimistic, id: 'saved-comment', isPending: undefined }
+assert.deepEqual(
+  settleOptimisticComment([optimistic], optimistic.id, saved),
+  [saved],
+)
+assert.deepEqual(rollbackOptimisticComment([optimistic], optimistic.id), [])
 
 const context = read('src/context/CompassStateContext.tsx')
 const displayPage = read('src/pages/DisplayPage.tsx')
@@ -96,6 +166,10 @@ assert.match(context, /liveSnapshotInFlightRef/)
 assert.match(context, /canShareInFlightRequest/)
 assert.match(adaptiveSyncHook, /if \(disposed \|\| running\)/)
 assert.match(adaptiveSyncHook, /BACKGROUND_LIVE_SYNC_INTERVAL_MS/)
+assert.match(adaptiveSyncHook, /hiddenSyncCompleted/)
+assert.match(adaptiveSyncHook, /getHiddenLiveSyncDelay/)
+assert.match(adaptiveSyncHook, /visibilityState === 'visible'/)
+assert.doesNotMatch(context, /IDLE_SYNC_TIMEOUT_MS|setSessionSyncPauseReason\('idle'\)/)
 assert.doesNotMatch(
   displayPage,
   /useAdaptiveLiveSync|supabaseDisplayStateRepository/,
@@ -123,6 +197,11 @@ assert.doesNotMatch(commentsRepository, /\.channel\(|postgres_changes/)
 assert.doesNotMatch(commentsRepository, /from\('participants'\)/)
 assert.doesNotMatch(liveStateRepository, /target_participant_id/)
 assert.match(liveStateRepository, /current_participant_id/)
+assert.match(liveStateRepository, /get_lecture_public_snapshot_v2/)
+assert.match(liveStateRepository, /get_lecture_participant_state_v2/)
+assert.match(liveStateRepository, /get_lecture_comment_history_v2/)
+assert.match(context, /mergeInitialCommentsWithPending/)
+assert.match(context, /rollbackOptimisticComment/)
 
 for (const objectName of [
   'lecture_live_state',

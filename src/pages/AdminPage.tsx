@@ -46,7 +46,10 @@ export function AdminPage() {
     displayState: liveDisplayState,
     displayStateError: liveDisplayStateError,
     hiddenCommentCount,
+    hasOlderComments,
+    isLoadingOlderComments,
     lecture,
+    loadOlderComments,
     participants,
     selectLectureSession,
     toggleCommentPinned,
@@ -1038,7 +1041,10 @@ export function AdminPage() {
       <div id="admin-voices">
         <LiveBoard
           comments={comments}
+          hasOlderComments={hasOlderComments}
+          isLoadingOlderComments={isLoadingOlderComments}
           mode="admin"
+          onLoadOlderComments={loadOlderComments}
           onTogglePinned={toggleCommentPinned}
           onToggleVisibility={toggleCommentVisibility}
         />
