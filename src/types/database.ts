@@ -7,6 +7,31 @@ export type Json =
   | Json[]
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       ai_usage_ledger: {
@@ -75,11 +100,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "ai_usage_ledger_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'ai_usage_ledger_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -104,11 +129,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "comment_like_totals_comment_id_lecture_session_id_fkey"
-            columns: ["comment_id", "lecture_session_id"]
+            foreignKeyName: 'comment_like_totals_comment_id_lecture_session_id_fkey'
+            columns: ['comment_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "comments"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'comments'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -136,25 +161,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "comment_likes_comment_id_lecture_session_id_fkey"
-            columns: ["comment_id", "lecture_session_id"]
+            foreignKeyName: 'comment_likes_comment_id_lecture_session_id_fkey'
+            columns: ['comment_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "comments"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'comments'
+            referencedColumns: ['id', 'lecture_session_id']
           },
           {
-            foreignKeyName: "comment_likes_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'comment_likes_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "comment_likes_participant_id_lecture_session_id_fkey"
-            columns: ["participant_id", "lecture_session_id"]
+            foreignKeyName: 'comment_likes_participant_id_lecture_session_id_fkey'
+            columns: ['participant_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "participants"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'participants'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -191,18 +216,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "comments_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'comments_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "comments_participant_id_lecture_session_id_fkey"
-            columns: ["participant_id", "lecture_session_id"]
+            foreignKeyName: 'comments_participant_id_lecture_session_id_fkey'
+            columns: ['participant_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "participants"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'participants'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -224,11 +249,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_admin_codes_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_admin_codes_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: true
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -343,11 +368,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_ai_control_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_ai_control_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: true
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -390,11 +415,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_archive_state_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_archive_state_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: true
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -419,11 +444,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_display_state_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_display_state_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: true
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -466,11 +491,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_lifecycle_events_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_lifecycle_events_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -485,7 +510,11 @@ export type Database = {
           lecture_version: number
           likes_version: number
           pdf_document_id: string | null
+          pdf_document_version: string | null
+          pdf_manifest_version: number
+          pdf_page_count: number | null
           pdf_version: number
+          pdf_visible: boolean
           polls_version: number
           state_version: number
           summaries_version: number
@@ -501,7 +530,11 @@ export type Database = {
           lecture_version?: number
           likes_version?: number
           pdf_document_id?: string | null
+          pdf_document_version?: string | null
+          pdf_manifest_version?: number
+          pdf_page_count?: number | null
           pdf_version?: number
+          pdf_visible?: boolean
           polls_version?: number
           state_version?: number
           summaries_version?: number
@@ -517,7 +550,11 @@ export type Database = {
           lecture_version?: number
           likes_version?: number
           pdf_document_id?: string | null
+          pdf_document_version?: string | null
+          pdf_manifest_version?: number
+          pdf_page_count?: number | null
           pdf_version?: number
+          pdf_visible?: boolean
           polls_version?: number
           state_version?: number
           summaries_version?: number
@@ -525,11 +562,82 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "lecture_live_state_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'lecture_live_state_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: true
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      lecture_pdf_documents: {
+        Row: {
+          archive_expires_at: string | null
+          byte_size: number
+          created_at: string
+          delete_after: string | null
+          display_name: string
+          document_id: string
+          document_version: string
+          download_enabled: boolean
+          lecture_session_id: string
+          manifest_version: number
+          page_count: number
+          pdf_sha256: string
+          published_at: string
+          retired_at: string | null
+          text_char_count: number
+          text_sha256: string
+          updated_at: string
+          visible: boolean
+        }
+        Insert: {
+          archive_expires_at?: string | null
+          byte_size: number
+          created_at?: string
+          delete_after?: string | null
+          display_name: string
+          document_id: string
+          document_version: string
+          download_enabled?: boolean
+          lecture_session_id: string
+          manifest_version: number
+          page_count: number
+          pdf_sha256: string
+          published_at?: string
+          retired_at?: string | null
+          text_char_count: number
+          text_sha256: string
+          updated_at?: string
+          visible?: boolean
+        }
+        Update: {
+          archive_expires_at?: string | null
+          byte_size?: number
+          created_at?: string
+          delete_after?: string | null
+          display_name?: string
+          document_id?: string
+          document_version?: string
+          download_enabled?: boolean
+          lecture_session_id?: string
+          manifest_version?: number
+          page_count?: number
+          pdf_sha256?: string
+          published_at?: string
+          retired_at?: string | null
+          text_char_count?: number
+          text_sha256?: string
+          updated_at?: string
+          visible?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'lecture_pdf_documents_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
+            isOneToOne: false
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -546,6 +654,8 @@ export type Database = {
           hard_stop_at: string | null
           id: string
           lifecycle_version: number
+          pdf_access_version: number
+          pdf_public_id: string
           started_at: string | null
           starts_at: string | null
           status: string
@@ -564,6 +674,8 @@ export type Database = {
           hard_stop_at?: string | null
           id?: string
           lifecycle_version?: number
+          pdf_access_version?: number
+          pdf_public_id?: string
           started_at?: string | null
           starts_at?: string | null
           status?: string
@@ -582,6 +694,8 @@ export type Database = {
           hard_stop_at?: string | null
           id?: string
           lifecycle_version?: number
+          pdf_access_version?: number
+          pdf_public_id?: string
           started_at?: string | null
           starts_at?: string | null
           status?: string
@@ -617,11 +731,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "participants_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'participants_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -649,18 +763,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "poll_option_totals_option_id_poll_id_fkey"
-            columns: ["option_id", "poll_id"]
+            foreignKeyName: 'poll_option_totals_option_id_poll_id_fkey'
+            columns: ['option_id', 'poll_id']
             isOneToOne: false
-            referencedRelation: "poll_options"
-            referencedColumns: ["id", "poll_id"]
+            referencedRelation: 'poll_options'
+            referencedColumns: ['id', 'poll_id']
           },
           {
-            foreignKeyName: "poll_option_totals_poll_id_lecture_session_id_fkey"
-            columns: ["poll_id", "lecture_session_id"]
+            foreignKeyName: 'poll_option_totals_poll_id_lecture_session_id_fkey'
+            columns: ['poll_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "polls"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'polls'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -691,18 +805,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "poll_options_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'poll_options_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "poll_options_poll_id_lecture_session_id_fkey"
-            columns: ["poll_id", "lecture_session_id"]
+            foreignKeyName: 'poll_options_poll_id_lecture_session_id_fkey'
+            columns: ['poll_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "polls"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'polls'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -736,25 +850,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "poll_responses_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'poll_responses_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "poll_responses_participant_id_lecture_session_id_fkey"
-            columns: ["participant_id", "lecture_session_id"]
+            foreignKeyName: 'poll_responses_participant_id_lecture_session_id_fkey'
+            columns: ['participant_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "participants"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'participants'
+            referencedColumns: ['id', 'lecture_session_id']
           },
           {
-            foreignKeyName: "poll_responses_poll_id_lecture_session_id_fkey"
-            columns: ["poll_id", "lecture_session_id"]
+            foreignKeyName: 'poll_responses_poll_id_lecture_session_id_fkey'
+            columns: ['poll_id', 'lecture_session_id']
             isOneToOne: false
-            referencedRelation: "polls"
-            referencedColumns: ["id", "lecture_session_id"]
+            referencedRelation: 'polls'
+            referencedColumns: ['id', 'lecture_session_id']
           },
         ]
       }
@@ -779,18 +893,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "poll_result_refresh_events_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'poll_result_refresh_events_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
           {
-            foreignKeyName: "poll_result_refresh_events_poll_id_fkey"
-            columns: ["poll_id"]
+            foreignKeyName: 'poll_result_refresh_events_poll_id_fkey'
+            columns: ['poll_id']
             isOneToOne: false
-            referencedRelation: "polls"
-            referencedColumns: ["id"]
+            referencedRelation: 'polls'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -824,11 +938,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "polls_lecture_session_id_fkey"
-            columns: ["lecture_session_id"]
+            foreignKeyName: 'polls_lecture_session_id_fkey'
+            columns: ['lecture_session_id']
             isOneToOne: false
-            referencedRelation: "lecture_sessions"
-            referencedColumns: ["id"]
+            referencedRelation: 'lecture_sessions'
+            referencedColumns: ['id']
           },
         ]
       }
@@ -876,6 +990,51 @@ export type Database = {
           target_status: string
         }
         Returns: Json
+      }
+      admin_get_pdf_access_claims_v1: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
+      admin_register_pdf_document: {
+        Args: {
+          target_byte_size: number
+          target_display_name: string
+          target_document_id: string
+          target_document_version: string
+          target_download_enabled?: boolean
+          target_lecture_session_id: string
+          target_manifest_version: number
+          target_page_count: number
+          target_pdf_sha256: string
+          target_text_char_count: number
+          target_text_sha256: string
+        }
+        Returns: {
+          archive_expires_at: string | null
+          byte_size: number
+          created_at: string
+          delete_after: string | null
+          display_name: string
+          document_id: string
+          document_version: string
+          download_enabled: boolean
+          lecture_session_id: string
+          manifest_version: number
+          page_count: number
+          pdf_sha256: string
+          published_at: string
+          retired_at: string | null
+          text_char_count: number
+          text_sha256: string
+          updated_at: string
+          visible: boolean
+        }
+        SetofOptions: {
+          from: '*'
+          to: 'lecture_pdf_documents'
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       admin_restore_lecture_archive: {
         Args: { target_actor_id?: string; target_lecture_session_id: string }
@@ -931,6 +1090,49 @@ export type Database = {
           display_version: number
           lecture_session_id: string
           pdf_document_id: string
+          state_version: number
+          updated_at: string
+        }[]
+      }
+      admin_update_pdf_display_phase2: {
+        Args: {
+          target_current_pdf_page: number
+          target_display_mode: string
+          target_lecture_session_id: string
+          target_pdf_document_id: string
+        }
+        Returns: {
+          current_pdf_page: number
+          display_mode: string
+          display_version: number
+          lecture_session_id: string
+          pdf_document_id: string
+          state_version: number
+          updated_at: string
+        }[]
+      }
+      admin_update_pdf_display_v3: {
+        Args: {
+          target_current_pdf_page: number
+          target_display_mode: string
+          target_lecture_session_id: string
+          target_pdf_document_id: string
+          target_pdf_document_version: string
+          target_pdf_manifest_version: number
+          target_pdf_page_count: number
+          target_pdf_visible: boolean
+        }
+        Returns: {
+          current_pdf_page: number
+          display_mode: string
+          display_version: number
+          lecture_session_id: string
+          pdf_document_id: string
+          pdf_document_version: string
+          pdf_manifest_version: number
+          pdf_page_count: number
+          pdf_version: number
+          pdf_visible: boolean
           state_version: number
           updated_at: string
         }[]
@@ -1004,6 +1206,10 @@ export type Database = {
           response_count: number
         }[]
       }
+      get_pdf_access_claims_v1: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
       is_lecture_open: {
         Args: { target_lecture_session_id: string }
         Returns: boolean
@@ -1037,33 +1243,33 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, '__InternalSupabase'>
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, 'public'>]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | keyof (DefaultSchema['Tables'] & DefaultSchema['Views'])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])
+    ? (DefaultSchema['Tables'] &
+        DefaultSchema['Views'])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -1072,23 +1278,22 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -1097,23 +1302,22 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+    keyof DefaultSchema['Tables'] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema['Tables']
+    ? DefaultSchema['Tables'][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -1122,39 +1326,41 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    keyof DefaultSchema['Enums'] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
+    ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
+    | keyof DefaultSchema['CompositeTypes']
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
+    ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

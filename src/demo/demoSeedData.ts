@@ -18,6 +18,10 @@ export const demoLecture: LectureSession = {
 export const demoDisplayState: DisplayState = {
   lectureSessionId: DEMO_LECTURE_ID,
   pdfDocumentId: 'why-learn-english-v1',
+  pdfDocumentVersion: null,
+  pdfManifestVersion: 0,
+  pdfPageCount: 15,
+  pdfVisible: true,
   currentPdfPage: 3,
   displayMode: 'normal',
   updatedAt: '2026-01-01T00:05:00.000Z',

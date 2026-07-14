@@ -14,6 +14,10 @@ type DisplayStateRow = {
   display_mode: DisplayMode
   lecture_session_id: string
   pdf_document_id: string | null
+  pdf_document_version: string | null
+  pdf_manifest_version: number
+  pdf_page_count: number | null
+  pdf_visible: boolean
   updated_at: string
 }
 
@@ -22,6 +26,10 @@ export type AdminDisplayState = {
   displayMode: DisplayMode
   lectureSessionId: string
   pdfDocumentId: string | null
+  pdfDocumentVersion: string | null
+  pdfManifestVersion: number
+  pdfPageCount: number | null
+  pdfVisible: boolean
   updatedAt: string
 }
 
@@ -104,6 +112,39 @@ type ManageAiControlResponse = {
   recentOperations?: unknown[]
   result?: unknown
 }
+
+export type AdminPdfDocument = {
+  byteSize: number
+  displayName: string
+  documentId: string
+  documentVersion: string
+  downloadEnabled: boolean
+  manifestVersion: number
+  pageCount: number
+  pdfSha256: string
+  publishedAt: string
+  textCharCount: number
+  textSha256: string
+  visible: boolean
+}
+
+type ManagePdfDocumentsResponse = {
+  documents?: AdminPdfDocument[]
+  message?: string
+  ok?: boolean
+}
+
+export type ManagePdfDocumentsRequest =
+  | {
+      action: 'list'
+      adminToken: string
+      lectureSessionId: string
+    }
+  | ({
+      action: 'register'
+      adminToken: string
+      lectureSessionId: string
+    } & Omit<AdminPdfDocument, 'publishedAt' | 'visible'>)
 
 export type ManageAiControlRequest =
   | {
@@ -203,6 +244,10 @@ function toAdminDisplayState(row: DisplayStateRow): AdminDisplayState {
     displayMode: row.display_mode,
     lectureSessionId: row.lecture_session_id,
     pdfDocumentId: row.pdf_document_id,
+    pdfDocumentVersion: row.pdf_document_version,
+    pdfManifestVersion: row.pdf_manifest_version,
+    pdfPageCount: row.pdf_page_count,
+    pdfVisible: row.pdf_visible,
     updatedAt: row.updated_at,
   }
 }
@@ -327,6 +372,25 @@ export const supabaseAdminRepository = {
     }
 
     return data
+  },
+
+  async managePdfDocuments(
+    request: ManagePdfDocumentsRequest,
+  ): Promise<AdminPdfDocument[]> {
+    const { data, error } =
+      await supabase.functions.invoke<ManagePdfDocumentsResponse>(
+        'manage-pdf-documents',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'PDF metadata operation failed.'),
+      )
+    }
+    if (!data?.ok || !data.documents) {
+      throw new Error(data?.message ?? 'PDF metadata operation failed.')
+    }
+    return data.documents
   },
 
   async managePolls(request: ManagePollsRequest): Promise<AdminPoll[]> {

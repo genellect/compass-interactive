@@ -19,9 +19,19 @@ supabase/.temp/
 .env.*.local
 .env.openai
 .env.supabase
+.env.publisher
+.env.publisher.*
+!.env.publisher.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 *.secret.*
 *service-role*
 *service_role*
+
+# Local Publisher data and local Worker state
+.compass-publisher-data/
+.wrangler/
 
 # Editor directories and files
 .vscode/*

@@ -5,6 +5,10 @@ export type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 export type DisplayState = {
   lectureSessionId: string
   pdfDocumentId: string | null
+  pdfDocumentVersion: string | null
+  pdfManifestVersion: number
+  pdfPageCount: number | null
+  pdfVisible: boolean
   currentPdfPage: number
   displayMode: DisplayMode
   updatedAt: string
@@ -23,6 +27,10 @@ function toDisplayState(row: DisplayStateRow): DisplayState {
     // This repository is retained only for compatibility with the pre-M2 table.
     // PDF identity is authoritative in lecture_live_state and its snapshot RPC.
     pdfDocumentId: null,
+    pdfDocumentVersion: null,
+    pdfManifestVersion: 0,
+    pdfPageCount: null,
+    pdfVisible: false,
     currentPdfPage: row.current_pdf_page,
     displayMode: row.display_mode,
     updatedAt: row.updated_at,
@@ -35,6 +43,10 @@ export function createDefaultDisplayState(
   return {
     lectureSessionId,
     pdfDocumentId: null,
+    pdfDocumentVersion: null,
+    pdfManifestVersion: 0,
+    pdfPageCount: null,
+    pdfVisible: false,
     currentPdfPage: 1,
     displayMode: 'normal',
     updatedAt: new Date().toISOString(),
@@ -45,9 +57,7 @@ export const supabaseDisplayStateRepository = {
   async getDisplayState(lectureSessionId: string): Promise<DisplayState> {
     const { data, error } = await supabase
       .from('lecture_display_state')
-      .select(
-        'lecture_session_id,current_pdf_page,display_mode,updated_at',
-      )
+      .select('lecture_session_id,current_pdf_page,display_mode,updated_at')
       .eq('lecture_session_id', lectureSessionId)
       .maybeSingle<DisplayStateRow>()
 
@@ -55,7 +65,8 @@ export const supabaseDisplayStateRepository = {
       throw new Error(error.message)
     }
 
-    return data ? toDisplayState(data) : createDefaultDisplayState(lectureSessionId)
+    return data
+      ? toDisplayState(data)
+      : createDefaultDisplayState(lectureSessionId)
   },
-
 }

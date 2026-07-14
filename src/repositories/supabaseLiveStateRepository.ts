@@ -132,6 +132,10 @@ type RawDisplay = {
   display_mode: DisplayState['displayMode']
   lecture_session_id: string
   pdf_document_id: string | null
+  pdf_document_version?: string | null
+  pdf_manifest_version?: number
+  pdf_page_count?: number | null
+  pdf_visible?: boolean
   updated_at: string
 }
 
@@ -272,6 +276,10 @@ function mapDisplay(raw: RawDisplay): DisplayState {
     displayMode: raw.display_mode,
     lectureSessionId: raw.lecture_session_id,
     pdfDocumentId: raw.pdf_document_id,
+    pdfDocumentVersion: raw.pdf_document_version ?? null,
+    pdfManifestVersion: raw.pdf_manifest_version ?? 0,
+    pdfPageCount: raw.pdf_page_count ?? null,
+    pdfVisible: raw.pdf_visible ?? Boolean(raw.pdf_document_id),
     updatedAt: raw.updated_at,
   }
 }
@@ -447,7 +455,9 @@ async function getPublicSnapshotV2({
     throw new Error(error.message)
   }
 
-  return data ? mapPublicSnapshotV2(data as unknown as RawPublicSnapshotV2) : null
+  return data
+    ? mapPublicSnapshotV2(data as unknown as RawPublicSnapshotV2)
+    : null
 }
 
 async function getTerminalSnapshot(

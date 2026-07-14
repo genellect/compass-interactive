@@ -15,15 +15,23 @@
     "test:phase1-load": "node scripts/test-phase1-load.mjs",
     "test:phase2-lifecycle": "node --experimental-strip-types scripts/test-phase2-lifecycle.mjs",
     "test:phase2-load": "node scripts/test-phase2-load.mjs",
+    "test:phase3-publisher": "node --experimental-strip-types publisher/tests/publisher.test.ts",
+    "test:phase3-worker": "node --experimental-strip-types cloudflare/asset-worker/tests/worker.test.ts",
+    "test:phase3-static": "node scripts/test-phase3-static.mjs",
+    "test:phase3-load": "node scripts/test-phase3-load.mjs",
     "test:admin-lifecycle": "node --experimental-strip-types scripts/test-admin-lifecycle.mjs",
     "test:pdf-sync": "node scripts/test-pdf-sync.mjs",
     "test:supabase:static": "node scripts/test-supabase-baseline.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:phase3": "tsc -p tsconfig.phase3.json --noEmit",
+    "publisher:start": "node --experimental-strip-types publisher/src/start.ts",
+    "worker:dev:local": "wrangler dev --config cloudflare/asset-worker/wrangler.jsonc --local",
     "preview": "vite preview",
     "deploy:cloudflare:direct": "npm run build && npx wrangler@latest pages deploy dist --project-name compass-interactive --branch main",
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1083.0",
     "@supabase/supabase-js": "^2.110.0",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.7",
@@ -38,6 +46,7 @@
     "oxlint": "^1.71.0",
     "prettier": "^3.9.4",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "wrangler": "4.110.0"
   }
 }

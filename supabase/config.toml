@@ -392,6 +392,17 @@ verify_jwt = true
 [functions.manage-ai-control]
 verify_jwt = true
 
+[functions.issue-pdf-access-token]
+verify_jwt = true
+
+[functions.manage-pdf-documents]
+verify_jwt = true
+
+# Machine-to-machine endpoint: Supabase JWT verification is intentionally off;
+# the function requires a separate 32-byte Worker/Edge shared secret.
+[functions.get-pdf-retention-feed]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

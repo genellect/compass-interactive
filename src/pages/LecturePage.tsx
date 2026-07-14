@@ -88,7 +88,9 @@ export function LecturePage() {
           <span>
             <AppIcon name="users" size={18} />
             <strong
-              className={runtimeMode === 'demo' ? 'participant-number' : undefined}
+              className={
+                runtimeMode === 'demo' ? 'participant-number' : undefined
+              }
               key={runtimeMode === 'demo' ? demoParticipantCount : undefined}
             >
               {runtimeMode === 'demo'
@@ -118,13 +120,21 @@ export function LecturePage() {
             </span>
             <p>
               <strong>本番に近い講義体験です</strong>
-              <span>資料をめくり、投票し、あなたの気づきを残してみてください。</span>
+              <span>
+                資料をめくり、投票し、あなたの気づきを残してみてください。
+              </span>
             </p>
           </div>
           <ol className="demo-steps">
-            <li><span>1</span>資料を見る</li>
-            <li><span>2</span>投票する</li>
-            <li><span>3</span>質問を送る</li>
+            <li>
+              <span>1</span>資料を見る
+            </li>
+            <li>
+              <span>2</span>投票する
+            </li>
+            <li>
+              <span>3</span>質問を送る
+            </li>
           </ol>
           <button
             className="text-link-button muted"
@@ -170,7 +180,9 @@ export function LecturePage() {
           いいねの反映に失敗しました。画面を再読み込みしてください。
         </p>
       ) : null}
-      {commentsLoading ? <p className="note">みんなの声を読み込んでいます。</p> : null}
+      {commentsLoading ? (
+        <p className="note">みんなの声を読み込んでいます。</p>
+      ) : null}
       {pollsError ? (
         <p className="error-note">
           投票の取得に失敗しました。画面を再読み込みしてください。
@@ -181,7 +193,9 @@ export function LecturePage() {
           投票結果の更新に失敗しました。回答は保存されている可能性があります。
         </p>
       ) : null}
-      {pollsLoading ? <p className="note">ライブ投票を読み込んでいます。</p> : null}
+      {pollsLoading ? (
+        <p className="note">ライブ投票を読み込んでいます。</p>
+      ) : null}
 
       <section className="lecture-live-grid">
         <section
@@ -189,7 +203,9 @@ export function LecturePage() {
           id="lecture-material"
         >
           <div className="section-intro compact-intro">
-            <span className="section-icon"><AppIcon name="book" size={18} /></span>
+            <span className="section-icon">
+              <AppIcon name="book" size={18} />
+            </span>
             <div>
               <p className="eyebrow">LECTURE MATERIAL</p>
               <h2>いま見ている資料</h2>
@@ -200,7 +216,12 @@ export function LecturePage() {
           ) : null}
           <SyncedPdfViewer
             documentId={displayState?.pdfDocumentId ?? null}
+            documentVersion={displayState?.pdfDocumentVersion}
+            lectureSessionId={activeLectureSessionId}
+            manifestVersion={displayState?.pdfManifestVersion}
+            pageCount={displayState?.pdfPageCount}
             remotePage={displayState?.currentPdfPage ?? null}
+            visible={displayState?.pdfVisible}
           />
         </section>
 

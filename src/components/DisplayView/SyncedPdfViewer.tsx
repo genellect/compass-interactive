@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useFullscreen } from '../../hooks/useFullscreen'
+import { isPhase3PrivatePdfEnabled } from '../../lib/featureFlags'
 import { getLecturePdfAsset } from '../../pdf/lectureAssets'
+import {
+  resolveRuntimePdf,
+  type RuntimePdfDocument,
+} from '../../pdf/pdfDelivery'
 import { AppIcon } from '../AppIcon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -16,16 +21,34 @@ const MIN_QUALITY_SCALE = 2
 
 type SyncedPdfViewerProps = {
   documentId: string | null
+  documentVersion?: string | null
+  lectureSessionId?: string | null
+  manifestVersion?: number
+  pageCount?: number | null
   presenterLocked?: boolean
   remotePage?: number | null
+  visible?: boolean
 }
 
 export function SyncedPdfViewer({
   documentId,
+  documentVersion = null,
+  lectureSessionId = null,
+  manifestVersion = 0,
+  pageCount = null,
   presenterLocked = false,
   remotePage,
+  visible = true,
 }: SyncedPdfViewerProps) {
-  const asset = getLecturePdfAsset(documentId)
+  const legacyAsset = getLecturePdfAsset(documentId)
+  const usePrivateDelivery = Boolean(
+    isPhase3PrivatePdfEnabled &&
+    lectureSessionId &&
+    documentId &&
+    documentVersion &&
+    manifestVersion > 0 &&
+    visible,
+  )
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const remotePageRef = useRef(remotePage)
@@ -38,7 +61,15 @@ export function SyncedPdfViewer({
   const [totalPages, setTotalPages] = useState(0)
   const [followPresenter, setFollowPresenter] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [isResolvingAsset, setIsResolvingAsset] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [runtimeDocument, setRuntimeDocument] =
+    useState<RuntimePdfDocument | null>(null)
+  const [runtimeUrl, setRuntimeUrl] = useState('')
+  const runtimeResolverRef = useRef<Awaited<
+    ReturnType<typeof resolveRuntimePdf>
+  > | null>(null)
+  const [resolveAttempt, setResolveAttempt] = useState(0)
   const [pageAspectRatio, setPageAspectRatio] = useState(
     DEFAULT_PAGE_ASPECT_RATIO,
   )
@@ -48,6 +79,67 @@ export function SyncedPdfViewer({
     isFullscreenSupported,
     toggleFullscreen,
   } = useFullscreen(stageRef)
+  const assetTitle = runtimeDocument?.displayName ?? legacyAsset?.title ?? null
+  const assetUrl = usePrivateDelivery ? runtimeUrl : (legacyAsset?.url ?? '')
+  const expectedPageCount =
+    runtimeDocument?.pageCount ?? pageCount ?? legacyAsset?.pageCount ?? null
+
+  useEffect(() => {
+    let active = true
+    runtimeResolverRef.current = null
+    setRuntimeDocument(null)
+    setRuntimeUrl('')
+
+    if (
+      !usePrivateDelivery ||
+      !lectureSessionId ||
+      !documentId ||
+      !documentVersion
+    ) {
+      setIsResolvingAsset(false)
+      return () => {
+        active = false
+      }
+    }
+
+    setIsResolvingAsset(true)
+    setErrorMessage('')
+    void resolveRuntimePdf({
+      documentId,
+      documentVersion,
+      lectureSessionId,
+      manifestVersion,
+    })
+      .then(async (resolved) => {
+        const url = await resolved.getAccessUrl('inline')
+        if (!active) return
+        runtimeResolverRef.current = resolved
+        setRuntimeDocument(resolved.document)
+        setRuntimeUrl(url)
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setErrorMessage(
+          error instanceof Error
+            ? `PDF資料の認証に失敗しました: ${error.message}`
+            : 'PDF資料の認証に失敗しました。',
+        )
+      })
+      .finally(() => {
+        if (active) setIsResolvingAsset(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [
+    documentId,
+    documentVersion,
+    lectureSessionId,
+    manifestVersion,
+    resolveAttempt,
+    usePrivateDelivery,
+  ])
 
   const renderPage = useCallback(
     async (pageNumber: number, document: PDFDocumentProxy) => {
@@ -68,7 +160,8 @@ export function SyncedPdfViewer({
       )
       const renderScale = Math.min(
         MAX_RENDER_SCALE,
-        displayScale * Math.max(window.devicePixelRatio || 1, MIN_QUALITY_SCALE),
+        displayScale *
+          Math.max(window.devicePixelRatio || 1, MIN_QUALITY_SCALE),
       )
       const displayViewport = page.getViewport({ scale: displayScale })
       const renderViewport = page.getViewport({ scale: renderScale })
@@ -93,7 +186,10 @@ export function SyncedPdfViewer({
       try {
         await renderTask.promise
       } catch (error) {
-        if (error instanceof Error && error.name === 'RenderingCancelledException') {
+        if (
+          error instanceof Error &&
+          error.name === 'RenderingCancelledException'
+        ) {
           return
         }
         throw error
@@ -136,7 +232,7 @@ export function SyncedPdfViewer({
     setPageAspectRatio(DEFAULT_PAGE_ASPECT_RATIO)
     setErrorMessage('')
 
-    if (!asset) {
+    if (!assetUrl) {
       setIsLoading(false)
       return () => {
         active = false
@@ -144,7 +240,10 @@ export function SyncedPdfViewer({
     }
 
     setIsLoading(true)
-    const loadingTask = pdfjsLib.getDocument({ url: asset.url })
+    const loadingTask = pdfjsLib.getDocument({
+      rangeChunkSize: 1024 * 1024,
+      url: assetUrl,
+    })
     void loadingTask.promise
       .then(async (loadedPdf) => {
         if (!active) {
@@ -180,7 +279,7 @@ export function SyncedPdfViewer({
       renderTaskRef.current?.cancel()
       void loadingTask.destroy()
     }
-  }, [asset, renderPage])
+  }, [assetUrl, renderPage])
 
   useEffect(() => {
     if (!pdfDocument || !remotePage || (!followPresenter && !presenterLocked)) {
@@ -217,14 +316,36 @@ export function SyncedPdfViewer({
     }
   }
 
+  async function downloadPdf() {
+    try {
+      const resolver = runtimeResolverRef.current
+      if (!resolver) return
+      const url = await resolver.getAccessUrl('download')
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.rel = 'noopener'
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? `PDFのダウンロードに失敗しました: ${error.message}`
+          : 'PDFのダウンロードに失敗しました。',
+      )
+    }
+  }
+
   return (
     <div className="local-pdf-viewer synced-pdf-viewer">
       <div className="pdf-toolbar">
         <div className="pdf-title-group">
-          <span className="section-icon"><AppIcon name="book" size={17} /></span>
+          <span className="section-icon">
+            <AppIcon name="book" size={17} />
+          </span>
           <div>
             <p className="eyebrow">MATERIAL</p>
-            <strong>{asset?.title ?? '資料を待っています'}</strong>
+            <strong>{assetTitle ?? '資料を待っています'}</strong>
           </div>
         </div>
         <div className="pdf-page-controls">
@@ -254,7 +375,9 @@ export function SyncedPdfViewer({
               <button
                 aria-label="次のページ"
                 className="icon-button"
-                disabled={!pdfDocument || currentPage >= totalPages || isLoading}
+                disabled={
+                  !pdfDocument || currentPage >= totalPages || isLoading
+                }
                 onClick={() => void moveToPage(currentPage + 1, true)}
                 type="button"
               >
@@ -282,6 +405,16 @@ export function SyncedPdfViewer({
         >
           {isPdfFullscreen ? '全画面を終了' : '大きく表示'}
         </button>
+        {runtimeDocument?.downloadEnabled ? (
+          <button
+            className="secondary-button"
+            disabled={!pdfDocument || isLoading}
+            onClick={() => void downloadPdf()}
+            type="button"
+          >
+            PDFを保存
+          </button>
+        ) : null}
       </div>
 
       {!presenterLocked && pdfDocument ? (
@@ -291,17 +424,28 @@ export function SyncedPdfViewer({
             : 'いまは自分のペースで資料を見ています。'}
         </p>
       ) : null}
-      {asset && asset.pageCount !== totalPages && pdfDocument ? (
+      {expectedPageCount && expectedPageCount !== totalPages && pdfDocument ? (
         <p className="error-note">資料情報を更新できませんでした。</p>
       ) : null}
-      {!asset && documentId ? (
+      {!legacyAsset && !usePrivateDelivery && documentId ? (
         <p className="error-note">指定されたPDF資料が見つかりません。</p>
       ) : null}
       {errorMessage ? <p className="error-note">{errorMessage}</p> : null}
+      {errorMessage && usePrivateDelivery ? (
+        <button
+          className="secondary-button"
+          onClick={() => setResolveAttempt((attempt) => attempt + 1)}
+          type="button"
+        >
+          PDFを再試行
+        </button>
+      ) : null}
       {fullscreenErrorMessage ? (
         <p className="error-note">{fullscreenErrorMessage}</p>
       ) : null}
-      {isLoading ? <p className="note">講義資料を開いています…</p> : null}
+      {isLoading || isResolvingAsset ? (
+        <p className="note">講義資料を開いています…</p>
+      ) : null}
 
       <div
         className="display-slide-frame pdf-stage"
@@ -312,9 +456,15 @@ export function SyncedPdfViewer({
           <canvas className="pdf-canvas" ref={canvasRef} />
         ) : (
           <div>
-            <span className="empty-slide-icon"><AppIcon name="book" size={28} /></span>
+            <span className="empty-slide-icon">
+              <AppIcon name="book" size={28} />
+            </span>
             <p className="eyebrow">LECTURE MATERIAL</p>
-            <h2>{asset ? '資料を開いています' : '教員からの資料を待っています'}</h2>
+            <h2>
+              {assetTitle
+                ? '資料を開いています'
+                : '教員からの資料を待っています'}
+            </h2>
             <p>資料が共有されると、この画面に自動で表示されます。</p>
           </div>
         )}

@@ -15,10 +15,7 @@ const adminPage = read('src/pages/AdminPage.tsx')
 const lecturePage = read('src/pages/LecturePage.tsx')
 const displayView = read('src/components/DisplayView/DisplayView.tsx')
 const pdfPath = join(root, 'public/lecture-assets/m4-sample-v1.pdf')
-const demoPdfPath = join(
-  root,
-  'public/lecture-assets/why-learn-english-v1.pdf',
-)
+const demoPdfPath = join(root, 'public/lecture-assets/why-learn-english-v1.pdf')
 
 assert.match(migration, /add column pdf_document_id text null/)
 assert.match(migration, /create function public\.admin_update_pdf_display/)
@@ -55,17 +52,23 @@ assert.equal(
 )
 
 assert.equal(existsSync(demoPdfPath), true, 'demo PDF asset must exist')
-assert.ok(statSync(demoPdfPath).size > 1_000, 'demo PDF asset must not be empty')
+assert.ok(
+  statSync(demoPdfPath).size > 1_000,
+  'demo PDF asset must not be empty',
+)
 assert.equal(
   readFileSync(demoPdfPath).subarray(0, 5).toString('ascii'),
   '%PDF-',
   'demo asset must be a PDF',
 )
 
-assert.match(viewer, /getDocument\(\{ url: asset\.url \}\)/)
+assert.match(viewer, /getDocument\(\{/)
+assert.match(viewer, /url: assetUrl/)
+assert.match(viewer, /rangeChunkSize: 1024 \* 1024/)
 assert.match(viewer, /教員のページに戻る/)
 assert.doesNotMatch(viewer, /type="file"|arrayBuffer\(\)/)
-assert.match(adminPage, /lecturePdfAssets\.map/)
+assert.match(adminPage, /availablePdfAssets/)
+assert.match(adminPage, /\.\.\.lecturePdfAssets/)
 assert.match(adminPage, /updateDisplayState\('setDocument'/)
 assert.match(lecturePage, /<SyncedPdfViewer/)
 assert.match(displayView, /<SyncedPdfViewer/)

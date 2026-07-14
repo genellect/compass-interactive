@@ -14,6 +14,7 @@ const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
 const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
 const phase1MigrationName = '20260714021129_phase1_sync_protocol_v2.sql'
 const phase2MigrationName = '20260714080706_phase2_lecture_lifecycle.sql'
+const phase3MigrationName = '20260714104032_phase3_private_pdf_delivery.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -30,6 +31,7 @@ assert.deepEqual(
     phase0MigrationName,
     phase1MigrationName,
     phase2MigrationName,
+    phase3MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -86,6 +88,7 @@ assert.match(anonymousAuth, /options: \{ captchaToken \}/)
 assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
 assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
 assert.match(envExample, /VITE_PHASE2_LECTURE_LIFECYCLE=false/)
+assert.match(envExample, /VITE_PHASE3_PRIVATE_PDF=false/)
 assert.match(
   turnstile,
   /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,
@@ -150,7 +153,10 @@ for (const rpc of [
 ]) {
   assert.match(phase1Migration, new RegExp(`public\\.${rpc}\\b`))
 }
-assert.doesNotMatch(phase1Migration, /drop function public\.get_lecture_live_snapshot/)
+assert.doesNotMatch(
+  phase1Migration,
+  /drop function public\.get_lecture_live_snapshot/,
+)
 assert.doesNotMatch(
   phase0Migration,
   /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to anon/,
@@ -166,6 +172,8 @@ for (const functionName of [
   'manage-polls',
   'update-display-state',
   'manage-ai-control',
+  'issue-pdf-access-token',
+  'manage-pdf-documents',
 ]) {
   const sourcePath = join(supabaseDir, 'functions', functionName, 'index.ts')
   assert.ok(existsSync(sourcePath), `${functionName} source must exist.`)

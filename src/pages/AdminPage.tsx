@@ -4,6 +4,7 @@ import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   type AdminLecture,
+  type AdminPdfDocument,
   type AdminPoll,
   supabaseAdminRepository,
 } from '../repositories/supabaseAdminRepository'
@@ -11,10 +12,10 @@ import {
   type DisplayMode,
   type DisplayState,
 } from '../repositories/supabaseDisplayStateRepository'
-import {
-  getLecturePdfAsset,
-  lecturePdfAssets,
-} from '../pdf/lectureAssets'
+import { getLecturePdfAsset, lecturePdfAssets } from '../pdf/lectureAssets'
+import { isPhase3PrivatePdfEnabled } from '../lib/featureFlags'
+import { issuePdfAccessSession } from '../pdf/pdfDelivery'
+import { publisherClient } from '../pdf/publisherClient'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
@@ -82,7 +83,34 @@ export function AdminPage() {
   const [newPollQuestion, setNewPollQuestion] = useState('')
   const [newPollType, setNewPollType] = useState<AdminPoll['type']>('single')
   const [newPollOptions, setNewPollOptions] = useState('賛成\n反対')
-  const selectedPdfAsset = getLecturePdfAsset(displayState?.pdfDocumentId)
+  const [adminPdfDocuments, setAdminPdfDocuments] = useState<
+    AdminPdfDocument[]
+  >([])
+  const [publisherPairingCode, setPublisherPairingCode] = useState('')
+  const [publisherSessionToken, setPublisherSessionToken] = useState('')
+  const [publisherStatus, setPublisherStatus] = useState<
+    'checking' | 'connected' | 'disconnected' | 'paired'
+  >('disconnected')
+  const [publisherMessage, setPublisherMessage] = useState('')
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [pdfPublicationDraftId, setPdfPublicationDraftId] = useState('')
+  const [pdfDisplayName, setPdfDisplayName] = useState('')
+  const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
+  const [pdfPublishing, setPdfPublishing] = useState(false)
+  const availablePdfAssets = isPhase3PrivatePdfEnabled
+    ? [
+        ...adminPdfDocuments.map((document) => ({
+          id: document.documentId,
+          pageCount: document.pageCount,
+          title: document.displayName,
+        })),
+        ...lecturePdfAssets,
+      ]
+    : lecturePdfAssets
+  const selectedPdfAsset =
+    availablePdfAssets.find(
+      (asset) => asset.id === displayState?.pdfDocumentId,
+    ) ?? getLecturePdfAsset(displayState?.pdfDocumentId)
 
   function toDatetimeLocalValue(value: string | null) {
     if (!value) {
@@ -172,6 +200,140 @@ export function AdminPage() {
     }
   }
 
+  async function refreshAdminPdfDocuments(
+    lectureSessionId = activeLectureSessionId,
+    token = adminToken,
+  ) {
+    if (!isPhase3PrivatePdfEnabled || !lectureSessionId || !token) {
+      setAdminPdfDocuments([])
+      return
+    }
+    try {
+      setAdminPdfDocuments(
+        await supabaseAdminRepository.managePdfDocuments({
+          action: 'list',
+          adminToken: token,
+          lectureSessionId,
+        }),
+      )
+    } catch (error) {
+      setPublisherMessage(
+        error instanceof Error
+          ? `資料一覧を取得できませんでした: ${error.message}`
+          : '資料一覧を取得できませんでした。',
+      )
+    }
+  }
+
+  async function checkPublisher() {
+    setPublisherStatus('checking')
+    setPublisherMessage('Publisherへ接続しています…')
+    try {
+      await publisherClient.health()
+      setPublisherStatus(publisherSessionToken ? 'paired' : 'connected')
+      setPublisherMessage(
+        publisherSessionToken
+          ? 'Publisher接続済み・ペアリング済み'
+          : 'Publisher接続済み。起動画面の8桁codeを入力してください。',
+      )
+    } catch {
+      setPublisherStatus('disconnected')
+      setPublisherMessage(
+        'Publisher未接続です。教員PCでローカルPublisherを起動してから再試行してください。',
+      )
+    }
+  }
+
+  async function pairPublisher() {
+    setPublisherStatus('checking')
+    setPublisherMessage('Publisherをペアリングしています…')
+    try {
+      const paired = await publisherClient.pair(publisherPairingCode.trim())
+      setPublisherSessionToken(paired.sessionToken)
+      setPublisherPairingCode('')
+      setPublisherStatus('paired')
+      setPublisherMessage('Publisher接続済み・ペアリング済み')
+    } catch (error) {
+      setPublisherStatus('connected')
+      setPublisherMessage(
+        error instanceof Error
+          ? error.message
+          : 'Publisherのペアリングに失敗しました。',
+      )
+    }
+  }
+
+  async function publishPdfDocument() {
+    if (!activeLectureSessionId || !adminToken || !publisherSessionToken) {
+      setPublisherMessage('講義、Admin認証、Publisher接続を確認してください。')
+      return
+    }
+    if (!pdfFile) {
+      setPublisherMessage('公開するPDFを選択してください。')
+      return
+    }
+    const displayName =
+      pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
+    const documentId =
+      pdfPublicationDraftId ||
+      `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
+    if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
+    setPdfPublishing(true)
+    setPublisherMessage('検証中です。PDF本文はSupabaseへ送信しません。')
+    try {
+      const access = await issuePdfAccessSession({
+        adminToken,
+        lectureSessionId: activeLectureSessionId,
+      })
+      setPublisherMessage('Cloudflareへ公開し、manifestを競合確認しています…')
+      const published = await publisherClient.publish({
+        accessToken: access.accessToken,
+        displayName,
+        documentId,
+        downloadEnabled: pdfDownloadEnabled,
+        file: pdfFile,
+        lecturePublicId: access.lecturePublicId,
+        publisherSessionToken,
+      })
+      setPublisherMessage('公開済みmetadataを講義へ登録しています…')
+      const documents = await supabaseAdminRepository.managePdfDocuments({
+        action: 'register',
+        adminToken,
+        byteSize: published.document.byteSize,
+        displayName: published.document.displayName,
+        documentId: published.document.documentId,
+        documentVersion: published.document.documentVersion,
+        downloadEnabled: published.document.downloadEnabled,
+        lectureSessionId: activeLectureSessionId,
+        manifestVersion: published.manifestVersion,
+        pageCount: published.document.pageCount,
+        pdfSha256: published.document.pdfSha256,
+        textCharCount: published.document.textCharCount,
+        textSha256: published.document.textSha256,
+      })
+      setAdminPdfDocuments(documents)
+      setPdfDocumentInput(published.document.documentId)
+      setPdfFile(null)
+      setPdfPublicationDraftId('')
+      setPdfDisplayName('')
+      setPublisherMessage(
+        `公開完了: ${published.document.pageCount}頁・${published.document.textCharCount.toLocaleString()}文字・${(
+          published.document.byteSize /
+          1024 /
+          1024
+        ).toFixed(2)}MB。資料選択後に「この資料を表示」を押してください。`,
+      )
+    } catch (error) {
+      setPublisherMessage(
+        error instanceof Error
+          ? `公開失敗・現在資料を維持しました: ${error.message}`
+          : '公開失敗・現在資料を維持しました。',
+      )
+    } finally {
+      setPdfPublishing(false)
+    }
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsVerifying(true)
@@ -210,10 +372,12 @@ export function AdminPage() {
     if (!isAuthenticated || !adminToken || !activeLectureSessionId) {
       setAdminPolls([])
       setAdminPollsError(null)
+      setAdminPdfDocuments([])
       return
     }
 
     void refreshAdminPolls(activeLectureSessionId, adminToken)
+    void refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
   }, [activeLectureSessionId, adminToken, isAuthenticated])
 
   function handleLogout() {
@@ -224,6 +388,10 @@ export function AdminPage() {
     setPin('')
     setAdminPolls([])
     setAdminPollsError(null)
+    setAdminPdfDocuments([])
+    setPublisherSessionToken('')
+    setPublisherStatus('disconnected')
+    setPublisherMessage('')
   }
 
   useEffect(() => {
@@ -248,12 +416,7 @@ export function AdminPage() {
   ])
 
   async function updateDisplayState(
-    action:
-      | 'next'
-      | 'previous'
-      | 'goToPage'
-      | 'setDisplayMode'
-      | 'setDocument',
+    action: 'next' | 'previous' | 'goToPage' | 'setDisplayMode' | 'setDocument',
     options: {
       currentPdfPage?: number
       displayMode?: DisplayMode
@@ -536,7 +699,9 @@ export function AdminPage() {
     return (
       <main className="page-shell join-page">
         <form className="join-card" onSubmit={handleLogin}>
-          <span className="admin-login-icon"><AppIcon name="compass" size={25} /></span>
+          <span className="admin-login-icon">
+            <AppIcon name="compass" size={25} />
+          </span>
           <p className="eyebrow">FOR EDUCATORS</p>
           <h1>講義を運営する</h1>
           <p>管理PINを入力して、講義コントロールを開きます。</p>
@@ -591,9 +756,21 @@ export function AdminPage() {
       </section>
 
       <nav className="admin-workflow" aria-label="講義運営の流れ">
-        <a href="#admin-prepare"><span>1</span><strong>準備</strong><small>講義と資料</small></a>
-        <a href="#admin-live"><span>2</span><strong>講義中</strong><small>投票と共有</small></a>
-        <a href="#admin-voices"><span>3</span><strong>振り返り</strong><small>みんなの声</small></a>
+        <a href="#admin-prepare">
+          <span>1</span>
+          <strong>準備</strong>
+          <small>講義と資料</small>
+        </a>
+        <a href="#admin-live">
+          <span>2</span>
+          <strong>講義中</strong>
+          <small>投票と共有</small>
+        </a>
+        <a href="#admin-voices">
+          <span>3</span>
+          <strong>振り返り</strong>
+          <small>みんなの声</small>
+        </a>
       </nav>
 
       <section className="panel" id="admin-prepare">
@@ -766,6 +943,132 @@ export function AdminPage() {
           </span>
         </div>
 
+        {isPhase3PrivatePdfEnabled ? (
+          <div className="display-control-grid publisher-control-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">LOCAL PUBLISHER</p>
+                <h3>PDFをPrivate R2へ公開する</h3>
+              </div>
+              <span className="metric">
+                {publisherStatus === 'paired'
+                  ? 'Publisher接続済み'
+                  : publisherStatus === 'connected'
+                    ? '接続・未ペアリング'
+                    : publisherStatus === 'checking'
+                      ? '確認中'
+                      : 'Publisher未接続'}
+              </span>
+            </div>
+
+            <div className="display-control-form">
+              <button
+                className="secondary-button"
+                disabled={publisherStatus === 'checking' || pdfPublishing}
+                onClick={() => void checkPublisher()}
+                type="button"
+              >
+                Publisher接続を確認
+              </button>
+              <label className="field compact-field">
+                <span>起動画面の8桁pairing code</span>
+                <input
+                  autoComplete="off"
+                  disabled={pdfPublishing}
+                  inputMode="numeric"
+                  maxLength={8}
+                  onChange={(event) =>
+                    setPublisherPairingCode(event.target.value)
+                  }
+                  value={publisherPairingCode}
+                />
+              </label>
+              <button
+                className="secondary-button"
+                disabled={
+                  publisherStatus === 'checking' ||
+                  publisherPairingCode.trim().length !== 8 ||
+                  pdfPublishing
+                }
+                onClick={() => void pairPublisher()}
+                type="button"
+              >
+                ペアリング
+              </button>
+            </div>
+
+            <div className="display-control-form">
+              <label className="field compact-field">
+                <span>PDF（合計15MB・75頁・20,000文字以下）</span>
+                <input
+                  accept="application/pdf,.pdf"
+                  disabled={
+                    publisherStatus !== 'paired' ||
+                    pdfPublishing ||
+                    lecture.status === 'closed'
+                  }
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null
+                    setPdfFile(file)
+                    setPdfPublicationDraftId('')
+                    if (file && !pdfDisplayName) {
+                      setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
+                    }
+                  }}
+                  type="file"
+                />
+              </label>
+              <label className="field compact-field">
+                <span>学生に表示する資料名</span>
+                <input
+                  disabled={pdfPublishing}
+                  maxLength={160}
+                  onChange={(event) => setPdfDisplayName(event.target.value)}
+                  value={pdfDisplayName}
+                />
+              </label>
+              <label className="field compact-field">
+                <span>ダウンロード</span>
+                <select
+                  disabled={pdfPublishing}
+                  onChange={(event) =>
+                    setPdfDownloadEnabled(event.target.value === 'enabled')
+                  }
+                  value={pdfDownloadEnabled ? 'enabled' : 'disabled'}
+                >
+                  <option value="enabled">学生に許可する</option>
+                  <option value="disabled">閲覧のみ</option>
+                </select>
+              </label>
+              <button
+                className="primary-button"
+                disabled={
+                  !pdfFile ||
+                  publisherStatus !== 'paired' ||
+                  pdfPublishing ||
+                  lecture.status === 'closed'
+                }
+                onClick={() => void publishPdfDocument()}
+                type="button"
+              >
+                {pdfPublishing ? '公開処理中…' : '検証してCloudflareへ公開'}
+              </button>
+            </div>
+
+            <p
+              className={
+                publisherMessage.includes('失敗') ? 'error-note' : 'note'
+              }
+            >
+              {publisherMessage ||
+                'PDF本文・抽出text・Cloudflare tokenはSupabaseやブラウザ保存領域へ送りません。画像OCRは行いません。'}
+            </p>
+            <p className="note">
+              大きいファイルは配信量、文字数は後続AI費用へ影響します。可能な限り圧縮・簡潔化してください。
+            </p>
+          </div>
+        ) : null}
+
         {!activeLectureSessionId ? (
           <p className="note">講義へ参加後、共有画面を操作できます。</p>
         ) : (
@@ -775,13 +1078,11 @@ export function AdminPage() {
                 <span>PDF資料</span>
                 <select
                   disabled={displayStateLoading || lecture.status === 'closed'}
-                  onChange={(event) =>
-                    setPdfDocumentInput(event.target.value)
-                  }
+                  onChange={(event) => setPdfDocumentInput(event.target.value)}
                   value={pdfDocumentInput}
                 >
                   <option value="">資料を表示しない</option>
-                  {lecturePdfAssets.map((asset) => (
+                  {availablePdfAssets.map((asset) => (
                     <option key={asset.id} value={asset.id}>
                       {asset.title}（{asset.pageCount}ページ）
                     </option>
@@ -899,7 +1200,9 @@ export function AdminPage() {
       <section className="panel ai-readiness-panel">
         <div className="panel-heading">
           <div className="section-intro">
-            <span className="section-icon violet"><AppIcon name="sparkles" size={18} /></span>
+            <span className="section-icon violet">
+              <AppIcon name="sparkles" size={18} />
+            </span>
             <div>
               <p className="eyebrow">LEARNING SUPPORT</p>
               <h2>講義の理解サポート</h2>
@@ -912,18 +1215,33 @@ export function AdminPage() {
         </p>
         <div className="api-readiness-grid">
           <article>
-            <span className="support-icon"><AppIcon name="message" size={18} /></span>
-            <div><strong>リアルタイム字幕</strong><small>学生・教室へ配信中</small></div>
+            <span className="support-icon">
+              <AppIcon name="message" size={18} />
+            </span>
+            <div>
+              <strong>リアルタイム字幕</strong>
+              <small>学生・教室へ配信中</small>
+            </div>
             <span className="readiness-dot is-active" />
           </article>
           <article>
-            <span className="support-icon violet"><AppIcon name="sparkles" size={18} /></span>
-            <div><strong>5分ハイライト</strong><small>話の要点とみんなの反応</small></div>
+            <span className="support-icon violet">
+              <AppIcon name="sparkles" size={18} />
+            </span>
+            <div>
+              <strong>5分ハイライト</strong>
+              <small>話の要点とみんなの反応</small>
+            </div>
             <span className="readiness-dot is-active" />
           </article>
           <article>
-            <span className="support-icon violet"><AppIcon name="book" size={18} /></span>
-            <div><strong>講義資料の要点</strong><small>ページと一緒に整理して表示</small></div>
+            <span className="support-icon violet">
+              <AppIcon name="book" size={18} />
+            </span>
+            <div>
+              <strong>講義資料の要点</strong>
+              <small>ページと一緒に整理して表示</small>
+            </div>
             <span className="readiness-dot is-active" />
           </article>
         </div>
@@ -1033,7 +1351,9 @@ export function AdminPage() {
             </div>
           ))}
           {!adminPollsLoading && adminPolls.length === 0 ? (
-            <p className="note">まだ投票はありません。講義の問いを作ってみましょう。</p>
+            <p className="note">
+              まだ投票はありません。講義の問いを作ってみましょう。
+            </p>
           ) : null}
         </div>
       </section>
