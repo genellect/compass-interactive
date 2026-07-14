@@ -389,6 +389,9 @@ verify_jwt = true
 [functions.update-display-state]
 verify_jwt = true
 
+[functions.manage-ai-control]
+verify_jwt = true
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

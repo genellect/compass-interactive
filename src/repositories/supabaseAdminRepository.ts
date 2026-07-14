@@ -57,8 +57,13 @@ type UpdateDisplayStateRequest =
     }
 
 export type AdminLecture = {
+  archiveExpiresAt: string | null
+  closedAt: string | null
+  closeActorType: string | null
+  closeReason: string | null
   createdAt: string
   endsAt: string | null
+  hardStopAt: string | null
   id: string
   lectureCode: string
   startsAt: string | null
@@ -91,6 +96,61 @@ type ManageLecturesResponse = {
   message?: string
   ok?: boolean
 }
+
+type ManageAiControlResponse = {
+  control?: unknown
+  message?: string
+  ok?: boolean
+  recentOperations?: unknown[]
+  result?: unknown
+}
+
+export type ManageAiControlRequest =
+  | {
+      action: 'status'
+      adminToken: string
+      lectureSessionId: string
+    }
+  | {
+      action: 'configure'
+      adminToken: string
+      configuration: Record<string, boolean | number>
+      lectureSessionId: string
+    }
+  | {
+      action: 'startOperation'
+      adminToken: string
+      estimatedAudioSeconds?: number
+      estimatedInputTokens?: number
+      estimatedMicrousd?: number
+      estimatedOutputTokens?: number
+      feature:
+        | 'captions'
+        | 'summaries'
+        | 'material_analysis'
+        | 'poll_suggestions'
+        | 'academic_answers'
+      idempotencyKey: string
+      lectureSessionId: string
+    }
+  | {
+      action: 'finishOperation'
+      actualAudioSeconds?: number
+      actualInputTokens?: number
+      actualMicrousd?: number
+      actualOutputTokens?: number
+      adminToken: string
+      errorCode?: string | null
+      operationId: string
+      providerRequestId?: string | null
+      status: 'succeeded' | 'failed' | 'cancelled'
+    }
+  | {
+      action: 'stop'
+      adminToken: string
+      lectureSessionId: string
+      reason: string
+    }
 
 type ManageLecturesRequest =
   | {
@@ -248,6 +308,25 @@ export const supabaseAdminRepository = {
     }
 
     return data.lectures
+  },
+
+  async manageAiControl(request: ManageAiControlRequest) {
+    const { data, error } =
+      await supabase.functions.invoke<ManageAiControlResponse>(
+        'manage-ai-control',
+        { body: request },
+      )
+
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'AI control operation failed.'),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'AI control operation failed.')
+    }
+
+    return data
   },
 
   async managePolls(request: ManagePollsRequest): Promise<AdminPoll[]> {

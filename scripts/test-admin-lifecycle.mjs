@@ -25,6 +25,7 @@ const migration = read('supabase/migrations/20260711080712_admin_lifecycle.sql')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const managePolls = read('supabase/functions/manage-polls/index.ts')
 const updateDisplay = read('supabase/functions/update-display-state/index.ts')
+const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
 const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
@@ -46,7 +47,7 @@ for (const functionName of [
   )
 }
 
-for (const source of [manageLectures, managePolls, updateDisplay]) {
+for (const source of [manageLectures, managePolls, updateDisplay, manageAiControl]) {
   assert.match(source, /_shared\/adminToken\.ts/)
   assert.match(source, /verifyAdminToken/)
   assert.doesNotMatch(source, /function timingSafeEqual|function signToken/)
@@ -55,6 +56,10 @@ assert.match(verifyPin, /_shared\/adminToken\.ts/)
 assert.match(manageLectures, /rpc\('admin_create_lecture'/)
 assert.match(manageLectures, /rpc\(\s*'admin_set_lecture_status'/)
 assert.doesNotMatch(manageLectures, /from\('lecture_sessions'\)\s*\.insert/)
+assert.doesNotMatch(manageLectures, /transition_at:\s*new Date/)
+assert.match(manageAiControl, /admin_start_lecture_ai_operation/)
+assert.match(manageAiControl, /admin_stop_lecture_ai_control/)
+assert.doesNotMatch(manageAiControl, /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY[^)]*jsonResponse/)
 assert.match(managePolls, /rpc\('admin_create_poll'/)
 assert.match(managePolls, /'admin_set_poll_status'/)
 assert.match(adminRepository, /async managePolls/)

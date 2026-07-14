@@ -21,8 +21,13 @@ type ManageLecturesRequest =
     }
 
 type LectureRow = {
+  archive_expires_at: string | null
+  closed_at: string | null
+  close_actor_type: string | null
+  close_reason: string | null
   created_at: string
   ends_at: string | null
+  hard_stop_at: string | null
   id: string
   starts_at: string | null
   status: LectureStatus
@@ -50,8 +55,13 @@ function normalizeTimestamp(value: string | null | undefined) {
 
 function mapLecture(row: LectureRow, codeByLectureId: Map<string, string>) {
   return {
+    archiveExpiresAt: row.archive_expires_at,
+    closedAt: row.closed_at,
+    closeActorType: row.close_actor_type,
+    closeReason: row.close_reason,
     createdAt: row.created_at,
     endsAt: row.ends_at,
+    hardStopAt: row.hard_stop_at,
     id: row.id,
     lectureCode: codeByLectureId.get(row.id) ?? '',
     startsAt: row.starts_at,
@@ -135,7 +145,9 @@ Deno.serve(async (request) => {
   async function listLectures() {
     const { data: lectureRows, error: lectureError } = await supabase
       .from('lecture_sessions')
-      .select('id,title,status,starts_at,ends_at,created_at,updated_at')
+      .select(
+        'id,title,status,starts_at,ends_at,hard_stop_at,closed_at,close_reason,close_actor_type,archive_expires_at,created_at,updated_at',
+      )
       .order('created_at', { ascending: false })
       .limit(30)
 
@@ -229,7 +241,6 @@ Deno.serve(async (request) => {
         {
           target_action: body.action,
           target_lecture_session_id: body.lectureSessionId,
-          transition_at: new Date().toISOString(),
         },
       )
 

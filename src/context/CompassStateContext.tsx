@@ -20,9 +20,19 @@ import {
   type JoinedLectureSession,
 } from '../lib/joinedLecture'
 import {
+  createServerClockSample,
+  getDeadlineRefreshDelayMs,
+  isLifecycleRequestCurrent,
+  removePendingComments,
+  type ServerClockSample,
+} from '../lib/lectureLifecycle'
+import {
   normalizeLiveSyncPathname,
 } from '../lib/liveSync'
-import { isPhase1SyncProtocolEnabled } from '../lib/featureFlags'
+import {
+  isPhase1SyncProtocolEnabled,
+  isPhase2LectureLifecycleEnabled,
+} from '../lib/featureFlags'
 import {
   advanceLiveStateVersions,
   getRequestedLiveStateVersions,
@@ -297,6 +307,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     useRef<Promise<JoinedLectureSession | null> | null>(null)
   const commentCursorRef = useRef<CommentCursor | null>(null)
   const likedCommentIdsRef = useRef<Set<string>>(new Set())
+  const lifecycleRequestEpochRef = useRef(0)
+  const serverClockSampleRef = useRef<ServerClockSample | null>(null)
+  const archiveLoadedLectureIdRef = useRef<string | null>(null)
   const [currentParticipantId, setCurrentParticipantId] = useState<
     string | null
   >(() => {
@@ -425,6 +438,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setSessionSyncPauseReason(
         nextLecture.status === 'closed' ? 'lectureClosed' : null,
       )
+      lifecycleRequestEpochRef.current += 1
+      archiveLoadedLectureIdRef.current = null
       setComments([])
       setPolls([])
       setPollResults([])
@@ -434,6 +449,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       liveStateVersionsRef.current = createEmptyLiveStateVersions()
       commentCursorRef.current = null
       likedCommentIdsRef.current = new Set()
+      serverClockSampleRef.current = null
       setHasOlderComments(false)
       setIsLoadingOlderComments(false)
       setCommentsError(null)
@@ -513,6 +529,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           })
           const participantState = await participantStatePromise
 
+          if (snapshot.serverTime) {
+            serverClockSampleRef.current = createServerClockSample(
+              snapshot.serverTime,
+              performance.now(),
+            )
+          }
+
           if (snapshot.lecture) {
             persistJoinedLectureSession(snapshot.lecture)
             setJoinedLectureSession(snapshot.lecture)
@@ -590,6 +613,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
 
           if (snapshot.lecture?.status === 'closed') {
+            lifecycleRequestEpochRef.current += 1
+            setComments(removePendingComments)
+            setIsSubmittingComment(false)
             setSessionSyncPauseReason('lectureClosed')
           }
 
@@ -724,6 +750,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     liveStateVersionsRef.current = createEmptyLiveStateVersions()
     commentCursorRef.current = null
     likedCommentIdsRef.current = new Set()
+    archiveLoadedLectureIdRef.current = null
     setHasOlderComments(false)
     setIsLoadingOlderComments(false)
 
@@ -743,6 +770,55 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     isLectureOpen,
     isLiveSyncRoute,
     refreshLiveSnapshot,
+    runtimeMode,
+  ])
+
+  useEffect(() => {
+    if (
+      !isPhase2LectureLifecycleEnabled ||
+      runtimeMode !== 'live' ||
+      !hasActiveLectureSessionId ||
+      joinedLectureSession?.status !== 'closed' ||
+      !isLiveSyncRoute ||
+      archiveLoadedLectureIdRef.current === activeLectureSessionId
+    ) {
+      return
+    }
+
+    archiveLoadedLectureIdRef.current = activeLectureSessionId
+    let disposed = false
+
+    void supabaseLiveStateRepository
+      .getArchive(activeLectureSessionId)
+      .then((archive) => {
+        if (disposed || !archive) {
+          return
+        }
+
+        persistJoinedLectureSession(archive.lecture)
+        setJoinedLectureSession(archive.lecture)
+        setComments(archive.comments)
+        setDisplayState(archive.pdf)
+        setHasOlderComments(archive.commentsHasMore)
+      })
+      .catch((error) => {
+        if (!disposed) {
+          setCommentsError(
+            error instanceof Error
+              ? error.message
+              : '講義アーカイブを取得できませんでした。',
+          )
+        }
+      })
+
+    return () => {
+      disposed = true
+    }
+  }, [
+    activeLectureSessionId,
+    hasActiveLectureSessionId,
+    isLiveSyncRoute,
+    joinedLectureSession?.status,
     runtimeMode,
   ])
 
@@ -793,6 +869,40 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     onSync: runFiveSecondLiveSync,
     runImmediately: false,
   })
+
+  useEffect(() => {
+    if (
+      !isPhase2LectureLifecycleEnabled ||
+      runtimeMode !== 'live' ||
+      !canRunLiveSync ||
+      !joinedLectureSession?.hardStopAt
+    ) {
+      return
+    }
+
+    const sample = serverClockSampleRef.current
+    if (!sample) {
+      return
+    }
+    const delay = getDeadlineRefreshDelayMs({
+      hardStopAt: joinedLectureSession.hardStopAt,
+      monotonicNowMs: performance.now(),
+      sample,
+    })
+    if (delay === null) {
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshLiveSnapshot({ forceAll: true }).catch(() => undefined)
+    }, Math.min(delay + 25, 2_147_483_647))
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    canRunLiveSync,
+    joinedLectureSession?.hardStopAt,
+    refreshLiveSnapshot,
+    runtimeMode,
+  ])
 
   useEffect(() => {
     if (runtimeMode !== 'demo' || !hasActiveLectureSessionId) {
@@ -944,6 +1054,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         setIsSubmittingComment(true)
         setCommentsError(null)
         recordSessionActivity()
+        const requestEpoch = lifecycleRequestEpochRef.current
 
         let optimisticCommentId: string | null = null
         try {
@@ -968,6 +1079,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               lectureSessionId: activeLectureSessionId,
               participantId: currentParticipantId,
             })
+          if (
+            !isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            return false
+          }
           setComments((current) =>
             settleOptimisticComment(
               current,
@@ -984,11 +1103,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               rollbackOptimisticComment(current, rejectedCommentId),
             )
           }
-          setCommentsError(
-            error instanceof Error
-              ? error.message
-              : 'コメント投稿に失敗しました。',
-          )
+          if (
+            isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            setCommentsError(
+              error instanceof Error
+                ? error.message
+                : 'コメント投稿に失敗しました。',
+            )
+          }
           return false
         } finally {
           setIsSubmittingComment(false)
@@ -1030,6 +1156,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
         setCommentLikesError(null)
         recordSessionActivity()
+        const requestEpoch = lifecycleRequestEpochRef.current
 
         try {
           if (runtimeMode === 'demo') {
@@ -1042,17 +1169,32 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             lectureSessionId: activeLectureSessionId,
             participantId: currentParticipantId,
           })
+          if (
+            !isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            return
+          }
           likedCommentIdsRef.current.add(commentId)
           setComments((current) =>
             mergeLocalCommentLike(current, commentId, currentParticipantId),
           )
           void refreshParticipantLiveState().catch(() => undefined)
         } catch (error) {
-          setCommentLikesError(
-            error instanceof Error
-              ? `いいねに失敗しました: ${error.message}`
-              : 'いいねに失敗しました。',
-          )
+          if (
+            isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            setCommentLikesError(
+              error instanceof Error
+                ? `いいねに失敗しました: ${error.message}`
+                : 'いいねに失敗しました。',
+            )
+          }
         }
       },
       toggleCommentVisibility: (commentId) => {
@@ -1116,6 +1258,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
         setPollsError(null)
         recordSessionActivity()
+        const requestEpoch = lifecycleRequestEpochRef.current
 
         try {
           await supabasePollRepository.submitPollResponse({
@@ -1124,6 +1267,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             participantId: currentParticipantId,
             pollId,
           })
+          if (
+            !isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            return
+          }
           setPollResponses((current) =>
             mergeLocalPollResponse({
               currentResponses: current,
@@ -1134,11 +1285,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           )
           void refreshParticipantLiveState().catch(() => undefined)
         } catch (error) {
-          setPollsError(
-            error instanceof Error
-              ? `Poll回答に失敗しました: ${error.message}`
-              : 'Poll回答に失敗しました。',
-          )
+          if (
+            isLifecycleRequestCurrent(
+              requestEpoch,
+              lifecycleRequestEpochRef.current,
+            )
+          ) {
+            setPollsError(
+              error instanceof Error
+                ? `Poll回答に失敗しました: ${error.message}`
+                : 'Poll回答に失敗しました。',
+            )
+          }
         }
       },
     }),

@@ -54,6 +54,7 @@ export type LiveSnapshot = {
   pollResponses: PollResponse[] | null
   pollResults: PollResultSummary[] | null
   polls: Poll[] | null
+  serverTime: string | null
   stateChanged: boolean
   versions: LiveStateVersions
 }
@@ -61,6 +62,14 @@ export type LiveSnapshot = {
 export type CommentHistoryPage = {
   hasOlder: boolean
   items: LiveComment[]
+}
+
+export type LectureArchive = {
+  comments: LiveComment[]
+  commentsHasMore: boolean
+  lecture: JoinedLectureSession
+  pdf: DisplayState | null
+  summaries: unknown[]
 }
 
 type SnapshotRequest = {
@@ -107,7 +116,11 @@ type RawPoll = {
 }
 
 type RawLecture = {
+  archive_expires_at?: string | null
+  closed_at?: string | null
+  close_reason?: string | null
   ends_at: string | null
+  hard_stop_at?: string | null
   lecture_session_id: string
   starts_at: string | null
   status: JoinedLectureSession['status']
@@ -134,6 +147,7 @@ type RawLegacySnapshot = {
   lecture: RawLecture
   like_totals: RawLikeTotal[] | null
   polls: RawPoll[] | null
+  server_time?: string
   state_changed: boolean
   versions: {
     comments: number
@@ -160,6 +174,7 @@ type RawPublicSnapshotV2 = {
     summaries?: unknown[]
   }
   contract_version: 2
+  server_time: string
   versions: {
     caption: number
     comments: number
@@ -195,6 +210,31 @@ type RawCommentHistoryV2 = {
   items: RawComment[]
 }
 
+type RawTerminalStateV2 = {
+  archive_expires_at: string | null
+  closed_at: string | null
+  close_reason: string | null
+  hard_stop_at: string | null
+  lecture_session_id: string
+  server_time: string
+  started_at: string | null
+  status: 'closed'
+  title: string
+}
+
+type RawArchiveV2 = {
+  comments: RawComment[]
+  comments_has_more: boolean
+  lecture: RawLecture
+  pdf: {
+    current_pdf_page: number
+    display_mode: DisplayState['displayMode']
+    pdf_document_id: string | null
+    updated_at: string
+  } | null
+  summaries: unknown[]
+}
+
 function mapComment(row: RawComment): LiveComment {
   return {
     body: row.body,
@@ -217,6 +257,12 @@ function mapLecture(raw: RawLecture): JoinedLectureSession {
     title: raw.title,
     ...(raw.starts_at ? { startsAt: raw.starts_at } : {}),
     ...(raw.ends_at ? { endsAt: raw.ends_at } : {}),
+    ...(raw.hard_stop_at ? { hardStopAt: raw.hard_stop_at } : {}),
+    ...(raw.closed_at ? { closedAt: raw.closed_at } : {}),
+    ...(raw.close_reason ? { closeReason: raw.close_reason } : {}),
+    ...(raw.archive_expires_at
+      ? { archiveExpiresAt: raw.archive_expires_at }
+      : {}),
   }
 }
 
@@ -298,6 +344,7 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
     pollResponses,
     pollResults,
     polls,
+    serverTime: raw.server_time ?? null,
     stateChanged: raw.state_changed,
     versions: {
       caption: null,
@@ -337,6 +384,7 @@ function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
     pollResponses: null,
     pollResults,
     polls,
+    serverTime: raw.server_time,
     stateChanged: Object.keys(raw.changed).length > 0,
     versions: {
       caption: Number(raw.versions.caption),
@@ -402,6 +450,57 @@ async function getPublicSnapshotV2({
   return data ? mapPublicSnapshotV2(data as unknown as RawPublicSnapshotV2) : null
 }
 
+async function getTerminalSnapshot(
+  lectureSessionId: string,
+): Promise<LiveSnapshot | null> {
+  const { data, error } = await supabase.rpc('get_lecture_terminal_state_v2', {
+    target_lecture_session_id: lectureSessionId,
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+  if (!data) {
+    return null
+  }
+
+  const raw = data as unknown as RawTerminalStateV2
+  return {
+    comments: null,
+    contractVersion: 2,
+    currentParticipantId: null,
+    display: null,
+    lecture: mapLecture({
+      archive_expires_at: raw.archive_expires_at,
+      closed_at: raw.closed_at,
+      close_reason: raw.close_reason,
+      ends_at: raw.hard_stop_at,
+      hard_stop_at: raw.hard_stop_at,
+      lecture_session_id: raw.lecture_session_id,
+      starts_at: raw.started_at,
+      status: raw.status,
+      title: raw.title,
+    }),
+    likeTotals: null,
+    pollResponses: null,
+    pollResults: null,
+    polls: null,
+    serverTime: raw.server_time,
+    stateChanged: true,
+    versions: {
+      caption: null,
+      comments: null,
+      display: null,
+      lecture: null,
+      likes: null,
+      pdf: null,
+      polls: null,
+      state: null,
+      summaries: null,
+    },
+  }
+}
+
 export const supabaseLiveStateRepository = {
   async getSnapshot(request: SnapshotRequest): Promise<LiveSnapshot> {
     assertSupabaseConfigured()
@@ -413,6 +512,12 @@ export const supabaseLiveStateRepository = {
         : await getLegacySnapshot(request)
 
     if (!snapshot) {
+      const terminalSnapshot = await getTerminalSnapshot(
+        request.lectureSessionId,
+      )
+      if (terminalSnapshot) {
+        return terminalSnapshot
+      }
       throw new Error('講義のlive snapshotが見つかりません。')
     }
 
@@ -490,6 +595,36 @@ export const supabaseLiveStateRepository = {
     return {
       hasOlder: raw.has_older,
       items: raw.items.map(mapComment),
+    }
+  },
+
+  async getArchive(lectureSessionId: string): Promise<LectureArchive | null> {
+    assertSupabaseConfigured()
+    await ensureAnonymousAuthSession()
+
+    const { data, error } = await supabase.rpc('get_lecture_archive_v2', {
+      target_lecture_session_id: lectureSessionId,
+    })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      return null
+    }
+
+    const raw = data as unknown as RawArchiveV2
+    return {
+      comments: raw.comments.map(mapComment),
+      commentsHasMore: raw.comments_has_more,
+      lecture: mapLecture(raw.lecture),
+      pdf: raw.pdf
+        ? mapDisplay({
+            ...raw.pdf,
+            lecture_session_id: lectureSessionId,
+          })
+        : null,
+      summaries: raw.summaries,
     }
   },
 }

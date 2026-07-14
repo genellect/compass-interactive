@@ -13,6 +13,7 @@ const adminLifecycleMigrationName = '20260711080712_admin_lifecycle.sql'
 const pdfSyncMigrationName = '20260711111834_pdf_sync.sql'
 const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
 const phase1MigrationName = '20260714021129_phase1_sync_protocol_v2.sql'
+const phase2MigrationName = '20260714080706_phase2_lecture_lifecycle.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -28,6 +29,7 @@ assert.deepEqual(
     pdfSyncMigrationName,
     phase0MigrationName,
     phase1MigrationName,
+    phase2MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -83,6 +85,7 @@ assert.match(anonymousAuth, /getAnonymousSignInCaptchaToken/)
 assert.match(anonymousAuth, /options: \{ captchaToken \}/)
 assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
 assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
+assert.match(envExample, /VITE_PHASE2_LECTURE_LIFECYCLE=false/)
 assert.match(
   turnstile,
   /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,
@@ -98,6 +101,35 @@ assert.match(
   phase0Migration,
   /grant execute on function public\.join_lecture_by_code\(text\)[\s\S]*?to authenticated/,
 )
+
+const phase2Migration = readFileSync(
+  join(migrationsDir, phase2MigrationName),
+  'utf8',
+)
+for (const lifecycleColumn of [
+  'started_at',
+  'hard_stop_at',
+  'closed_at',
+  'archive_expires_at',
+]) {
+  assert.match(phase2Migration, new RegExp(`add column ${lifecycleColumn}\\b`))
+}
+for (const table of [
+  'lecture_lifecycle_events',
+  'lecture_archive_state',
+  'lecture_ai_control',
+  'ai_usage_ledger',
+]) {
+  assert.match(phase2Migration, new RegExp(`create table public\\.${table}\\b`))
+  assert.match(
+    phase2Migration,
+    new RegExp(`alter table public\\.${table} enable row level security;`),
+  )
+}
+assert.match(phase2Migration, /interval '90 minutes'/)
+assert.match(phase2Migration, /interval '30 days'/)
+assert.match(phase2Migration, /for update skip locked/)
+assert.doesNotMatch(phase2Migration, /delete from public\./)
 
 const phase1Migration = readFileSync(
   join(migrationsDir, phase1MigrationName),
@@ -133,6 +165,7 @@ for (const functionName of [
   'manage-lectures',
   'manage-polls',
   'update-display-state',
+  'manage-ai-control',
 ]) {
   const sourcePath = join(supabaseDir, 'functions', functionName, 'index.ts')
   assert.ok(existsSync(sourcePath), `${functionName} source must exist.`)

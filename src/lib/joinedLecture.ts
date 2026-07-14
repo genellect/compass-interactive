@@ -4,6 +4,13 @@ const LECTURE_TITLE_STORAGE_KEY = 'compass-interactive-lecture-title'
 const LECTURE_STATUS_STORAGE_KEY = 'compass-interactive-lecture-status'
 const LECTURE_STARTS_AT_STORAGE_KEY = 'compass-interactive-lecture-starts-at'
 const LECTURE_ENDS_AT_STORAGE_KEY = 'compass-interactive-lecture-ends-at'
+const LECTURE_HARD_STOP_AT_STORAGE_KEY =
+  'compass-interactive-lecture-hard-stop-at'
+const LECTURE_CLOSED_AT_STORAGE_KEY = 'compass-interactive-lecture-closed-at'
+const LECTURE_CLOSE_REASON_STORAGE_KEY =
+  'compass-interactive-lecture-close-reason'
+const LECTURE_ARCHIVE_EXPIRES_AT_STORAGE_KEY =
+  'compass-interactive-lecture-archive-expires-at'
 const LECTURE_RUNTIME_MODE_STORAGE_KEY =
   'compass-interactive-lecture-runtime-mode'
 
@@ -13,6 +20,10 @@ const UUID_PATTERN =
 export const JOURNAL_CLUB_MVP_CODE = 'JC2026'
 
 export type JoinedLectureSession = {
+  archiveExpiresAt?: string
+  closedAt?: string
+  closeReason?: string
+  hardStopAt?: string
   id: string
   runtimeMode: LectureRuntimeMode
   title: string
@@ -44,6 +55,16 @@ export function restoreJoinedLectureSession(): JoinedLectureSession | null {
   const status = window.localStorage.getItem(LECTURE_STATUS_STORAGE_KEY)
   const startsAt = window.localStorage.getItem(LECTURE_STARTS_AT_STORAGE_KEY)
   const endsAt = window.localStorage.getItem(LECTURE_ENDS_AT_STORAGE_KEY)
+  const hardStopAt = window.localStorage.getItem(
+    LECTURE_HARD_STOP_AT_STORAGE_KEY,
+  )
+  const closedAt = window.localStorage.getItem(LECTURE_CLOSED_AT_STORAGE_KEY)
+  const closeReason = window.localStorage.getItem(
+    LECTURE_CLOSE_REASON_STORAGE_KEY,
+  )
+  const archiveExpiresAt = window.localStorage.getItem(
+    LECTURE_ARCHIVE_EXPIRES_AT_STORAGE_KEY,
+  )
 
   return {
     id,
@@ -52,6 +73,10 @@ export function restoreJoinedLectureSession(): JoinedLectureSession | null {
     title: title || '参加中の講義',
     ...(startsAt ? { startsAt } : {}),
     ...(endsAt ? { endsAt } : {}),
+    ...(hardStopAt ? { hardStopAt } : {}),
+    ...(closedAt ? { closedAt } : {}),
+    ...(closeReason ? { closeReason } : {}),
+    ...(archiveExpiresAt ? { archiveExpiresAt } : {}),
   }
 }
 
@@ -79,6 +104,39 @@ export function persistJoinedLectureSession(lecture: JoinedLectureSession) {
   } else {
     window.localStorage.removeItem(LECTURE_ENDS_AT_STORAGE_KEY)
   }
+
+  if (lecture.hardStopAt) {
+    window.localStorage.setItem(
+      LECTURE_HARD_STOP_AT_STORAGE_KEY,
+      lecture.hardStopAt,
+    )
+  } else {
+    window.localStorage.removeItem(LECTURE_HARD_STOP_AT_STORAGE_KEY)
+  }
+
+  if (lecture.closedAt) {
+    window.localStorage.setItem(LECTURE_CLOSED_AT_STORAGE_KEY, lecture.closedAt)
+  } else {
+    window.localStorage.removeItem(LECTURE_CLOSED_AT_STORAGE_KEY)
+  }
+
+  if (lecture.closeReason) {
+    window.localStorage.setItem(
+      LECTURE_CLOSE_REASON_STORAGE_KEY,
+      lecture.closeReason,
+    )
+  } else {
+    window.localStorage.removeItem(LECTURE_CLOSE_REASON_STORAGE_KEY)
+  }
+
+  if (lecture.archiveExpiresAt) {
+    window.localStorage.setItem(
+      LECTURE_ARCHIVE_EXPIRES_AT_STORAGE_KEY,
+      lecture.archiveExpiresAt,
+    )
+  } else {
+    window.localStorage.removeItem(LECTURE_ARCHIVE_EXPIRES_AT_STORAGE_KEY)
+  }
 }
 
 export function clearJoinedLectureSession() {
@@ -91,5 +149,9 @@ export function clearJoinedLectureSession() {
   window.localStorage.removeItem(LECTURE_STATUS_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_STARTS_AT_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_ENDS_AT_STORAGE_KEY)
+  window.localStorage.removeItem(LECTURE_HARD_STOP_AT_STORAGE_KEY)
+  window.localStorage.removeItem(LECTURE_CLOSED_AT_STORAGE_KEY)
+  window.localStorage.removeItem(LECTURE_CLOSE_REASON_STORAGE_KEY)
+  window.localStorage.removeItem(LECTURE_ARCHIVE_EXPIRES_AT_STORAGE_KEY)
   window.localStorage.removeItem(LECTURE_RUNTIME_MODE_STORAGE_KEY)
 }
