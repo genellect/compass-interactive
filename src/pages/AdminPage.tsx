@@ -115,6 +115,9 @@ export function AdminPage() {
     availablePdfAssets.find(
       (asset) => asset.id === displayState?.pdfDocumentId,
     ) ?? getLecturePdfAsset(displayState?.pdfDocumentId)
+  const activeAdminLecture = lectures.find(
+    (item) => item.id === activeLectureSessionId,
+  )
 
   function toDatetimeLocalValue(value: string | null) {
     if (!value) {
@@ -1226,12 +1229,9 @@ export function AdminPage() {
         activeLectureSessionId ? (
           <RealtimeCaptionControl
             adminToken={adminToken}
-            hardStopAt={
-              lectures.find((item) => item.id === activeLectureSessionId)
-                ?.hardStopAt ?? lecture.expiresAt
-            }
+            hardStopAt={activeAdminLecture?.hardStopAt ?? lecture.expiresAt}
             lectureSessionId={activeLectureSessionId}
-            lectureStatus={lecture.status}
+            lectureStatus={activeAdminLecture?.status ?? lecture.status}
           />
         ) : (
           <p className="note">

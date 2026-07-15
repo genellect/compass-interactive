@@ -2,12 +2,19 @@
 
 Date: 2026-07-15 (JST)
 
-Decision: **PASS — local implementation and mock/provider-boundary tests only**
+Decision: **PASS — local implementation, isolated browser/DB verification and
+real no-audio provider-boundary verification**
 
 Production decision: **HOLD**. No production Supabase migration/setting/secret,
 Cloudflare resource, public Web deployment, hosted feature flag, external
-service mutation, paid OpenAI request or Git push was performed. Phase 1-4
-remain OFF until the combined Phase 6 rollout gate.
+service configuration or Git push was changed. One local OpenAI client-secret
+request was made without WebRTC, microphone access or audio. Phase 1-4 remain
+OFF until the combined Phase 6 rollout gate.
+
+The developer explicitly deferred the real microphone/WebRTC canary to a later
+phase. Phase 4 therefore gates the provider credential/client-secret boundary,
+mocked WebRTC event flow and real application state flow; live audio quality,
+latency and microphone permission behavior remain Phase 6 canary measurements.
 
 ## Delivered
 
@@ -34,11 +41,12 @@ Requirements and threat controls are in
 
 - `OPENAI_API_KEY`: present only in ignored local `.env.local`; value was never
   displayed or committed.
-- `BILLING_PIN`: absent. Local live/paid smoke testing remains intentionally
-  blocked until the developer creates a strong value distinct from
-  `ADMIN_PIN`.
-- All completed tests used fake keys/PINs or direct local DB fixtures. No paid
-  provider request was sent.
+- `BILLING_PIN`: present only in ignored local `.env.local`; value was never
+  displayed or committed and remains separate from the Admin credential.
+- A real-key, no-audio boundary test minted one short-lived
+  `gpt-realtime-whisper` client secret and immediately cancelled the operation.
+  No standard key, Admin token, billing PIN or ephemeral secret was printed or
+  persisted in application data.
 
 ## Database gates
 
@@ -51,12 +59,15 @@ Validation stack: Docker/Supabase local PostgreSQL 17, DB port 55422.
 | Full SQL regression           | PASS   | 10 pgTAP files, 399 assertions; Phase 0 27/27 and Phase 1-4 suites pass                                                               |
 | Phase 4 SQL test              | PASS   | 59 assertions: RLS/grants, PIN lockout, scope/replay/expiry, budget, ledger, ownership, bounded publish, heartbeat/reaper, stop/close |
 | DB lint                       | PASS   | public/private PL/pgSQL lint has no remaining warnings after removal of unread variables                                              |
+| Local DB Advisors             | PASS   | Supabase security and performance Advisors reported no issues                                                                          |
 | Realtime publication check    | PASS   | no Phase 4 table in `supabase_realtime`                                                                                               |
 
-The local gate caught and fixed two defects before completion: a PL/pgSQL local
-variable qualification that failed only when consuming a grant, and an overly
-broad open-lecture read inherited from v2. The additive v3 RPC now requires
-exact participant ownership without altering v2 compatibility.
+The local gate caught and fixed three defects before completion: a PL/pgSQL
+local-variable qualification that failed only when consuming a grant, an overly
+broad open-lecture read inherited from v2, and an Admin caption guard that read
+participant-owned context state and disabled start when the Admin was not also
+a participant. The additive v3 RPC retains exact participant ownership, while
+the Admin control now uses the independently authorized Admin lecture list.
 
 ## Application gates
 
@@ -65,7 +76,9 @@ exact participant ownership without altering v2 compatibility.
 | TypeScript `--noEmit`                               | PASS                  |
 | Oxlint                                              | PASS, zero warnings   |
 | Caption ordering/window/parser/export test          | PASS                  |
-| Edge billing/Admin-token/OpenAI request-helper test | PASS; mock fetch only |
+| Edge billing/Admin-token/OpenAI request-helper test | PASS; mock fetch      |
+| Real OpenAI client-secret boundary                  | PASS; no audio/WebRTC |
+| Isolated Admin/student browser flow                 | PASS                  |
 | Static secret/storage/responsibility test           | PASS                  |
 | Existing frontend/demo/live/Admin/Phase 1-3 tests   | PASS                  |
 | Production frontend build                           | PASS                  |
@@ -92,21 +105,18 @@ a 20-person canary measurement rather than a permanent quota guarantee.
   rows and repair forward. Do not physically delete accounting data or run a
   destructive down migration.
 
-## Production blockers / manual work
+## Deferred production work
 
-1. Create a strong `BILLING_PIN` distinct from `ADMIN_PIN`. For a future local
-   live smoke, add it only to ignored `.env.local`; never use `VITE_`.
-2. Install the official OpenAI developer-docs MCP if desired:
-   `codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp`,
-   then restart Codex. The app sandbox could not execute `codex.exe`; official
-   Web documentation was used instead.
-3. Do not add hosted Edge secrets yet. At the Phase 6 production gate, add the
-   standard key, billing PIN, model and price to Supabase Edge secrets/config
-   with flags OFF, then run hosted security/two-user tests.
-4. Obtain explicit approval for the first paid local/provider smoke request and
-   define its maximum cost before enabling both Phase 4 flags.
-5. Verify organization privacy/ZDR settings, microphone notice/consent text,
-   hosted rate limits and model price immediately before rollout.
+1. Do not add hosted Edge secrets yet. At the Phase 6 production gate, add the
+   standard key, a strong billing PIN distinct from `ADMIN_PIN`, model and price
+   with both flags OFF, then run hosted security/two-user tests.
+2. Run the developer-deferred microphone/WebRTC canary only after approving the
+   microphone notice and a maximum test budget.
+3. Verify organization privacy/ZDR settings, hosted rate limits and the current
+   model price immediately before rollout.
+4. Re-evaluate Supabase's current publishable/secret API-key migration before
+   hosted deployment. The local implementation still supports the legacy
+   service-role variable, which must never be exposed to a browser.
 
 ## Workspace integrity
 

@@ -49,6 +49,7 @@ const control = read(
   'AdminAiControl',
   'RealtimeCaptionControl.tsx',
 )
+const adminPage = read('src', 'pages', 'AdminPage.tsx')
 const config = read('supabase', 'config.toml')
 
 assert.match(envExample, /VITE_PHASE4_REALTIME_CAPTIONS=false/)
@@ -83,6 +84,14 @@ assert.doesNotMatch(control, /localStorage|sessionStorage/)
 assert.match(control, /5_000/)
 assert.match(control, /15_000/)
 assert.match(control, /client_unmount/)
+assert.match(
+  adminPage,
+  /const activeAdminLecture = lectures\.find\([\s\S]*?item\.id === activeLectureSessionId/,
+)
+assert.match(
+  adminPage,
+  /lectureStatus=\{activeAdminLecture\?\.status \?\? lecture\.status\}/,
+)
 assert.match(migration, /lecture_public_captions/)
 assert.match(
   migration,

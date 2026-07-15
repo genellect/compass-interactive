@@ -23,6 +23,16 @@ The server stores the model and price snapshot with each operation. Price and
 availability must be rechecked at the Phase 6 gate. Model selection for Phase 5
 summaries is intentionally not decided here.
 
+### Local validation boundary
+
+The local gate verified the complete browser/DB control flow, mocked WebRTC
+events and one real OpenAI client-secret issuance. The real request used the
+ignored standard key only inside the local Edge runtime, returned an ephemeral
+secret, created no WebRTC connection and sent no microphone audio. The
+developer explicitly deferred the real microphone/WebRTC canary to a later
+phase, so live audio accuracy, vocabulary and latency are rollout measurements,
+not unresolved Phase 4 implementation work.
+
 ## Start, run and stop protocol
 
 ```mermaid
@@ -68,8 +78,13 @@ stateDiagram-v2
   ordered by first-seen local sequence because completion events may arrive out
   of order.
 - Failure to mint the client secret immediately cancels the reserved operation
-  without charge. A connected-session stop charges at most elapsed seconds and
-  refunds the unused reservation.
+  without charge. After a client secret is issued, the server conservatively
+  meters elapsed time from issuance until stop and refunds the unused
+  reservation. This prevents an untrusted client from avoiding the lecture
+  budget by omitting a connection acknowledgement. Consequently, the internal
+  budget ledger may be a few seconds higher than provider audio usage when
+  WebRTC never connects. The no-audio provider-boundary test recorded two
+  seconds / 567 microUSD in the isolated ledger while sending no audio.
 
 ### Stop and failure behavior
 
@@ -205,6 +220,12 @@ rotate the affected secret and invalidate Admin sessions before re-enabling.
    actual OpenAI usage.
 8. Expand toward 300 only if measured cost/load and privacy observations pass.
 
+Before that hosted sequence, re-evaluate Supabase's publishable/secret API-key
+migration. The current Edge implementation uses the legacy
+`SUPABASE_SERVICE_ROLE_KEY`, which remains server-only and must never enter a
+browser bundle. Any key-model migration belongs to the Phase 6 expand-first
+rollout and must preserve the existing Admin-token and RLS checks.
+
 ## Reference basis
 
 - OpenAI Realtime transcription:
@@ -219,3 +240,5 @@ rotate the affected secret and invalidate Admin sessions before re-enabling.
   <https://supabase.com/docs/guides/functions/secrets>
 - Supabase API/RLS hardening:
   <https://supabase.com/docs/guides/api/securing-your-api>
+- Supabase publishable/secret API-key migration:
+  <https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys>

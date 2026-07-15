@@ -2,22 +2,23 @@
 
 Date: 2026-07-15 (JST)
 
-Status: local implementation. Production Supabase, hosted Edge secrets,
-Cloudflare, public Web and feature flags remain unchanged.
+Status: **local gate PASS**. Production Supabase, hosted Edge secrets,
+Cloudflare, public Web and feature flags remain unchanged. The developer
+deferred real microphone/WebRTC testing to a later-phase canary.
 
 ## Requirements correspondence
 
 | Requirement                                                  | Local implementation                                                                                                                             | Gate evidence                                                       |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| Separate billing authorization for every paid OFF→ON/restart | `authorize-ai-start` verifies server-only `BILLING_PIN`; a two-minute, one-use grant is scoped to lecture, Admin session actor and exact actions | Phase 4 pgTAP grant scope/replay/expiry tests                       |
-| Stop without PIN                                             | Local audio tracks close first; `stopFeature` invokes the actor-bound idempotent finish RPC without a grant                                      | pgTAP manual/repeated-stop tests                                    |
-| Standard API key never reaches browser                       | Only `issue-realtime-client-secret` reads `OPENAI_API_KEY`; the browser receives the short-lived Realtime client secret                          | static secret-boundary and Edge helper tests                        |
+| Separate billing authorization for every paid OFF→ON/restart | `authorize-ai-start` verifies server-only `BILLING_PIN`; a two-minute, one-use grant is scoped to lecture, Admin session actor and exact actions | pgTAP plus isolated Admin browser PIN flow                          |
+| Stop without PIN                                             | Local audio tracks close first; `stopFeature` invokes the actor-bound idempotent finish RPC without a grant                                      | pgTAP plus isolated Admin browser stop flow                         |
+| Standard API key never reaches browser                       | Only `issue-realtime-client-secret` reads `OPENAI_API_KEY`; the browser receives the short-lived Realtime client secret                          | static scan, Edge mock and real no-audio secret issuance            |
 | Cost and concurrency limits                                  | Grant consumption and operation admission occur in one DB transaction; Phase 2 budget/audio/token/concurrency limits remain authoritative        | Phase 2 regression plus Phase 4 budget-bypass test                  |
-| Realtime teacher experience without Supabase delta load      | WebRTC deltas stay in the Admin process and use `BroadcastChannel` for the same-device display                                                   | static/load tests; no Realtime publication                          |
-| Low-load student captions                                    | Only completed segments form a 45-second, maximum 1,000-character window; publish checks changes at five-second cadence                          | unit, pgTAP no-op version and load tests                            |
+| Realtime teacher experience without Supabase delta load      | WebRTC deltas stay in the Admin process and use `BroadcastChannel` for the same-device display                                                   | mocked event flow, static/load tests; no Realtime publication       |
+| Low-load student captions                                    | Only completed segments form a 45-second, maximum 1,000-character window; publish checks changes at five-second cadence                          | unit/pgTAP/load plus isolated five-second browser update             |
 | No audio persistence                                         | Browser uses a live `MediaStream`; stop/failure closes every track. IndexedDB schema stores completed text segments only                         | static test and source review                                       |
 | Local review transcript                                      | Completed segments only, ordered by first-seen item sequence, exportable as TXT/JSONL, manually deletable and automatically purged after 30 days | caption unit/static tests                                           |
-| Lecture close / 90-minute stop                               | Server heartbeat and every write recheck the Phase 2 canonical lecture state; client hard-stop timer is an additional defense                    | Phase 2 96-test regression and Phase 4 heartbeat/closed-grant tests |
+| Lecture close / 90-minute stop                               | Server heartbeat and every write recheck the Phase 2 canonical lecture state; client hard-stop timer is an additional defense                    | Phase 2/4 SQL plus isolated Admin-close/student convergence          |
 | Participant ownership                                        | v3 snapshot requires `auth.uid()` to own a participant in the exact lecture; v2 remains intact for old clients                                   | unrelated-user pgTAP test                                           |
 | Expand-first compatibility                                   | New v3 snapshot and service RPCs are additive. Existing v1/v2 RPCs and Phase 0-3 tables remain available                                         | clean and Phase-3-data upgrade gates                                |
 | Default OFF                                                  | `VITE_PHASE4_REALTIME_CAPTIONS=false` and `PHASE4_REALTIME_CAPTIONS_ENABLED=false` in the example                                                | static test                                                         |
@@ -62,7 +63,9 @@ state, ownership, one-use grants, reserved/actual use and stop state.
 
 ## Explicit exclusions
 
-- No live paid OpenAI request was made in the local gate.
+- One real OpenAI client-secret request was made without creating WebRTC,
+  requesting microphone permission or sending audio. The real microphone/audio
+  canary is explicitly deferred to a later phase by the developer.
 - No standard key, billing PIN, service-role key or ephemeral client secret is
   written to PostgreSQL, IndexedDB, browser storage, Git or test output.
 - Phase 4 does not implement five-minute summaries, comment summaries, Poll
