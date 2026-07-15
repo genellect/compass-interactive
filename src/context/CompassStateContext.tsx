@@ -26,9 +26,7 @@ import {
   removePendingComments,
   type ServerClockSample,
 } from '../lib/lectureLifecycle'
-import {
-  normalizeLiveSyncPathname,
-} from '../lib/liveSync'
+import { normalizeLiveSyncPathname } from '../lib/liveSync'
 import {
   isPhase1SyncProtocolEnabled,
   isPhase2LectureLifecycleEnabled,
@@ -50,6 +48,7 @@ import {
   type CommentLikeTotal,
   type LiveStateVersions,
   type ParticipantLiveState,
+  type PublicCaption,
   supabaseLiveStateRepository,
 } from '../repositories/supabaseLiveStateRepository'
 import { supabasePollRepository } from '../repositories/supabasePollRepository'
@@ -297,6 +296,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [pollResults, setPollResults] = useState<PollResultSummary[]>([])
   const [pollResponses, setPollResponses] = useState<PollResponse[]>([])
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
+  const [caption, setCaption] = useState<PublicCaption | null>(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
   )
@@ -362,6 +362,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setPollResponses(snapshot.pollResponses)
     setPollResults(snapshot.pollResults)
     setDisplayState(snapshot.displayState)
+    setCaption(null)
     setDisplayStateError(null)
     setCommentsError(null)
     setCommentLikesError(null)
@@ -445,6 +446,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setPollResults([])
       setPollResponses([])
       setDisplayState(null)
+      setCaption(null)
       setDisplayStateError(null)
       liveStateVersionsRef.current = createEmptyLiveStateVersions()
       commentCursorRef.current = null
@@ -601,6 +603,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
           if (snapshot.display) {
             setDisplayState(snapshot.display)
+          }
+
+          if (snapshot.caption !== undefined) {
+            setCaption(snapshot.caption)
           }
 
           liveStateVersionsRef.current = advanceLiveStateVersions(
@@ -892,9 +898,12 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     if (delay === null) {
       return
     }
-    const timeoutId = window.setTimeout(() => {
-      void refreshLiveSnapshot({ forceAll: true }).catch(() => undefined)
-    }, Math.min(delay + 25, 2_147_483_647))
+    const timeoutId = window.setTimeout(
+      () => {
+        void refreshLiveSnapshot({ forceAll: true }).catch(() => undefined)
+      },
+      Math.min(delay + 25, 2_147_483_647),
+    )
 
     return () => window.clearTimeout(timeoutId)
   }, [
@@ -936,6 +945,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<CompassStateValue>(
     () => ({
+      caption,
       lecture,
       participants,
       comments,
@@ -1301,6 +1311,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       },
     }),
     [
+      caption,
       comments,
       activeLectureSessionId,
       baseLecture,

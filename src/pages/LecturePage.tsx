@@ -14,6 +14,7 @@ export function LecturePage() {
   const {
     addComment,
     activeLectureSessionId,
+    caption,
     currentParticipantId,
     commentLikesError,
     commentsError,
@@ -250,7 +251,11 @@ export function LecturePage() {
         </aside>
       </section>
 
-      <LiveCaptionPanel compact isDemo={runtimeMode === 'demo'} />
+      <LiveCaptionPanel
+        caption={caption ? { text: caption.text } : null}
+        compact
+        isDemo={runtimeMode === 'demo'}
+      />
 
       <FiveMinuteRecapPanel isDemo={runtimeMode === 'demo'} />
 

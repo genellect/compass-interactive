@@ -151,6 +151,7 @@ export function LiveCaptionPanel({
   mode = 'student',
 }: CaptionPanelProps) {
   const [demoCaptionIndex, setDemoCaptionIndex] = useState(0)
+  const [isHidden, setIsHidden] = useState(false)
 
   useEffect(() => {
     if (!isDemo || caption) {
@@ -168,8 +169,7 @@ export function LiveCaptionPanel({
   }, [caption, isDemo])
 
   const visibleCaption =
-    caption ??
-    (isDemo ? demoCaptionSequence[demoCaptionIndex] : null)
+    caption ?? (isDemo ? demoCaptionSequence[demoCaptionIndex] : null)
 
   return (
     <section
@@ -186,9 +186,18 @@ export function LiveCaptionPanel({
         <span className={`support-state ${isDemo ? 'preview' : ''}`}>
           {isDemo ? 'ライブ再生' : visibleCaption ? '字幕中' : '待機中'}
         </span>
+        {mode === 'student' && visibleCaption ? (
+          <button
+            className="caption-visibility-button"
+            onClick={() => setIsHidden((current) => !current)}
+            type="button"
+          >
+            {isHidden ? '字幕を表示' : '字幕を隠す'}
+          </button>
+        ) : null}
       </div>
 
-      {visibleCaption ? (
+      {visibleCaption && !isHidden ? (
         <div
           className="caption-copy is-live"
           key={isDemo ? demoCaptionIndex : visibleCaption.text}
@@ -203,7 +212,10 @@ export function LiveCaptionPanel({
             </div>
           ) : null}
           {isDemo ? (
-            <div className="caption-sequence" aria-label={`${demoCaptionIndex + 1} / ${demoCaptionSequence.length}`}>
+            <div
+              className="caption-sequence"
+              aria-label={`${demoCaptionIndex + 1} / ${demoCaptionSequence.length}`}
+            >
               {demoCaptionSequence.map((item, index) => (
                 <i
                   className={index === demoCaptionIndex ? 'is-active' : ''}
@@ -233,7 +245,8 @@ export function FiveMinuteRecapPanel({
   isDemo = false,
   recaps = [],
 }: FiveMinuteRecapPanelProps) {
-  const visibleRecaps = recaps.length > 0 ? recaps : isDemo ? demoFiveMinuteRecaps : []
+  const visibleRecaps =
+    recaps.length > 0 ? recaps : isDemo ? demoFiveMinuteRecaps : []
   const [availableCount, setAvailableCount] = useState(
     isDemo && recaps.length === 0 ? 1 : visibleRecaps.length,
   )
@@ -280,7 +293,9 @@ export function FiveMinuteRecapPanel({
           </div>
         </div>
         <div className="recap-update-state">
-          <span><i /> LIVE</span>
+          <span>
+            <i /> LIVE
+          </span>
           <small>5分ごとに更新</small>
         </div>
       </div>
@@ -294,7 +309,9 @@ export function FiveMinuteRecapPanel({
           <div className="recap-grid">
             <article className="recap-stream presenter-stream">
               <div className="recap-stream-heading">
-                <span><AppIcon name="compass" size={17} /></span>
+                <span>
+                  <AppIcon name="compass" size={17} />
+                </span>
                 <div>
                   <small>SPEAKER</small>
                   <strong>講演者のポイント</strong>
@@ -308,7 +325,9 @@ export function FiveMinuteRecapPanel({
             </article>
             <article className="recap-stream class-stream">
               <div className="recap-stream-heading">
-                <span><AppIcon name="users" size={17} /></span>
+                <span>
+                  <AppIcon name="users" size={17} />
+                </span>
                 <div>
                   <small>CLASS PULSE</small>
                   <strong>みんなの反応</strong>
@@ -330,7 +349,11 @@ export function FiveMinuteRecapPanel({
       ) : (
         <div className="recap-awaiting">
           <span className="caption-wave" aria-hidden="true">
-            <i /><i /><i /><i /><i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
           </span>
           <div>
             <strong>講義の流れを聴いています</strong>
@@ -356,7 +379,9 @@ export function FiveMinuteRecapPanel({
         </div>
       ) : null}
       {isDemo && availableCount < demoFiveMinuteRecaps.length ? (
-        <div className="recap-progress" aria-hidden="true"><span /></div>
+        <div className="recap-progress" aria-hidden="true">
+          <span />
+        </div>
       ) : null}
     </section>
   )

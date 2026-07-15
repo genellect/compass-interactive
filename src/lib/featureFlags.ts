@@ -6,3 +6,7 @@ export const isPhase2LectureLifecycleEnabled =
 
 export const isPhase3PrivatePdfEnabled =
   import.meta.env.VITE_PHASE3_PRIVATE_PDF === 'true'
+
+export const isPhase4RealtimeCaptionsEnabled =
+  isPhase1SyncProtocolEnabled &&
+  import.meta.env.VITE_PHASE4_REALTIME_CAPTIONS === 'true'

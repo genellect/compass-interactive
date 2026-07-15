@@ -3,6 +3,13 @@ const TOKEN_TTL_SECONDS = 8 * 60 * 60
 const textDecoder = new TextDecoder()
 const textEncoder = new TextEncoder()
 
+export type AdminTokenClaims = {
+  exp: number
+  iat: number
+  scope: typeof ADMIN_TOKEN_SCOPE
+  sid?: string
+}
+
 function base64UrlToBytes(value: string) {
   const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
   const padded = base64.padEnd(
@@ -81,6 +88,7 @@ export async function createAdminToken(secret: string) {
       exp: now + TOKEN_TTL_SECONDS,
       iat: now,
       scope: ADMIN_TOKEN_SCOPE,
+      sid: crypto.randomUUID(),
     }),
   )
   const signature = await signToken(payload, secret)
@@ -88,16 +96,19 @@ export async function createAdminToken(secret: string) {
   return `${payload}.${signature}`
 }
 
-export async function verifyAdminToken(token: string, secret: string) {
+export async function getAdminTokenClaims(
+  token: string,
+  secret: string,
+): Promise<AdminTokenClaims | null> {
   const [payload, signature, extra] = token.split('.')
 
   if (!payload || !signature || extra) {
-    return false
+    return null
   }
 
   const expectedSignature = await signToken(payload, secret)
   if (!timingSafeEqual(signature, expectedSignature)) {
-    return false
+    return null
   }
 
   try {
@@ -106,18 +117,34 @@ export async function verifyAdminToken(token: string, secret: string) {
     ) as {
       exp?: number
       iat?: number
+      sid?: string
       scope?: string
     }
     const now = Date.now() / 1000
 
-    return Boolean(
+    const valid = Boolean(
       parsedPayload.scope === ADMIN_TOKEN_SCOPE &&
       parsedPayload.iat &&
       parsedPayload.iat <= now &&
       parsedPayload.exp &&
-      parsedPayload.exp > now,
+      parsedPayload.exp > now &&
+      (!parsedPayload.sid ||
+        /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(parsedPayload.sid)),
     )
+    if (!valid) {
+      return null
+    }
+
+    return parsedPayload as AdminTokenClaims
   } catch {
-    return false
+    return null
   }
+}
+
+export async function verifyAdminToken(token: string, secret: string) {
+  return (await getAdminTokenClaims(token, secret)) !== null
+}
+
+export function getAdminActorId(claims: AdminTokenClaims) {
+  return claims.sid ? `admin-session:${claims.sid}` : 'admin-session:legacy'
 }

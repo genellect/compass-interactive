@@ -392,6 +392,15 @@ verify_jwt = true
 [functions.manage-ai-control]
 verify_jwt = true
 
+[functions.authorize-ai-start]
+verify_jwt = true
+
+[functions.issue-realtime-client-secret]
+verify_jwt = true
+
+[functions.publish-caption-window]
+verify_jwt = true
+
 [functions.issue-pdf-access-token]
 verify_jwt = true
 

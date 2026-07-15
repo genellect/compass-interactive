@@ -13,9 +13,13 @@ import {
   type DisplayState,
 } from '../repositories/supabaseDisplayStateRepository'
 import { getLecturePdfAsset, lecturePdfAssets } from '../pdf/lectureAssets'
-import { isPhase3PrivatePdfEnabled } from '../lib/featureFlags'
+import {
+  isPhase3PrivatePdfEnabled,
+  isPhase4RealtimeCaptionsEnabled,
+} from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { publisherClient } from '../pdf/publisherClient'
+import { RealtimeCaptionControl } from '../components/AdminAiControl'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
@@ -1208,11 +1212,32 @@ export function AdminPage() {
               <h2>講義の理解サポート</h2>
             </div>
           </div>
-          <span className="support-state is-ready">講義中</span>
+          <span
+            className={`support-state ${isPhase4RealtimeCaptionsEnabled ? 'is-ready' : ''}`}
+          >
+            {isPhase4RealtimeCaptionsEnabled ? '利用可能' : '既定OFF'}
+          </span>
         </div>
         <p className="panel-description">
           字幕、直近5分のハイライト、講義資料の要点が、学生の理解を途切れさせずに支えます。
         </p>
+        {isPhase4RealtimeCaptionsEnabled &&
+        adminToken &&
+        activeLectureSessionId ? (
+          <RealtimeCaptionControl
+            adminToken={adminToken}
+            hardStopAt={
+              lectures.find((item) => item.id === activeLectureSessionId)
+                ?.hardStopAt ?? lecture.expiresAt
+            }
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={lecture.status}
+          />
+        ) : (
+          <p className="note">
+            Phase 4 Realtime字幕は既定OFFです。本番有効化はPhase 6後に行います。
+          </p>
+        )}
         <div className="api-readiness-grid">
           <article>
             <span className="support-icon">
@@ -1220,9 +1245,13 @@ export function AdminPage() {
             </span>
             <div>
               <strong>リアルタイム字幕</strong>
-              <small>学生・教室へ配信中</small>
+              <small>
+                {isPhase4RealtimeCaptionsEnabled ? '開始待ち' : '既定OFF'}
+              </small>
             </div>
-            <span className="readiness-dot is-active" />
+            <span
+              className={`readiness-dot ${isPhase4RealtimeCaptionsEnabled ? 'is-active' : ''}`}
+            />
           </article>
           <article>
             <span className="support-icon violet">

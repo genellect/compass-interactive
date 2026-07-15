@@ -4,7 +4,7 @@ import { LivePoll } from '../LivePoll'
 import { SyncedPdfViewer } from './SyncedPdfViewer'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { AppIcon } from '../AppIcon'
-import { LiveCaptionPanel } from '../LearningSupport'
+import { LiveCaptionPanel, type CaptionContent } from '../LearningSupport'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
 import type {
@@ -16,6 +16,7 @@ import type {
 
 type DisplayViewProps = {
   activeLectureSessionId: string | null
+  caption: CaptionContent | null
   comments: LiveComment[]
   commentsError: string | null
   commentsLoading: boolean
@@ -35,6 +36,7 @@ type DisplayViewProps = {
 
 export function DisplayView({
   activeLectureSessionId,
+  caption,
   comments,
   commentsError,
   commentsLoading,
@@ -133,6 +135,7 @@ export function DisplayView({
           </div>
 
           <LiveCaptionPanel
+            caption={caption}
             compact
             isDemo={runtimeMode === 'demo'}
             mode="display"

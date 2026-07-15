@@ -4,6 +4,17 @@ import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { LiveComment, Poll, PollResponse } from '../types'
 import type { DisplayState } from './supabaseDisplayStateRepository'
 import type { PollResultSummary } from './supabasePollRepository'
+import { isPhase4RealtimeCaptionsEnabled } from '../lib/featureFlags'
+
+export type PublicCaption = {
+  language: 'auto' | 'en' | 'ja' | 'mixed' | 'und'
+  lastItemId: string
+  sequence: number
+  text: string
+  updatedAt: string
+  windowEndedAt: string
+  windowStartedAt: string
+}
 
 export type LiveStateVersions = {
   caption: number | null
@@ -40,6 +51,7 @@ export type ParticipantLiveState = {
 }
 
 export type LiveSnapshot = {
+  caption: PublicCaption | null | undefined
   comments: {
     hasMore: boolean
     hasOlder: boolean
@@ -164,7 +176,15 @@ type RawLegacySnapshot = {
 
 type RawPublicSnapshotV2 = {
   changed: {
-    caption?: unknown
+    caption?: {
+      language: PublicCaption['language']
+      last_item_id: string
+      sequence: number
+      text: string
+      updated_at: string
+      window_ended_at: string
+      window_started_at: string
+    } | null
     comments?: {
       has_more: boolean
       has_older: boolean
@@ -331,6 +351,7 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
         : null
 
   return {
+    caption: undefined,
     comments: raw.comments
       ? {
           hasMore: raw.comments.has_more,
@@ -370,8 +391,22 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
 
 function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
   const { pollResults, polls } = mapPolls(raw.changed.polls)
+  const caption = Object.hasOwn(raw.changed, 'caption')
+    ? raw.changed.caption
+      ? {
+          language: raw.changed.caption.language,
+          lastItemId: raw.changed.caption.last_item_id,
+          sequence: Number(raw.changed.caption.sequence),
+          text: raw.changed.caption.text,
+          updatedAt: raw.changed.caption.updated_at,
+          windowEndedAt: raw.changed.caption.window_ended_at,
+          windowStartedAt: raw.changed.caption.window_started_at,
+        }
+      : null
+    : undefined
 
   return {
+    caption,
     comments: raw.changed.comments
       ? {
           hasMore: raw.changed.comments.has_more,
@@ -437,7 +472,10 @@ async function getPublicSnapshotV2({
   lectureSessionId,
   versions,
 }: SnapshotRequest) {
-  const { data, error } = await supabase.rpc('get_lecture_public_snapshot_v2', {
+  const rpcName = isPhase4RealtimeCaptionsEnabled
+    ? 'get_lecture_public_snapshot_v3'
+    : 'get_lecture_public_snapshot_v2'
+  const { data, error } = await supabase.rpc(rpcName, {
     comment_cursor_created_at: commentCursor?.createdAt,
     comment_cursor_id: commentCursor?.id,
     comment_limit: 100,
@@ -476,6 +514,7 @@ async function getTerminalSnapshot(
 
   const raw = data as unknown as RawTerminalStateV2
   return {
+    caption: null,
     comments: null,
     contractVersion: 2,
     currentParticipantId: null,

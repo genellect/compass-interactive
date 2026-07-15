@@ -47,9 +47,14 @@ for (const functionName of [
   )
 }
 
-for (const source of [manageLectures, managePolls, updateDisplay, manageAiControl]) {
+for (const source of [
+  manageLectures,
+  managePolls,
+  updateDisplay,
+  manageAiControl,
+]) {
   assert.match(source, /_shared\/adminToken\.ts/)
-  assert.match(source, /verifyAdminToken/)
+  assert.match(source, /verifyAdminToken|getAdminTokenClaims/)
   assert.doesNotMatch(source, /function timingSafeEqual|function signToken/)
 }
 assert.match(verifyPin, /_shared\/adminToken\.ts/)
@@ -57,9 +62,20 @@ assert.match(manageLectures, /rpc\('admin_create_lecture'/)
 assert.match(manageLectures, /rpc\(\s*'admin_set_lecture_status'/)
 assert.doesNotMatch(manageLectures, /from\('lecture_sessions'\)\s*\.insert/)
 assert.doesNotMatch(manageLectures, /transition_at:\s*new Date/)
-assert.match(manageAiControl, /admin_start_lecture_ai_operation/)
 assert.match(manageAiControl, /admin_stop_lecture_ai_control/)
-assert.doesNotMatch(manageAiControl, /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY[^)]*jsonResponse/)
+assert.match(manageAiControl, /admin_heartbeat_realtime_caption_operation/)
+assert.match(
+  manageAiControl,
+  /Starting a paid AI feature requires a billing grant/,
+)
+assert.doesNotMatch(
+  manageAiControl,
+  /rpc\(\s*'admin_start_lecture_ai_operation'/,
+)
+assert.doesNotMatch(
+  manageAiControl,
+  /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY[^)]*jsonResponse/,
+)
 assert.match(managePolls, /rpc\('admin_create_poll'/)
 assert.match(managePolls, /'admin_set_poll_status'/)
 assert.match(adminRepository, /async managePolls/)

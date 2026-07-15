@@ -15,6 +15,8 @@ const phase0MigrationName = '20260713142227_phase0_auth_hardening.sql'
 const phase1MigrationName = '20260714021129_phase1_sync_protocol_v2.sql'
 const phase2MigrationName = '20260714080706_phase2_lecture_lifecycle.sql'
 const phase3MigrationName = '20260714104032_phase3_private_pdf_delivery.sql'
+const phase4MigrationName =
+  '20260715032806_phase4_billing_and_realtime_captions.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -32,6 +34,7 @@ assert.deepEqual(
     phase1MigrationName,
     phase2MigrationName,
     phase3MigrationName,
+    phase4MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import {
+  getAdminActorId,
+  getAdminTokenClaims,
+  getAdminTokenSecret,
+} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { jsonResponse } from '../_shared/responses.ts'
 
@@ -63,6 +67,17 @@ type ManageAiControlRequest =
       status?: 'succeeded' | 'failed' | 'cancelled'
     }
   | {
+      action: 'heartbeat'
+      adminToken?: string
+      operationId?: string
+    }
+  | {
+      action: 'stopFeature'
+      adminToken?: string
+      operationId?: string
+      reason?: string
+    }
+  | {
       action: 'stop'
       adminToken?: string
       lectureSessionId?: string
@@ -115,12 +130,13 @@ Deno.serve(async (request) => {
     )
   }
 
-  if (
-    !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret))
-  ) {
+  const adminClaims = body.adminToken
+    ? await getAdminTokenClaims(body.adminToken, tokenSecret)
+    : null
+  if (!adminClaims) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
+  const actorId = getAdminActorId(adminClaims)
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
@@ -157,6 +173,46 @@ Deno.serve(async (request) => {
   }
 
   try {
+    if (body.action === 'heartbeat') {
+      if (!body.operationId) {
+        return jsonResponse(
+          { ok: false, message: 'operationId is required.' },
+          400,
+        )
+      }
+      const { data, error } = await supabase.rpc(
+        'admin_heartbeat_realtime_caption_operation',
+        {
+          target_actor_id: actorId,
+          target_operation_id: body.operationId,
+        },
+      )
+      if (error) throw new Error(error.message)
+      return jsonResponse({ ok: true, result: data })
+    }
+
+    if (body.action === 'stopFeature') {
+      const reason = body.reason?.trim()
+      if (!body.operationId || !reason) {
+        return jsonResponse(
+          { ok: false, message: 'operationId and reason are required.' },
+          400,
+        )
+      }
+      const { data, error } = await supabase.rpc(
+        'admin_finish_realtime_caption_operation',
+        {
+          charge_elapsed: true,
+          disable_feature: true,
+          target_actor_id: actorId,
+          target_operation_id: body.operationId,
+          target_reason: reason,
+        },
+      )
+      if (error) throw new Error(error.message)
+      return jsonResponse({ ok: true, result: data })
+    }
+
     if (body.action === 'finishOperation') {
       if (!body.operationId || !body.status) {
         return jsonResponse(
@@ -204,7 +260,10 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'status') {
-      return jsonResponse({ ok: true, ...(await getStatus(body.lectureSessionId)) })
+      return jsonResponse({
+        ok: true,
+        ...(await getStatus(body.lectureSessionId)),
+      })
     }
 
     if (body.action === 'configure') {
@@ -214,11 +273,24 @@ Deno.serve(async (request) => {
           400,
         )
       }
+      if (
+        Object.entries(body.configuration).some(
+          ([key, value]) => key.endsWith('_enabled') && value === true,
+        )
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message: 'Enabling a paid AI feature requires a billing grant.',
+          },
+          403,
+        )
+      }
       const { data, error } = await supabase.rpc(
         'admin_configure_lecture_ai_control',
         {
           configuration: body.configuration,
-          target_actor_id: 'admin-session',
+          target_actor_id: actorId,
           target_lecture_session_id: body.lectureSessionId,
         },
       )
@@ -229,41 +301,13 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'startOperation') {
-      if (!body.feature || !body.idempotencyKey) {
-        return jsonResponse(
-          { ok: false, message: 'feature and idempotencyKey are required.' },
-          400,
-        )
-      }
-      const { data, error } = await supabase.rpc(
-        'admin_start_lecture_ai_operation',
+      return jsonResponse(
         {
-          estimated_audio_seconds: getNonNegativeInteger(
-            body.estimatedAudioSeconds,
-            'estimatedAudioSeconds',
-          ),
-          estimated_input_tokens: getNonNegativeInteger(
-            body.estimatedInputTokens,
-            'estimatedInputTokens',
-          ),
-          estimated_microusd: getNonNegativeInteger(
-            body.estimatedMicrousd,
-            'estimatedMicrousd',
-          ),
-          estimated_output_tokens: getNonNegativeInteger(
-            body.estimatedOutputTokens,
-            'estimatedOutputTokens',
-          ),
-          target_actor_id: 'admin-session',
-          target_feature: body.feature,
-          target_idempotency_key: body.idempotencyKey,
-          target_lecture_session_id: body.lectureSessionId,
+          ok: false,
+          message: 'Starting a paid AI feature requires a billing grant.',
         },
+        403,
       )
-      if (error) {
-        throw new Error(error.message)
-      }
-      return jsonResponse({ ok: true, result: data })
     }
 
     if (body.action === 'stop') {
@@ -277,7 +321,7 @@ Deno.serve(async (request) => {
       const { data, error } = await supabase.rpc(
         'admin_stop_lecture_ai_control',
         {
-          target_actor_id: 'admin-session',
+          target_actor_id: actorId,
           target_lecture_session_id: body.lectureSessionId,
           target_reason: reason,
         },
@@ -294,7 +338,9 @@ Deno.serve(async (request) => {
       {
         ok: false,
         message:
-          error instanceof Error ? error.message : 'AI control operation failed.',
+          error instanceof Error
+            ? error.message
+            : 'AI control operation failed.',
       },
       409,
     )

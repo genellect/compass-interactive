@@ -113,6 +113,44 @@ type ManageAiControlResponse = {
   result?: unknown
 }
 
+export type AiBillingAction =
+  | 'captions'
+  | 'summaries'
+  | 'material_analysis'
+  | 'poll_suggestions'
+  | 'academic_answers'
+
+type AuthorizeAiStartResponse = {
+  actions?: AiBillingAction[]
+  billingGrant?: string
+  expiresAt?: string
+  message?: string
+  ok?: boolean
+  reason?: string
+  retryAt?: string | null
+}
+
+export type RealtimeCaptionLanguage = 'auto' | 'en' | 'ja'
+
+export type RealtimeCaptionSecret = {
+  clientSecret: string
+  expiresAt: number | null
+  model: string
+  operationId: string
+  sessionConfig: Record<string, unknown>
+}
+
+type RealtimeCaptionSecretResponse = Partial<RealtimeCaptionSecret> & {
+  message?: string
+  ok?: boolean
+}
+
+type PublishCaptionResponse = {
+  message?: string
+  ok?: boolean
+  result?: unknown
+}
+
 export type AdminPdfDocument = {
   byteSize: number
   displayName: string
@@ -185,6 +223,17 @@ export type ManageAiControlRequest =
       operationId: string
       providerRequestId?: string | null
       status: 'succeeded' | 'failed' | 'cancelled'
+    }
+  | {
+      action: 'heartbeat'
+      adminToken: string
+      operationId: string
+    }
+  | {
+      action: 'stopFeature'
+      adminToken: string
+      operationId: string
+      reason: string
     }
   | {
       action: 'stop'
@@ -372,6 +421,98 @@ export const supabaseAdminRepository = {
     }
 
     return data
+  },
+
+  async authorizeAiStart(request: {
+    actions: AiBillingAction[]
+    adminToken: string
+    billingPin: string
+    lectureSessionId: string
+  }) {
+    const { data, error } =
+      await supabase.functions.invoke<AuthorizeAiStartResponse>(
+        'authorize-ai-start',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Billing authorization failed.'),
+      )
+    }
+    if (!data?.ok || !data.billingGrant || !data.expiresAt) {
+      throw new Error(data?.message ?? 'Billing authorization failed.')
+    }
+    return {
+      actions: data.actions ?? request.actions,
+      billingGrant: data.billingGrant,
+      expiresAt: data.expiresAt,
+    }
+  },
+
+  async issueRealtimeCaptionSecret(request: {
+    adminToken: string
+    billingGrant: string
+    delay: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+    idempotencyKey: string
+    language: RealtimeCaptionLanguage
+    lectureSessionId: string
+  }): Promise<RealtimeCaptionSecret> {
+    const { data, error } =
+      await supabase.functions.invoke<RealtimeCaptionSecretResponse>(
+        'issue-realtime-client-secret',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Realtime caption connection could not be prepared.',
+        ),
+      )
+    }
+    if (
+      !data?.ok ||
+      !data.clientSecret ||
+      !data.model ||
+      !data.operationId ||
+      !data.sessionConfig
+    ) {
+      throw new Error(
+        data?.message ?? 'Realtime caption connection could not be prepared.',
+      )
+    }
+    return {
+      clientSecret: data.clientSecret,
+      expiresAt: data.expiresAt ?? null,
+      model: data.model,
+      operationId: data.operationId,
+      sessionConfig: data.sessionConfig,
+    }
+  },
+
+  async publishCaptionWindow(request: {
+    adminToken: string
+    language: RealtimeCaptionLanguage | 'mixed' | 'und'
+    lastItemId: string
+    lectureSessionId: string
+    operationId: string
+    sequence: number
+    text: string
+  }) {
+    const { data, error } =
+      await supabase.functions.invoke<PublishCaptionResponse>(
+        'publish-caption-window',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Caption publishing failed.'),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'Caption publishing failed.')
+    }
+    return data.result
   },
 
   async managePdfDocuments(
