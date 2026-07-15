@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { DOCUMENT_ID_PATTERN, LECTURE_PUBLIC_ID_PATTERN } from '../constants.ts'
 import type { ValidatedPdf } from '../pdf/validatePdf.ts'
 
-type StoredExtraction = {
+export type StoredExtraction = {
   deleteAfter: string | null
   documentId: string
   documentVersion: string
@@ -85,6 +85,39 @@ export class LocalTextStore {
     })
     await rename(temporaryPath, finalPath)
     return finalPath
+  }
+
+  async load(input: {
+    documentId: string
+    documentVersion: string
+    lecturePublicId: string
+  }): Promise<StoredExtraction | null> {
+    const filePath = extractionPath(
+      this.rootDirectory,
+      input.lecturePublicId,
+      input.documentId,
+      input.documentVersion,
+    )
+    let stored: StoredExtraction
+    try {
+      stored = JSON.parse(await readFile(filePath, 'utf8')) as StoredExtraction
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+    if (
+      stored.lecturePublicId !== input.lecturePublicId ||
+      stored.documentId !== input.documentId ||
+      stored.documentVersion !== input.documentVersion ||
+      stored.textSha256 === '' ||
+      !/^[0-9a-f]{64}$/.test(stored.textSha256) ||
+      stored.pages.length !== stored.pageCount ||
+      stored.textCharCount < 1 ||
+      stored.textCharCount > 20_000
+    ) {
+      throw new Error('Local extraction identity is inconsistent.')
+    }
+    return stored
   }
 
   async cleanupDue(now = new Date()) {

@@ -18,6 +18,7 @@ const phase3MigrationName = '20260714104032_phase3_private_pdf_delivery.sql'
 const phase4MigrationName =
   '20260715032806_phase4_billing_and_realtime_captions.sql'
 const phase41MigrationName = '20260715145555_phase4_1_ai_concurrency_lanes.sql'
+const phase5MigrationName = '20260715155407_phase5_pdf_ai_poll_proposals.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -37,6 +38,7 @@ assert.deepEqual(
     phase3MigrationName,
     phase4MigrationName,
     phase41MigrationName,
+    phase5MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -94,6 +96,7 @@ assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
 assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
 assert.match(envExample, /VITE_PHASE2_LECTURE_LIFECYCLE=false/)
 assert.match(envExample, /VITE_PHASE3_PRIVATE_PDF=false/)
+assert.match(envExample, /VITE_PHASE5_MATERIAL_ANALYSIS=false/)
 assert.match(
   turnstile,
   /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,
@@ -179,6 +182,8 @@ for (const functionName of [
   'manage-ai-control',
   'issue-pdf-access-token',
   'manage-pdf-documents',
+  'analyze-lecture-material',
+  'manage-material-analysis',
 ]) {
   const sourcePath = join(supabaseDir, 'functions', functionName, 'index.ts')
   assert.ok(existsSync(sourcePath), `${functionName} source must exist.`)

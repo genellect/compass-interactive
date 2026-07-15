@@ -401,6 +401,12 @@ verify_jwt = true
 [functions.publish-caption-window]
 verify_jwt = true
 
+[functions.analyze-lecture-material]
+verify_jwt = true
+
+[functions.manage-material-analysis]
+verify_jwt = true
+
 [functions.issue-pdf-access-token]
 verify_jwt = true
 

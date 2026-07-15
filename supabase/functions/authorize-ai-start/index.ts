@@ -74,6 +74,17 @@ Deno.serve(async (request) => {
       503,
     )
   }
+  if (
+    actions.some((action) =>
+      ['material_analysis', 'poll_suggestions'].includes(action),
+    ) &&
+    Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') !== 'true'
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Material analysis is disabled.' },
+      503,
+    )
+  }
   if (!body.adminToken || !body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'Admin session and lecture are required.' },

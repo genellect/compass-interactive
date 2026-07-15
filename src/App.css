@@ -4608,3 +4608,192 @@ input:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.material-analysis-control {
+  background: rgba(10, 18, 34, 0.48);
+  border: 1px solid rgba(135, 118, 220, 0.32);
+  border-radius: 18px;
+  margin: 18px 0;
+  padding: 18px;
+}
+
+.material-analysis-heading,
+.additional-poll-actions,
+.proposal-card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.material-analysis-heading > div,
+.additional-poll-actions > div {
+  display: grid;
+  margin-right: auto;
+}
+
+.material-analysis-heading small,
+.material-analysis-heading > span,
+.additional-poll-actions small {
+  color: var(--muted-text, #aebbd0);
+}
+
+.material-analysis-heading > span {
+  border: 1px solid rgba(151, 168, 195, 0.3);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 6px 10px;
+}
+
+.material-analysis-actions {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.5fr) auto;
+  margin-top: 14px;
+}
+
+.material-analysis-result {
+  background: rgba(7, 13, 25, 0.66);
+  border: 1px solid rgba(118, 145, 181, 0.22);
+  border-radius: 16px;
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 16px;
+}
+
+.material-analysis-result h3,
+.poll-proposal-card h4 {
+  margin: 5px 0 8px;
+}
+
+.material-analysis-result p,
+.poll-proposal-card p,
+.poll-proposal-card li {
+  line-height: 1.65;
+}
+
+.material-analysis-columns {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.material-analysis-columns article {
+  background: rgba(118, 145, 181, 0.08);
+  border-radius: 12px;
+  padding: 13px;
+}
+
+.material-analysis-columns ol,
+.poll-proposal-card ul {
+  margin: 9px 0 0;
+  padding-left: 20px;
+}
+
+.material-analysis-columns dl,
+.material-analysis-columns dd {
+  margin: 0;
+}
+
+.material-analysis-columns dl > div {
+  margin-top: 9px;
+}
+
+.material-analysis-columns dt {
+  font-weight: 700;
+}
+
+.material-analysis-columns dd {
+  color: var(--muted-text, #aebbd0);
+  line-height: 1.55;
+}
+
+.additional-poll-actions {
+  border-top: 1px solid rgba(151, 168, 195, 0.2);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.additional-poll-actions .field {
+  min-width: 90px;
+  width: 100px;
+}
+
+.poll-proposal-list {
+  display: grid;
+  gap: 13px;
+  margin-top: 16px;
+}
+
+.poll-proposal-card {
+  background: rgba(7, 13, 25, 0.56);
+  border: 1px solid rgba(118, 145, 181, 0.22);
+  border-radius: 15px;
+  padding: 15px;
+}
+
+.poll-proposal-card.adopted,
+.poll-proposal-card.rejected,
+.poll-proposal-card.expired,
+.poll-proposal-card.superseded {
+  opacity: 0.7;
+}
+
+.poll-proposal-card header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.poll-proposal-card header > span {
+  background: rgba(139, 114, 232, 0.14);
+  border-radius: 999px;
+  color: #b9a9f8;
+  font-size: 0.72rem;
+  padding: 5px 9px;
+}
+
+.poll-proposal-card header small {
+  color: var(--muted-text, #aebbd0);
+}
+
+.proposal-edit-form {
+  background: rgba(118, 145, 181, 0.08);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 13px;
+}
+
+.proposal-card-actions .status-pill {
+  margin-left: auto;
+}
+
+.theme-light .material-analysis-control,
+.theme-light .material-analysis-result,
+.theme-light .poll-proposal-card {
+  background: #f8fafc;
+  border-color: #dfe7ee;
+}
+
+.theme-light .material-analysis-columns article,
+.theme-light .proposal-edit-form {
+  background: #eef3f7;
+}
+
+.theme-light .poll-proposal-card header > span {
+  background: #f2effc;
+  color: #684fc0;
+}
+
+@media (max-width: 900px) {
+  .material-analysis-actions,
+  .material-analysis-columns {
+    grid-template-columns: 1fr;
+  }
+}

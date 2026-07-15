@@ -10,3 +10,7 @@ export const isPhase3PrivatePdfEnabled =
 export const isPhase4RealtimeCaptionsEnabled =
   isPhase1SyncProtocolEnabled &&
   import.meta.env.VITE_PHASE4_REALTIME_CAPTIONS === 'true'
+
+export const isPhase5MaterialAnalysisEnabled =
+  isPhase3PrivatePdfEnabled &&
+  import.meta.env.VITE_PHASE5_MATERIAL_ANALYSIS === 'true'

@@ -16,10 +16,14 @@ import { getLecturePdfAsset, lecturePdfAssets } from '../pdf/lectureAssets'
 import {
   isPhase3PrivatePdfEnabled,
   isPhase4RealtimeCaptionsEnabled,
+  isPhase5MaterialAnalysisEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { publisherClient } from '../pdf/publisherClient'
-import { RealtimeCaptionControl } from '../components/AdminAiControl'
+import {
+  MaterialAnalysisControl,
+  RealtimeCaptionControl,
+} from '../components/AdminAiControl'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
@@ -1216,9 +1220,11 @@ export function AdminPage() {
             </div>
           </div>
           <span
-            className={`support-state ${isPhase4RealtimeCaptionsEnabled ? 'is-ready' : ''}`}
+            className={`support-state ${isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled ? 'is-ready' : ''}`}
           >
-            {isPhase4RealtimeCaptionsEnabled ? '利用可能' : '既定OFF'}
+            {isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled
+              ? '利用可能'
+              : '既定OFF'}
           </span>
         </div>
         <p className="panel-description">
@@ -1236,6 +1242,23 @@ export function AdminPage() {
         ) : (
           <p className="note">
             Phase 4 Realtime字幕は既定OFFです。本番有効化はPhase 6後に行います。
+          </p>
+        )}
+        {isPhase5MaterialAnalysisEnabled &&
+        adminToken &&
+        activeLectureSessionId ? (
+          <MaterialAnalysisControl
+            adminToken={adminToken}
+            documents={adminPdfDocuments}
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={activeAdminLecture?.status ?? lecture.status}
+            onPollDraftCreated={() => refreshAdminPolls()}
+            publisherSessionToken={publisherSessionToken}
+          />
+        ) : (
+          <p className="note">
+            Phase 5 資料分析とAI
+            Poll候補は既定OFFです。PDF公開だけではAPI課金されません。
           </p>
         )}
         <div className="api-readiness-grid">
@@ -1261,7 +1284,7 @@ export function AdminPage() {
               <strong>5分ハイライト</strong>
               <small>話の要点とみんなの反応</small>
             </div>
-            <span className="readiness-dot is-active" />
+            <span className="readiness-dot" />
           </article>
           <article>
             <span className="support-icon violet">
@@ -1271,7 +1294,9 @@ export function AdminPage() {
               <strong>講義資料の要点</strong>
               <small>ページと一緒に整理して表示</small>
             </div>
-            <span className="readiness-dot is-active" />
+            <span
+              className={`readiness-dot ${isPhase5MaterialAnalysisEnabled ? 'is-active' : ''}`}
+            />
           </article>
         </div>
       </section>

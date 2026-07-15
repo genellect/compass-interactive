@@ -16,6 +16,23 @@ export type PublisherPublication = {
   manifestVersion: number
 }
 
+export type PublisherExtractionPage = {
+  characterCount: number
+  excerptId: string
+  pageNumber: number
+  text: string
+}
+
+export type PublisherExtraction = {
+  documentId: string
+  documentVersion: string
+  lecturePublicId: string
+  pageCount: number
+  pages: PublisherExtractionPage[]
+  textCharCount: number
+  textSha256: string
+}
+
 type PublisherResponse<T> = T & { message?: string; ok?: boolean }
 
 const baseUrl = (
@@ -88,5 +105,28 @@ export const publisherClient = {
       },
     )
     return parseResponse<PublisherPublication>(response)
+  },
+
+  async getExtraction(input: {
+    accessToken: string
+    documentId: string
+    documentVersion: string
+    lecturePublicId: string
+    publisherSessionToken: string
+  }): Promise<PublisherExtraction> {
+    const response = await fetch(
+      `${baseUrl}/v1/lectures/${input.lecturePublicId}/documents/${input.documentId}/versions/${input.documentVersion}/extraction`,
+      {
+        cache: 'no-store',
+        headers: {
+          'X-Compass-Lecture-Token': input.accessToken,
+          'X-Compass-Publisher-Token': input.publisherSessionToken,
+        },
+      },
+    )
+    const body = await parseResponse<{ extraction: PublisherExtraction }>(
+      response,
+    )
+    return body.extraction
   },
 }

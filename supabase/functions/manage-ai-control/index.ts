@@ -221,6 +221,26 @@ Deno.serve(async (request) => {
         )
       }
 
+      const { data: operation, error: operationError } = await supabase
+        .from('lecture_ai_operation_ledger')
+        .select('feature')
+        .eq('id', body.operationId)
+        .maybeSingle()
+      if (operationError) throw new Error(operationError.message)
+      if (
+        operation?.feature === 'material_analysis' ||
+        operation?.feature === 'poll_suggestions'
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              'Phase 5 operations must be finalized by the material analysis endpoint.',
+          },
+          409,
+        )
+      }
+
       const { data, error } = await supabase.rpc(
         'admin_finish_lecture_ai_operation',
         {

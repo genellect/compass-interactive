@@ -157,6 +157,14 @@ test('publishes hash-addressed bytes, local text and a verified manifest', async
       'utf8',
     )
     assert.match(extraction, /"pages":/)
+    const loaded = await textStore.load({
+      documentId: 'doc-main',
+      documentVersion: first.document.document_version,
+      lecturePublicId: 'lecture_1234567890abcdef',
+    })
+    assert.equal(loaded?.textSha256, first.document.text_sha256)
+    assert.equal(loaded?.pages.length, first.document.page_count)
+    assert.ok(loaded?.pages.every((page) => page.text.length > 0))
 
     const duplicate = await publishPdf(publicationInput(bytes), {
       objectStore,
@@ -321,6 +329,21 @@ test('loopback server rejects hostile Origin and oversized bodies before parsing
         method: 'POST',
       })
       assert.equal(oversized.status, 413)
+
+      const extractionWithoutSession = await fetch(
+        `${url}/v1/lectures/lecture_1234567890abcdef/documents/doc-main/versions/${'a'.repeat(64)}/extraction`,
+        {
+          headers: {
+            Origin: 'https://compass.example',
+            'X-Compass-Lecture-Token': 'not-a-token',
+          },
+        },
+      )
+      assert.equal(extractionWithoutSession.status, 401)
+      assert.equal(
+        extractionWithoutSession.headers.get('Cache-Control'),
+        'no-store',
+      )
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

@@ -168,6 +168,58 @@ export function createPublisherServer(dependencies: {
       const publicationMatch = url.pathname.match(
         /^\/v1\/lectures\/(lecture_[a-z0-9]{16,64})\/documents\/([a-z0-9][a-z0-9-]{0,63})$/,
       )
+
+      const extractionMatch = url.pathname.match(
+        /^\/v1\/lectures\/(lecture_[a-z0-9]{16,64})\/documents\/([a-z0-9][a-z0-9-]{0,63})\/versions\/([0-9a-f]{64})\/extraction$/,
+      )
+      if (request.method === 'GET' && extractionMatch) {
+        const lecturePublicId = extractionMatch[1]!
+        const documentId = extractionMatch[2]!
+        const documentVersion = extractionMatch[3]!
+        const publisherToken =
+          getHeader(request, 'x-compass-publisher-token') ?? ''
+        if (!sessions.verify(publisherToken, origin)) {
+          throw Object.assign(new Error('Publisher session is invalid.'), {
+            status: 401,
+          })
+        }
+        await verifyLectureAccessToken({
+          audience: configuration.audience,
+          issuer: configuration.issuer,
+          lecturePublicId,
+          publicJwk: configuration.publicJwk,
+          token: getHeader(request, 'x-compass-lecture-token') ?? '',
+        })
+        const extraction = await textStore.load({
+          documentId,
+          documentVersion,
+          lecturePublicId,
+        })
+        if (!extraction) {
+          throw Object.assign(new Error('Local extraction was not found.'), {
+            status: 404,
+          })
+        }
+        sendJson(
+          response,
+          200,
+          {
+            extraction: {
+              documentId: extraction.documentId,
+              documentVersion: extraction.documentVersion,
+              lecturePublicId: extraction.lecturePublicId,
+              pageCount: extraction.pageCount,
+              pages: extraction.pages,
+              textCharCount: extraction.textCharCount,
+              textSha256: extraction.textSha256,
+            },
+            ok: true,
+          },
+          origin,
+        )
+        return
+      }
+
       if (request.method === 'POST' && publicationMatch) {
         const lecturePublicId = publicationMatch[1]!
         const documentId = publicationMatch[2]!
