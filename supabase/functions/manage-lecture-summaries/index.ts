@@ -14,7 +14,7 @@ import {
   readJsonBody,
   RequestBodyTooLargeError,
 } from '../_shared/requestBody.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   action?:
@@ -40,7 +40,10 @@ type RequestBody = {
   summaryId?: string
 }
 
-function errorResponse(error: unknown) {
+function errorResponse(
+  jsonResponse: ReturnType<typeof createJsonResponse>,
+  error: unknown,
+) {
   return jsonResponse(
     {
       message:
@@ -54,6 +57,7 @@ function errorResponse(error: unknown) {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {
@@ -238,6 +242,6 @@ Deno.serve(async (request) => {
     if (error) throw error
     return jsonResponse({ ok: true, results: data })
   } catch (error) {
-    return errorResponse(error)
+    return errorResponse(jsonResponse, error)
   }
 })

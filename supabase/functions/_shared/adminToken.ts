@@ -71,11 +71,13 @@ export function timingSafeEqual(left: string, right: string) {
 }
 
 export function getAdminTokenSecret() {
-  const adminPin = Deno.env.get('ADMIN_PIN')
-  const tokenSecret = Deno.env.get('ADMIN_SESSION_SECRET') ?? adminPin
+  const tokenSecret = Deno.env.get('ADMIN_SESSION_SECRET')
 
   if (!tokenSecret) {
     throw new Error('Admin session secret is not configured.')
+  }
+  if (textEncoder.encode(tokenSecret).byteLength < 32) {
+    throw new Error('Admin session secret must contain at least 32 bytes.')
   }
 
   return tokenSecret

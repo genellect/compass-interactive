@@ -5,7 +5,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type AiFeature =
   | 'captions'
@@ -93,6 +93,7 @@ function getNonNegativeInteger(value: number | undefined, field: string) {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) {
     return corsResponse

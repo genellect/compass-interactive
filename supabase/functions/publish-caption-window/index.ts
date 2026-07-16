@@ -5,7 +5,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type PublishCaptionRequest = {
   adminToken?: string
@@ -18,6 +18,7 @@ type PublishCaptionRequest = {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {

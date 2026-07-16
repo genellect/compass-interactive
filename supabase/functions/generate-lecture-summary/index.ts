@@ -31,7 +31,7 @@ import {
   readJsonBody,
   RequestBodyTooLargeError,
 } from '../_shared/requestBody.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   adminToken?: string
@@ -57,7 +57,10 @@ type StartResult = {
   }
 }
 
-function responseForError(error: unknown) {
+function responseForError(
+  jsonResponse: ReturnType<typeof createJsonResponse>,
+  error: unknown,
+) {
   if (error instanceof LectureSummaryError) {
     return jsonResponse({ code: error.code, message: error.message, ok: false }, error.status)
   }
@@ -68,6 +71,7 @@ function responseForError(error: unknown) {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {
@@ -379,6 +383,6 @@ Deno.serve(async (request) => {
     }
     throw lastError ?? new LectureSummaryError('summary_failed', 'Summary generation failed.', 502)
   } catch (error) {
-    return responseForError(error)
+    return responseForError(jsonResponse, error)
   }
 })

@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type PollStatus = 'draft' | 'open' | 'closed'
 type PollType = 'single' | 'multiple'
@@ -50,6 +50,7 @@ type PollOptionTotalRow = {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) {
     return corsResponse

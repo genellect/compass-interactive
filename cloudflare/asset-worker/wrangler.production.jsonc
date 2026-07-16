@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "compass-private-pdf-assets",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-14",
+  "workers_dev": true,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://compass-interactive.pages.dev",
+    "PDF_ACCESS_AUDIENCE": "compass-pdf-worker",
+    "PDF_ACCESS_ISSUER": "compass-supabase",
+  },
+  "triggers": {
+    "crons": ["*/30 * * * *"],
+  },
+  "r2_buckets": [
+    {
+      "binding": "PDF_BUCKET",
+      "bucket_name": "compass-private-pdf-assets",
+    },
+  ],
+  "secrets": {
+    "required": [
+      "PDF_ACCESS_PUBLIC_JWK",
+      "PDF_ASSET_TICKET_SECRET",
+      "PDF_RETENTION_SYNC_SECRET",
+      "PDF_RETENTION_FEED_URL",
+    ],
+  },
+}

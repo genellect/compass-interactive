@@ -9,7 +9,7 @@ import {
   readJsonBody,
   RequestBodyTooLargeError,
 } from '../_shared/requestBody.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   action?: 'list' | 'adopt' | 'reject'
@@ -22,6 +22,7 @@ type RequestBody = {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {

@@ -79,6 +79,10 @@ assert.doesNotMatch(
 assert.match(managePolls, /rpc\('admin_create_poll'/)
 assert.match(managePolls, /'admin_set_poll_status'/)
 assert.match(adminRepository, /async managePolls/)
+assert.match(
+  adminRepository,
+  /async verifyAdminPin[\s\S]*?await ensureAnonymousAuthSession\(\)[\s\S]*?functions\.invoke/,
+)
 assert.match(adminPage, /handleCreatePoll/)
 assert.doesNotMatch(adminPage, /setPollStatus/)
 assert.match(config, /\[functions\.manage-polls\][\s\S]*?verify_jwt = true/)

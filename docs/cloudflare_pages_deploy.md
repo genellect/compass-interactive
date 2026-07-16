@@ -22,7 +22,19 @@ Production environment variables:
 VITE_SUPABASE_URL
 VITE_SUPABASE_PUBLISHABLE_KEY
 VITE_TURNSTILE_SITE_KEY
+VITE_PDF_PUBLISHER_URL
+VITE_PDF_WORKER_BASE_URL
+VITE_PHASE1_SYNC_PROTOCOL
+VITE_PHASE2_LECTURE_LIFECYCLE
+VITE_PHASE3_PRIVATE_PDF
+VITE_PHASE4_REALTIME_CAPTIONS
+VITE_PHASE5_MATERIAL_ANALYSIS
+VITE_PHASE6_SUMMARIES
+VITE_PHASE6_5_COMMENT_NICKNAMES
 ```
+
+Run `npm run production:check` before a direct upload. The initial deployment
+must set every feature flag explicitly to `false`.
 
 Do not set these in Cloudflare Pages frontend environment variables:
 
@@ -139,7 +151,8 @@ Flow:
 2. Enter JC2026.
 3. Confirm /lecture opens.
 4. Submit a comment.
-5. Open another browser and confirm comments/likes realtime.
+5. Open another browser and confirm comments/likes arrive through the
+   five-second snapshot protocol without a comment Realtime subscription.
 6. Answer a poll and confirm poll results.
 7. Open /display and confirm comments, likes, poll results, and PDF area.
 8. Open /admin and confirm PIN gate.

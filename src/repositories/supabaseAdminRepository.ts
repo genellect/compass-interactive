@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient'
+import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { PublisherExtraction } from '../pdf/publisherClient'
 import type { LectureStatus } from '../types'
 
@@ -678,6 +679,8 @@ export const supabaseAdminRepository = {
     if (!trimmedPin) {
       throw new Error('Admin PIN is required.')
     }
+
+    await ensureAnonymousAuthSession()
 
     const { data, error } =
       await supabase.functions.invoke<VerifyAdminPinResponse>(

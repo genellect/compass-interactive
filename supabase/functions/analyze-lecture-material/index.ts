@@ -27,7 +27,7 @@ import {
   readJsonBody,
   RequestBodyTooLargeError,
 } from '../_shared/requestBody.ts'
-import { jsonResponse } from '../_shared/responses.ts'
+import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   action?: MaterialAction
@@ -68,7 +68,10 @@ type StartResult = {
   reason?: string
 }
 
-function errorResponse(error: unknown) {
+function errorResponse(
+  jsonResponse: ReturnType<typeof createJsonResponse>,
+  error: unknown,
+) {
   if (error instanceof MaterialAnalysisError) {
     return jsonResponse(
       { code: error.code, message: error.message, ok: false },
@@ -86,6 +89,7 @@ function errorResponse(error: unknown) {
 }
 
 Deno.serve(async (request) => {
+  const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {
@@ -429,6 +433,6 @@ Deno.serve(async (request) => {
           ? 'provider_timeout'
           : 'material_analysis_failed'
     await finishFailure(code).catch(() => undefined)
-    return errorResponse(error)
+    return errorResponse(jsonResponse, error)
   }
 })
