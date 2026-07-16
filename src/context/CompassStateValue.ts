@@ -10,7 +10,10 @@ import type {
 import type { PollResultSummary } from '../repositories/supabasePollRepository'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { DisplayState } from '../repositories/supabaseDisplayStateRepository'
-import type { PublicCaption } from '../repositories/supabaseLiveStateRepository'
+import type {
+  PublicCaption,
+  PublicLectureSummary,
+} from '../repositories/supabaseLiveStateRepository'
 
 export type JoinResult =
   { ok: true; participantId: string } | { ok: false; message: string }
@@ -19,6 +22,7 @@ export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
 
 export type CompassStateValue = {
   caption: PublicCaption | null
+  summaries: PublicLectureSummary[]
   lecture: LectureSession
   participants: Participant[]
   comments: LiveComment[]
@@ -46,6 +50,7 @@ export type CompassStateValue = {
   isSubmittingComment: boolean
   isSessionSyncPaused: boolean
   lastActivityAt: number
+  getServerNow: () => string | null
   resumeSessionSync: () => Promise<void>
   resetDemoLecture: () => void
   selectLectureSession: (lecture: JoinedLectureSession) => void

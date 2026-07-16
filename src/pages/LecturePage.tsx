@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CommentInput, LiveBoard } from '../components/LiveBoard'
 import { LivePoll } from '../components/LivePoll'
 import { SyncedPdfViewer } from '../components/DisplayView'
@@ -9,6 +9,7 @@ import {
   MaterialSummaryPanel,
 } from '../components/LearningSupport'
 import { useCompassState } from '../hooks/useCompassState'
+import { formatSummaryWindowLabel } from '../summary/summaryWindow'
 
 export function LecturePage() {
   const {
@@ -41,6 +42,7 @@ export function LecturePage() {
     sessionSyncMessage,
     sessionSyncPauseReason,
     submitPollResponse,
+    summaries,
     toggleCommentLike,
     visibleComments,
   } = useCompassState()
@@ -69,6 +71,26 @@ export function LecturePage() {
 
     return () => window.clearInterval(timer)
   }, [lecture.expectedParticipants, runtimeMode])
+
+  const liveRecaps = useMemo(
+    () =>
+      summaries.map((summary) => ({
+        classPulse: summary.commentPulse,
+        id: `${summary.id}:${summary.revisionId}`,
+        presenterPoints: summary.lectureRecap,
+        responseLabel:
+          summary.reviewState === 'admin_revised'
+            ? '教員修正済み'
+            : summary.reviewState === 'admin_confirmed'
+              ? '教員確認済み'
+              : 'AI生成・教員未確認',
+        windowLabel: formatSummaryWindowLabel(
+          summary.windowStart,
+          summary.windowEnd,
+        ),
+      })),
+    [summaries],
+  )
 
   return (
     <main className="page-shell lecture-page">
@@ -257,7 +279,10 @@ export function LecturePage() {
         isDemo={runtimeMode === 'demo'}
       />
 
-      <FiveMinuteRecapPanel isDemo={runtimeMode === 'demo'} />
+      <FiveMinuteRecapPanel
+        isDemo={runtimeMode === 'demo'}
+        recaps={liveRecaps}
+      />
 
       <section className="lecture-participation">
         <div className="participation-main">
@@ -288,7 +313,10 @@ export function LecturePage() {
         <a href="#lecture-poll">
           <AppIcon name="poll" size={18} /> 投票
         </a>
-        <a className="has-update" href="#lecture-recap">
+        <a
+          className={liveRecaps.length > 0 ? 'has-update' : undefined}
+          href="#lecture-recap"
+        >
           <AppIcon name="sparkles" size={18} /> 要点
         </a>
         <a href="#lecture-question">

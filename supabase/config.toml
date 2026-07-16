@@ -407,6 +407,12 @@ verify_jwt = true
 [functions.manage-material-analysis]
 verify_jwt = true
 
+[functions.generate-lecture-summary]
+verify_jwt = true
+
+[functions.manage-lecture-summaries]
+verify_jwt = true
+
 [functions.issue-pdf-access-token]
 verify_jwt = true
 

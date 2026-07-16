@@ -259,6 +259,100 @@ type MaterialFunctionResponse = {
   results?: RawMaterialResults
 }
 
+export type AdminSummaryRevision = {
+  authorActorId: string | null
+  authorType: 'admin' | 'ai'
+  body: { commentPulse: string[]; lectureRecap: string[] }
+  createdAt: string
+  id: string
+  reason: string | null
+  revisionNumber: number
+}
+
+export type AdminLectureSummary = {
+  aiOutput: {
+    academicQuestionCandidate: {
+      commentId: string
+      educationalValue: string
+      qualityScore: number
+      question: string
+      rationale: string
+    } | null
+    commentPulse: string[]
+    lectureRecap: string[]
+  }
+  createdAt: string
+  id: string
+  modelId: string
+  promptVersion: string
+  publication: {
+    activeRevisionId: string
+    pinnedOrder: number | null
+    pinnedUntil: string | null
+    publishedAt: string | null
+    reviewState: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
+    visibility: 'hidden' | 'public'
+  } | null
+  qualityResult: Record<string, unknown>
+  revisions: AdminSummaryRevision[]
+  status: 'accepted' | 'hidden' | 'published'
+  windowEnd: string
+  windowIndex: number
+  windowStart: string
+}
+
+export type AdminSummaryResults = {
+  control: {
+    budgetLimitMicrousd: number
+    inputTokenLimit: number
+    inputTokensUsed: number
+    outputTokenLimit: number
+    outputTokensUsed: number
+    status: string
+    summariesEnabled: boolean
+    summaryCallLimit: number
+    summaryCallsUsed: number
+    usedMicrousd: number
+  } | null
+  run: {
+    expiresAt: string
+    id: string
+    lastWindowIndex: number
+    status: 'closed' | 'failed' | 'running' | 'stopped'
+  } | null
+  summaries: AdminLectureSummary[]
+  windows: Array<{
+    attemptCount: number
+    id: string
+    lastErrorCode: string | null
+    status: string
+    windowEnd: string
+    windowIndex: number
+    windowStart: string
+  }>
+}
+
+type RawSummaryResults = {
+  control?: null | Record<string, unknown>
+  run?: null | Record<string, unknown>
+  summaries?: Array<Record<string, unknown>>
+  windows?: Array<Record<string, unknown>>
+}
+
+type SummaryFunctionResponse = {
+  actualInputTokens?: number
+  actualMicrousd?: number
+  actualOutputTokens?: number
+  idempotentReplay?: boolean
+  message?: string
+  ok?: boolean
+  published?: boolean
+  reason?: string
+  results?: RawSummaryResults
+  runToken?: string
+  skipped?: boolean
+}
+
 type ManagePdfDocumentsResponse = {
   documents?: AdminPdfDocument[]
   message?: string
@@ -433,6 +527,124 @@ function toAdminMaterialResults(
       reviewedAt: proposal.reviewed_at,
       status: proposal.status,
       stem: proposal.stem,
+    })),
+  }
+}
+
+function toStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+function toAdminSummaryResults(raw?: RawSummaryResults): AdminSummaryResults {
+  const control = raw?.control ?? null
+  const run = raw?.run ?? null
+  return {
+    control: control
+      ? {
+          budgetLimitMicrousd: Number(control.budget_limit_microusd ?? 0),
+          inputTokenLimit: Number(control.input_token_limit ?? 0),
+          inputTokensUsed: Number(control.input_tokens_used ?? 0),
+          outputTokenLimit: Number(control.output_token_limit ?? 0),
+          outputTokensUsed: Number(control.output_tokens_used ?? 0),
+          status: String(control.status ?? 'disabled'),
+          summariesEnabled: Boolean(control.summaries_enabled),
+          summaryCallLimit: Number(control.summary_call_limit ?? 18),
+          summaryCallsUsed: Number(control.summary_calls_used ?? 0),
+          usedMicrousd: Number(control.used_microusd ?? 0),
+        }
+      : null,
+    run: run
+      ? {
+          expiresAt: String(run.expires_at ?? ''),
+          id: String(run.id ?? ''),
+          lastWindowIndex: Number(run.last_window_index ?? 0),
+          status: String(run.status ?? 'stopped') as AdminSummaryResults['run'] extends infer T
+            ? T extends { status: infer S }
+              ? S
+              : never
+            : never,
+        }
+      : null,
+    summaries: (raw?.summaries ?? []).map((item) => {
+      const output = (item.ai_output ?? {}) as Record<string, unknown>
+      const publication = (item.publication ?? null) as Record<string, unknown> | null
+      return {
+        aiOutput: {
+          academicQuestionCandidate:
+            (output.academic_question_candidate as AdminLectureSummary['aiOutput']['academicQuestionCandidate']) ??
+            null,
+          commentPulse: toStringArray(output.comment_pulse),
+          lectureRecap: toStringArray(output.lecture_recap),
+        },
+        createdAt: String(item.created_at ?? ''),
+        id: String(item.id ?? ''),
+        modelId: String(item.model_id ?? ''),
+        promptVersion: String(item.prompt_version ?? ''),
+        publication: publication
+          ? {
+              activeRevisionId: String(publication.active_revision_id ?? ''),
+              pinnedOrder:
+                publication.pinned_order == null
+                  ? null
+                  : Number(publication.pinned_order),
+              pinnedUntil:
+                publication.pinned_until == null
+                  ? null
+                  : String(publication.pinned_until),
+              publishedAt:
+                publication.published_at == null
+                  ? null
+                  : String(publication.published_at),
+              reviewState: String(
+                publication.review_state ?? 'ai_unreviewed',
+              ) as AdminLectureSummary['publication'] extends infer T
+                ? T extends { reviewState: infer S }
+                  ? S
+                  : never
+                : never,
+              visibility: String(
+                publication.visibility ?? 'hidden',
+              ) as 'hidden' | 'public',
+            }
+          : null,
+        qualityResult: (item.quality_result ?? {}) as Record<string, unknown>,
+        revisions: ((item.revisions ?? []) as Array<Record<string, unknown>>).map(
+          (revision) => {
+            const revisionBody = (revision.body ?? {}) as Record<string, unknown>
+            return {
+              authorActorId:
+                revision.author_actor_id == null
+                  ? null
+                  : String(revision.author_actor_id),
+              authorType: String(revision.author_type ?? 'ai') as 'admin' | 'ai',
+              body: {
+                commentPulse: toStringArray(revisionBody.comment_pulse),
+                lectureRecap: toStringArray(revisionBody.lecture_recap),
+              },
+              createdAt: String(revision.created_at ?? ''),
+              id: String(revision.id ?? ''),
+              reason: revision.reason == null ? null : String(revision.reason),
+              revisionNumber: Number(revision.revision_number ?? 0),
+            }
+          },
+        ),
+        status: String(item.status ?? 'accepted') as AdminLectureSummary['status'],
+        windowEnd: String(item.window_end ?? ''),
+        windowIndex: Number(item.window_index ?? 0),
+        windowStart: String(item.window_start ?? ''),
+      }
+    }),
+    windows: (raw?.windows ?? []).map((item) => ({
+      attemptCount: Number(item.attempt_count ?? 0),
+      id: String(item.id ?? ''),
+      lastErrorCode:
+        item.last_error_code == null ? null : String(item.last_error_code),
+      status: String(item.status ?? 'pending'),
+      windowEnd: String(item.window_end ?? ''),
+      windowIndex: Number(item.window_index ?? 0),
+      windowStart: String(item.window_start ?? ''),
     })),
   }
 }
@@ -741,6 +953,114 @@ export const supabaseAdminRepository = {
     return {
       pollId: data.pollId ?? null,
       results: toAdminMaterialResults(data.results),
+    }
+  },
+
+  async manageLectureSummaries(request:
+    | {
+        action: 'status' | 'resume'
+        adminToken: string
+        lectureSessionId: string
+      }
+    | {
+        action: 'start'
+        adminToken: string
+        billingGrant: string
+        lectureSessionId: string
+      }
+    | {
+        action: 'stop'
+        adminToken: string
+        lectureSessionId: string
+        reason: string
+      }
+    | {
+        action: 'hide' | 'publish' | 'unpin'
+        adminToken: string
+        lectureSessionId: string
+        summaryId: string
+      }
+    | {
+        action: 'pin'
+        adminToken: string
+        lectureSessionId: string
+        pinnedOrder: number
+        pinnedUntil: string
+        summaryId: string
+      }
+    | {
+        action: 'revisePublish'
+        adminToken: string
+        lectureSessionId: string
+        reason: string
+        revisionBody: { commentPulse: string[]; lectureRecap: string[] }
+        summaryId: string
+      },
+  ): Promise<{
+    reason: string | null
+    results: AdminSummaryResults
+    runToken: string | null
+  }> {
+    const { data, error } =
+      await supabase.functions.invoke<SummaryFunctionResponse>(
+        'manage-lecture-summaries',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Lecture summary operation failed.'),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'Lecture summary operation failed.')
+    }
+    return {
+      reason: data.reason ?? null,
+      results: toAdminSummaryResults(data.results),
+      runToken: data.runToken ?? null,
+    }
+  },
+
+  async generateLectureSummary(request: {
+    adminToken: string
+    lectureSessionId: string
+    pdfContext: {
+      documentId: string
+      documentVersion: string
+      pages: Array<{ excerptId: string; pageNumber: number; text: string }>
+    } | null
+    runToken: string
+    transcriptSegments: Array<{
+      completedAt: string
+      itemId: string
+      startedAt: string
+      text: string
+    }>
+    windowIndex: number
+  }): Promise<{
+    actualMicrousd: number
+    published: boolean
+    results: AdminSummaryResults
+    skipped: boolean
+  }> {
+    const { data, error } =
+      await supabase.functions.invoke<SummaryFunctionResponse>(
+        'generate-lecture-summary',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Lecture summary generation failed.'),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'Lecture summary generation failed.')
+    }
+    return {
+      actualMicrousd: Number(data.actualMicrousd ?? 0),
+      published: Boolean(data.published),
+      results: toAdminSummaryResults(data.results),
+      skipped: Boolean(data.skipped),
     }
   },
 

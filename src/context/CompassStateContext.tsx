@@ -21,6 +21,7 @@ import {
 } from '../lib/joinedLecture'
 import {
   createServerClockSample,
+  estimateServerTimeMs,
   getDeadlineRefreshDelayMs,
   isLifecycleRequestCurrent,
   removePendingComments,
@@ -49,6 +50,7 @@ import {
   type LiveStateVersions,
   type ParticipantLiveState,
   type PublicCaption,
+  type PublicLectureSummary,
   supabaseLiveStateRepository,
 } from '../repositories/supabaseLiveStateRepository'
 import { supabasePollRepository } from '../repositories/supabasePollRepository'
@@ -297,6 +299,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [pollResponses, setPollResponses] = useState<PollResponse[]>([])
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [caption, setCaption] = useState<PublicCaption | null>(null)
+  const [summaries, setSummaries] = useState<PublicLectureSummary[]>([])
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
   )
@@ -363,6 +366,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setPollResults(snapshot.pollResults)
     setDisplayState(snapshot.displayState)
     setCaption(null)
+    setSummaries([])
     setDisplayStateError(null)
     setCommentsError(null)
     setCommentLikesError(null)
@@ -447,6 +451,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setPollResponses([])
       setDisplayState(null)
       setCaption(null)
+      setSummaries([])
       setDisplayStateError(null)
       liveStateVersionsRef.current = createEmptyLiveStateVersions()
       commentCursorRef.current = null
@@ -607,6 +612,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
           if (snapshot.caption !== undefined) {
             setCaption(snapshot.caption)
+          }
+
+          if (snapshot.summaries) {
+            setSummaries(snapshot.summaries)
           }
 
           liveStateVersionsRef.current = advanceLiveStateVersions(
@@ -805,6 +814,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         setJoinedLectureSession(archive.lecture)
         setComments(archive.comments)
         setDisplayState(archive.pdf)
+        setSummaries(archive.summaries)
         setHasOlderComments(archive.commentsHasMore)
       })
       .catch((error) => {
@@ -943,9 +953,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     applyDemoSnapshot(snapshot)
   }, [applyDemoSnapshot, runtimeMode])
 
+  const getServerNow = useCallback(() => {
+    const sample = serverClockSampleRef.current
+    if (!sample) return runtimeMode === 'demo' ? new Date().toISOString() : null
+    return new Date(
+      estimateServerTimeMs(sample, performance.now()),
+    ).toISOString()
+  }, [runtimeMode])
+
   const value = useMemo<CompassStateValue>(
     () => ({
       caption,
+      summaries,
       lecture,
       participants,
       comments,
@@ -974,6 +993,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       isSubmittingComment,
       isSessionSyncPaused,
       lastActivityAt,
+      getServerNow,
       resumeSessionSync,
       resetDemoLecture,
       selectLectureSession,
@@ -1312,6 +1332,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     }),
     [
       caption,
+      summaries,
       comments,
       activeLectureSessionId,
       baseLecture,
@@ -1339,6 +1360,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       polls,
       isSessionSyncPaused,
       lastActivityAt,
+      getServerNow,
       recordSessionActivity,
       resetDemoLecture,
       resumeSessionSync,

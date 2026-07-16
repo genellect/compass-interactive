@@ -4,7 +4,10 @@ import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { LiveComment, Poll, PollResponse } from '../types'
 import type { DisplayState } from './supabaseDisplayStateRepository'
 import type { PollResultSummary } from './supabasePollRepository'
-import { isPhase4RealtimeCaptionsEnabled } from '../lib/featureFlags'
+import {
+  isPhase4RealtimeCaptionsEnabled,
+  isPhase6SummariesEnabled,
+} from '../lib/featureFlags'
 
 export type PublicCaption = {
   language: 'auto' | 'en' | 'ja' | 'mixed' | 'und'
@@ -14,6 +17,19 @@ export type PublicCaption = {
   updatedAt: string
   windowEndedAt: string
   windowStartedAt: string
+}
+
+export type PublicLectureSummary = {
+  commentPulse: string[]
+  id: string
+  lectureRecap: string[]
+  pinned: boolean
+  publishedAt: string
+  reviewState: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
+  revisionId: string
+  windowEnd: string
+  windowIndex: number
+  windowStart: string
 }
 
 export type LiveStateVersions = {
@@ -68,6 +84,7 @@ export type LiveSnapshot = {
   polls: Poll[] | null
   serverTime: string | null
   stateChanged: boolean
+  summaries: PublicLectureSummary[] | null
   versions: LiveStateVersions
 }
 
@@ -81,7 +98,7 @@ export type LectureArchive = {
   commentsHasMore: boolean
   lecture: JoinedLectureSession
   pdf: DisplayState | null
-  summaries: unknown[]
+  summaries: PublicLectureSummary[]
 }
 
 type SnapshotRequest = {
@@ -195,7 +212,7 @@ type RawPublicSnapshotV2 = {
     likes?: RawLikeTotal[]
     pdf?: RawDisplay
     polls?: RawPoll[]
-    summaries?: unknown[]
+    summaries?: RawPublicSummary[]
   }
   contract_version: 2
   server_time: string
@@ -208,6 +225,19 @@ type RawPublicSnapshotV2 = {
     polls: number
     summaries: number
   }
+}
+
+type RawPublicSummary = {
+  comment_pulse: string[]
+  id: string
+  lecture_recap: string[]
+  pinned: boolean
+  published_at: string
+  review_state: PublicLectureSummary['reviewState']
+  revision_id: string
+  window_end: string
+  window_index: number
+  window_start: string
 }
 
 type RawParticipantStateV2 = {
@@ -256,7 +286,24 @@ type RawArchiveV2 = {
     pdf_document_id: string | null
     updated_at: string
   } | null
-  summaries: unknown[]
+  summaries: RawPublicSummary[]
+}
+
+function mapSummaries(raw: RawPublicSummary[] | undefined | null) {
+  return (
+    raw?.map<PublicLectureSummary>((summary) => ({
+      commentPulse: summary.comment_pulse,
+      id: summary.id,
+      lectureRecap: summary.lecture_recap,
+      pinned: summary.pinned,
+      publishedAt: summary.published_at,
+      reviewState: summary.review_state,
+      revisionId: summary.revision_id,
+      windowEnd: summary.window_end,
+      windowIndex: Number(summary.window_index),
+      windowStart: summary.window_start,
+    })) ?? null
+  )
 }
 
 function mapComment(row: RawComment): LiveComment {
@@ -375,6 +422,7 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
     polls,
     serverTime: raw.server_time ?? null,
     stateChanged: raw.state_changed,
+    summaries: null,
     versions: {
       caption: null,
       comments: Number(raw.versions.comments),
@@ -429,6 +477,7 @@ function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
     polls,
     serverTime: raw.server_time,
     stateChanged: Object.keys(raw.changed).length > 0,
+    summaries: mapSummaries(raw.changed.summaries),
     versions: {
       caption: Number(raw.versions.caption),
       comments: Number(raw.versions.comments),
@@ -472,9 +521,11 @@ async function getPublicSnapshotV2({
   lectureSessionId,
   versions,
 }: SnapshotRequest) {
-  const rpcName = isPhase4RealtimeCaptionsEnabled
-    ? 'get_lecture_public_snapshot_v3'
-    : 'get_lecture_public_snapshot_v2'
+  const rpcName = isPhase6SummariesEnabled
+    ? 'get_lecture_public_snapshot_v4'
+    : isPhase4RealtimeCaptionsEnabled
+      ? 'get_lecture_public_snapshot_v3'
+      : 'get_lecture_public_snapshot_v2'
   const { data, error } = await supabase.rpc(rpcName, {
     comment_cursor_created_at: commentCursor?.createdAt,
     comment_cursor_id: commentCursor?.id,
@@ -536,6 +587,7 @@ async function getTerminalSnapshot(
     polls: null,
     serverTime: raw.server_time,
     stateChanged: true,
+    summaries: null,
     versions: {
       caption: null,
       comments: null,
@@ -651,7 +703,10 @@ export const supabaseLiveStateRepository = {
     assertSupabaseConfigured()
     await ensureAnonymousAuthSession()
 
-    const { data, error } = await supabase.rpc('get_lecture_archive_v2', {
+    const archiveRpc = isPhase6SummariesEnabled
+      ? 'get_lecture_archive_v3'
+      : 'get_lecture_archive_v2'
+    const { data, error } = await supabase.rpc(archiveRpc, {
       target_lecture_session_id: lectureSessionId,
     })
 
@@ -673,7 +728,7 @@ export const supabaseLiveStateRepository = {
             lecture_session_id: lectureSessionId,
           })
         : null,
-      summaries: raw.summaries,
+      summaries: mapSummaries(raw.summaries) ?? [],
     }
   },
 }

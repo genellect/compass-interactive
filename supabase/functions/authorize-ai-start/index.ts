@@ -85,6 +85,15 @@ Deno.serve(async (request) => {
       503,
     )
   }
+  if (
+    actions.includes('summaries') &&
+    Deno.env.get('PHASE6_SUMMARIES_ENABLED') !== 'true'
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Five-minute summaries are disabled.' },
+      503,
+    )
+  }
   if (!body.adminToken || !body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'Admin session and lecture are required.' },

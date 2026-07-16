@@ -17,10 +17,12 @@ import {
   isPhase3PrivatePdfEnabled,
   isPhase4RealtimeCaptionsEnabled,
   isPhase5MaterialAnalysisEnabled,
+  isPhase6SummariesEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { publisherClient } from '../pdf/publisherClient'
 import {
+  LectureSummaryControl,
   MaterialAnalysisControl,
   RealtimeCaptionControl,
 } from '../components/AdminAiControl'
@@ -56,6 +58,7 @@ export function AdminPage() {
     displayStateError: liveDisplayStateError,
     hiddenCommentCount,
     hasOlderComments,
+    getServerNow,
     isLoadingOlderComments,
     lecture,
     loadOlderComments,
@@ -1220,9 +1223,11 @@ export function AdminPage() {
             </div>
           </div>
           <span
-            className={`support-state ${isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled ? 'is-ready' : ''}`}
+            className={`support-state ${isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled || isPhase6SummariesEnabled ? 'is-ready' : ''}`}
           >
-            {isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled
+            {isPhase4RealtimeCaptionsEnabled ||
+            isPhase5MaterialAnalysisEnabled ||
+            isPhase6SummariesEnabled
               ? '利用可能'
               : '既定OFF'}
           </span>
@@ -1242,6 +1247,25 @@ export function AdminPage() {
         ) : (
           <p className="note">
             Phase 4 Realtime字幕は既定OFFです。本番有効化はPhase 6後に行います。
+          </p>
+        )}
+        {isPhase6SummariesEnabled &&
+        adminToken &&
+        activeLectureSessionId ? (
+          <LectureSummaryControl
+            adminToken={adminToken}
+            displayState={displayState}
+            documents={adminPdfDocuments}
+            getServerNow={getServerNow}
+            hardStopAt={activeAdminLecture?.hardStopAt ?? null}
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={activeAdminLecture?.status ?? lecture.status}
+            publisherSessionToken={publisherSessionToken}
+            startedAt={activeAdminLecture?.startsAt ?? null}
+          />
+        ) : (
+          <p className="note">
+            Phase 6 5分要約は既定OFFです。有効化後も開始時のBilling PINが必要です。
           </p>
         )}
         {isPhase5MaterialAnalysisEnabled &&
@@ -1284,7 +1308,9 @@ export function AdminPage() {
               <strong>5分ハイライト</strong>
               <small>話の要点とみんなの反応</small>
             </div>
-            <span className="readiness-dot" />
+            <span
+              className={`readiness-dot ${isPhase6SummariesEnabled ? 'is-active' : ''}`}
+            />
           </article>
           <article>
             <span className="support-icon violet">

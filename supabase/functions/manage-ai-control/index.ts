@@ -228,6 +228,7 @@ Deno.serve(async (request) => {
         .maybeSingle()
       if (operationError) throw new Error(operationError.message)
       if (
+        operation?.feature === 'summaries' ||
         operation?.feature === 'material_analysis' ||
         operation?.feature === 'poll_suggestions'
       ) {
@@ -235,7 +236,7 @@ Deno.serve(async (request) => {
           {
             ok: false,
             message:
-              'Phase 5 operations must be finalized by the material analysis endpoint.',
+              'Phase 5 operations must be finalized by their dedicated endpoints; summaries use their dedicated endpoint too.',
           },
           409,
         )
@@ -337,6 +338,13 @@ Deno.serve(async (request) => {
           { ok: false, message: 'stop reason is required.' },
           400,
         )
+      }
+      if (Deno.env.get('PHASE6_SUMMARIES_ENABLED') === 'true') {
+        await supabase.rpc('admin_stop_lecture_summary_run', {
+          target_actor_id: actorId,
+          target_lecture_session_id: body.lectureSessionId,
+          target_reason: reason,
+        })
       }
       const { data, error } = await supabase.rpc(
         'admin_stop_lecture_ai_control',

@@ -27,7 +27,7 @@ export type MaterialSummaryContent = {
 
 export type FiveMinuteRecap = {
   classPulse: string[]
-  emergingQuestion: string
+  emergingQuestion?: string
   id: string
   presenterPoints: string[]
   responseLabel: string
@@ -253,6 +253,7 @@ export function FiveMinuteRecapPanel({
   const [activeIndex, setActiveIndex] = useState(
     isDemo && recaps.length === 0 ? 0 : Math.max(visibleRecaps.length - 1, 0),
   )
+  const [isHidden, setIsHidden] = useState(false)
 
   useEffect(() => {
     if (!isDemo || recaps.length > 0) {
@@ -298,9 +299,18 @@ export function FiveMinuteRecapPanel({
           </span>
           <small>5分ごとに更新</small>
         </div>
+        {!isDemo && activeRecap ? (
+          <button
+            className="caption-visibility-button"
+            onClick={() => setIsHidden((current) => !current)}
+            type="button"
+          >
+            {isHidden ? 'AI支援を表示' : 'AI支援を非表示'}
+          </button>
+        ) : null}
       </div>
 
-      {activeRecap ? (
+      {activeRecap && !isHidden ? (
         <div className="recap-content" key={activeRecap.id} aria-live="polite">
           <div className="recap-meta">
             <strong>{activeRecap.windowLabel}</strong>
@@ -323,27 +333,38 @@ export function FiveMinuteRecapPanel({
                 ))}
               </ul>
             </article>
-            <article className="recap-stream class-stream">
-              <div className="recap-stream-heading">
-                <span>
-                  <AppIcon name="users" size={17} />
-                </span>
-                <div>
-                  <small>CLASS PULSE</small>
-                  <strong>みんなの反応</strong>
+            {activeRecap.classPulse.length ? (
+              <article className="recap-stream class-stream">
+                <div className="recap-stream-heading">
+                  <span>
+                    <AppIcon name="users" size={17} />
+                  </span>
+                  <div>
+                    <small>CLASS PULSE</small>
+                    <strong>みんなの反応</strong>
+                  </div>
                 </div>
-              </div>
-              <ul>
-                {activeRecap.classPulse.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
-            </article>
+                <ul>
+                  {activeRecap.classPulse.map((point) => (
+                    <li key={point}>{point}</li>
+                  ))}
+                </ul>
+              </article>
+            ) : null}
           </div>
-          <div className="recap-question">
-            <span>いま生まれている問い</span>
-            <strong>{activeRecap.emergingQuestion}</strong>
-            <a href="#lecture-question">自分の考えを残す</a>
+          {activeRecap.emergingQuestion ? (
+            <div className="recap-question">
+              <span>いま生まれている問い</span>
+              <strong>{activeRecap.emergingQuestion}</strong>
+              <a href="#lecture-question">自分の考えを残す</a>
+            </div>
+          ) : null}
+        </div>
+      ) : activeRecap && isHidden ? (
+        <div className="recap-awaiting">
+          <div>
+            <strong>AI支援を非表示にしています</strong>
+            <p>講義参加やコメント機能には影響しません。</p>
           </div>
         </div>
       ) : (

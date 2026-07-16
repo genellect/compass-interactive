@@ -1141,6 +1141,10 @@ export type Database = {
         Args: { target_lecture_session_id: string }
         Returns: Json
       }
+      get_lecture_archive_v3: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
       get_lecture_comment_history_v2: {
         Args: {
           before_comment_id: string
@@ -1185,6 +1189,22 @@ export type Database = {
         Returns: Json
       }
       get_lecture_public_snapshot_v3: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          known_caption_version?: number
+          known_comments_version?: number
+          known_lecture_version?: number
+          known_likes_version?: number
+          known_pdf_version?: number
+          known_polls_version?: number
+          known_summaries_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      get_lecture_public_snapshot_v4: {
         Args: {
           comment_cursor_created_at?: string
           comment_cursor_id?: string
