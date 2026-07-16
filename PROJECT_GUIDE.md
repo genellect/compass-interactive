@@ -1,17 +1,19 @@
 # COMPASS Interactive Project Guide
 
-- 最終更新: 2026-07-13
+- 最終更新: 2026-07-16
 - 対象リポジトリ: `C:\Users\emers\OneDrive\Desktop\COMPASS Interactive`
-- 対象範囲: Codexが一貫して実施するPhase 1〜6の実装計画
-- 状態: 設計確定・実装未着手
+- 対象範囲: Phase 0〜6.5の実装、統合監査、Development Production Review
+- 状態: ローカル実装・統合監査完了、本番反映準備中
 
 ## 1. このガイドの位置付け
 
-この文書は、既存の`PROJECT_GUIDE.md`、現行コードと本番Supabaseの読み取り監査、OpenAI API実装計画、添付GPTレビュー、追加されたPDFアップロード／ダウンロードおよびAI Poll提案要件を統合した、新しい実装上の正本である。
+この文書は、既存の`PROJECT_GUIDE.md`、現行コードとSupabaseの監査、OpenAI API実装計画、添付GPTレビュー、PDFアップロード／ダウンロード、AI Poll提案、5分要約、任意ニックネーム要件を統合した実装上の正本である。
 
 既存Project Guideに記載されていた古いPhase番号、未実装状況、ローカルPDFだけを前提としたロードマップは、この文書のPhase 1〜6については置き換える。既に実装済みのコメント、Poll、Display、Admin lifecycle、5秒snapshot、PDFページ同期は破棄せず、現在の基盤として段階的に拡張する。
 
-この文書を作成した時点では、コード、マイグレーション、本番DB、Cloudflare、Supabase Edge Functionsには変更を加えていない。
+Phase 0〜6.5のコード、migration、RPC、RLS、Edge Functions、Publisher、Cloudflare Worker、UIおよびテストはローカル実装済みである。2026-07-16の統合監査では、空DBからの全migration、既存Phase 6.5からのupgrade、pgTAP 613項目、DB lint、型検査、Lint、production build、20人／300人負荷モデルがPASSした。
+
+本番Supabase、Hosted Auth、R2、Worker、Pages、Git remoteへの反映は、Development Production Reviewのrunbookに従って、データベースとバックエンドを先に準備し、main pushを最後の公開操作として行う。
 
 ## 2. プロダクト目標
 
