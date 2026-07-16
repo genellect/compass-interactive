@@ -10,6 +10,7 @@ import {
 } from '../components/LearningSupport'
 import { useCompassState } from '../hooks/useCompassState'
 import { formatSummaryWindowLabel } from '../summary/summaryWindow'
+import { isPhase65CommentNicknamesEnabled } from '../lib/featureFlags'
 
 export function LecturePage() {
   const {
@@ -289,6 +290,13 @@ export function LecturePage() {
           <CommentInput
             disabled={!isJoined || commentsLoading || isSessionSyncPaused}
             isSubmitting={isSubmittingComment}
+            nicknameMode={
+              runtimeMode === 'demo'
+                ? 'demo'
+                : isPhase65CommentNicknamesEnabled
+                  ? 'live'
+                  : 'disabled'
+            }
             onSubmit={addComment}
           />
           <LiveBoard

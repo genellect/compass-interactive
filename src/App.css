@@ -2274,6 +2274,60 @@ input:disabled {
   color: var(--text);
 }
 
+.nickname-control {
+  background: rgba(94, 225, 255, 0.045);
+  border: 1px solid rgba(94, 225, 255, 0.13);
+  border-radius: 14px;
+  display: grid;
+  gap: 11px;
+  margin-top: 14px;
+  padding: 12px 13px;
+}
+
+.nickname-toggle {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+}
+
+.nickname-toggle input {
+  accent-color: var(--accent);
+  height: 18px;
+  margin: 0;
+  width: 18px;
+}
+
+.nickname-toggle > span,
+.nickname-field {
+  display: grid;
+  gap: 2px;
+}
+
+.nickname-toggle strong,
+.nickname-field > span {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.nickname-toggle small,
+.nickname-field small {
+  color: var(--muted);
+  font-size: 0.69rem;
+  line-height: 1.5;
+}
+
+.nickname-field input {
+  background: rgba(2, 9, 20, 0.68);
+  border-color: rgba(165, 199, 232, 0.18);
+  min-height: 42px;
+}
+
+.nickname-field .nickname-counter {
+  justify-self: end;
+}
+
 .composer-footer {
   align-items: center;
   display: flex;
@@ -2306,13 +2360,14 @@ input:disabled {
   border-color: rgba(94, 225, 255, 0.18);
 }
 
-.anonymous-author {
+.comment-author {
   align-items: center;
   display: inline-flex;
   gap: 7px;
+  min-width: 0;
 }
 
-.anonymous-author i {
+.comment-author i {
   align-items: center;
   background: rgba(94, 225, 255, 0.1);
   border-radius: 50%;
@@ -2323,6 +2378,17 @@ input:disabled {
   height: 24px;
   justify-content: center;
   width: 24px;
+}
+
+.comment-author.has-nickname {
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.comment-author.has-nickname i {
+  background: linear-gradient(135deg, rgba(94, 225, 255, 0.2), rgba(157, 124, 255, 0.2));
+  border: 1px solid rgba(137, 235, 255, 0.2);
+  color: var(--text);
 }
 
 .like-count,
@@ -4257,9 +4323,25 @@ input:disabled {
   color: #718398;
 }
 
-.theme-light .anonymous-author i {
+.theme-light .comment-author i {
   background: #e7f3f8;
   color: #1677a8;
+}
+
+.theme-light .nickname-control {
+  background: #f3f9fb;
+  border-color: #d5e7ee;
+}
+
+.theme-light .nickname-field input {
+  background: #ffffff;
+  border-color: #ccd9e5;
+}
+
+.theme-light .comment-author.has-nickname i {
+  background: linear-gradient(135deg, #dff4fa, #eee8ff);
+  border-color: #c9dfe9;
+  color: #185f7e;
 }
 
 .theme-light .learning-support {

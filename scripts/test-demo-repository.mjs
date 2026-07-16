@@ -54,8 +54,13 @@ assert.match(learningSupportSource, /講義資料の要点/)
 assert.match(lecturePageSource, /href="#lecture-recap"/)
 assert.doesNotMatch(adminPageSource, /API接続待ち/)
 
-const withComment = demoRepository.addComment('端末内テストコメント', storage)
+const withComment = demoRepository.addComment(
+  '端末内テストコメント',
+  'デモ参加者',
+  storage,
+)
 assert.equal(withComment.comments[0]?.body, '端末内テストコメント')
+assert.equal(withComment.comments[0]?.nickname, 'デモ参加者')
 
 const liked = demoRepository.addCommentLike('demo-comment-2', storage)
 assert.equal(
@@ -87,6 +92,7 @@ assert.throws(
 
 const restored = demoRepository.getSnapshot(storage)
 assert.equal(restored.comments[0]?.body, '端末内テストコメント')
+assert.equal(restored.comments[0]?.nickname, 'デモ参加者')
 assert.equal(restored.pollResponses.length, 1)
 
 const reset = demoRepository.reset(storage)

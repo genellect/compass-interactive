@@ -115,9 +115,11 @@ const optimistic = createOptimisticComment({
   createdAt: '2026-07-14T00:00:01.000Z',
   id: 'optimistic-test',
   lectureId: 'lecture-1',
+  nickname: '質問係',
   participantId: 'participant-1',
 })
 assert.equal(optimistic.body, 'queued question')
+assert.equal(optimistic.nickname, '質問係')
 assert.equal(optimistic.isPending, true)
 assert.deepEqual(
   mergeInitialCommentsWithPending([optimistic], []),

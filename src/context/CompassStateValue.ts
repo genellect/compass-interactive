@@ -57,7 +57,7 @@ export type CompassStateValue = {
   sessionSyncMessage: string | null
   sessionSyncPauseReason: SessionSyncPauseReason
   joinLecture: (lectureCode: string) => Promise<JoinResult>
-  addComment: (body: string) => Promise<boolean>
+  addComment: (body: string, nickname?: string | null) => Promise<boolean>
   refreshComments: () => Promise<void>
   loadOlderComments: () => Promise<void>
   refreshPollResults: () => Promise<void>

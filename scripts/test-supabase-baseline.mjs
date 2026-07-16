@@ -20,6 +20,8 @@ const phase4MigrationName =
 const phase41MigrationName = '20260715145555_phase4_1_ai_concurrency_lanes.sql'
 const phase5MigrationName = '20260715155407_phase5_pdf_ai_poll_proposals.sql'
 const phase6MigrationName = '20260716013632_phase6_five_minute_summaries.sql'
+const phase65MigrationName =
+  '20260716062858_phase6_5_optional_comment_nicknames.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -41,6 +43,7 @@ assert.deepEqual(
     phase41MigrationName,
     phase5MigrationName,
     phase6MigrationName,
+    phase65MigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -99,6 +102,7 @@ assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
 assert.match(envExample, /VITE_PHASE2_LECTURE_LIFECYCLE=false/)
 assert.match(envExample, /VITE_PHASE3_PRIVATE_PDF=false/)
 assert.match(envExample, /VITE_PHASE5_MATERIAL_ANALYSIS=false/)
+assert.match(envExample, /VITE_PHASE6_5_COMMENT_NICKNAMES=false/)
 assert.match(
   turnstile,
   /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/,

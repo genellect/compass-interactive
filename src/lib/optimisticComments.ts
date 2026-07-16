@@ -1,4 +1,5 @@
-import type { LiveComment } from '../types'
+import type { LiveComment } from '../types/index.ts'
+import { normalizeCommentNickname } from './commentNickname.ts'
 
 function sortCommentsNewestFirst(comments: LiveComment[]) {
   return [...comments].sort((left, right) => {
@@ -12,12 +13,14 @@ export function createOptimisticComment({
   createdAt = new Date().toISOString(),
   id = `optimistic-${crypto.randomUUID()}`,
   lectureId,
+  nickname,
   participantId,
 }: {
   body: string
   createdAt?: string
   id?: string
   lectureId: string
+  nickname?: string | null
   participantId: string
 }): LiveComment {
   return {
@@ -27,6 +30,7 @@ export function createOptimisticComment({
     isPending: true,
     isPinned: false,
     lectureId,
+    nickname: normalizeCommentNickname(nickname),
     likeCount: 0,
     likedByParticipantIds: [],
     participantId,

@@ -25,15 +25,21 @@ export function CommentCard({
     hour: '2-digit',
     minute: '2-digit',
   })
+  const authorLabel = comment.nickname ?? '匿名の参加者'
+  const authorInitial = comment.nickname
+    ? (Array.from(comment.nickname)[0] ?? '?')
+    : '?'
 
   return (
     <article
       className={`comment-card ${comment.status === 'hidden' ? 'is-hidden' : ''}`}
     >
       <div className="comment-meta">
-        <span className="anonymous-author">
-          <i aria-hidden="true">?</i>
-          匿名の参加者
+        <span
+          className={`comment-author ${comment.nickname ? 'has-nickname' : ''}`}
+        >
+          <i aria-hidden="true">{authorInitial}</i>
+          {authorLabel}
         </span>
         <span>{comment.isPending ? '送信中…' : timeLabel}</span>
       </div>

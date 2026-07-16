@@ -1,5 +1,6 @@
 import { demoSeedComments } from './demoSeedData.ts'
 import type { LiveComment, PollResponse } from '../types/index.ts'
+import { normalizeCommentNickname } from '../lib/commentNickname.ts'
 
 export const DEMO_STORAGE_KEY = 'compass-interactive:demo:v1'
 export const DEMO_SCHEMA_VERSION = 2 as const
@@ -24,7 +25,14 @@ function getBrowserStorage(): DemoStorage {
 }
 
 function cloneState(state: DemoLectureState): DemoLectureState {
-  return JSON.parse(JSON.stringify(state)) as DemoLectureState
+  const clone = JSON.parse(JSON.stringify(state)) as DemoLectureState
+  return {
+    ...clone,
+    comments: clone.comments.map((comment) => ({
+      ...comment,
+      nickname: normalizeCommentNickname(comment.nickname),
+    })),
+  }
 }
 
 function createParticipantId() {

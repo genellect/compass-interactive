@@ -6,6 +6,7 @@ export type CommentRepository = {
     body: string
     comments: LiveComment[]
     lectureId: string
+    nickname?: string | null
     participantId: string
   }) => LiveComment[]
   toggleLike: (input: {

@@ -42,6 +42,7 @@ import {
   rollbackOptimisticComment,
   settleOptimisticComment,
 } from '../lib/optimisticComments'
+import { normalizeCommentNickname } from '../lib/commentNickname'
 import { mockCompassRepository } from '../repositories'
 import { supabaseCommentRepository } from '../repositories/supabaseCommentRepository'
 import {
@@ -1056,7 +1057,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
         }
       },
-      addComment: async (body) => {
+      addComment: async (body, nickname) => {
         if (!currentParticipantId) {
           setCommentsError('講義に参加してからコメントしてください。')
           return false
@@ -1076,6 +1077,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         }
 
         const trimmedBody = body.trim().slice(0, 120)
+        const normalizedNickname = normalizeCommentNickname(nickname)
         if (!trimmedBody) {
           setCommentsError('コメントを入力してください。')
           return false
@@ -1089,13 +1091,16 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         let optimisticCommentId: string | null = null
         try {
           if (runtimeMode === 'demo') {
-            applyDemoSnapshot(demoRepository.addComment(trimmedBody))
+            applyDemoSnapshot(
+              demoRepository.addComment(trimmedBody, normalizedNickname),
+            )
             return true
           }
 
           const optimisticComment = createOptimisticComment({
             body: trimmedBody,
             lectureId: activeLectureSessionId,
+            nickname: normalizedNickname,
             participantId: currentParticipantId,
           })
           optimisticCommentId = optimisticComment.id
@@ -1107,6 +1112,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             await supabaseCommentRepository.createVisibleComment({
               body: trimmedBody,
               lectureSessionId: activeLectureSessionId,
+              nickname: normalizedNickname,
               participantId: currentParticipantId,
             })
           if (

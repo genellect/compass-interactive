@@ -16,6 +16,7 @@ import {
 import type { JoinedLectureSession } from '../lib/joinedLecture.ts'
 import type { PollResultSummary } from '../repositories/supabasePollRepository.ts'
 import type { Participant } from '../types/index.ts'
+import { normalizeCommentNickname } from '../lib/commentNickname.ts'
 
 export type DemoSnapshot = {
   comments: DemoLectureState['comments']
@@ -78,7 +79,11 @@ export const demoRepository = {
     return toSnapshot(loadDemoState(storage))
   },
 
-  addComment(body: string, storage?: DemoStorage) {
+  addComment(
+    body: string,
+    nickname?: string | null,
+    storage?: DemoStorage,
+  ) {
     const trimmedBody = body.trim().slice(0, 120)
     if (!trimmedBody) {
       throw new Error('コメントを入力してください。')
@@ -92,6 +97,7 @@ export const demoRepository = {
             id: crypto.randomUUID(),
             lectureId: DEMO_LECTURE_ID,
             participantId: current.participantId,
+            nickname: normalizeCommentNickname(nickname),
             body: trimmedBody,
             likeCount: 0,
             likedByParticipantIds: [],

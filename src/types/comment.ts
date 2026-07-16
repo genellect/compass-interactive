@@ -4,6 +4,7 @@ export type LiveComment = {
   id: string
   lectureId: string
   participantId: string
+  nickname: string | null
   body: string
   likeCount: number
   likedByParticipantIds: string[]

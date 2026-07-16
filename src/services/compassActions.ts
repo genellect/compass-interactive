@@ -64,11 +64,13 @@ export function submitComment({
   body,
   comments,
   lectureId,
+  nickname,
   participantId,
 }: {
   body: string
   comments: LiveComment[]
   lectureId: string
+  nickname?: string | null
   participantId: string
 }) {
   const trimmedBody = body.trim().slice(0, 120)
@@ -81,6 +83,7 @@ export function submitComment({
     id: `comment-${Date.now()}`,
     lectureId,
     participantId,
+    nickname: nickname?.trim() || null,
     body: trimmedBody,
     likeCount: 0,
     likedByParticipantIds: [],

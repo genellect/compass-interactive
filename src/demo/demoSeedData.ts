@@ -32,6 +32,7 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-1',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-1',
+    nickname: '薬理好き',
     body: '翻訳結果が正しいか判断するには、自分にも基礎が必要だと思いました。',
     likeCount: 27,
     likedByParticipantIds: [
@@ -48,6 +49,7 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-2',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-2',
+    nickname: null,
     body: '海外の研究者と直接話す力は、翻訳だけでは補いにくそうです。',
     likeCount: 18,
     likedByParticipantIds: ['demo-seed-like-5', 'demo-seed-like-6'],
@@ -59,6 +61,7 @@ export const demoSeedComments: LiveComment[] = [
     id: 'demo-comment-3',
     lectureId: DEMO_LECTURE_ID,
     participantId: 'demo-seed-participant-3',
+    nickname: '質問係',
     body: '英語を学ぶ目的を、点数以外で初めて考えました。',
     likeCount: 9,
     likedByParticipantIds: ['demo-seed-like-7'],

@@ -18,3 +18,7 @@ export const isPhase5MaterialAnalysisEnabled =
 export const isPhase6SummariesEnabled =
   isPhase1SyncProtocolEnabled &&
   import.meta.env.VITE_PHASE6_SUMMARIES === 'true'
+
+export const isPhase65CommentNicknamesEnabled =
+  isPhase1SyncProtocolEnabled &&
+  import.meta.env.VITE_PHASE6_5_COMMENT_NICKNAMES === 'true'

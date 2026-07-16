@@ -6,8 +6,10 @@ import type { DisplayState } from './supabaseDisplayStateRepository'
 import type { PollResultSummary } from './supabasePollRepository'
 import {
   isPhase4RealtimeCaptionsEnabled,
+  isPhase65CommentNicknamesEnabled,
   isPhase6SummariesEnabled,
 } from '../lib/featureFlags'
+import { normalizeCommentNickname } from '../lib/commentNickname'
 
 export type PublicCaption = {
   language: 'auto' | 'en' | 'ja' | 'mixed' | 'und'
@@ -115,6 +117,7 @@ type RawComment = {
   is_pinned: boolean
   lecture_session_id: string
   like_count?: number
+  nickname?: string | null
   participant_id?: string
   status: 'visible'
 }
@@ -315,6 +318,9 @@ function mapComment(row: RawComment): LiveComment {
     lectureId: row.lecture_session_id,
     likeCount: Number(row.like_count ?? 0),
     likedByParticipantIds: [],
+    nickname: isPhase65CommentNicknamesEnabled
+      ? normalizeCommentNickname(row.nickname)
+      : null,
     participantId: row.participant_id ?? '',
     status: 'visible',
   }

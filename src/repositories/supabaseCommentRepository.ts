@@ -1,11 +1,13 @@
 import { supabase } from '../lib/supabaseClient'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { LiveComment } from '../types'
+import { normalizeCommentNickname } from '../lib/commentNickname'
 
 type CommentRow = {
   id: string
   lecture_session_id: string
   participant_id: string
+  nickname: string | null
   body: string
   status: 'visible' | 'hidden' | 'deleted'
   is_pinned: boolean
@@ -18,6 +20,7 @@ function mapCommentRow(row: CommentRow): LiveComment {
     id: row.id,
     lectureId: row.lecture_session_id,
     participantId: row.participant_id,
+    nickname: row.nickname,
     body: row.body,
     likeCount: 0,
     likedByParticipantIds: [],
@@ -32,14 +35,17 @@ export const supabaseCommentRepository = {
     body,
     lectureSessionId,
     participantId,
+    nickname,
   }: {
     body: string
     lectureSessionId: string
     participantId: string
+    nickname?: string | null
   }): Promise<LiveComment> {
     await ensureAnonymousAuthSession()
 
     const trimmedBody = body.trim().slice(0, 120)
+    const normalizedNickname = normalizeCommentNickname(nickname)
     if (!trimmedBody) {
       throw new Error('コメントを入力してください。')
     }
@@ -49,12 +55,13 @@ export const supabaseCommentRepository = {
       .insert({
         lecture_session_id: lectureSessionId,
         participant_id: participantId,
+        nickname: normalizedNickname,
         body: trimmedBody,
         status: 'visible',
         is_pinned: false,
       })
       .select(
-        'id, lecture_session_id, participant_id, body, status, is_pinned, created_at, updated_at',
+        'id, lecture_session_id, participant_id, nickname, body, status, is_pinned, created_at, updated_at',
       )
       .single()
 

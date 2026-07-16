@@ -190,6 +190,7 @@ export type Database = {
           id: string
           is_pinned: boolean
           lecture_session_id: string
+          nickname: string | null
           participant_id: string
           status: string
           updated_at: string
@@ -200,6 +201,7 @@ export type Database = {
           id?: string
           is_pinned?: boolean
           lecture_session_id: string
+          nickname?: string | null
           participant_id: string
           status?: string
           updated_at?: string
@@ -210,6 +212,7 @@ export type Database = {
           id?: string
           is_pinned?: boolean
           lecture_session_id?: string
+          nickname?: string | null
           participant_id?: string
           status?: string
           updated_at?: string
