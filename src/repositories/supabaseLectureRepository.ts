@@ -2,6 +2,7 @@ import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { LectureStatus } from '../types'
+import { isPhase66UxIntegrationEnabled } from '../lib/featureFlags'
 
 type JoinLectureByCodeRow = {
   lecture_session_id: string
@@ -28,7 +29,7 @@ function getJoinErrorMessage(message: string) {
     normalizedMessage.includes('closed') ||
     normalizedMessage.includes('not open')
   ) {
-    return 'この講義は現在openではありません。'
+    return 'この講義は終了しています。'
   }
 
   if (normalizedMessage.includes('not found')) {
@@ -76,6 +77,7 @@ export const supabaseLectureRepository = {
 
   async joinLectureByCode(
     lectureCode: string,
+    captchaToken?: string,
   ): Promise<JoinedLectureWithParticipant> {
     assertSupabaseConfigured()
 
@@ -85,11 +87,16 @@ export const supabaseLectureRepository = {
       throw new Error('講義コードを入力してください。')
     }
 
-    await ensureAnonymousAuthSession()
+    await ensureAnonymousAuthSession(captchaToken)
 
-    const { data, error } = await supabase.rpc('join_lecture_by_code', {
-      lecture_code: trimmedCode,
-    })
+    const { data, error } = await supabase.rpc(
+      isPhase66UxIntegrationEnabled
+        ? 'join_lecture_by_code_v2'
+        : 'join_lecture_by_code',
+      {
+        lecture_code: trimmedCode,
+      },
+    )
 
     if (error) {
       throw new Error(getJoinErrorMessage(error.message))

@@ -1,12 +1,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  runRealtimeProviderHangupSweep,
+  type RealtimeProviderHangupJob,
+} from '../_shared/realtimeProviderHangup.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type LectureStatus = 'draft' | 'open' | 'closed'
 
 type ManageLecturesRequest =
-  | { action: 'list'; adminToken?: string }
+  | { action: 'list'; adminToken?: string; includeHistory?: boolean }
   | {
       action: 'create'
       adminToken?: string
@@ -16,6 +20,11 @@ type ManageLecturesRequest =
     }
   | {
       action: 'start' | 'close'
+      adminToken?: string
+      lectureSessionId?: string
+    }
+  | {
+      action: 'duplicate'
       adminToken?: string
       lectureSessionId?: string
     }
@@ -83,13 +92,15 @@ async function sha256Hex(value: string) {
 }
 
 function generateLectureCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(6))
-  const suffix = Array.from(bytes)
-    .map((byte) => alphabet[byte % alphabet.length])
-    .join('')
+  const range = 1_000_000
+  const maxAccepted = Math.floor(0x1_0000_0000 / range) * range
+  const random = new Uint32Array(1)
 
-  return `JC-${suffix}`
+  do {
+    crypto.getRandomValues(random)
+  } while (random[0] >= maxAccepted)
+
+  return String(random[0] % range).padStart(6, '0')
 }
 
 Deno.serve(async (request) => {
@@ -143,14 +154,55 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   })
 
-  async function listLectures() {
+  async function sweepRealtimeProviderCalls(lectureSessionId: string) {
+    const openAiApiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
+    if (!openAiApiKey) {
+      return { claimed: 0, pending: true, retried: 0, stopped: 0 }
+    }
+    try {
+      const result = await runRealtimeProviderHangupSweep({
+        apiKey: openAiApiKey,
+        claim: async ({ lectureSessionId, limit, operationId }) => {
+          const { data, error } = await supabase.rpc(
+            'claim_realtime_provider_hangups',
+            {
+              job_limit: limit,
+              target_lecture_session_id: lectureSessionId,
+              target_operation_id: operationId,
+            },
+          )
+          if (error) throw new Error('realtime_hangup_claim_failed')
+          return (data ?? []) as RealtimeProviderHangupJob[]
+        },
+        finish: async ({ error: providerError, operationId, succeeded }) => {
+          const { data, error } = await supabase.rpc(
+            'finish_realtime_provider_hangup',
+            {
+              target_error: providerError,
+              target_operation_id: operationId,
+              target_succeeded: succeeded,
+            },
+          )
+          if (error) throw new Error('realtime_hangup_finalize_failed')
+          return data === true
+        },
+        lectureSessionId,
+        limit: 10,
+      })
+      return { ...result, pending: result.retried > 0 }
+    } catch {
+      return { claimed: 0, pending: true, retried: 1, stopped: 0 }
+    }
+  }
+
+  async function listLectures(limit = 30) {
     const { data: lectureRows, error: lectureError } = await supabase
       .from('lecture_sessions')
       .select(
         'id,title,status,starts_at,ends_at,hard_stop_at,closed_at,close_reason,close_actor_type,archive_expires_at,created_at,updated_at',
       )
       .order('created_at', { ascending: false })
-      .limit(30)
+      .limit(limit)
 
     if (lectureError) {
       throw new Error(lectureError.message)
@@ -180,7 +232,10 @@ Deno.serve(async (request) => {
 
   try {
     if (body.action === 'list') {
-      return jsonResponse({ lectures: await listLectures(), ok: true })
+      return jsonResponse({
+        lectures: await listLectures(body.includeHistory ? 30 : 3),
+        ok: true,
+      })
     }
 
     if (body.action === 'create') {
@@ -202,9 +257,9 @@ Deno.serve(async (request) => {
       }
 
       let created = false
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      for (let attempt = 0; attempt < 16; attempt += 1) {
         const lectureCode = generateLectureCode()
-        const { error } = await supabase.rpc('admin_create_lecture', {
+        const { error } = await supabase.rpc('admin_create_lecture_v2', {
           lecture_code: lectureCode,
           lecture_code_hash: await sha256Hex(lectureCode),
           lecture_ends_at: endsAt,
@@ -223,6 +278,50 @@ Deno.serve(async (request) => {
       }
 
       if (!created) {
+        throw new Error('Could not generate a unique lecture code.')
+      }
+
+      return jsonResponse({ lectures: await listLectures(), ok: true })
+    }
+
+    if (body.action === 'duplicate') {
+      if (!body.lectureSessionId) {
+        return jsonResponse(
+          { ok: false, message: 'lectureSessionId is required.' },
+          400,
+        )
+      }
+
+      let duplicated = false
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const lectureCode = generateLectureCode()
+        const { error } = await supabase.rpc('admin_duplicate_lecture_v1', {
+          lecture_code: lectureCode,
+          lecture_code_hash: await sha256Hex(lectureCode),
+          source_lecture_session_id: body.lectureSessionId,
+        })
+
+        if (!error) {
+          duplicated = true
+          break
+        }
+
+        if (error.code === 'P0001') {
+          return jsonResponse(
+            {
+              ok: false,
+              message: 'Only a closed lecture can be reused.',
+            },
+            409,
+          )
+        }
+
+        if (error.code !== '23505') {
+          throw new Error(error.message)
+        }
+      }
+
+      if (!duplicated) {
         throw new Error('Could not generate a unique lecture code.')
       }
 
@@ -256,7 +355,15 @@ Deno.serve(async (request) => {
         )
       }
 
-      return jsonResponse({ lectures: await listLectures(), ok: true })
+      const providerHangup =
+        body.action === 'close'
+          ? await sweepRealtimeProviderCalls(body.lectureSessionId)
+          : null
+      return jsonResponse({
+        lectures: await listLectures(),
+        ok: true,
+        providerHangup,
+      })
     }
 
     return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)

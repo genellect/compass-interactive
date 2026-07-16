@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   ConditionalObjectWriteError,
   type PrivateObjectStore,
@@ -17,7 +18,10 @@ import {
 } from '../src/publishPdf.ts'
 import { PublisherSessionManager } from '../src/security/publisherSession.ts'
 import { syncLocalRetention } from '../src/retention/syncLocalRetention.ts'
-import { createPublisherServer } from '../src/server/publisherServer.ts'
+import {
+  createPublisherServer,
+  getDefaultPublisherDataRoot,
+} from '../src/server/publisherServer.ts'
 import { FileObjectStore } from '../src/storage/fileObjectStore.ts'
 import { LocalTextStore } from '../src/storage/localTextStore.ts'
 
@@ -220,6 +224,76 @@ test('pairing code is one-time and sessions are bound to their Origin', () => {
   assert.equal(sessions.verify(paired.token, 'https://compass.example'), false)
 })
 
+test('publisher data defaults outside the repository and ignores a blank override', () => {
+  const applicationData = join(tmpdir(), 'compass-publisher-app-data')
+  const expected = join(applicationData, 'COMPASS Interactive', 'Publisher')
+  assert.equal(
+    getDefaultPublisherDataRoot({
+      COMPASS_PUBLISHER_DATA_DIR: '',
+      LOCALAPPDATA: applicationData,
+    }),
+    expected,
+  )
+  const repositoryPath = fileURLToPath(new URL('../../', import.meta.url))
+  const relativeToRepository = relative(
+    repositoryPath,
+    getDefaultPublisherDataRoot({
+      COMPASS_PUBLISHER_DATA_DIR: '',
+      LOCALAPPDATA: applicationData,
+    }),
+  )
+  assert.equal(
+    relativeToRepository === '' ||
+      (!relativeToRepository.startsWith('..') &&
+        !isAbsolute(relativeToRepository)),
+    false,
+  )
+})
+
+test('relative Publisher roots stay under application data and cannot traverse', () => {
+  const applicationData = join(tmpdir(), 'compass-publisher-relative')
+  const applicationPublisherRoot = join(
+    applicationData,
+    'COMPASS Interactive',
+    'Publisher',
+  )
+  assert.equal(
+    getDefaultPublisherDataRoot({
+      COMPASS_PUBLISHER_DATA_DIR: 'teacher-a',
+      LOCALAPPDATA: applicationData,
+    }),
+    join(applicationPublisherRoot, 'teacher-a'),
+  )
+  assert.throws(
+    () =>
+      getDefaultPublisherDataRoot({
+        COMPASS_PUBLISHER_DATA_DIR: '..\\..\\..\\unsafe',
+        LOCALAPPDATA: applicationData,
+      }),
+    /outside the repository/,
+  )
+})
+
+test('Publisher rejects an explicit repository data root and accepts an external absolute root', () => {
+  const repositoryPath = fileURLToPath(new URL('../../', import.meta.url))
+  const externalRoot = join(tmpdir(), 'compass-publisher-explicit')
+  assert.throws(
+    () =>
+      getDefaultPublisherDataRoot({
+        COMPASS_PUBLISHER_DATA_DIR: repositoryPath,
+        LOCALAPPDATA: join(tmpdir(), 'compass-publisher-app-data'),
+      }),
+    /outside the repository/,
+  )
+  assert.equal(
+    getDefaultPublisherDataRoot({
+      COMPASS_PUBLISHER_DATA_DIR: externalRoot,
+      LOCALAPPDATA: join(tmpdir(), 'compass-publisher-app-data'),
+    }),
+    externalRoot,
+  )
+})
+
 test('canonical retention feed updates and expires teacher-local text', async () => {
   await withStores(async ({ directory, objectStore, textStore }) => {
     const bytes = await readFile(samplePath)
@@ -288,7 +362,7 @@ test('loopback server rejects hostile Origin and oversized bodies before parsing
       port: 0,
       publicJwk: {} as JsonWebKey,
     }
-    const { server } = createPublisherServer({
+    const { server, sessions } = createPublisherServer({
       configuration,
       objectStore,
       textStore,
@@ -314,6 +388,34 @@ test('loopback server rejects hostile Origin and oversized bodies before parsing
         healthy.headers.has('Access-Control-Allow-Credentials'),
         false,
       )
+
+      const invalidSession = await fetch(`${url}/v1/session`, {
+        headers: {
+          Origin: 'https://compass.example',
+          'X-Compass-Publisher-Token': 'invalid',
+        },
+      })
+      assert.equal(invalidSession.status, 401)
+
+      const paired = await fetch(`${url}/v1/pair`, {
+        body: JSON.stringify({ pairingCode: sessions.pairingCode }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://compass.example',
+        },
+        method: 'POST',
+      })
+      assert.equal(paired.status, 200)
+      const pairedBody = (await paired.json()) as {
+        sessionToken: string
+      }
+      const validSession = await fetch(`${url}/v1/session`, {
+        headers: {
+          Origin: 'https://compass.example',
+          'X-Compass-Publisher-Token': pairedBody.sessionToken,
+        },
+      })
+      assert.equal(validSession.status, 200)
 
       const hostile = await fetch(`${url}/v1/health`, {
         headers: { Origin: 'https://evil.example' },

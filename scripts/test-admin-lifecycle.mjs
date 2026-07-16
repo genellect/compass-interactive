@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import {
   createAdminToken,
   verifyAdminToken,
@@ -9,6 +10,43 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
+
+function assertSecretsAreNotReturned(source) {
+  const sourceFile = ts.createSourceFile(
+    'manage-ai-control.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const leakedIdentifiers = []
+  const inspectResponseValue = (node) => {
+    if (
+      ts.isIdentifier(node) &&
+      (node.text === 'openAiApiKey' || node.text === 'serviceRoleKey')
+    ) {
+      leakedIdentifiers.push(node.text)
+    }
+    ts.forEachChild(node, inspectResponseValue)
+  }
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'jsonResponse' &&
+      node.arguments[0]
+    ) {
+      inspectResponseValue(node.arguments[0])
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  assert.deepEqual(
+    leakedIdentifiers,
+    [],
+    'Server-only credentials must never be included in an Edge JSON response.',
+  )
+}
 
 const secret = 'milestone-3-test-secret'
 const token = await createAdminToken(secret)
@@ -58,7 +96,8 @@ for (const source of [
   assert.doesNotMatch(source, /function timingSafeEqual|function signToken/)
 }
 assert.match(verifyPin, /_shared\/adminToken\.ts/)
-assert.match(manageLectures, /rpc\('admin_create_lecture'/)
+assert.match(manageLectures, /rpc\('admin_create_lecture_v2'/)
+assert.match(manageLectures, /rpc\('admin_duplicate_lecture_v1'/)
 assert.match(manageLectures, /rpc\(\s*'admin_set_lecture_status'/)
 assert.doesNotMatch(manageLectures, /from\('lecture_sessions'\)\s*\.insert/)
 assert.doesNotMatch(manageLectures, /transition_at:\s*new Date/)
@@ -72,12 +111,13 @@ assert.doesNotMatch(
   manageAiControl,
   /rpc\(\s*'admin_start_lecture_ai_operation'/,
 )
-assert.doesNotMatch(
-  manageAiControl,
-  /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY[^)]*jsonResponse/,
-)
+assert.match(manageAiControl, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
+assertSecretsAreNotReturned(manageAiControl)
 assert.match(managePolls, /rpc\('admin_create_poll'/)
 assert.match(managePolls, /'admin_set_poll_status'/)
+assert.match(managePolls, /\.eq\('status', 'open'\)/)
+assert.match(managePolls, /\.neq\('status', 'open'\)/)
+assert.match(managePolls, /hasMore/)
 assert.match(adminRepository, /async managePolls/)
 assert.match(
   adminRepository,

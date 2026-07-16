@@ -31,6 +31,7 @@ export function getRequestedLiveStateVersions(
     display: forceAll || forceDisplay ? null : current.display,
     lecture: forceAll ? null : current.lecture,
     likes: forceAll || forceLikes ? null : current.likes,
+    metrics: forceAll ? null : current.metrics,
     pdf: forceAll || forceDisplay ? null : current.pdf,
     polls: forceAll || forcePolls ? null : current.polls,
     state: forceAll ? null : current.state,

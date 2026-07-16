@@ -33,7 +33,10 @@ declare global {
 }
 
 let turnstileScriptRequest: Promise<TurnstileApi> | null = null
-let turnstileChallengeRequest: Promise<string | undefined> | null = null
+const turnstileChallengeRequests = new Map<
+  string,
+  Promise<string | undefined>
+>()
 
 function resolveTurnstileApi() {
   if (!window.turnstile) {
@@ -130,7 +133,7 @@ function createChallengeElements() {
   return { layer, widget }
 }
 
-async function createTurnstileToken() {
+async function createTurnstileToken(action: string) {
   if (!turnstileSiteKey) {
     return undefined
   }
@@ -178,7 +181,7 @@ async function createTurnstileToken() {
     try {
       widgetId = turnstile.render(widget, {
         sitekey: turnstileSiteKey,
-        action: 'anonymous-sign-in',
+        action,
         appearance: 'interaction-only',
         theme: 'auto',
         callback: complete,
@@ -202,12 +205,27 @@ async function createTurnstileToken() {
   })
 }
 
-export function getAnonymousSignInCaptchaToken() {
-  if (!turnstileChallengeRequest) {
-    turnstileChallengeRequest = createTurnstileToken().finally(() => {
-      turnstileChallengeRequest = null
-    })
+export function getTurnstileToken(action: string) {
+  const normalizedAction = action.trim()
+  if (!/^[a-z0-9_-]{3,32}$/.test(normalizedAction)) {
+    throw new Error('安全確認の用途が不正です。')
+  }
+  const existing = turnstileChallengeRequests.get(normalizedAction)
+  if (existing) {
+    return existing
   }
 
-  return turnstileChallengeRequest
+  const request = createTurnstileToken(normalizedAction).finally(() => {
+    turnstileChallengeRequests.delete(normalizedAction)
+  })
+  turnstileChallengeRequests.set(normalizedAction, request)
+  return request
+}
+
+export function getAnonymousSignInCaptchaToken() {
+  return getTurnstileToken('anonymous-sign-in')
+}
+
+export function getLectureJoinCaptchaToken() {
+  return getTurnstileToken('archive-lookup')
 }

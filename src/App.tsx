@@ -21,6 +21,16 @@ const LecturePage = lazy(() =>
     default: module.LecturePage,
   })),
 )
+const CommentHistoryPage = lazy(() =>
+  import('./pages/CommentHistoryPage').then((module) => ({
+    default: module.CommentHistoryPage,
+  })),
+)
+const LectureArchivePage = lazy(() =>
+  import('./pages/LectureArchivePage').then((module) => ({
+    default: module.LectureArchivePage,
+  })),
+)
 
 const publicNavItems = [
   { to: '/demo', label: 'デモを体験', icon: 'sparkles' as const },
@@ -58,8 +68,7 @@ function AppShell() {
   const { hasJoinedLectureSession } = useCompassState()
   const location = useLocation()
   const isAdminRoute = location.pathname.startsWith('/admin')
-  const isDisplayRoute = location.pathname.startsWith('/display')
-  const appTheme = isDisplayRoute ? 'theme-dark' : 'theme-light'
+  const appTheme = 'theme-light'
   const navItems = isAdminRoute
     ? adminNavItems
     : hasJoinedLectureSession
@@ -103,6 +112,15 @@ function AppShell() {
             }
             path="/lecture"
           />
+          <Route
+            element={
+              <RequireJoinedLecture>
+                <CommentHistoryPage />
+              </RequireJoinedLecture>
+            }
+            path="/lecture/comments"
+          />
+          <Route element={<LectureArchivePage />} path="/lecture/archive" />
           <Route
             element={
               <RequireJoinedLecture>

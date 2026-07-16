@@ -27,7 +27,7 @@ SELECT is(
       AND schedule = '17 3 * * 0'
       AND active
       AND command LIKE '%interval ''30 days''%'
-      AND command LIKE '%compass-phase2-lifecycle-minute%'
+      AND command LIKE '%jobname like ''compass-%%''%'
   ),
   1,
   'cron diagnostics are pruned after the bounded retention period'

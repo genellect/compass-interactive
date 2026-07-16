@@ -21,6 +21,11 @@ const migration = read(
   'migrations',
   '20260715032806_phase4_billing_and_realtime_captions.sql',
 )
+const providerControlMigration = read(
+  'supabase',
+  'migrations',
+  '20260717090500_phase6_6_realtime_provider_control.sql',
+)
 const envExample = read('.env.local.example')
 const browserSource = readTree(join(root, 'src'))
 const authorize = read(
@@ -29,10 +34,16 @@ const authorize = read(
   'authorize-ai-start',
   'index.ts',
 )
-const clientSecret = read(
+const realtimeCallEndpoint = read(
   'supabase',
   'functions',
   'issue-realtime-client-secret',
+  'index.ts',
+)
+const realtimeSweepEndpoint = read(
+  'supabase',
+  'functions',
+  'sweep-realtime-provider-calls',
   'index.ts',
 )
 const openAiRealtime = read(
@@ -63,15 +74,31 @@ assert.doesNotMatch(browserSource, /sk-proj-|sk-[A-Za-z0-9_-]{20,}/)
 assert.match(authorize, /verifyBillingPin/)
 assert.match(authorize, /pin_succeeded: pinSucceeded/)
 assert.doesNotMatch(authorize, /billingPin[^\n]*(insert|update|rpc)/i)
-assert.match(clientSecret, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
-assert.match(clientSecret, /admin_consume_ai_billing_grant/)
-assert.match(clientSecret, /admin_finish_realtime_caption_operation/)
-assert.match(openAiRealtime, /\/v1\/realtime\/client_secrets/)
+assert.match(realtimeCallEndpoint, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
+assert.match(
+  realtimeCallEndpoint,
+  /admin_consume_realtime_billing_grant/,
+)
+assert.match(
+  realtimeCallEndpoint,
+  /admin_activate_realtime_provider_call/,
+)
+assert.match(realtimeCallEndpoint, /admin_finish_realtime_caption_operation/)
+assert.match(realtimeCallEndpoint, /sdpOffer/)
+assert.match(realtimeCallEndpoint, /sdpAnswer/)
+assert.match(openAiRealtime, /\/v1\/realtime\/calls/)
+assert.match(openAiRealtime, /\/hangup/)
+assert.doesNotMatch(openAiRealtime, /\/v1\/realtime\/client_secrets/)
 assert.doesNotMatch(
   openAiRealtime,
   /console\.|apiKey[^\n]*(jsonResponse|JSON\.stringify)/,
 )
-assert.match(realtimeSession, /\/v1\/realtime\/calls/)
+assert.doesNotMatch(
+  realtimeSession,
+  /api\.openai\.com|Authorization|clientSecret/,
+)
+assert.match(realtimeSession, /createOffer/)
+assert.match(realtimeSession, /connect\(answerSdp/)
 assert.match(realtimeSession, /input_audio_buffer\.commit/)
 assert.match(realtimeSession, /getTracks\(\).*track\.stop/)
 assert.match(transcriptStore, /IndexedDB|indexedDB/i)
@@ -84,6 +111,10 @@ assert.doesNotMatch(control, /localStorage|sessionStorage/)
 assert.match(control, /5_000/)
 assert.match(control, /15_000/)
 assert.match(control, /client_unmount/)
+assert.match(control, /publishInFlightRef/)
+assert.match(control, /createRealtimeCaptionCall/)
+assert.match(control, /sdpOffer/)
+assert.match(control, /sdpAnswer/)
 assert.match(
   adminPage,
   /const activeAdminLecture = lectures\.find\([\s\S]*?item\.id === activeLectureSessionId/,
@@ -105,6 +136,29 @@ assert.match(
 assert.match(migration, /reap_stale_realtime_caption_operations/)
 assert.match(migration, /interval '45 seconds'/)
 assert.doesNotMatch(migration, /alter publication supabase_realtime add table/)
+assert.match(
+  providerControlMigration,
+  /create table public\.ai_realtime_provider_calls/,
+)
+assert.match(
+  providerControlMigration,
+  /ai_usage_ledger_enqueue_realtime_provider_hangup/,
+)
+assert.match(providerControlMigration, /idempotent_replay/)
+assert.match(providerControlMigration, /provider_call\.activated_at is not null/)
+assert.match(providerControlMigration, /reason', 'stale_sequence'/)
+assert.match(
+  providerControlMigration,
+  /revoke all on public\.ai_realtime_provider_calls[\s\S]*?authenticated/,
+)
+assert.match(
+  providerControlMigration,
+  /grant execute on function public\.claim_realtime_provider_hangups[\s\S]*?service_role/,
+)
+assert.match(realtimeSweepEndpoint, /REALTIME_SWEEP_TRIGGER_SECRET/)
+assert.match(realtimeSweepEndpoint, /timingSafeEqual/)
+assert.match(realtimeSweepEndpoint, /runRealtimeProviderHangupSweep/)
+assert.match(envExample, /REALTIME_SWEEP_TRIGGER_SECRET=/)
 for (const functionName of [
   'authorize-ai-start',
   'issue-realtime-client-secret',
@@ -115,7 +169,11 @@ for (const functionName of [
     new RegExp(`\\[functions\\.${functionName}\\][\\s\\S]*?verify_jwt = true`),
   )
 }
+assert.match(
+  config,
+  /\[functions\.sweep-realtime-provider-calls\][\s\S]*?verify_jwt = false/,
+)
 
 console.log(
-  'Phase 4 static secret, billing, storage, and responsibility checks passed.',
+  'Phase 4 static secret, billing, trusted signalling, provider shutdown, storage, and responsibility checks passed.',
 )

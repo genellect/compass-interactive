@@ -14,6 +14,7 @@ import {
   restoreLocalParticipantId,
 } from '../lib/participantIdentity'
 import {
+  clearJoinedLectureSession,
   JOURNAL_CLUB_MVP_CODE,
   persistJoinedLectureSession,
   restoreJoinedLectureSession,
@@ -31,6 +32,7 @@ import { normalizeLiveSyncPathname } from '../lib/liveSync'
 import {
   isPhase1SyncProtocolEnabled,
   isPhase2LectureLifecycleEnabled,
+  isPhase66UxIntegrationEnabled,
 } from '../lib/featureFlags'
 import {
   advanceLiveStateVersions,
@@ -43,6 +45,13 @@ import {
   settleOptimisticComment,
 } from '../lib/optimisticComments'
 import { normalizeCommentNickname } from '../lib/commentNickname'
+import { getLectureJoinCaptchaToken } from '../lib/turnstile'
+import { ArchiveLookupError, archiveClient } from '../archive/archiveClient'
+import {
+  clearLectureArchiveResumeCode,
+  persistLectureArchiveResumeCode,
+  restoreLectureArchiveResumeCode,
+} from '../archive/archiveSessionStorage'
 import { mockCompassRepository } from '../repositories'
 import { supabaseCommentRepository } from '../repositories/supabaseCommentRepository'
 import {
@@ -52,6 +61,7 @@ import {
   type ParticipantLiveState,
   type PublicCaption,
   type PublicLectureSummary,
+  type PublicMaterialSummary,
   supabaseLiveStateRepository,
 } from '../repositories/supabaseLiveStateRepository'
 import { supabasePollRepository } from '../repositories/supabasePollRepository'
@@ -65,11 +75,13 @@ import type {
   Poll,
   PollResponse,
 } from '../types'
+import type { LectureArchiveSession } from '../types/archive'
 import { createOrUpdateParticipant } from '../services/compassActions'
 import { useAdaptiveLiveSync } from '../hooks/useAdaptiveLiveSync'
 import {
   CompassStateContext,
   type CompassStateValue,
+  type OperatorLiveAccess,
 } from './CompassStateValue'
 
 function createEmptyLiveStateVersions(): LiveStateVersions {
@@ -79,6 +91,7 @@ function createEmptyLiveStateVersions(): LiveStateVersions {
     display: null,
     lecture: null,
     likes: null,
+    metrics: null,
     pdf: null,
     polls: null,
     state: null,
@@ -247,7 +260,7 @@ function getSessionPauseMessage(
   reason: CompassStateValue['sessionSyncPauseReason'],
 ) {
   if (reason === 'lectureClosed') {
-    return '講義は終了しました。コメント投稿、いいね、Poll回答は停止しています。'
+    return '講義は終了しました。コメント投稿、共感、投票は停止しています。'
   }
 
   if (reason === 'idle') {
@@ -301,6 +314,23 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [caption, setCaption] = useState<PublicCaption | null>(null)
   const [summaries, setSummaries] = useState<PublicLectureSummary[]>([])
+  const [materialSummary, setMaterialSummary] =
+    useState<PublicMaterialSummary | null>(null)
+  const [archiveSession, setArchiveSession] =
+    useState<LectureArchiveSession | null>(null)
+  const [isArchiveResumePending, setIsArchiveResumePending] = useState(false)
+  const [archiveResumeError, setArchiveResumeError] = useState<string | null>(
+    null,
+  )
+  const [archiveResumeNonce, setArchiveResumeNonce] = useState(0)
+  const [participantCount, setParticipantCount] = useState(0)
+  const [visibleCommentCount, setVisibleCommentCount] = useState(0)
+  const [hiddenCommentCount, setHiddenCommentCount] = useState(0)
+  const [operatorLiveAccess, setOperatorLiveAccessState] =
+    useState<OperatorLiveAccess | null>(null)
+  const [lastSuccessfulSyncAt, setLastSuccessfulSyncAt] = useState<
+    number | null
+  >(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
   )
@@ -314,6 +344,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const lifecycleRequestEpochRef = useRef(0)
   const serverClockSampleRef = useRef<ServerClockSample | null>(null)
   const archiveLoadedLectureIdRef = useRef<string | null>(null)
+  const archiveResumeAttemptedCodeRef = useRef<string | null>(null)
   const [currentParticipantId, setCurrentParticipantId] = useState<
     string | null
   >(() => {
@@ -346,18 +377,100 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const isLiveSyncRoute = ['/admin', '/display', '/lecture'].includes(
     normalizedPathname,
   )
+  const hasRequiredOperatorAccess =
+    normalizedPathname === '/admin'
+      ? operatorLiveAccess?.kind === 'admin'
+      : normalizedPathname === '/display'
+        ? operatorLiveAccess?.kind === 'display'
+        : true
   const canRunLiveSync =
     runtimeMode === 'live' &&
     hasActiveLectureSessionId &&
     isLectureOpen &&
     isLiveSyncRoute &&
+    hasRequiredOperatorAccess &&
     !isSessionSyncPaused
   const canInteract =
     runtimeMode === 'demo'
       ? hasActiveLectureSessionId && isLectureOpen
       : canRunLiveSync
 
+  const setOperatorLiveAccess = useCallback(
+    (access: OperatorLiveAccess | null) => {
+      setOperatorLiveAccessState(access)
+      liveStateVersionsRef.current = createEmptyLiveStateVersions()
+      liveSnapshotInFlightRef.current = null
+      commentCursorRef.current = null
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (
+      normalizedPathname !== '/lecture/archive' ||
+      archiveSession ||
+      !isPhase66UxIntegrationEnabled ||
+      !archiveClient.isConfigured()
+    ) {
+      if (normalizedPathname !== '/lecture/archive') {
+        setIsArchiveResumePending(false)
+        setArchiveResumeError(null)
+      }
+      return
+    }
+    const lectureCode = restoreLectureArchiveResumeCode()
+    if (!lectureCode || archiveResumeAttemptedCodeRef.current === lectureCode) {
+      return
+    }
+
+    archiveResumeAttemptedCodeRef.current = lectureCode
+    setIsArchiveResumePending(true)
+    setArchiveResumeError(null)
+    let active = true
+    void getLectureJoinCaptchaToken()
+      .then((turnstileToken) =>
+        archiveClient.resolveLectureCode(lectureCode, turnstileToken),
+      )
+      .then((archive) => {
+        if (!active) return
+        if (!archive) {
+          clearLectureArchiveResumeCode()
+          setIsArchiveResumePending(false)
+          setArchiveResumeError(
+            '講義記録が見つかりませんでした。参加画面から講義コードを確認してください。',
+          )
+          return
+        }
+        setArchiveSession(archive)
+        setIsArchiveResumePending(false)
+        setArchiveResumeError(null)
+      })
+      .catch(() => {
+        if (!active) return
+        archiveResumeAttemptedCodeRef.current = null
+        setIsArchiveResumePending(false)
+        setArchiveResumeError(
+          '講義記録を読み込めませんでした。通信を確認して、もう一度お試しください。',
+        )
+      })
+
+    return () => {
+      active = false
+    }
+  }, [archiveResumeNonce, archiveSession, normalizedPathname])
+
+  const retryArchiveResume = useCallback(() => {
+    archiveResumeAttemptedCodeRef.current = null
+    setArchiveResumeError(null)
+    setArchiveResumeNonce((current) => current + 1)
+  }, [])
+
   const applyDemoSnapshot = useCallback((snapshot: DemoSnapshot) => {
+    clearLectureArchiveResumeCode()
+    archiveResumeAttemptedCodeRef.current = null
+    setIsArchiveResumePending(false)
+    setArchiveResumeError(null)
+    setArchiveSession(null)
     setJoinedLectureSession(snapshot.session)
     setCurrentParticipantId(snapshot.participant.id)
     setParticipants([snapshot.participant])
@@ -368,6 +481,16 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setDisplayState(snapshot.displayState)
     setCaption(null)
     setSummaries([])
+    setMaterialSummary(null)
+    setParticipantCount(snapshot.lecture.expectedParticipants)
+    setVisibleCommentCount(
+      snapshot.comments.filter((comment) => comment.status === 'visible')
+        .length,
+    )
+    setHiddenCommentCount(
+      snapshot.comments.filter((comment) => comment.status === 'hidden').length,
+    )
+    setLastSuccessfulSyncAt(Date.now())
     setDisplayStateError(null)
     setCommentsError(null)
     setCommentLikesError(null)
@@ -434,6 +557,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   const selectLectureSession = useCallback(
     (nextLecture: JoinedLectureSession) => {
+      clearLectureArchiveResumeCode()
+      archiveResumeAttemptedCodeRef.current = null
+      setIsArchiveResumePending(false)
+      setArchiveResumeError(null)
+      setArchiveSession(null)
       persistJoinedLectureSession(nextLecture)
       setJoinedLectureSession(nextLecture)
       setCurrentParticipantId(
@@ -453,6 +581,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setDisplayState(null)
       setCaption(null)
       setSummaries([])
+      setMaterialSummary(null)
+      setParticipantCount(0)
+      setVisibleCommentCount(0)
+      setHiddenCommentCount(0)
+      setLastSuccessfulSyncAt(null)
       setDisplayStateError(null)
       liveStateVersionsRef.current = createEmptyLiveStateVersions()
       commentCursorRef.current = null
@@ -517,24 +650,44 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       const snapshotRequest = (async () => {
         try {
           const knownVersions = liveStateVersionsRef.current
+          const activeOperatorAccess =
+            operatorLiveAccess &&
+            (normalizedPathname === '/admin' ||
+              normalizedPathname === '/display')
+              ? operatorLiveAccess
+              : null
           const participantStatePromise =
-            isPhase1SyncProtocolEnabled && forceAll
+            isPhase1SyncProtocolEnabled && forceAll && !activeOperatorAccess
               ? supabaseLiveStateRepository.getParticipantState(
                   activeLectureSessionId,
                 )
               : Promise.resolve(null)
-          const snapshot = await supabaseLiveStateRepository.getSnapshot({
-            commentCursor: commentCursorRef.current,
-            lectureSessionId: activeLectureSessionId,
-            protocolVersion: isPhase1SyncProtocolEnabled ? 2 : 1,
-            versions: getRequestedLiveStateVersions(knownVersions, {
+          const requestedVersions = getRequestedLiveStateVersions(
+            knownVersions,
+            {
               forceAll,
               forceComments,
               forceDisplay,
               forceLikes,
               forcePolls,
-            }),
-          })
+            },
+          )
+          const snapshot = activeOperatorAccess
+            ? await supabaseLiveStateRepository.getOperatorSnapshot({
+                commentCursor: commentCursorRef.current,
+                lectureSessionId: activeLectureSessionId,
+                protocolVersion: 2,
+                versions: requestedVersions,
+                ...(activeOperatorAccess.kind === 'admin'
+                  ? { adminToken: activeOperatorAccess.token }
+                  : { displayToken: activeOperatorAccess.token }),
+              })
+            : await supabaseLiveStateRepository.getSnapshot({
+                commentCursor: commentCursorRef.current,
+                lectureSessionId: activeLectureSessionId,
+                protocolVersion: isPhase1SyncProtocolEnabled ? 2 : 1,
+                versions: requestedVersions,
+              })
           const participantState = await participantStatePromise
 
           if (snapshot.serverTime) {
@@ -543,6 +696,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               performance.now(),
             )
           }
+          setLastSuccessfulSyncAt(Date.now())
 
           if (snapshot.lecture) {
             persistJoinedLectureSession(snapshot.lecture)
@@ -619,6 +773,21 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             setSummaries(snapshot.summaries)
           }
 
+          if (snapshot.materialSummary !== undefined) {
+            setMaterialSummary(snapshot.materialSummary)
+          }
+
+          if (snapshot.metrics) {
+            setParticipantCount(snapshot.metrics.participantCountApproximate)
+            setVisibleCommentCount(snapshot.metrics.visibleCommentCount)
+            if (
+              snapshot.metrics.hiddenCommentCount !== undefined &&
+              activeOperatorAccess?.kind === 'admin'
+            ) {
+              setHiddenCommentCount(snapshot.metrics.hiddenCommentCount)
+            }
+          }
+
           liveStateVersionsRef.current = advanceLiveStateVersions(
             knownVersions,
             snapshot,
@@ -668,6 +837,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       applyParticipantLiveState,
       hasActiveLectureSessionId,
       hydrateDemo,
+      normalizedPathname,
+      operatorLiveAccess,
       runtimeMode,
     ],
   )
@@ -711,10 +882,17 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setIsLoadingOlderComments(true)
     setCommentsError(null)
     try {
-      const page = await supabaseLiveStateRepository.getCommentHistory({
-        before,
-        lectureSessionId: activeLectureSessionId,
-      })
+      const page =
+        operatorLiveAccess?.kind === 'admin' && normalizedPathname === '/admin'
+          ? await supabaseLiveStateRepository.getOperatorCommentHistory({
+              adminToken: operatorLiveAccess.token,
+              before,
+              lectureSessionId: activeLectureSessionId,
+            })
+          : await supabaseLiveStateRepository.getCommentHistory({
+              before,
+              lectureSessionId: activeLectureSessionId,
+            })
       setComments((current) =>
         page.items.reduce((merged, comment) => {
           const nextComment =
@@ -724,6 +902,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
                   likedByParticipantIds: [currentParticipantId],
                 }
               : comment
+          if (nextComment.status === 'hidden') {
+            return merged.some((item) => item.id === nextComment.id)
+              ? merged
+              : [...merged, nextComment].sort(
+                  (left, right) =>
+                    Date.parse(right.createdAt) - Date.parse(left.createdAt),
+                )
+          }
           return mergeVisibleComment(merged, nextComment)
         }, current),
       )
@@ -744,6 +930,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     hasActiveLectureSessionId,
     hasOlderComments,
     isLoadingOlderComments,
+    normalizedPathname,
+    operatorLiveAccess,
     runtimeMode,
   ])
 
@@ -796,6 +984,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       !hasActiveLectureSessionId ||
       joinedLectureSession?.status !== 'closed' ||
       !isLiveSyncRoute ||
+      operatorLiveAccess !== null ||
       archiveLoadedLectureIdRef.current === activeLectureSessionId
     ) {
       return
@@ -836,6 +1025,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     hasActiveLectureSessionId,
     isLiveSyncRoute,
     joinedLectureSession?.status,
+    operatorLiveAccess,
     runtimeMode,
   ])
 
@@ -943,7 +1133,6 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const visibleComments =
     mockCompassRepository.comment.listVisibleComments(comments)
   const openPolls = mockCompassRepository.poll.listOpenPolls(polls)
-  const hiddenCommentCount = comments.length - visibleComments.length
   const resetDemoLecture = useCallback(() => {
     if (runtimeMode !== 'demo') {
       return
@@ -953,6 +1142,47 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     persistJoinedLectureSession(snapshot.session)
     applyDemoSnapshot(snapshot)
   }, [applyDemoSnapshot, runtimeMode])
+
+  const leaveLecture = useCallback(() => {
+    lifecycleRequestEpochRef.current += 1
+    clearJoinedLectureSession()
+    clearLectureArchiveResumeCode()
+    archiveResumeAttemptedCodeRef.current = null
+    setArchiveSession(null)
+    setIsArchiveResumePending(false)
+    setArchiveResumeError(null)
+    setJoinedLectureSession(null)
+    setCurrentParticipantId(null)
+    setParticipants([])
+    setParticipantCount(0)
+    setVisibleCommentCount(0)
+    setHiddenCommentCount(0)
+    setOperatorLiveAccessState(null)
+    setComments([])
+    setPolls([])
+    setPollResults([])
+    setPollResponses([])
+    setDisplayState(null)
+    setCaption(null)
+    setSummaries([])
+    setMaterialSummary(null)
+    setCommentsError(null)
+    setCommentLikesError(null)
+    setPollsError(null)
+    setPollResultsError(null)
+    setDisplayStateError(null)
+    setSessionSyncPauseReason(null)
+    setIsSubmittingComment(false)
+    setHasOlderComments(false)
+    setIsLoadingOlderComments(false)
+    setLastSuccessfulSyncAt(null)
+    liveStateVersionsRef.current = createEmptyLiveStateVersions()
+    liveSnapshotInFlightRef.current = null
+    commentCursorRef.current = null
+    likedCommentIdsRef.current = new Set()
+    serverClockSampleRef.current = null
+    archiveLoadedLectureIdRef.current = null
+  }, [])
 
   const getServerNow = useCallback(() => {
     const sample = serverClockSampleRef.current
@@ -964,10 +1194,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<CompassStateValue>(
     () => ({
+      archiveSession,
       caption,
       summaries,
+      materialSummary,
       lecture,
       participants,
+      participantCount:
+        runtimeMode === 'demo'
+          ? lecture.expectedParticipants
+          : participantCount,
+      visibleCommentCount:
+        runtimeMode === 'demo' ? visibleComments.length : visibleCommentCount,
       comments,
       visibleComments,
       hiddenCommentCount,
@@ -984,6 +1222,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       commentsLoading,
       hasOlderComments,
       isLoadingOlderComments,
+      isArchiveResumePending,
+      archiveResumeError,
       commentsError,
       commentLikesError,
       pollsError,
@@ -994,9 +1234,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       isSubmittingComment,
       isSessionSyncPaused,
       lastActivityAt,
+      lastSuccessfulSyncAt,
       getServerNow,
+      leaveLecture,
+      setOperatorLiveAccess,
       resumeSessionSync,
       resetDemoLecture,
+      retryArchiveResume,
       selectLectureSession,
       sessionSyncMessage: getSessionPauseMessage(sessionSyncPauseReason),
       sessionSyncPauseReason,
@@ -1010,12 +1254,65 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             persistJoinedLectureSession(snapshot.session)
             applyDemoSnapshot(snapshot)
             recordSessionActivity()
-            return { ok: true, participantId: snapshot.participant.id }
+            return {
+              destination: 'lecture',
+              ok: true,
+              participantId: snapshot.participant.id,
+            }
+          }
+
+          if (isPhase66UxIntegrationEnabled && archiveClient.isConfigured()) {
+            const archiveCaptchaToken = await getLectureJoinCaptchaToken()
+            const archive = await archiveClient
+              .resolveLectureCode(lectureCode, archiveCaptchaToken)
+              .catch((error) => {
+                if (error instanceof ArchiveLookupError && error.status < 500) {
+                  throw error
+                }
+                return null
+              })
+            if (archive) {
+              lifecycleRequestEpochRef.current += 1
+              clearJoinedLectureSession()
+              persistLectureArchiveResumeCode(lectureCode)
+              setJoinedLectureSession(null)
+              setArchiveSession(archive)
+              setIsArchiveResumePending(false)
+              setArchiveResumeError(null)
+              setCurrentParticipantId(null)
+              setParticipants([])
+              setParticipantCount(archive.participantCountApproximate)
+              setVisibleCommentCount(archive.comments.length)
+              setComments([])
+              setPolls([])
+              setPollResults([])
+              setPollResponses([])
+              setDisplayState(null)
+              setCaption(null)
+              setSummaries([])
+              setMaterialSummary(null)
+              setSessionSyncPauseReason(null)
+              setLastSuccessfulSyncAt(null)
+              recordSessionActivity()
+              return {
+                destination: 'archive',
+                ok: true,
+                participantId: null,
+              }
+            }
           }
 
           const { lecture: joinedLecture, participantId } =
-            await supabaseLectureRepository.joinLectureByCode(lectureCode)
+            await supabaseLectureRepository.joinLectureByCode(
+              lectureCode,
+              undefined,
+            )
 
+          clearLectureArchiveResumeCode()
+          archiveResumeAttemptedCodeRef.current = null
+          setIsArchiveResumePending(false)
+          setArchiveResumeError(null)
+          setArchiveSession(null)
           persistJoinedLectureSession(joinedLecture)
           persistLocalParticipantIdentity(participantId, joinedLecture.id)
           setSessionSyncPauseReason(null)
@@ -1042,11 +1339,16 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
                 participants: current,
               }).participants,
           )
+          setParticipantCount((current) => Math.max(current, 1))
           setCommentsError(null)
           setPollsError(null)
           setCommentLikesError(null)
           setPollResultsError(null)
-          return { ok: true, participantId }
+          return {
+            destination: 'lecture',
+            ok: true,
+            participantId,
+          }
         } catch (error) {
           return {
             ok: false,
@@ -1186,7 +1488,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         if (
           targetComment.likedByParticipantIds.includes(currentParticipantId)
         ) {
-          setCommentLikesError('いいね取消はPhase 2-Fでは未実装です。')
+          setCommentLikesError('共感は取り消せません。')
           return
         }
 
@@ -1277,9 +1579,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         )
 
         if (alreadyAnswered) {
-          setPollsError(
-            'このPollは回答済みです。再回答はPhase 2-Hでは未実装です。',
-          )
+          setPollsError('この投票には回答済みです。再回答はできません。')
           return
         }
 
@@ -1329,16 +1629,18 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           ) {
             setPollsError(
               error instanceof Error
-                ? `Poll回答に失敗しました: ${error.message}`
-                : 'Poll回答に失敗しました。',
+                ? `投票に失敗しました: ${error.message}`
+                : '投票に失敗しました。',
             )
           }
         }
       },
     }),
     [
+      archiveSession,
       caption,
       summaries,
+      materialSummary,
       comments,
       activeLectureSessionId,
       baseLecture,
@@ -1352,10 +1654,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       hiddenCommentCount,
       isSubmittingComment,
       isLoadingOlderComments,
+      isArchiveResumePending,
+      archiveResumeError,
       joinedLectureSession,
       lecture,
       openPolls,
       participants,
+      participantCount,
       pollResponses,
       pollResults,
       pollsError,
@@ -1366,9 +1671,13 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       polls,
       isSessionSyncPaused,
       lastActivityAt,
+      lastSuccessfulSyncAt,
       getServerNow,
+      leaveLecture,
+      setOperatorLiveAccess,
       recordSessionActivity,
       resetDemoLecture,
+      retryArchiveResume,
       resumeSessionSync,
       selectLectureSession,
       sessionSyncPauseReason,
@@ -1377,6 +1686,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       refreshParticipantLiveState,
       refreshPollResults,
       visibleComments,
+      visibleCommentCount,
       runtimeMode,
       applyDemoSnapshot,
     ],

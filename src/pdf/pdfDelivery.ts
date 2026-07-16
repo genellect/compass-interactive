@@ -129,6 +129,13 @@ async function getMemberSession(lectureSessionId: string, force = false) {
   return session
 }
 
+async function getAdminSession(adminToken: string, lectureSessionId: string) {
+  return issuePdfAccessSession({
+    adminToken,
+    lectureSessionId,
+  })
+}
+
 async function requestWorkerJson<T>(url: string, accessToken: string) {
   const response = await fetch(url, {
     cache: 'no-store',
@@ -149,12 +156,17 @@ async function requestWorkerJson<T>(url: string, accessToken: string) {
 }
 
 export async function resolveRuntimePdf(input: {
+  adminToken?: string
   documentId: string
   documentVersion: string
   lectureSessionId: string
   manifestVersion: number
 }) {
-  let session = await getMemberSession(input.lectureSessionId)
+  const getSession = (force = false) =>
+    input.adminToken
+      ? getAdminSession(input.adminToken, input.lectureSessionId)
+      : getMemberSession(input.lectureSessionId, force)
+  let session = await getSession()
   const fetchManifest = () =>
     requestWorkerJson<PublicManifestResponse>(
       `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/manifest`,
@@ -165,7 +177,7 @@ export async function resolveRuntimePdf(input: {
     manifest = await fetchManifest()
   } catch (error) {
     if ((error as { status?: number }).status !== 401) throw error
-    session = await getMemberSession(input.lectureSessionId, true)
+    session = await getSession(true)
     manifest = await fetchManifest()
   }
   if (manifest.manifest_version < input.manifestVersion) {
@@ -196,7 +208,7 @@ export async function resolveRuntimePdf(input: {
       throw new Error('この資料はダウンロードできません。')
     }
     if (Date.parse(session.expiresAt) <= Date.now() + 30_000) {
-      session = await getMemberSession(input.lectureSessionId, true)
+      session = await getSession(true)
     }
     const endpoint = `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/documents/${document.documentId}/${document.documentVersion}/access?mode=${mode}`
     let ticket: { expiresAt: string; url: string }
@@ -204,7 +216,7 @@ export async function resolveRuntimePdf(input: {
       ticket = await requestWorkerJson(endpoint, session.accessToken)
     } catch (error) {
       if ((error as { status?: number }).status !== 401) throw error
-      session = await getMemberSession(input.lectureSessionId, true)
+      session = await getSession(true)
       const retryEndpoint = `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/documents/${document.documentId}/${document.documentVersion}/access?mode=${mode}`
       ticket = await requestWorkerJson(retryEndpoint, session.accessToken)
     }

@@ -6,12 +6,10 @@ import {
   type AdminLecture,
   type AdminPdfDocument,
   type AdminPoll,
+  type AdminPollList,
   supabaseAdminRepository,
 } from '../repositories/supabaseAdminRepository'
-import {
-  type DisplayMode,
-  type DisplayState,
-} from '../repositories/supabaseDisplayStateRepository'
+import { type DisplayState } from '../repositories/supabaseDisplayStateRepository'
 import { getLecturePdfAsset, lecturePdfAssets } from '../pdf/lectureAssets'
 import {
   isPhase3PrivatePdfEnabled,
@@ -20,15 +18,22 @@ import {
   isPhase6SummariesEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
-import { publisherClient } from '../pdf/publisherClient'
+import {
+  PublisherRequestError,
+  publisherClient,
+} from '../pdf/publisherClient'
 import {
   LectureSummaryControl,
   MaterialAnalysisControl,
   RealtimeCaptionControl,
 } from '../components/AdminAiControl'
+import { SyncedPdfViewer } from '../components/DisplayView/SyncedPdfViewer'
+import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
 const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
+const PUBLISHER_SESSION_STORAGE_KEY =
+  'compass-interactive-publisher-session-token'
 
 function restoreAdminSession() {
   return window.sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY) === 'true'
@@ -36,6 +41,10 @@ function restoreAdminSession() {
 
 function restoreAdminToken() {
   return window.sessionStorage.getItem(ADMIN_TOKEN_SESSION_STORAGE_KEY) ?? ''
+}
+
+function restorePublisherSessionToken() {
+  return window.sessionStorage.getItem(PUBLISHER_SESSION_STORAGE_KEY) ?? ''
 }
 
 function getStatusLabel(status: string) {
@@ -62,11 +71,11 @@ export function AdminPage() {
     isLoadingOlderComments,
     lecture,
     loadOlderComments,
-    participants,
+    participantCount,
+    refreshComments,
+    setOperatorLiveAccess,
     selectLectureSession,
-    toggleCommentPinned,
-    toggleCommentVisibility,
-    visibleComments,
+    visibleCommentCount,
   } = useCompassState()
   const [isAuthenticated, setIsAuthenticated] = useState(restoreAdminSession)
   const [adminToken, setAdminToken] = useState(restoreAdminToken)
@@ -78,19 +87,30 @@ export function AdminPage() {
     null,
   )
   const [displayStateLoading, setDisplayStateLoading] = useState(false)
+  const [displayLaunchError, setDisplayLaunchError] = useState<string | null>(
+    null,
+  )
+  const [isOpeningDisplay, setIsOpeningDisplay] = useState(false)
   const [displayPageInput, setDisplayPageInput] = useState('1')
   const [pdfDocumentInput, setPdfDocumentInput] = useState('')
-  const [displayModeInput, setDisplayModeInput] =
-    useState<DisplayMode>('normal')
   const [lectures, setLectures] = useState<AdminLecture[]>([])
+  const [showLectureHistory, setShowLectureHistory] = useState(false)
   const [lecturesError, setLecturesError] = useState<string | null>(null)
   const [lecturesLoading, setLecturesLoading] = useState(false)
   const [newLectureTitle, setNewLectureTitle] = useState('Journal Club')
   const [newLectureStartsAt, setNewLectureStartsAt] = useState('')
   const [newLectureEndsAt, setNewLectureEndsAt] = useState('')
   const [adminPolls, setAdminPolls] = useState<AdminPoll[]>([])
+  const [adminPollsHasMore, setAdminPollsHasMore] = useState(false)
+  const [showPollHistory, setShowPollHistory] = useState(false)
   const [adminPollsError, setAdminPollsError] = useState<string | null>(null)
   const [adminPollsLoading, setAdminPollsLoading] = useState(false)
+  const [commentModerationError, setCommentModerationError] = useState<
+    string | null
+  >(null)
+  const [commentModerationPendingId, setCommentModerationPendingId] = useState<
+    string | null
+  >(null)
   const [newPollQuestion, setNewPollQuestion] = useState('')
   const [newPollType, setNewPollType] = useState<AdminPoll['type']>('single')
   const [newPollOptions, setNewPollOptions] = useState('賛成\n反対')
@@ -98,7 +118,9 @@ export function AdminPage() {
     AdminPdfDocument[]
   >([])
   const [publisherPairingCode, setPublisherPairingCode] = useState('')
-  const [publisherSessionToken, setPublisherSessionToken] = useState('')
+  const [publisherSessionToken, setPublisherSessionToken] = useState(
+    restorePublisherSessionToken,
+  )
   const [publisherStatus, setPublisherStatus] = useState<
     'checking' | 'connected' | 'disconnected' | 'paired'
   >('disconnected')
@@ -125,6 +147,41 @@ export function AdminPage() {
   const activeAdminLecture = lectures.find(
     (item) => item.id === activeLectureSessionId,
   )
+  const orderedLectures = [...lectures].sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  )
+  const visibleLectures = showLectureHistory
+    ? orderedLectures
+    : orderedLectures.slice(0, 2)
+  const orderedAdminPolls = [...adminPolls].sort((left, right) => {
+    if (left.status === 'open' && right.status !== 'open') {
+      return -1
+    }
+    if (left.status !== 'open' && right.status === 'open') {
+      return 1
+    }
+    return Date.parse(right.createdAt) - Date.parse(left.createdAt)
+  })
+  const openAdminPolls = orderedAdminPolls.filter(
+    (poll) => poll.status === 'open',
+  )
+  const recentAdminPolls = orderedAdminPolls.filter(
+    (poll) => poll.status !== 'open',
+  )
+  const visibleAdminPolls = showPollHistory
+    ? orderedAdminPolls
+    : [...openAdminPolls, ...recentAdminPolls.slice(0, 5)]
+  const canShowPollHistory =
+    showPollHistory || adminPollsHasMore || recentAdminPolls.length > 5
+
+  useEffect(() => {
+    if (!isAuthenticated || !adminToken) {
+      setOperatorLiveAccess(null)
+      return
+    }
+    setOperatorLiveAccess({ kind: 'admin', token: adminToken })
+    return () => setOperatorLiveAccess(null)
+  }, [adminToken, isAuthenticated, setOperatorLiveAccess])
 
   function toDatetimeLocalValue(value: string | null) {
     if (!value) {
@@ -157,7 +214,10 @@ export function AdminPage() {
     }
   }
 
-  async function refreshLectures(token = adminToken) {
+  async function refreshLectures(
+    token = adminToken,
+    includeHistory = showLectureHistory,
+  ) {
     if (!token) {
       return
     }
@@ -169,6 +229,7 @@ export function AdminPage() {
       const nextLectures = await supabaseAdminRepository.manageLectures({
         action: 'list',
         adminToken: token,
+        includeHistory,
       })
       setLectures(nextLectures)
     } catch (error) {
@@ -185,33 +246,42 @@ export function AdminPage() {
   async function refreshAdminPolls(
     lectureSessionId = activeLectureSessionId,
     token = adminToken,
+    includeHistory = showPollHistory,
   ) {
     if (!lectureSessionId || !token) {
       setAdminPolls([])
+      setAdminPollsHasMore(false)
       setAdminPollsError(null)
-      return
+      return false
     }
 
     setAdminPollsLoading(true)
     setAdminPollsError(null)
 
     try {
-      setAdminPolls(
-        await supabaseAdminRepository.managePolls({
-          action: 'list',
-          adminToken: token,
-          lectureSessionId,
-        }),
-      )
+      const result = await supabaseAdminRepository.managePolls({
+        action: 'list',
+        adminToken: token,
+        includeHistory,
+        lectureSessionId,
+      })
+      applyAdminPollList(result)
+      return true
     } catch (error) {
       setAdminPollsError(
         error instanceof Error
           ? `投票一覧の取得に失敗しました: ${error.message}`
           : '投票一覧の取得に失敗しました。',
       )
+      return false
     } finally {
       setAdminPollsLoading(false)
     }
+  }
+
+  function applyAdminPollList(result: AdminPollList) {
+    setAdminPolls(result.polls)
+    setAdminPollsHasMore(result.hasMore)
   }
 
   async function refreshAdminPdfDocuments(
@@ -241,45 +311,45 @@ export function AdminPage() {
 
   async function checkPublisher() {
     setPublisherStatus('checking')
-    setPublisherMessage('Publisherへ接続しています…')
+    setPublisherMessage('講義資料の公開準備を確認しています…')
     try {
       await publisherClient.health()
+      if (publisherSessionToken) {
+        try {
+          await publisherClient.verifySession(publisherSessionToken)
+        } catch (error) {
+          if (
+            error instanceof PublisherRequestError &&
+            error.status === 401
+          ) {
+            window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
+            setPublisherSessionToken('')
+            setPublisherStatus('connected')
+            setPublisherMessage(
+              '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
+            )
+            return
+          }
+          throw error
+        }
+      }
       setPublisherStatus(publisherSessionToken ? 'paired' : 'connected')
       setPublisherMessage(
         publisherSessionToken
-          ? 'Publisher接続済み・ペアリング済み'
-          : 'Publisher接続済み。起動画面の8桁codeを入力してください。',
+          ? '講義資料を公開できます。'
+          : '初回接続の確認が必要です。教員PCに表示された8桁コードを入力してください。',
       )
     } catch {
       setPublisherStatus('disconnected')
       setPublisherMessage(
-        'Publisher未接続です。教員PCでローカルPublisherを起動してから再試行してください。',
-      )
-    }
-  }
-
-  async function pairPublisher() {
-    setPublisherStatus('checking')
-    setPublisherMessage('Publisherをペアリングしています…')
-    try {
-      const paired = await publisherClient.pair(publisherPairingCode.trim())
-      setPublisherSessionToken(paired.sessionToken)
-      setPublisherPairingCode('')
-      setPublisherStatus('paired')
-      setPublisherMessage('Publisher接続済み・ペアリング済み')
-    } catch (error) {
-      setPublisherStatus('connected')
-      setPublisherMessage(
-        error instanceof Error
-          ? error.message
-          : 'Publisherのペアリングに失敗しました。',
+        '講義資料の公開機能を確認できません。教員PCで資料公開アプリを起動してください。',
       )
     }
   }
 
   async function publishPdfDocument() {
-    if (!activeLectureSessionId || !adminToken || !publisherSessionToken) {
-      setPublisherMessage('講義、Admin認証、Publisher接続を確認してください。')
+    if (!activeLectureSessionId || !adminToken) {
+      setPublisherMessage('先に講義を選択してください。')
       return
     }
     if (!pdfFile) {
@@ -293,13 +363,30 @@ export function AdminPage() {
       `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
     if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
     setPdfPublishing(true)
-    setPublisherMessage('検証中です。PDF本文はSupabaseへ送信しません。')
+    setPublisherMessage('講義資料を確認しています…')
     try {
+      let activePublisherToken = publisherSessionToken
+      if (!activePublisherToken) {
+        if (publisherPairingCode.trim().length !== 8) {
+          throw new Error(
+            '初回のみ、教員PCに表示された8桁コードを入力してください。',
+          )
+        }
+        const paired = await publisherClient.pair(publisherPairingCode.trim())
+        activePublisherToken = paired.sessionToken
+        window.sessionStorage.setItem(
+          PUBLISHER_SESSION_STORAGE_KEY,
+          activePublisherToken,
+        )
+        setPublisherSessionToken(activePublisherToken)
+        setPublisherPairingCode('')
+        setPublisherStatus('paired')
+      }
       const access = await issuePdfAccessSession({
         adminToken,
         lectureSessionId: activeLectureSessionId,
       })
-      setPublisherMessage('Cloudflareへ公開し、manifestを競合確認しています…')
+      setPublisherMessage('学生が閲覧できるように公開しています…')
       const published = await publisherClient.publish({
         accessToken: access.accessToken,
         displayName,
@@ -307,9 +394,9 @@ export function AdminPage() {
         downloadEnabled: pdfDownloadEnabled,
         file: pdfFile,
         lecturePublicId: access.lecturePublicId,
-        publisherSessionToken,
+        publisherSessionToken: activePublisherToken,
       })
-      setPublisherMessage('公開済みmetadataを講義へ登録しています…')
+      setPublisherMessage('講義画面へ反映しています…')
       const documents = await supabaseAdminRepository.managePdfDocuments({
         action: 'register',
         adminToken,
@@ -330,18 +417,36 @@ export function AdminPage() {
       setPdfFile(null)
       setPdfPublicationDraftId('')
       setPdfDisplayName('')
+      const displayUpdated = await updateDisplayState('setDocument', {
+        pdfDocumentId: published.document.documentId,
+      })
+      if (!displayUpdated) {
+        setPublisherMessage(
+          '資料ファイルは公開されましたが、講義画面への表示切替に失敗しました。資料一覧から「この資料を表示」をもう一度押してください。',
+        )
+        return
+      }
       setPublisherMessage(
-        `公開完了: ${published.document.pageCount}頁・${published.document.textCharCount.toLocaleString()}文字・${(
+        `学生への公開が完了しました（${published.document.pageCount}ページ・${(
           published.document.byteSize /
           1024 /
           1024
-        ).toFixed(2)}MB。資料選択後に「この資料を表示」を押してください。`,
+        ).toFixed(2)}MB）。現在の講義資料として表示しています。`,
       )
     } catch (error) {
+      if (error instanceof PublisherRequestError && error.status === 401) {
+        window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
+        setPublisherSessionToken('')
+        setPublisherStatus('connected')
+        setPublisherMessage(
+          '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
+        )
+        return
+      }
       setPublisherMessage(
         error instanceof Error
-          ? `公開失敗・現在資料を維持しました: ${error.message}`
-          : '公開失敗・現在資料を維持しました。',
+          ? `資料を公開できませんでした。現在の資料は維持されています: ${error.message}`
+          : '資料を公開できませんでした。現在の資料は維持されています。',
       )
     } finally {
       setPdfPublishing(false)
@@ -385,14 +490,77 @@ export function AdminPage() {
   useEffect(() => {
     if (!isAuthenticated || !adminToken || !activeLectureSessionId) {
       setAdminPolls([])
+      setAdminPollsHasMore(false)
       setAdminPollsError(null)
       setAdminPdfDocuments([])
       return
     }
 
-    void refreshAdminPolls(activeLectureSessionId, adminToken)
+    setShowPollHistory(false)
+    void refreshAdminPolls(activeLectureSessionId, adminToken, false)
     void refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
   }, [activeLectureSessionId, adminToken, isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated || !isPhase3PrivatePdfEnabled) {
+      return
+    }
+
+    let active = true
+    setPublisherStatus('checking')
+    setPublisherMessage('講義資料の公開準備を確認しています…')
+    void publisherClient
+      .health()
+      .then(async () => {
+        if (!active) return
+        if (publisherSessionToken) {
+          try {
+            await publisherClient.verifySession(publisherSessionToken)
+          } catch (error) {
+            if (!active) return
+            if (
+              error instanceof PublisherRequestError &&
+              error.status === 401
+            ) {
+              window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
+              setPublisherSessionToken('')
+              setPublisherStatus('connected')
+              setPublisherMessage(
+                '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
+              )
+              return
+            }
+            throw error
+          }
+        }
+        if (!active) return
+        setPublisherStatus(publisherSessionToken ? 'paired' : 'connected')
+        setPublisherMessage(
+          publisherSessionToken
+            ? '講義資料を公開できます。'
+            : '初回接続の確認が必要です。教員PCに表示された8桁コードを入力してください。',
+        )
+      })
+      .catch((error) => {
+        if (!active) return
+        if (error instanceof PublisherRequestError && error.status === 401) {
+          window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
+          setPublisherSessionToken('')
+          setPublisherStatus('connected')
+          setPublisherMessage(
+            '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
+          )
+          return
+        }
+        setPublisherStatus('disconnected')
+        setPublisherMessage(
+          '講義資料の公開機能を確認できません。教員PCで資料公開アプリを起動してください。',
+        )
+      })
+    return () => {
+      active = false
+    }
+  }, [isAuthenticated, publisherSessionToken])
 
   function handleLogout() {
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
@@ -401,10 +569,10 @@ export function AdminPage() {
     setAdminToken('')
     setPin('')
     setAdminPolls([])
+    setAdminPollsHasMore(false)
     setAdminPollsError(null)
     setAdminPdfDocuments([])
-    setPublisherSessionToken('')
-    setPublisherStatus('disconnected')
+    setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
   }
 
@@ -419,7 +587,6 @@ export function AdminPage() {
     setDisplayStateError(liveDisplayStateError)
     if (liveDisplayState) {
       setDisplayPageInput(String(liveDisplayState.currentPdfPage))
-      setDisplayModeInput(liveDisplayState.displayMode)
       setPdfDocumentInput(liveDisplayState.pdfDocumentId ?? '')
     }
   }, [
@@ -430,23 +597,22 @@ export function AdminPage() {
   ])
 
   async function updateDisplayState(
-    action: 'next' | 'previous' | 'goToPage' | 'setDisplayMode' | 'setDocument',
+    action: 'next' | 'previous' | 'goToPage' | 'setDocument',
     options: {
       currentPdfPage?: number
-      displayMode?: DisplayMode
       pdfDocumentId?: string | null
     } = {},
   ) {
     if (!activeLectureSessionId) {
       setDisplayStateError('先に講義へ参加してください。')
-      return
+      return false
     }
 
     if (!adminToken) {
       setDisplayStateError(
         '管理者認証の有効期限が切れました。再度ログインしてください。',
       )
-      return
+      return false
     }
 
     setDisplayStateLoading(true)
@@ -461,13 +627,6 @@ export function AdminPage() {
           action,
           adminToken,
           currentPdfPage: options.currentPdfPage ?? 1,
-          lectureSessionId: activeLectureSessionId,
-        })
-      } else if (action === 'setDisplayMode') {
-        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
-          action,
-          adminToken,
-          displayMode: options.displayMode ?? 'normal',
           lectureSessionId: activeLectureSessionId,
         })
       } else if (action === 'setDocument') {
@@ -487,8 +646,8 @@ export function AdminPage() {
 
       setDisplayState(nextDisplayState)
       setDisplayPageInput(String(nextDisplayState.currentPdfPage))
-      setDisplayModeInput(nextDisplayState.displayMode)
       setPdfDocumentInput(nextDisplayState.pdfDocumentId ?? '')
+      return true
     } catch (error) {
       const message =
         error instanceof Error
@@ -510,6 +669,7 @@ export function AdminPage() {
           ? '管理者認証の有効期限が切れました。再度ログインしてください。'
           : '表示画面の更新に失敗しました。少し時間をおいて再度お試しください。',
       )
+      return false
     } finally {
       setDisplayStateLoading(false)
     }
@@ -603,6 +763,54 @@ export function AdminPage() {
     }
   }
 
+  async function duplicateLecture(lectureSessionId: string) {
+    if (!adminToken) {
+      setLecturesError(
+        '管理者認証の有効期限が切れました。再度ログインしてください。',
+      )
+      return
+    }
+
+    setLecturesLoading(true)
+    setLecturesError(null)
+    const existingIds = new Set(lectures.map((item) => item.id))
+
+    try {
+      const nextLectures = await supabaseAdminRepository.manageLectures({
+        action: 'duplicate',
+        adminToken,
+        lectureSessionId,
+      })
+      setLectures(nextLectures)
+      const duplicatedLecture = nextLectures.find(
+        (item) => !existingIds.has(item.id),
+      )
+      if (duplicatedLecture) {
+        const startedLectures =
+          await supabaseAdminRepository.manageLectures({
+            action: 'start',
+            adminToken,
+            lectureSessionId: duplicatedLecture.id,
+          })
+        setLectures(startedLectures)
+        const startedLecture =
+          startedLectures.find(
+            (item) => item.id === duplicatedLecture.id,
+          ) ?? duplicatedLecture
+        selectLectureSession(makeJoinedLecture(startedLecture))
+        setShowLectureHistory(false)
+      }
+    } catch (error) {
+      setLecturesError(
+        error instanceof Error
+          ? `講義をもう一度開始できませんでした: ${error.message}`
+          : '講義をもう一度開始できませんでした。',
+      )
+    } finally {
+      setLecturesLoading(false)
+    }
+  }
+
   async function handleCreatePoll(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -624,10 +832,11 @@ export function AdminPage() {
     setAdminPollsLoading(true)
     setAdminPollsError(null)
     try {
-      setAdminPolls(
+      applyAdminPollList(
         await supabaseAdminRepository.managePolls({
           action: 'create',
           adminToken,
+          includeHistory: showPollHistory,
           lectureSessionId: activeLectureSessionId,
           optionLabels,
           question: newPollQuestion.trim(),
@@ -656,10 +865,11 @@ export function AdminPage() {
     setAdminPollsLoading(true)
     setAdminPollsError(null)
     try {
-      setAdminPolls(
+      applyAdminPollList(
         await supabaseAdminRepository.managePolls({
           action,
           adminToken,
+          includeHistory: showPollHistory,
           lectureSessionId: activeLectureSessionId,
           pollId: poll.id,
         }),
@@ -685,6 +895,84 @@ export function AdminPage() {
       setLecturesError(null)
     } catch {
       setLecturesError('講義コードをコピーできませんでした。')
+    }
+  }
+
+  async function openClassroomDisplay() {
+    if (
+      !adminToken ||
+      !activeLectureSessionId ||
+      activeAdminLecture?.status !== 'open'
+    ) {
+      setDisplayLaunchError('開始中の講義を選択してください。')
+      return
+    }
+
+    const displayWindow = window.open('', '_blank')
+    if (!displayWindow) {
+      setDisplayLaunchError(
+        '共有画面を開けませんでした。ポップアップを許可して再度お試しください。',
+      )
+      return
+    }
+    displayWindow.opener = null
+    displayWindow.document.title = 'COMPASS 共有画面を準備中'
+    displayWindow.document.body.textContent = '共有画面を準備しています…'
+
+    setIsOpeningDisplay(true)
+    setDisplayLaunchError(null)
+    try {
+      const session = await supabaseAdminRepository.issueDisplaySession({
+        adminToken,
+        lectureSessionId: activeLectureSessionId,
+      })
+      const fragment = new URLSearchParams({
+        lecture: session.lectureSessionId,
+        token: session.displayToken,
+      })
+      displayWindow.location.replace(`/display#${fragment.toString()}`)
+    } catch (error) {
+      displayWindow.close()
+      setDisplayLaunchError(
+        error instanceof Error
+          ? `共有画面を開けませんでした: ${error.message}`
+          : '共有画面を開けませんでした。',
+      )
+    } finally {
+      setIsOpeningDisplay(false)
+    }
+  }
+
+  async function moderateComment(
+    commentId: string,
+    action: 'togglePin' | 'toggleVisibility',
+  ) {
+    if (
+      !adminToken ||
+      !activeLectureSessionId ||
+      commentModerationPendingId
+    ) {
+      return
+    }
+
+    setCommentModerationPendingId(commentId)
+    setCommentModerationError(null)
+    try {
+      await supabaseAdminRepository.moderateComment({
+        action,
+        adminToken,
+        commentId,
+        lectureSessionId: activeLectureSessionId,
+      })
+      await refreshComments()
+    } catch (error) {
+      setCommentModerationError(
+        error instanceof Error
+          ? `コメントの更新に失敗しました: ${error.message}`
+          : 'コメントの更新に失敗しました。',
+      )
+    } finally {
+      setCommentModerationPendingId(null)
     }
   }
 
@@ -756,9 +1044,18 @@ export function AdminPage() {
           <p>講義の流れと、教室の反応をひとつの画面で。</p>
         </div>
         <div className="admin-actions">
-          <a className="secondary-link" href="/display" target="_blank">
-            共有画面を開く
-          </a>
+          <button
+            className="secondary-button"
+            disabled={
+              isOpeningDisplay ||
+              !activeLectureSessionId ||
+              activeAdminLecture?.status !== 'open'
+            }
+            onClick={() => void openClassroomDisplay()}
+            type="button"
+          >
+            {isOpeningDisplay ? '共有画面を準備中…' : '共有画面を開く'}
+          </button>
           <button
             className="secondary-button"
             onClick={handleLogout}
@@ -768,6 +1065,9 @@ export function AdminPage() {
           </button>
         </div>
       </section>
+      {displayLaunchError ? (
+        <p className="error-note">{displayLaunchError}</p>
+      ) : null}
 
       <nav className="admin-workflow" aria-label="講義運営の流れ">
         <a href="#admin-prepare">
@@ -846,8 +1146,8 @@ export function AdminPage() {
         ) : null}
 
         <div className="table-like lecture-table">
-          {lectures.length > 0 ? (
-            lectures.map((lectureRow) => {
+          {orderedLectures.length > 0 ? (
+            visibleLectures.map((lectureRow) => {
               const isActive = activeLectureSessionId === lectureRow.id
 
               return (
@@ -915,6 +1215,23 @@ export function AdminPage() {
                     >
                       終了
                     </button>
+                    {lectureRow.status === 'closed' ? (
+                      <button
+                        className="secondary-button"
+                        disabled={lecturesLoading}
+                        onClick={() => {
+                          const confirmed = window.confirm(
+                            '同じタイトルで新しい講義コードを発行し、講義を開始します。過去の記録は変更されず、資料と投票は引き継がれません。続けますか？',
+                          )
+                          if (confirmed) {
+                            void duplicateLecture(lectureRow.id)
+                          }
+                        }}
+                        type="button"
+                      >
+                        もう一度開催する
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )
@@ -925,6 +1242,23 @@ export function AdminPage() {
             </p>
           )}
         </div>
+        {orderedLectures.length > 2 ? (
+          <button
+            className="secondary-button admin-history-toggle"
+            onClick={() => {
+              if (showLectureHistory) {
+                setShowLectureHistory(false)
+                return
+              }
+              void refreshLectures(adminToken, true).then(() =>
+                setShowLectureHistory(true),
+              )
+            }}
+            type="button"
+          >
+            {showLectureHistory ? '講義履歴を閉じる' : '講義履歴を表示する'}
+          </button>
+        ) : null}
       </section>
 
       <section className="dashboard-grid">
@@ -934,11 +1268,11 @@ export function AdminPage() {
         </article>
         <article className="stat-card">
           <span>参加者数</span>
-          <strong>{participants.length}</strong>
+          <strong>約{participantCount}</strong>
         </article>
         <article className="stat-card">
           <span>表示コメント</span>
-          <strong>{visibleComments.length}</strong>
+          <strong>{visibleCommentCount}</strong>
         </article>
         <article className="stat-card">
           <span>非表示コメント</span>
@@ -961,66 +1295,57 @@ export function AdminPage() {
           <div className="display-control-grid publisher-control-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">LOCAL PUBLISHER</p>
-                <h3>PDFをPrivate R2へ公開する</h3>
+                <p className="eyebrow">LECTURE MATERIAL</p>
+                <h3>講義資料を公開する</h3>
               </div>
               <span className="metric">
                 {publisherStatus === 'paired'
-                  ? 'Publisher接続済み'
+                  ? '公開できます'
                   : publisherStatus === 'connected'
-                    ? '接続・未ペアリング'
+                    ? '初回確認が必要'
                     : publisherStatus === 'checking'
-                      ? '確認中'
-                      : 'Publisher未接続'}
+                      ? '準備を確認中'
+                      : '公開アプリを確認'}
               </span>
             </div>
 
-            <div className="display-control-form">
-              <button
-                className="secondary-button"
-                disabled={publisherStatus === 'checking' || pdfPublishing}
-                onClick={() => void checkPublisher()}
-                type="button"
-              >
-                Publisher接続を確認
-              </button>
-              <label className="field compact-field">
-                <span>起動画面の8桁pairing code</span>
-                <input
-                  autoComplete="off"
-                  disabled={pdfPublishing}
-                  inputMode="numeric"
-                  maxLength={8}
-                  onChange={(event) =>
-                    setPublisherPairingCode(event.target.value)
-                  }
-                  value={publisherPairingCode}
-                />
-              </label>
-              <button
-                className="secondary-button"
-                disabled={
-                  publisherStatus === 'checking' ||
-                  publisherPairingCode.trim().length !== 8 ||
-                  pdfPublishing
-                }
-                onClick={() => void pairPublisher()}
-                type="button"
-              >
-                ペアリング
-              </button>
-            </div>
+            {publisherStatus !== 'paired' ? (
+              <details className="admin-publisher-setup">
+                <summary>初回接続の設定</summary>
+                <div className="display-control-form">
+                  <label className="field compact-field">
+                    <span>教員PCに表示された8桁コード</span>
+                    <input
+                      autoComplete="off"
+                      disabled={pdfPublishing}
+                      inputMode="numeric"
+                      maxLength={8}
+                      onChange={(event) =>
+                        setPublisherPairingCode(
+                          event.target.value.replace(/\D/g, ''),
+                        )
+                      }
+                      value={publisherPairingCode}
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={publisherStatus === 'checking' || pdfPublishing}
+                    onClick={() => void checkPublisher()}
+                    type="button"
+                  >
+                    公開準備を再確認
+                  </button>
+                </div>
+              </details>
+            ) : null}
 
             <div className="display-control-form">
               <label className="field compact-field">
-                <span>PDF（合計15MB・75頁・20,000文字以下）</span>
+                <span>PDFを選択（15MB・75ページ・20,000文字以下）</span>
                 <input
                   accept="application/pdf,.pdf"
-                  disabled={
-                    publisherStatus !== 'paired' ||
-                    pdfPublishing ||
-                    lecture.status === 'closed'
-                  }
+                  disabled={pdfPublishing || lecture.status === 'closed'}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null
                     setPdfFile(file)
@@ -1058,14 +1383,17 @@ export function AdminPage() {
                 className="primary-button"
                 disabled={
                   !pdfFile ||
-                  publisherStatus !== 'paired' ||
                   pdfPublishing ||
-                  lecture.status === 'closed'
+                  lecture.status === 'closed' ||
+                  (!publisherSessionToken &&
+                    publisherPairingCode.trim().length !== 8)
                 }
                 onClick={() => void publishPdfDocument()}
                 type="button"
               >
-                {pdfPublishing ? '公開処理中…' : '検証してCloudflareへ公開'}
+                {pdfPublishing
+                  ? '学生画面へ反映中…'
+                  : '学生に講義資料を公開する'}
               </button>
             </div>
 
@@ -1074,11 +1402,10 @@ export function AdminPage() {
                 publisherMessage.includes('失敗') ? 'error-note' : 'note'
               }
             >
-              {publisherMessage ||
-                'PDF本文・抽出text・Cloudflare tokenはSupabaseやブラウザ保存領域へ送りません。画像OCRは行いません。'}
+              {publisherMessage || 'PDFを選択して公開してください。'}
             </p>
             <p className="note">
-              大きいファイルは配信量、文字数は後続AI費用へ影響します。可能な限り圧縮・簡潔化してください。
+              大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。
             </p>
           </div>
         ) : null}
@@ -1132,7 +1459,7 @@ export function AdminPage() {
                 前へ
               </button>
               <button
-                className="primary-button"
+                className="secondary-button"
                 disabled={
                   displayStateLoading ||
                   lecture.status === 'closed' ||
@@ -1171,43 +1498,34 @@ export function AdminPage() {
                 移動
               </button>
             </form>
-
-            <div className="display-control-form">
-              <label className="field compact-field">
-                <span>表示モード</span>
-                <select
-                  disabled={displayStateLoading || lecture.status === 'closed'}
-                  onChange={(event) =>
-                    setDisplayModeInput(event.target.value as DisplayMode)
-                  }
-                  value={displayModeInput}
-                >
-                  <option value="normal">通常表示</option>
-                  <option value="presentation">発表表示</option>
-                  <option value="slideOnly">スライドのみ</option>
-                </select>
-              </label>
-              <button
-                className="secondary-button"
-                disabled={displayStateLoading || lecture.status === 'closed'}
-                onClick={() =>
-                  void updateDisplayState('setDisplayMode', {
-                    displayMode: displayModeInput,
-                  })
-                }
-                type="button"
-              >
-                適用
-              </button>
-            </div>
           </div>
         )}
+
+        {activeLectureSessionId && displayState?.pdfDocumentId ? (
+          <div className="admin-current-pdf-preview">
+            <h3>現在、学生に表示しているページ</h3>
+            <SyncedPdfViewer
+              adminToken={adminToken}
+              documentId={displayState.pdfDocumentId}
+              documentVersion={displayState.pdfDocumentVersion}
+              lectureSessionId={activeLectureSessionId}
+              manifestVersion={displayState.pdfManifestVersion}
+              pageCount={displayState.pdfPageCount}
+              presenterLocked
+              remotePage={displayState.currentPdfPage}
+              viewMode={lecture.status === 'closed' ? 'closed' : 'live'}
+              visible={displayState.pdfVisible}
+            />
+          </div>
+        ) : null}
 
         {displayStateError ? (
           <p className="error-note">{displayStateError}</p>
         ) : null}
         <p className="note">
-          学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。
+          {lecture.status === 'closed'
+            ? '講義終了時点で表示していた資料とページです。'
+            : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
         </p>
       </section>
 
@@ -1229,7 +1547,7 @@ export function AdminPage() {
             isPhase5MaterialAnalysisEnabled ||
             isPhase6SummariesEnabled
               ? '利用可能'
-              : '既定OFF'}
+              : '停止中'}
           </span>
         </div>
         <p className="panel-description">
@@ -1246,12 +1564,10 @@ export function AdminPage() {
           />
         ) : (
           <p className="note">
-            Phase 4 Realtime字幕は既定OFFです。本番有効化はPhase 6後に行います。
+            リアルタイム字幕は現在停止しています。利用設定が完了すると、ここから開始できます。
           </p>
         )}
-        {isPhase6SummariesEnabled &&
-        adminToken &&
-        activeLectureSessionId ? (
+        {isPhase6SummariesEnabled && adminToken && activeLectureSessionId ? (
           <LectureSummaryControl
             adminToken={adminToken}
             displayState={displayState}
@@ -1265,7 +1581,7 @@ export function AdminPage() {
           />
         ) : (
           <p className="note">
-            Phase 6 5分要約は既定OFFです。有効化後も開始時のBilling PINが必要です。
+            5分ハイライトは現在停止しています。利用時は開始にAPI利用PINが必要です。
           </p>
         )}
         {isPhase5MaterialAnalysisEnabled &&
@@ -1276,13 +1592,14 @@ export function AdminPage() {
             documents={adminPdfDocuments}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={activeAdminLecture?.status ?? lecture.status}
-            onPollDraftCreated={() => refreshAdminPolls()}
+            onPollDraftCreated={async () => {
+              await refreshAdminPolls()
+            }}
             publisherSessionToken={publisherSessionToken}
           />
         ) : (
           <p className="note">
-            Phase 5 資料分析とAI
-            Poll候補は既定OFFです。PDF公開だけではAPI課金されません。
+            資料分析と投票案の提案は現在停止しています。PDFを公開するだけではAPI利用は発生しません。
           </p>
         )}
         <div className="api-readiness-grid">
@@ -1293,7 +1610,7 @@ export function AdminPage() {
             <div>
               <strong>リアルタイム字幕</strong>
               <small>
-                {isPhase4RealtimeCaptionsEnabled ? '開始待ち' : '既定OFF'}
+                {isPhase4RealtimeCaptionsEnabled ? '開始待ち' : '停止中'}
               </small>
             </div>
             <span
@@ -1306,7 +1623,11 @@ export function AdminPage() {
             </span>
             <div>
               <strong>5分ハイライト</strong>
-              <small>話の要点とみんなの反応</small>
+              <small>
+                {isPhase6SummariesEnabled
+                  ? '話の要点とみんなの反応'
+                  : '停止中'}
+              </small>
             </div>
             <span
               className={`readiness-dot ${isPhase6SummariesEnabled ? 'is-active' : ''}`}
@@ -1318,7 +1639,11 @@ export function AdminPage() {
             </span>
             <div>
               <strong>講義資料の要点</strong>
-              <small>ページと一緒に整理して表示</small>
+              <small>
+                {isPhase5MaterialAnalysisEnabled
+                  ? 'ページと一緒に整理して表示'
+                  : '停止中'}
+              </small>
             </div>
             <span
               className={`readiness-dot ${isPhase5MaterialAnalysisEnabled ? 'is-active' : ''}`}
@@ -1399,9 +1724,12 @@ export function AdminPage() {
         {adminPollsLoading ? (
           <p className="note">投票情報を更新しています。</p>
         ) : null}
+        <p className="note">
+          新しい投票を開始すると、配信中の投票は自動で締め切られます。
+        </p>
 
         <div className="table-like">
-          {adminPolls.map((poll) => (
+          {visibleAdminPolls.map((poll) => (
             <div className="table-row poll-admin-row" key={poll.id}>
               <span>
                 <strong>{poll.question}</strong>
@@ -1436,18 +1764,51 @@ export function AdminPage() {
             </p>
           ) : null}
         </div>
+        {canShowPollHistory ? (
+          <button
+            className="secondary-button admin-history-toggle"
+            onClick={() => {
+              if (showPollHistory) {
+                setShowPollHistory(false)
+                return
+              }
+              void refreshAdminPolls(
+                activeLectureSessionId,
+                adminToken,
+                true,
+              ).then((loaded) => {
+                if (loaded) {
+                  setShowPollHistory(true)
+                }
+              })
+            }}
+            type="button"
+          >
+            {showPollHistory ? '投票履歴を閉じる' : '投票履歴を見る'}
+          </button>
+        ) : null}
       </section>
 
       <div id="admin-voices">
+        {commentModerationError ? (
+          <p className="error-note">{commentModerationError}</p>
+        ) : null}
         <LiveBoard
           comments={comments}
           hasOlderComments={hasOlderComments}
           isLoadingOlderComments={isLoadingOlderComments}
           mode="admin"
           onLoadOlderComments={loadOlderComments}
-          onTogglePinned={toggleCommentPinned}
-          onToggleVisibility={toggleCommentVisibility}
+          onTogglePinned={(commentId) =>
+            void moderateComment(commentId, 'togglePin')
+          }
+          onToggleVisibility={(commentId) =>
+            void moderateComment(commentId, 'toggleVisibility')
+          }
         />
+        {commentModerationPendingId ? (
+          <p className="note">コメントを更新しています…</p>
+        ) : null}
       </div>
     </main>
   )

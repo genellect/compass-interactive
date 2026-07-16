@@ -42,8 +42,9 @@ assert.doesNotMatch(
   /supabase\s*\.\s*from\(|fetch\(|\.rpc\(|createClient|ensureAnonymousAuthSession/i,
 )
 assert.match(commentInput, /useState\(false\)/)
-assert.match(commentInput, /デフォルト：匿名の参加者/)
-assert.match(commentInput, /この端末内だけに保存/)
+assert.doesNotMatch(commentInput, /デフォルト：匿名の参加者/)
+assert.match(commentInput, /10文字以内で入力してください/)
+assert.match(commentInput, /このデモ画面の中だけで使われます/)
 assert.match(commentCard, /comment\.nickname \? 'has-nickname' : ''/)
 
 console.log('Phase 6.5 nickname static security and integration checks passed.')

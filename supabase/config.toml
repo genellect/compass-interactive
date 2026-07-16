@@ -386,6 +386,9 @@ verify_jwt = true
 [functions.manage-polls]
 verify_jwt = true
 
+[functions.manage-comments]
+verify_jwt = true
+
 [functions.update-display-state]
 verify_jwt = true
 
@@ -419,9 +422,28 @@ verify_jwt = true
 [functions.manage-pdf-documents]
 verify_jwt = true
 
+[functions.issue-display-session]
+verify_jwt = true
+
+[functions.operator-live-snapshot]
+verify_jwt = true
+
 # Machine-to-machine endpoint: Supabase JWT verification is intentionally off;
 # the function requires a separate 32-byte Worker/Edge shared secret.
 [functions.get-pdf-retention-feed]
+verify_jwt = false
+
+# Machine-to-machine endpoints: Supabase JWT verification is intentionally off;
+# each function requires its own separate 32-byte trigger secret.
+[functions.export-lecture-archives]
+verify_jwt = false
+
+[functions.send-daily-operations-digest]
+verify_jwt = false
+
+# Machine-to-machine Realtime hangup retry endpoint. Supabase JWT verification
+# is intentionally off; a distinct 32-byte trigger secret is mandatory.
+[functions.sweep-realtime-provider-calls]
 verify_jwt = false
 
 # [edge_runtime.secrets]

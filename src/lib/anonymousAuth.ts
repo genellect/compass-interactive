@@ -3,8 +3,9 @@ import { getAnonymousSignInCaptchaToken } from './turnstile'
 
 let anonymousSignInRequest: Promise<string> | null = null
 
-async function createAnonymousSession() {
-  const captchaToken = await getAnonymousSignInCaptchaToken()
+async function createAnonymousSession(providedCaptchaToken?: string) {
+  const captchaToken =
+    providedCaptchaToken ?? (await getAnonymousSignInCaptchaToken())
   const { data, error } = await supabase.auth.signInAnonymously(
     captchaToken ? { options: { captchaToken } } : undefined,
   )
@@ -20,7 +21,7 @@ async function createAnonymousSession() {
   return data.user.id
 }
 
-export async function ensureAnonymousAuthSession() {
+export async function ensureAnonymousAuthSession(captchaToken?: string) {
   assertSupabaseConfigured()
 
   const { data, error } = await supabase.auth.getSession()
@@ -34,7 +35,7 @@ export async function ensureAnonymousAuthSession() {
   }
 
   if (!anonymousSignInRequest) {
-    anonymousSignInRequest = createAnonymousSession()
+    anonymousSignInRequest = createAnonymousSession(captchaToken)
   }
 
   try {

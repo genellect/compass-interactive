@@ -224,7 +224,7 @@ Deno.serve(async (request) => {
           message:
             state.status === 'running'
               ? 'This material analysis is already running.'
-              : 'A new Billing PIN authorization is required before retrying.',
+              : 'A new API usage PIN authorization is required before retrying.',
           ok: false,
         },
         409,

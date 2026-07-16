@@ -9,23 +9,56 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
 
+const STANDARD_LECTURE_CODE_PATTERN = /^[0-9]{6}$/
+const LEGACY_LECTURE_CODE_PATTERN = /^[A-Z0-9-]{4,32}$/
+
+function normalizeLectureCode(value: string) {
+  return value.trim().toUpperCase()
+}
+
+function getLectureCodeValidationError(value: string, legacyMode: boolean) {
+  const normalizedCode = normalizeLectureCode(value)
+  const isValid = legacyMode
+    ? LEGACY_LECTURE_CODE_PATTERN.test(normalizedCode)
+    : STANDARD_LECTURE_CODE_PATTERN.test(normalizedCode)
+
+  if (isValid) {
+    return null
+  }
+
+  return legacyMode
+    ? '旧形式の講義コードを4〜32文字の英数字・ハイフンで入力してください。'
+    : '講義コードを6桁の数字で入力してください。'
+}
+
 export function JoinPage() {
   const { hasJoinedLectureSession, joinLecture, lecture } = useCompassState()
   const [lectureCode, setLectureCode] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isJoining, setIsJoining] = useState(false)
+  const [legacyCodeMode, setLegacyCodeMode] = useState(false)
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const didAutoJoin = useRef(false)
 
   useEffect(() => {
-    const directCode = searchParams.get('code')?.trim()
+    const directCode = normalizeLectureCode(searchParams.get('code') ?? '')
     if (!directCode || didAutoJoin.current) {
       return
     }
 
     didAutoJoin.current = true
+    const isLegacyCode = !STANDARD_LECTURE_CODE_PATTERN.test(directCode)
     setLectureCode(directCode)
+    setLegacyCodeMode(isLegacyCode)
+    const validationError = getLectureCodeValidationError(
+      directCode,
+      isLegacyCode,
+    )
+    if (validationError) {
+      setErrorMessage(validationError)
+      return
+    }
     setIsJoining(true)
 
     void joinLecture(directCode).then((result) => {
@@ -36,14 +69,27 @@ export function JoinPage() {
       }
 
       setErrorMessage('')
-      navigate('/lecture', { replace: true })
+      navigate(
+        result.destination === 'archive' ? '/lecture/archive' : '/lecture',
+        { replace: true },
+      )
     })
   }, [joinLecture, navigate, searchParams])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const normalizedCode = normalizeLectureCode(lectureCode)
+    const validationError = getLectureCodeValidationError(
+      normalizedCode,
+      legacyCodeMode,
+    )
+    if (validationError) {
+      setErrorMessage(validationError)
+      return
+    }
+
     setIsJoining(true)
-    const result = await joinLecture(lectureCode)
+    const result = await joinLecture(normalizedCode)
     setIsJoining(false)
 
     if (!result.ok) {
@@ -52,7 +98,9 @@ export function JoinPage() {
     }
 
     setErrorMessage('')
-    navigate('/lecture')
+    navigate(
+      result.destination === 'archive' ? '/lecture/archive' : '/lecture',
+    )
   }
 
   return (
@@ -102,8 +150,17 @@ export function JoinPage() {
                 aria-label="講義コード"
                 autoComplete="off"
                 disabled={isJoining}
-                onChange={(event) => setLectureCode(event.target.value)}
-                placeholder="例：AB12CD"
+                inputMode={legacyCodeMode ? 'text' : 'numeric'}
+                maxLength={legacyCodeMode ? 32 : 6}
+                onChange={(event) => {
+                  setErrorMessage('')
+                  setLectureCode(
+                    legacyCodeMode
+                      ? event.target.value.toUpperCase()
+                      : event.target.value.replace(/\D/g, '').slice(0, 6),
+                  )
+                }}
+                placeholder={legacyCodeMode ? '旧形式の講義コード' : '例：285463'}
                 type="text"
                 value={lectureCode}
               />
@@ -116,6 +173,20 @@ export function JoinPage() {
                 {!isJoining ? <AppIcon name="arrow-right" size={18} /> : null}
               </button>
             </div>
+            <button
+              className="join-code-mode-toggle"
+              disabled={isJoining}
+              onClick={() => {
+                setLectureCode('')
+                setErrorMessage('')
+                setLegacyCodeMode((current) => !current)
+              }}
+              type="button"
+            >
+              {legacyCodeMode
+                ? '6桁の講義コードを入力する'
+                : '以前発行された英数字コードを入力する'}
+            </button>
           </label>
 
           {errorMessage ? (
@@ -231,11 +302,16 @@ export function JoinPage() {
       </section>
 
       <footer className="educator-entry">
-        <span>教員・講義運営者の方へ</span>
-        <Link to="/admin">
-          教員用コントロールを開く
-          <AppIcon name="arrow-right" size={15} />
-        </Link>
+        <div>
+          <span>教員・講義運営者の方へ</span>
+          <Link to="/admin">
+            教員用コントロールを開く
+            <AppIcon name="arrow-right" size={15} />
+          </Link>
+        </div>
+        <small className="copyright-note">
+          © COMPASS. All rights reserved. Developer: Yuto Matsui
+        </small>
       </footer>
     </main>
   )

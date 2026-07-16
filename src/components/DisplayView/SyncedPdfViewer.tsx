@@ -8,6 +8,8 @@ import {
   resolveRuntimePdf,
   type RuntimePdfDocument,
 } from '../../pdf/pdfDelivery'
+import { archiveClient } from '../../archive/archiveClient'
+import type { LectureArchiveSession } from '../../types/archive'
 import { AppIcon } from '../AppIcon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -20,6 +22,8 @@ const MAX_RENDER_SCALE = 5
 const MIN_QUALITY_SCALE = 2
 
 type SyncedPdfViewerProps = {
+  adminToken?: string
+  archiveSession?: LectureArchiveSession | null
   documentId: string | null
   documentVersion?: string | null
   lectureSessionId?: string | null
@@ -27,10 +31,13 @@ type SyncedPdfViewerProps = {
   pageCount?: number | null
   presenterLocked?: boolean
   remotePage?: number | null
+  viewMode?: 'archive' | 'closed' | 'live'
   visible?: boolean
 }
 
 export function SyncedPdfViewer({
+  adminToken,
+  archiveSession = null,
   documentId,
   documentVersion = null,
   lectureSessionId = null,
@@ -38,9 +45,12 @@ export function SyncedPdfViewer({
   pageCount = null,
   presenterLocked = false,
   remotePage,
+  viewMode = 'live',
   visible = true,
 }: SyncedPdfViewerProps) {
   const legacyAsset = getLecturePdfAsset(documentId)
+  const archivedPdf = archiveSession?.pdf ?? null
+  const useArchiveDelivery = Boolean(archiveSession && archivedPdf)
   const usePrivateDelivery = Boolean(
     isPhase3PrivatePdfEnabled &&
     lectureSessionId &&
@@ -79,16 +89,52 @@ export function SyncedPdfViewer({
     isFullscreenSupported,
     toggleFullscreen,
   } = useFullscreen(stageRef)
-  const assetTitle = runtimeDocument?.displayName ?? legacyAsset?.title ?? null
-  const assetUrl = usePrivateDelivery ? runtimeUrl : (legacyAsset?.url ?? '')
+  const assetTitle =
+    archivedPdf?.displayName ??
+    runtimeDocument?.displayName ??
+    legacyAsset?.title ??
+    null
+  const assetUrl =
+    useArchiveDelivery || usePrivateDelivery
+      ? runtimeUrl
+      : (legacyAsset?.url ?? '')
   const expectedPageCount =
-    runtimeDocument?.pageCount ?? pageCount ?? legacyAsset?.pageCount ?? null
+    archivedPdf?.pageCount ??
+    runtimeDocument?.pageCount ??
+    pageCount ??
+    legacyAsset?.pageCount ??
+    null
+  const isLiveView = viewMode === 'live'
 
   useEffect(() => {
     let active = true
     runtimeResolverRef.current = null
     setRuntimeDocument(null)
     setRuntimeUrl('')
+
+    if (useArchiveDelivery && archiveSession) {
+      setIsResolvingAsset(true)
+      setErrorMessage('')
+      void archiveClient
+        .getDocumentAccessUrl(archiveSession, 'inline')
+        .then((url) => {
+          if (active) setRuntimeUrl(url)
+        })
+        .catch((error: unknown) => {
+          if (!active) return
+          setErrorMessage(
+            error instanceof Error
+              ? `アーカイブ資料の認証に失敗しました: ${error.message}`
+              : 'アーカイブ資料の認証に失敗しました。',
+          )
+        })
+        .finally(() => {
+          if (active) setIsResolvingAsset(false)
+        })
+      return () => {
+        active = false
+      }
+    }
 
     if (
       !usePrivateDelivery ||
@@ -105,6 +151,7 @@ export function SyncedPdfViewer({
     setIsResolvingAsset(true)
     setErrorMessage('')
     void resolveRuntimePdf({
+      ...(adminToken ? { adminToken } : {}),
       documentId,
       documentVersion,
       lectureSessionId,
@@ -133,11 +180,14 @@ export function SyncedPdfViewer({
       active = false
     }
   }, [
+    adminToken,
+    archiveSession,
     documentId,
     documentVersion,
     lectureSessionId,
     manifestVersion,
     resolveAttempt,
+    useArchiveDelivery,
     usePrivateDelivery,
   ])
 
@@ -282,7 +332,12 @@ export function SyncedPdfViewer({
   }, [assetUrl, renderPage])
 
   useEffect(() => {
-    if (!pdfDocument || !remotePage || (!followPresenter && !presenterLocked)) {
+    if (
+      !isLiveView ||
+      !pdfDocument ||
+      !remotePage ||
+      (!followPresenter && !presenterLocked)
+    ) {
       return
     }
     if (remotePage === currentPage || remotePage > totalPages) {
@@ -292,6 +347,7 @@ export function SyncedPdfViewer({
   }, [
     currentPage,
     followPresenter,
+    isLiveView,
     moveToPage,
     pdfDocument,
     presenterLocked,
@@ -318,6 +374,19 @@ export function SyncedPdfViewer({
 
   async function downloadPdf() {
     try {
+      if (archiveSession) {
+        const url = await archiveClient.getDocumentAccessUrl(
+          archiveSession,
+          'download',
+        )
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.rel = 'noopener'
+        document.body.append(anchor)
+        anchor.click()
+        anchor.remove()
+        return
+      }
       const resolver = runtimeResolverRef.current
       if (!resolver) return
       const url = await resolver.getAccessUrl('download')
@@ -351,9 +420,11 @@ export function SyncedPdfViewer({
         <div className="pdf-page-controls">
           {presenterLocked ? (
             <>
-              <span className="presenter-sync-badge">
-                <i /> 教員同期
-              </span>
+              {isLiveView ? (
+                <span className="presenter-sync-badge">
+                  <i /> 教員同期
+                </span>
+              ) : null}
               <span className="metric">
                 {pdfDocument ? `${currentPage} / ${totalPages}` : '— / —'}
               </span>
@@ -386,7 +457,7 @@ export function SyncedPdfViewer({
             </>
           )}
         </div>
-        {!presenterLocked ? (
+        {!presenterLocked && isLiveView ? (
           <button
             className={`follow-button ${followPresenter ? 'is-following' : ''}`}
             disabled={!pdfDocument || followPresenter}
@@ -405,7 +476,7 @@ export function SyncedPdfViewer({
         >
           {isPdfFullscreen ? '全画面を終了' : '大きく表示'}
         </button>
-        {runtimeDocument?.downloadEnabled ? (
+        {(archivedPdf?.downloadEnabled ?? runtimeDocument?.downloadEnabled) ? (
           <button
             className="secondary-button"
             disabled={!pdfDocument || isLoading}
@@ -417,7 +488,7 @@ export function SyncedPdfViewer({
         ) : null}
       </div>
 
-      {!presenterLocked && pdfDocument ? (
+      {!presenterLocked && isLiveView && pdfDocument ? (
         <p className="note">
           {followPresenter
             ? '教員がページを進めると、自動で同じページに移動します。'
@@ -427,11 +498,14 @@ export function SyncedPdfViewer({
       {expectedPageCount && expectedPageCount !== totalPages && pdfDocument ? (
         <p className="error-note">資料情報を更新できませんでした。</p>
       ) : null}
-      {!legacyAsset && !usePrivateDelivery && documentId ? (
+      {!legacyAsset &&
+      !useArchiveDelivery &&
+      !usePrivateDelivery &&
+      documentId ? (
         <p className="error-note">指定されたPDF資料が見つかりません。</p>
       ) : null}
       {errorMessage ? <p className="error-note">{errorMessage}</p> : null}
-      {errorMessage && usePrivateDelivery ? (
+      {errorMessage && (useArchiveDelivery || usePrivateDelivery) ? (
         <button
           className="secondary-button"
           onClick={() => setResolveAttempt((attempt) => attempt + 1)}
@@ -463,9 +537,15 @@ export function SyncedPdfViewer({
             <h2>
               {assetTitle
                 ? '資料を開いています'
-                : '教員からの資料を待っています'}
+                : isLiveView
+                  ? '教員からの資料を待っています'
+                  : '講義資料は公開されていません'}
             </h2>
-            <p>資料が共有されると、この画面に自動で表示されます。</p>
+            <p>
+              {isLiveView
+                ? '資料が共有されると、この画面に自動で表示されます。'
+                : '閲覧できる資料はありません。'}
+            </p>
           </div>
         )}
       </div>

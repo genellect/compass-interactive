@@ -42,7 +42,7 @@ Deno.serve(async (request) => {
   const billingPin = Deno.env.get('BILLING_PIN')
   if (!supabaseUrl || !serviceRoleKey || !billingPin) {
     return jsonResponse(
-      { ok: false, message: 'Billing authorization is not configured.' },
+      { ok: false, message: 'API usage authorization is not configured.' },
       503,
     )
   }
@@ -136,7 +136,7 @@ Deno.serve(async (request) => {
 
   if (error) {
     return jsonResponse(
-      { ok: false, message: 'Billing authorization failed.' },
+      { ok: false, message: 'API usage authorization failed.' },
       409,
     )
   }
@@ -148,7 +148,7 @@ Deno.serve(async (request) => {
         ok: false,
         message: rateLimited
           ? 'Too many failed attempts. Try again later.'
-          : 'Billing PIN could not be verified.',
+          : 'API usage PIN could not be verified.',
         reason: result.reason,
         retryAt: result.retry_at ?? null,
       },

@@ -111,9 +111,9 @@ assert.ok(
   verifyPublisherPosition >= 0 && verifyPublisherPosition < loadPosition,
 )
 assert.match(files.publisher, /verifyLectureAccessToken/)
-assert.match(files.ui, /Billing PIN（毎回）/)
+assert.match(files.ui, /API利用PIN（毎回）/)
 assert.match(files.ui, /AI生成・未検証/)
-assert.match(files.ui, /通常Pollの下書きへ追加/)
+assert.match(files.ui, /通常の投票下書きへ追加/)
 assert.doesNotMatch(files.ui, /localStorage/)
 assert.doesNotMatch(files.ui, /sessionStorage/)
 

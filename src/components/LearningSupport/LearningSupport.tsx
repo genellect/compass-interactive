@@ -14,7 +14,7 @@ type CaptionPanelProps = {
 }
 
 export type MaterialSummaryPoint = {
-  detail: string
+  detail?: string
   pageLabel: string
   title: string
 }
@@ -22,7 +22,7 @@ export type MaterialSummaryPoint = {
 export type MaterialSummaryContent = {
   lead: string
   points: MaterialSummaryPoint[]
-  reflectionQuestion: string
+  reflectionQuestion?: string
 }
 
 export type FiveMinuteRecap = {
@@ -42,6 +42,7 @@ type MaterialSummaryPanelProps = {
 type FiveMinuteRecapPanelProps = {
   isDemo?: boolean
   recaps?: FiveMinuteRecap[]
+  viewMode?: 'archive' | 'closed' | 'live'
 }
 
 const demoMaterialSummary: MaterialSummaryContent = {
@@ -244,6 +245,7 @@ export function LiveCaptionPanel({
 export function FiveMinuteRecapPanel({
   isDemo = false,
   recaps = [],
+  viewMode = 'live',
 }: FiveMinuteRecapPanelProps) {
   const visibleRecaps =
     recaps.length > 0 ? recaps : isDemo ? demoFiveMinuteRecaps : []
@@ -295,9 +297,20 @@ export function FiveMinuteRecapPanel({
         </div>
         <div className="recap-update-state">
           <span>
-            <i /> LIVE
+            {viewMode === 'live' ? <i /> : null}
+            {viewMode === 'live'
+              ? 'LIVE'
+              : viewMode === 'archive'
+                ? 'ARCHIVE'
+                : 'LECTURE ENDED'}
           </span>
-          <small>5分ごとに更新</small>
+          <small>
+            {viewMode === 'live'
+              ? '5分ごとに更新'
+              : viewMode === 'archive'
+                ? '講義中の記録'
+                : '更新は終了しました'}
+          </small>
         </div>
         {!isDemo && activeRecap ? (
           <button
@@ -356,7 +369,9 @@ export function FiveMinuteRecapPanel({
             <div className="recap-question">
               <span>いま生まれている問い</span>
               <strong>{activeRecap.emergingQuestion}</strong>
-              <a href="#lecture-question">自分の考えを残す</a>
+              {viewMode === 'live' ? (
+                <a href="#lecture-question">自分の考えを残す</a>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -435,18 +450,20 @@ export function MaterialSummaryPanel({
           <ol className="summary-points">
             {visibleSummary.points.map((point) => (
               <li key={`${point.pageLabel}-${point.title}`}>
-                <span className="summary-page">{point.pageLabel}</span>
-                <div>
-                  <strong>{point.title}</strong>
-                  <p>{point.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <div className="reflection-prompt">
-            <span>資料を読むための問い</span>
-            <strong>{visibleSummary.reflectionQuestion}</strong>
-          </div>
+                  <span className="summary-page">{point.pageLabel}</span>
+                  <div>
+                    <strong>{point.title}</strong>
+                    {point.detail ? <p>{point.detail}</p> : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          {visibleSummary.reflectionQuestion ? (
+            <div className="reflection-prompt">
+              <span>資料を読むための問い</span>
+              <strong>{visibleSummary.reflectionQuestion}</strong>
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="support-empty summary-empty">

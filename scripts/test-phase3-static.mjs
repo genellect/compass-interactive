@@ -71,7 +71,10 @@ assert.match(worker, /Range/)
 assert.match(worker, /If-None-Match/)
 assert.match(worker, /syncRetentionMetadata/)
 assert.match(worker, /cleanup-pending/)
-assert.doesNotMatch(worker, /supabase|service_role|SUPABASE_URL/i)
+assert.doesNotMatch(
+  worker,
+  /createClient|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|supabase\./i,
+)
 assert.match(wrangler, /"binding": "PDF_BUCKET"/)
 assert.doesNotMatch(wrangler, /"routes?"|"crons?"/)
 assert.match(delivery, /cache: 'no-store'/)

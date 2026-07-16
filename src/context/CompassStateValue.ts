@@ -13,18 +13,33 @@ import type { DisplayState } from '../repositories/supabaseDisplayStateRepositor
 import type {
   PublicCaption,
   PublicLectureSummary,
+  PublicMaterialSummary,
 } from '../repositories/supabaseLiveStateRepository'
+import type { LectureArchiveSession } from '../types/archive'
 
 export type JoinResult =
-  { ok: true; participantId: string } | { ok: false; message: string }
+  | {
+      destination: 'archive' | 'lecture'
+      ok: true
+      participantId: string | null
+    }
+  | { ok: false; message: string }
 
 export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
+
+export type OperatorLiveAccess =
+  | { kind: 'admin'; token: string }
+  | { kind: 'display'; token: string }
 
 export type CompassStateValue = {
   caption: PublicCaption | null
   summaries: PublicLectureSummary[]
+  materialSummary: PublicMaterialSummary | null
+  archiveSession: LectureArchiveSession | null
   lecture: LectureSession
   participants: Participant[]
+  participantCount: number
+  visibleCommentCount: number
   comments: LiveComment[]
   visibleComments: LiveComment[]
   hiddenCommentCount: number
@@ -40,6 +55,8 @@ export type CompassStateValue = {
   commentsLoading: boolean
   hasOlderComments: boolean
   isLoadingOlderComments: boolean
+  isArchiveResumePending: boolean
+  archiveResumeError: string | null
   commentsError: string | null
   commentLikesError: string | null
   pollsError: string | null
@@ -50,9 +67,13 @@ export type CompassStateValue = {
   isSubmittingComment: boolean
   isSessionSyncPaused: boolean
   lastActivityAt: number
+  lastSuccessfulSyncAt: number | null
   getServerNow: () => string | null
   resumeSessionSync: () => Promise<void>
   resetDemoLecture: () => void
+  retryArchiveResume: () => void
+  leaveLecture: () => void
+  setOperatorLiveAccess: (access: OperatorLiveAccess | null) => void
   selectLectureSession: (lecture: JoinedLectureSession) => void
   sessionSyncMessage: string | null
   sessionSyncPauseReason: SessionSyncPauseReason

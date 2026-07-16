@@ -11,6 +11,14 @@ type VerifyAdminPinResponse = {
   ok?: boolean
 }
 
+type IssueDisplaySessionResponse = {
+  displayToken?: string
+  expiresAt?: string
+  lectureSessionId?: string
+  message?: string
+  ok?: boolean
+}
+
 type DisplayStateRow = {
   current_pdf_page: number
   display_mode: DisplayMode
@@ -100,9 +108,20 @@ export type AdminPoll = {
   updatedAt: string
 }
 
+export type AdminPollList = {
+  hasMore: boolean
+  polls: AdminPoll[]
+}
+
 type ManageLecturesResponse = {
   lecture?: AdminLecture
   lectures?: AdminLecture[]
+  message?: string
+  ok?: boolean
+}
+
+type ManageCommentsResponse = {
+  comment?: unknown
   message?: string
   ok?: boolean
 }
@@ -112,6 +131,7 @@ type ManageAiControlResponse = {
   message?: string
   ok?: boolean
   recentOperations?: unknown[]
+  realtimePriceMicrousdPerMinute?: number | null
   result?: unknown
 }
 
@@ -134,15 +154,18 @@ type AuthorizeAiStartResponse = {
 
 export type RealtimeCaptionLanguage = 'auto' | 'en' | 'ja'
 
-export type RealtimeCaptionSecret = {
-  clientSecret: string
-  expiresAt: number | null
+export type RealtimeCaptionCall = {
   model: string
   operationId: string
+  pricingRateMicrousdPerMinute: number
+  reservedAudioSeconds: number
+  reservedMicrousd: number
+  reservedUntil: string
+  sdpAnswer: string
   sessionConfig: Record<string, unknown>
 }
 
-type RealtimeCaptionSecretResponse = Partial<RealtimeCaptionSecret> & {
+type RealtimeCaptionCallResponse = Partial<RealtimeCaptionCall> & {
   message?: string
   ok?: boolean
 }
@@ -191,6 +214,26 @@ export type AdminMaterialAnalysis = {
   sourceDocumentVersion: string
 }
 
+export type AdminMaterialSummaryBody = {
+  lead: string
+  points: Array<{
+    detail?: string
+    pageLabel: string
+    title: string
+  }>
+  reflectionQuestion?: string
+}
+
+export type AdminMaterialPublication = {
+  analysisId: string
+  body: AdminMaterialSummaryBody
+  publishedAt: string | null
+  reviewState: 'admin_confirmed' | 'admin_revised'
+  updatedAt: string
+  version: number
+  visibility: 'hidden' | 'public'
+}
+
 export type AdminPollProposal = {
   adoptedPollId: string | null
   analysisId: string
@@ -214,6 +257,7 @@ export type AdminPollProposal = {
 
 export type AdminMaterialResults = {
   analysis: AdminMaterialAnalysis | null
+  publication: AdminMaterialPublication | null
   proposals: AdminPollProposal[]
 }
 
@@ -230,6 +274,15 @@ type RawMaterialResults = {
     section_boundaries: AdminMaterialAnalysis['sectionBoundaries']
     source_document_id: string
     source_document_version: string
+  }
+  publication?: null | {
+    analysis_id: string
+    body: AdminMaterialSummaryBody
+    published_at: string | null
+    review_state: AdminMaterialPublication['reviewState']
+    updated_at: string
+    version: number | string
+    visibility: AdminMaterialPublication['visibility']
   }
   proposals?: Array<{
     adopted_poll_id: string | null
@@ -364,6 +417,7 @@ export type ManagePdfDocumentsRequest =
   | {
       action: 'list'
       adminToken: string
+      includeHistory?: boolean
       lectureSessionId: string
     }
   | ({
@@ -434,6 +488,7 @@ type ManageLecturesRequest =
   | {
       action: 'list'
       adminToken: string
+      includeHistory?: boolean
     }
   | {
       action: 'create'
@@ -447,8 +502,14 @@ type ManageLecturesRequest =
       adminToken: string
       lectureSessionId: string
     }
+  | {
+      action: 'duplicate'
+      adminToken: string
+      lectureSessionId: string
+    }
 
 type ManagePollsResponse = {
+  hasMore?: boolean
   message?: string
   ok?: boolean
   polls?: AdminPoll[]
@@ -458,11 +519,13 @@ export type ManagePollsRequest =
   | {
       action: 'list'
       adminToken: string
+      includeHistory?: boolean
       lectureSessionId: string
     }
   | {
       action: 'create'
       adminToken: string
+      includeHistory?: boolean
       lectureSessionId: string
       optionLabels: string[]
       question: string
@@ -471,6 +534,7 @@ export type ManagePollsRequest =
   | {
       action: 'open' | 'close'
       adminToken: string
+      includeHistory?: boolean
       lectureSessionId: string
       pollId: string
     }
@@ -493,6 +557,7 @@ function toAdminMaterialResults(
   value: RawMaterialResults | null | undefined,
 ): AdminMaterialResults {
   const analysis = value?.analysis
+  const publication = value?.publication
   return {
     analysis: analysis
       ? {
@@ -507,6 +572,17 @@ function toAdminMaterialResults(
           sectionBoundaries: analysis.section_boundaries,
           sourceDocumentId: analysis.source_document_id,
           sourceDocumentVersion: analysis.source_document_version,
+        }
+      : null,
+    publication: publication
+      ? {
+          analysisId: publication.analysis_id,
+          body: publication.body,
+          publishedAt: publication.published_at,
+          reviewState: publication.review_state,
+          updatedAt: publication.updated_at,
+          version: Number(publication.version),
+          visibility: publication.visibility,
         }
       : null,
     proposals: (value?.proposals ?? []).map((proposal) => ({
@@ -561,7 +637,9 @@ function toAdminSummaryResults(raw?: RawSummaryResults): AdminSummaryResults {
           expiresAt: String(run.expires_at ?? ''),
           id: String(run.id ?? ''),
           lastWindowIndex: Number(run.last_window_index ?? 0),
-          status: String(run.status ?? 'stopped') as AdminSummaryResults['run'] extends infer T
+          status: String(
+            run.status ?? 'stopped',
+          ) as AdminSummaryResults['run'] extends infer T
             ? T extends { status: infer S }
               ? S
               : never
@@ -570,7 +648,10 @@ function toAdminSummaryResults(raw?: RawSummaryResults): AdminSummaryResults {
       : null,
     summaries: (raw?.summaries ?? []).map((item) => {
       const output = (item.ai_output ?? {}) as Record<string, unknown>
-      const publication = (item.publication ?? null) as Record<string, unknown> | null
+      const publication = (item.publication ?? null) as Record<
+        string,
+        unknown
+      > | null
       return {
         aiOutput: {
           academicQuestionCandidate:
@@ -605,33 +686,34 @@ function toAdminSummaryResults(raw?: RawSummaryResults): AdminSummaryResults {
                   ? S
                   : never
                 : never,
-              visibility: String(
-                publication.visibility ?? 'hidden',
-              ) as 'hidden' | 'public',
+              visibility: String(publication.visibility ?? 'hidden') as
+                'hidden' | 'public',
             }
           : null,
         qualityResult: (item.quality_result ?? {}) as Record<string, unknown>,
-        revisions: ((item.revisions ?? []) as Array<Record<string, unknown>>).map(
-          (revision) => {
-            const revisionBody = (revision.body ?? {}) as Record<string, unknown>
-            return {
-              authorActorId:
-                revision.author_actor_id == null
-                  ? null
-                  : String(revision.author_actor_id),
-              authorType: String(revision.author_type ?? 'ai') as 'admin' | 'ai',
-              body: {
-                commentPulse: toStringArray(revisionBody.comment_pulse),
-                lectureRecap: toStringArray(revisionBody.lecture_recap),
-              },
-              createdAt: String(revision.created_at ?? ''),
-              id: String(revision.id ?? ''),
-              reason: revision.reason == null ? null : String(revision.reason),
-              revisionNumber: Number(revision.revision_number ?? 0),
-            }
-          },
-        ),
-        status: String(item.status ?? 'accepted') as AdminLectureSummary['status'],
+        revisions: (
+          (item.revisions ?? []) as Array<Record<string, unknown>>
+        ).map((revision) => {
+          const revisionBody = (revision.body ?? {}) as Record<string, unknown>
+          return {
+            authorActorId:
+              revision.author_actor_id == null
+                ? null
+                : String(revision.author_actor_id),
+            authorType: String(revision.author_type ?? 'ai') as 'admin' | 'ai',
+            body: {
+              commentPulse: toStringArray(revisionBody.comment_pulse),
+              lectureRecap: toStringArray(revisionBody.lecture_recap),
+            },
+            createdAt: String(revision.created_at ?? ''),
+            id: String(revision.id ?? ''),
+            reason: revision.reason == null ? null : String(revision.reason),
+            revisionNumber: Number(revision.revision_number ?? 0),
+          }
+        }),
+        status: String(
+          item.status ?? 'accepted',
+        ) as AdminLectureSummary['status'],
         windowEnd: String(item.window_end ?? ''),
         windowIndex: Number(item.window_index ?? 0),
         windowStart: String(item.window_start ?? ''),
@@ -707,6 +789,41 @@ export const supabaseAdminRepository = {
     return data.adminToken
   },
 
+  async issueDisplaySession(request: {
+    adminToken: string
+    lectureSessionId: string
+  }) {
+    await ensureAnonymousAuthSession()
+
+    const { data, error } =
+      await supabase.functions.invoke<IssueDisplaySessionResponse>(
+        'issue-display-session',
+        { body: request },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Display session could not be issued.',
+        ),
+      )
+    }
+    if (
+      !data?.ok ||
+      !data.displayToken ||
+      !data.expiresAt ||
+      data.lectureSessionId !== request.lectureSessionId
+    ) {
+      throw new Error(data?.message ?? 'Display session could not be issued.')
+    }
+
+    return {
+      displayToken: data.displayToken,
+      expiresAt: data.expiresAt,
+      lectureSessionId: data.lectureSessionId,
+    }
+  },
+
   async updateDisplayState(
     request: UpdateDisplayStateRequest,
   ): Promise<AdminDisplayState> {
@@ -744,12 +861,12 @@ export const supabaseAdminRepository = {
 
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'Lecture operation failed.'),
+        await getFunctionErrorMessage(error, '講義の操作に失敗しました。'),
       )
     }
 
     if (!data?.ok || !data.lectures) {
-      throw new Error(data?.message ?? 'Lecture operation failed.')
+      throw new Error(data?.message ?? '講義の操作に失敗しました。')
     }
 
     return data.lectures
@@ -787,11 +904,11 @@ export const supabaseAdminRepository = {
       )
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'Billing authorization failed.'),
+        await getFunctionErrorMessage(error, 'API usage authorization failed.'),
       )
     }
     if (!data?.ok || !data.billingGrant || !data.expiresAt) {
-      throw new Error(data?.message ?? 'Billing authorization failed.')
+      throw new Error(data?.message ?? 'API usage authorization failed.')
     }
     return {
       actions: data.actions ?? request.actions,
@@ -800,16 +917,18 @@ export const supabaseAdminRepository = {
     }
   },
 
-  async issueRealtimeCaptionSecret(request: {
+  async createRealtimeCaptionCall(request: {
     adminToken: string
     billingGrant: string
     delay: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
     idempotencyKey: string
     language: RealtimeCaptionLanguage
     lectureSessionId: string
-  }): Promise<RealtimeCaptionSecret> {
+    maxAudioSeconds: number
+    sdpOffer: string
+  }): Promise<RealtimeCaptionCall> {
     const { data, error } =
-      await supabase.functions.invoke<RealtimeCaptionSecretResponse>(
+      await supabase.functions.invoke<RealtimeCaptionCallResponse>(
         'issue-realtime-client-secret',
         { body: request },
       )
@@ -823,9 +942,13 @@ export const supabaseAdminRepository = {
     }
     if (
       !data?.ok ||
-      !data.clientSecret ||
       !data.model ||
       !data.operationId ||
+      !data.pricingRateMicrousdPerMinute ||
+      !data.reservedAudioSeconds ||
+      !data.reservedMicrousd ||
+      !data.reservedUntil ||
+      !data.sdpAnswer ||
       !data.sessionConfig
     ) {
       throw new Error(
@@ -833,10 +956,13 @@ export const supabaseAdminRepository = {
       )
     }
     return {
-      clientSecret: data.clientSecret,
-      expiresAt: data.expiresAt ?? null,
       model: data.model,
       operationId: data.operationId,
+      pricingRateMicrousdPerMinute: data.pricingRateMicrousdPerMinute,
+      reservedAudioSeconds: data.reservedAudioSeconds,
+      reservedMicrousd: data.reservedMicrousd,
+      reservedUntil: data.reservedUntil,
+      sdpAnswer: data.sdpAnswer,
       sessionConfig: data.sessionConfig,
     }
   },
@@ -876,11 +1002,11 @@ export const supabaseAdminRepository = {
       )
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'PDF metadata operation failed.'),
+        await getFunctionErrorMessage(error, '講義資料の操作に失敗しました。'),
       )
     }
     if (!data?.ok || !data.documents) {
-      throw new Error(data?.message ?? 'PDF metadata operation failed.')
+      throw new Error(data?.message ?? '講義資料の操作に失敗しました。')
     }
     return data.documents
   },
@@ -935,6 +1061,22 @@ export const supabaseAdminRepository = {
           pollType: 'single' | 'multiple'
           proposalId: string
           question: string
+        }
+      | {
+          action: 'publishSummary'
+          adminToken: string
+          analysisId: string
+          lectureSessionId: string
+          reviewState: AdminMaterialPublication['reviewState']
+          summaryBody: AdminMaterialSummaryBody
+        }
+      | {
+          action: 'hideSummary'
+          adminToken: string
+          analysisId: string
+          lectureSessionId: string
+          reviewState: AdminMaterialPublication['reviewState']
+          summaryBody: AdminMaterialSummaryBody
         },
   ): Promise<{ pollId: string | null; results: AdminMaterialResults }> {
     const { data, error } =
@@ -944,14 +1086,11 @@ export const supabaseAdminRepository = {
       )
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(
-          error,
-          'Material analysis operation failed.',
-        ),
+        await getFunctionErrorMessage(error, '資料分析の操作に失敗しました。'),
       )
     }
     if (!data?.ok || !data.results) {
-      throw new Error(data?.message ?? 'Material analysis operation failed.')
+      throw new Error(data?.message ?? '資料分析の操作に失敗しました。')
     }
     return {
       pollId: data.pollId ?? null,
@@ -959,46 +1098,47 @@ export const supabaseAdminRepository = {
     }
   },
 
-  async manageLectureSummaries(request:
-    | {
-        action: 'status' | 'resume'
-        adminToken: string
-        lectureSessionId: string
-      }
-    | {
-        action: 'start'
-        adminToken: string
-        billingGrant: string
-        lectureSessionId: string
-      }
-    | {
-        action: 'stop'
-        adminToken: string
-        lectureSessionId: string
-        reason: string
-      }
-    | {
-        action: 'hide' | 'publish' | 'unpin'
-        adminToken: string
-        lectureSessionId: string
-        summaryId: string
-      }
-    | {
-        action: 'pin'
-        adminToken: string
-        lectureSessionId: string
-        pinnedOrder: number
-        pinnedUntil: string
-        summaryId: string
-      }
-    | {
-        action: 'revisePublish'
-        adminToken: string
-        lectureSessionId: string
-        reason: string
-        revisionBody: { commentPulse: string[]; lectureRecap: string[] }
-        summaryId: string
-      },
+  async manageLectureSummaries(
+    request:
+      | {
+          action: 'status' | 'resume'
+          adminToken: string
+          lectureSessionId: string
+        }
+      | {
+          action: 'start'
+          adminToken: string
+          billingGrant: string
+          lectureSessionId: string
+        }
+      | {
+          action: 'stop'
+          adminToken: string
+          lectureSessionId: string
+          reason: string
+        }
+      | {
+          action: 'hide' | 'publish' | 'unpin'
+          adminToken: string
+          lectureSessionId: string
+          summaryId: string
+        }
+      | {
+          action: 'pin'
+          adminToken: string
+          lectureSessionId: string
+          pinnedOrder: number
+          pinnedUntil: string
+          summaryId: string
+        }
+      | {
+          action: 'revisePublish'
+          adminToken: string
+          lectureSessionId: string
+          reason: string
+          revisionBody: { commentPulse: string[]; lectureRecap: string[] }
+          summaryId: string
+        },
   ): Promise<{
     reason: string | null
     results: AdminSummaryResults
@@ -1011,11 +1151,11 @@ export const supabaseAdminRepository = {
       )
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'Lecture summary operation failed.'),
+        await getFunctionErrorMessage(error, '講義要約の操作に失敗しました。'),
       )
     }
     if (!data?.ok) {
-      throw new Error(data?.message ?? 'Lecture summary operation failed.')
+      throw new Error(data?.message ?? '講義要約の操作に失敗しました。')
     }
     return {
       reason: data.reason ?? null,
@@ -1053,11 +1193,11 @@ export const supabaseAdminRepository = {
       )
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'Lecture summary generation failed.'),
+        await getFunctionErrorMessage(error, '講義要約の生成に失敗しました。'),
       )
     }
     if (!data?.ok) {
-      throw new Error(data?.message ?? 'Lecture summary generation failed.')
+      throw new Error(data?.message ?? '講義要約の生成に失敗しました。')
     }
     return {
       actualMicrousd: Number(data.actualMicrousd ?? 0),
@@ -1067,7 +1207,7 @@ export const supabaseAdminRepository = {
     }
   },
 
-  async managePolls(request: ManagePollsRequest): Promise<AdminPoll[]> {
+  async managePolls(request: ManagePollsRequest): Promise<AdminPollList> {
     const { data, error } =
       await supabase.functions.invoke<ManagePollsResponse>('manage-polls', {
         body: request,
@@ -1075,14 +1215,39 @@ export const supabaseAdminRepository = {
 
     if (error) {
       throw new Error(
-        await getFunctionErrorMessage(error, 'Poll operation failed.'),
+        await getFunctionErrorMessage(error, '投票の操作に失敗しました。'),
       )
     }
 
     if (!data?.ok || !data.polls) {
-      throw new Error(data?.message ?? 'Poll operation failed.')
+      throw new Error(data?.message ?? '投票の操作に失敗しました。')
     }
 
-    return data.polls
+    return {
+      hasMore: data.hasMore ?? data.polls.length > 5,
+      polls: data.polls,
+    }
+  },
+
+  async moderateComment(request: {
+    action: 'togglePin' | 'toggleVisibility'
+    adminToken: string
+    commentId: string
+    lectureSessionId: string
+  }) {
+    const { data, error } =
+      await supabase.functions.invoke<ManageCommentsResponse>(
+        'manage-comments',
+        { body: request },
+      )
+
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(error, 'Comment moderation failed.'),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'Comment moderation failed.')
+    }
   },
 }

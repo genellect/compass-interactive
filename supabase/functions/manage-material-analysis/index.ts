@@ -12,13 +12,61 @@ import {
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
-  action?: 'list' | 'adopt' | 'reject'
+  action?: 'list' | 'adopt' | 'reject' | 'publishSummary' | 'hideSummary'
   adminToken?: string
+  analysisId?: string
   lectureSessionId?: string
   optionLabels?: string[]
   pollType?: 'single' | 'multiple'
   proposalId?: string
   question?: string
+  reviewState?: 'admin_confirmed' | 'admin_revised'
+  summaryBody?: {
+    lead?: string
+    points?: Array<{
+      detail?: string
+      pageLabel?: string
+      title?: string
+    }>
+    reflectionQuestion?: string
+  }
+}
+
+function normalizeMaterialSummaryBody(value: RequestBody['summaryBody']) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const lead = value.lead?.trim() ?? ''
+  const reflectionQuestion = value.reflectionQuestion?.trim() ?? ''
+  if (lead.length < 1 || lead.length > 1_200) return null
+  if (
+    !Array.isArray(value.points) ||
+    value.points.length < 1 ||
+    value.points.length > 3 ||
+    reflectionQuestion.length > 300
+  ) {
+    return null
+  }
+  const points = value.points.map((point) => ({
+    detail: point.detail?.trim() ?? '',
+    pageLabel: point.pageLabel?.trim() ?? '',
+    title: point.title?.trim() ?? '',
+  }))
+  if (
+    points.some(
+      (point) =>
+        point.pageLabel.length < 1 ||
+        point.pageLabel.length > 30 ||
+        point.title.length < 1 ||
+        point.title.length > 160 ||
+        point.detail.length > 500,
+    )
+  ) {
+    return null
+  }
+  return {
+    lead,
+    points,
+    reflectionQuestion,
+  }
 }
 
 Deno.serve(async (request) => {
@@ -57,6 +105,7 @@ Deno.serve(async (request) => {
   }
 
   let actorId: string
+  let actorSessionId: string | null
   try {
     const claims = await getAdminTokenClaims(
       body.adminToken,
@@ -66,6 +115,13 @@ Deno.serve(async (request) => {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
     }
     actorId = getAdminActorId(claims)
+    actorSessionId =
+      claims.sid &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        claims.sid,
+      )
+        ? claims.sid
+        : null
   } catch {
     return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
   }
@@ -121,6 +177,45 @@ Deno.serve(async (request) => {
         target_lecture_session_id: body.lectureSessionId,
         target_proposal_id: body.proposalId,
       })
+      if (error) throw error
+    } else if (
+      body.action === 'publishSummary' ||
+      body.action === 'hideSummary'
+    ) {
+      if (!actorSessionId) {
+        return jsonResponse(
+          {
+            message:
+              '要点を公開する前に、管理画面へ再ログインしてください。',
+            ok: false,
+          },
+          401,
+        )
+      }
+      const summaryBody = normalizeMaterialSummaryBody(body.summaryBody)
+      if (
+        !body.analysisId ||
+        !summaryBody ||
+        !body.reviewState ||
+        !['admin_confirmed', 'admin_revised'].includes(body.reviewState)
+      ) {
+        return jsonResponse(
+          { message: 'Reviewed material summary fields are required.', ok: false },
+          400,
+        )
+      }
+      const { error } = await supabase.rpc(
+        'admin_set_material_summary_publication',
+        {
+          target_actor_id: actorSessionId,
+          target_analysis_id: body.analysisId,
+          target_body: summaryBody,
+          target_lecture_session_id: body.lectureSessionId,
+          target_review_state: body.reviewState,
+          target_visibility:
+            body.action === 'publishSummary' ? 'public' : 'hidden',
+        },
+      )
       if (error) throw error
     } else if (body.action !== 'list') {
       return jsonResponse({ message: 'Unknown action.', ok: false }, 400)

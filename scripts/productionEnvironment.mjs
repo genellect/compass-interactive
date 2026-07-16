@@ -6,6 +6,7 @@ const featureFlags = [
   'VITE_PHASE5_MATERIAL_ANALYSIS',
   'VITE_PHASE6_SUMMARIES',
   'VITE_PHASE6_5_COMMENT_NICKNAMES',
+  'VITE_PHASE6_6_UX_INTEGRATION',
 ]
 
 const forbiddenPublicNames = [
@@ -79,6 +80,17 @@ export function validateProductionEnvironment(environment) {
   requireFlag('VITE_PHASE5_MATERIAL_ANALYSIS', 'VITE_PHASE3_PRIVATE_PDF')
   requireFlag('VITE_PHASE6_SUMMARIES', 'VITE_PHASE1_SYNC_PROTOCOL')
   requireFlag('VITE_PHASE6_5_COMMENT_NICKNAMES', 'VITE_PHASE1_SYNC_PROTOCOL')
+  for (const dependency of [
+    'VITE_PHASE1_SYNC_PROTOCOL',
+    'VITE_PHASE2_LECTURE_LIFECYCLE',
+    'VITE_PHASE3_PRIVATE_PDF',
+    'VITE_PHASE4_REALTIME_CAPTIONS',
+    'VITE_PHASE5_MATERIAL_ANALYSIS',
+    'VITE_PHASE6_SUMMARIES',
+    'VITE_PHASE6_5_COMMENT_NICKNAMES',
+  ]) {
+    requireFlag('VITE_PHASE6_6_UX_INTEGRATION', dependency)
+  }
 
   if (enabled('VITE_PHASE3_PRIVATE_PDF')) {
     const workerUrl = value(environment, 'VITE_PDF_WORKER_BASE_URL')

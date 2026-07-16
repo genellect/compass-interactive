@@ -1223,6 +1223,23 @@ export type Database = {
         }
         Returns: Json
       }
+      get_lecture_public_snapshot_v5: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          known_caption_version?: number
+          known_comments_version?: number
+          known_lecture_version?: number
+          known_likes_version?: number
+          known_metrics_version?: number
+          known_pdf_version?: number
+          known_polls_version?: number
+          known_summaries_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
       get_lecture_session_state: {
         Args: { target_lecture_session_id: string }
         Returns: {
@@ -1255,6 +1272,17 @@ export type Database = {
       }
       is_poll_open: { Args: { target_poll_id: string }; Returns: boolean }
       join_lecture_by_code: {
+        Args: { lecture_code: string }
+        Returns: {
+          ends_at: string
+          lecture_session_id: string
+          participant_id: string
+          starts_at: string
+          status: string
+          title: string
+        }[]
+      }
+      join_lecture_by_code_v2: {
         Args: { lecture_code: string }
         Returns: {
           ends_at: string

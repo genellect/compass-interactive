@@ -22,3 +22,7 @@ export const isPhase6SummariesEnabled =
 export const isPhase65CommentNicknamesEnabled =
   isPhase1SyncProtocolEnabled &&
   import.meta.env.VITE_PHASE6_5_COMMENT_NICKNAMES === 'true'
+
+export const isPhase66UxIntegrationEnabled =
+  isPhase1SyncProtocolEnabled &&
+  import.meta.env.VITE_PHASE6_6_UX_INTEGRATION === 'true'

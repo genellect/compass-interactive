@@ -1,0 +1,7 @@
+@media (min-width: 901px) {
+  .realtime-caption-control .caption-control-form {
+    grid-template-columns:
+      minmax(190px, 1fr) minmax(160px, 0.65fr)
+      minmax(120px, 0.45fr) auto auto;
+  }
+}

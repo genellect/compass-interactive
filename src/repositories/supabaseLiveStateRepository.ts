@@ -7,6 +7,7 @@ import type { PollResultSummary } from './supabasePollRepository'
 import {
   isPhase4RealtimeCaptionsEnabled,
   isPhase65CommentNicknamesEnabled,
+  isPhase66UxIntegrationEnabled,
   isPhase6SummariesEnabled,
 } from '../lib/featureFlags'
 import { normalizeCommentNickname } from '../lib/commentNickname'
@@ -34,12 +35,28 @@ export type PublicLectureSummary = {
   windowStart: string
 }
 
+export type PublicMaterialSummary = {
+  analysisId: string
+  body: {
+    lead: string
+    points: Array<{
+      detail?: string
+      pageLabel: string
+      title: string
+    }>
+    reflectionQuestion?: string
+  }
+  publishedAt: string
+  reviewState: 'admin_confirmed' | 'admin_revised'
+}
+
 export type LiveStateVersions = {
   caption: number | null
   comments: number | null
   display: number | null
   lecture: number | null
   likes: number | null
+  metrics: number | null
   pdf: number | null
   polls: number | null
   state: number | null
@@ -81,6 +98,14 @@ export type LiveSnapshot = {
   display: DisplayState | null
   lecture: JoinedLectureSession | null
   likeTotals: CommentLikeTotal[] | null
+  materialSummary: PublicMaterialSummary | null | undefined
+  metrics: {
+    hiddenCommentCount?: number
+    participantCountApproximate: number
+    participantCountMode: 'active_90s'
+    updatedAt: string
+    visibleCommentCount: number
+  } | null
   pollResponses: PollResponse[] | null
   pollResults: PollResultSummary[] | null
   polls: Poll[] | null
@@ -103,7 +128,7 @@ export type LectureArchive = {
   summaries: PublicLectureSummary[]
 }
 
-type SnapshotRequest = {
+export type SnapshotRequest = {
   commentCursor: CommentCursor | null
   lectureSessionId: string
   protocolVersion: 1 | 2
@@ -119,7 +144,7 @@ type RawComment = {
   like_count?: number
   nickname?: string | null
   participant_id?: string
-  status: 'visible'
+  status: 'hidden' | 'visible'
 }
 
 type RawLikeTotal = {
@@ -213,6 +238,14 @@ type RawPublicSnapshotV2 = {
     }
     lecture?: RawLecture
     likes?: RawLikeTotal[]
+    metrics?: {
+      hidden_comment_count?: number
+      participant_count_approximate: number
+      participant_count_mode: 'active_90s'
+      updated_at: string
+      visible_comment_count: number
+    }
+    material_summary?: RawPublicMaterialSummary | null
     pdf?: RawDisplay
     polls?: RawPoll[]
     summaries?: RawPublicSummary[]
@@ -224,6 +257,7 @@ type RawPublicSnapshotV2 = {
     comments: number
     lecture: number
     likes: number
+    metrics?: number
     pdf: number
     polls: number
     summaries: number
@@ -241,6 +275,34 @@ type RawPublicSummary = {
   window_end: string
   window_index: number
   window_start: string
+}
+
+type RawPublicMaterialSummary = {
+  analysis_id: string
+  body: {
+    lead: string
+    points: Array<{
+      detail?: string
+      pageLabel: string
+      title: string
+    }>
+    reflectionQuestion?: string
+  }
+  published_at: string
+  review_state: PublicMaterialSummary['reviewState']
+}
+
+function mapMaterialSummary(
+  raw: RawPublicMaterialSummary | null | undefined,
+): PublicMaterialSummary | null | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null) return null
+  return {
+    analysisId: raw.analysis_id,
+    body: raw.body,
+    publishedAt: raw.published_at,
+    reviewState: raw.review_state,
+  }
 }
 
 type RawParticipantStateV2 = {
@@ -292,6 +354,20 @@ type RawArchiveV2 = {
   summaries: RawPublicSummary[]
 }
 
+type OperatorCredential =
+  | { adminToken: string; displayToken?: never }
+  | { adminToken?: never; displayToken: string }
+
+export type OperatorSnapshotRequest = SnapshotRequest & OperatorCredential
+
+type OperatorFunctionResponse = {
+  message?: string
+  ok?: boolean
+  result?:
+    | { mode: 'live'; snapshot: RawPublicSnapshotV2 }
+    | { mode: 'terminal'; terminal: RawTerminalStateV2 }
+}
+
 function mapSummaries(raw: RawPublicSummary[] | undefined | null) {
   return (
     raw?.map<PublicLectureSummary>((summary) => ({
@@ -322,7 +398,7 @@ function mapComment(row: RawComment): LiveComment {
       ? normalizeCommentNickname(row.nickname)
       : null,
     participantId: row.participant_id ?? '',
-    status: 'visible',
+    status: row.status,
   }
 }
 
@@ -423,6 +499,8 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
         likeCount: Number(total.like_count),
         likedByParticipant: total.liked_by_participant,
       })) ?? null,
+    materialSummary: undefined,
+    metrics: null,
     pollResponses,
     pollResults,
     polls,
@@ -435,6 +513,7 @@ function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
       display: Number(raw.versions.display),
       lecture: null,
       likes: Number(raw.versions.likes),
+      metrics: null,
       pdf: null,
       polls: Number(raw.versions.polls),
       state: Number(raw.versions.state),
@@ -478,6 +557,28 @@ function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
         commentId: total.comment_id,
         likeCount: Number(total.like_count),
       })) ?? null,
+    materialSummary: Object.hasOwn(raw.changed, 'material_summary')
+      ? mapMaterialSummary(raw.changed.material_summary)
+      : undefined,
+    metrics: raw.changed.metrics
+      ? {
+          ...(raw.changed.metrics.hidden_comment_count === undefined
+            ? {}
+            : {
+                hiddenCommentCount: Number(
+                  raw.changed.metrics.hidden_comment_count,
+                ),
+              }),
+          participantCountApproximate: Number(
+            raw.changed.metrics.participant_count_approximate,
+          ),
+          participantCountMode: raw.changed.metrics.participant_count_mode,
+          updatedAt: raw.changed.metrics.updated_at,
+          visibleCommentCount: Number(
+            raw.changed.metrics.visible_comment_count,
+          ),
+        }
+      : null,
     pollResponses: null,
     pollResults,
     polls,
@@ -490,6 +591,10 @@ function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
       display: null,
       lecture: Number(raw.versions.lecture),
       likes: Number(raw.versions.likes),
+      metrics:
+        raw.versions.metrics === undefined
+          ? null
+          : Number(raw.versions.metrics),
       pdf: Number(raw.versions.pdf),
       polls: Number(raw.versions.polls),
       state: null,
@@ -527,19 +632,24 @@ async function getPublicSnapshotV2({
   lectureSessionId,
   versions,
 }: SnapshotRequest) {
-  const rpcName = isPhase6SummariesEnabled
-    ? 'get_lecture_public_snapshot_v4'
-    : isPhase4RealtimeCaptionsEnabled
-      ? 'get_lecture_public_snapshot_v3'
-      : 'get_lecture_public_snapshot_v2'
+  const rpcName = isPhase66UxIntegrationEnabled
+    ? 'get_lecture_public_snapshot_v5'
+    : isPhase6SummariesEnabled
+      ? 'get_lecture_public_snapshot_v4'
+      : isPhase4RealtimeCaptionsEnabled
+        ? 'get_lecture_public_snapshot_v3'
+        : 'get_lecture_public_snapshot_v2'
   const { data, error } = await supabase.rpc(rpcName, {
     comment_cursor_created_at: commentCursor?.createdAt,
     comment_cursor_id: commentCursor?.id,
-    comment_limit: 100,
+    comment_limit: isPhase66UxIntegrationEnabled ? 5 : 100,
     known_caption_version: versions.caption ?? undefined,
     known_comments_version: versions.comments ?? undefined,
     known_lecture_version: versions.lecture ?? undefined,
     known_likes_version: versions.likes ?? undefined,
+    ...(isPhase66UxIntegrationEnabled
+      ? { known_metrics_version: versions.metrics ?? undefined }
+      : {}),
     known_pdf_version: versions.pdf ?? undefined,
     known_polls_version: versions.polls ?? undefined,
     known_summaries_version: versions.summaries ?? undefined,
@@ -569,7 +679,10 @@ async function getTerminalSnapshot(
     return null
   }
 
-  const raw = data as unknown as RawTerminalStateV2
+  return mapTerminalState(data as unknown as RawTerminalStateV2)
+}
+
+function mapTerminalState(raw: RawTerminalStateV2): LiveSnapshot {
   return {
     caption: null,
     comments: null,
@@ -588,6 +701,8 @@ async function getTerminalSnapshot(
       title: raw.title,
     }),
     likeTotals: null,
+    materialSummary: null,
+    metrics: null,
     pollResponses: null,
     pollResults: null,
     polls: null,
@@ -600,12 +715,35 @@ async function getTerminalSnapshot(
       display: null,
       lecture: null,
       likes: null,
+      metrics: null,
       pdf: null,
       polls: null,
       state: null,
       summaries: null,
     },
   }
+}
+
+async function getFunctionErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+) {
+  if (!(error instanceof Error)) {
+    return fallbackMessage
+  }
+
+  const maybeResponse = (error as { context?: unknown }).context
+  if (maybeResponse instanceof Response) {
+    try {
+      const body = (await maybeResponse.clone().json()) as {
+        message?: string
+      }
+      return body.message ?? error.message
+    } catch {
+      return error.message
+    }
+  }
+  return error.message
 }
 
 export const supabaseLiveStateRepository = {
@@ -629,6 +767,105 @@ export const supabaseLiveStateRepository = {
     }
 
     return snapshot
+  },
+
+  async getOperatorSnapshot(
+    request: OperatorSnapshotRequest,
+  ): Promise<LiveSnapshot> {
+    assertSupabaseConfigured()
+    await ensureAnonymousAuthSession()
+
+    const credential = request.adminToken
+      ? { adminToken: request.adminToken }
+      : request.displayToken
+        ? { displayToken: request.displayToken }
+        : null
+    if (!credential) {
+      throw new Error('An operator credential is required.')
+    }
+    const { data, error } =
+      await supabase.functions.invoke<OperatorFunctionResponse>(
+        'operator-live-snapshot',
+        {
+          body: {
+            action: 'snapshot',
+            commentCursorCreatedAt: request.commentCursor?.createdAt ?? null,
+            commentCursorId: request.commentCursor?.id ?? null,
+            knownCaptionVersion: request.versions.caption,
+            knownCommentsVersion: request.versions.comments,
+            knownLectureVersion: request.versions.lecture,
+            knownLikesVersion: request.versions.likes,
+            knownMetricsVersion: request.versions.metrics,
+            knownPdfVersion: request.versions.pdf,
+            knownPollsVersion: request.versions.polls,
+            knownSummariesVersion: request.versions.summaries,
+            lectureSessionId: request.lectureSessionId,
+            ...credential,
+          },
+        },
+      )
+
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Operator snapshot could not be loaded.',
+        ),
+      )
+    }
+    if (!data?.ok || !data.result) {
+      throw new Error(data?.message ?? 'Operator snapshot could not be loaded.')
+    }
+    return data.result.mode === 'live'
+      ? mapPublicSnapshotV2(data.result.snapshot)
+      : mapTerminalState(data.result.terminal)
+  },
+
+  async getOperatorCommentHistory({
+    adminToken,
+    before,
+    lectureSessionId,
+    limit = 50,
+  }: {
+    adminToken: string
+    before: CommentCursor
+    lectureSessionId: string
+    limit?: number
+  }): Promise<CommentHistoryPage> {
+    assertSupabaseConfigured()
+    await ensureAnonymousAuthSession()
+
+    const { data, error } = await supabase.functions.invoke<
+      Omit<OperatorFunctionResponse, 'result'> & {
+        result?: RawCommentHistoryV2
+      }
+    >('operator-live-snapshot', {
+      body: {
+        action: 'commentHistory',
+        adminToken,
+        commentCursorCreatedAt: before.createdAt,
+        commentCursorId: before.id,
+        lectureSessionId,
+        limit,
+      },
+    })
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Operator comment history could not be loaded.',
+        ),
+      )
+    }
+    if (!data?.ok || !data.result) {
+      throw new Error(
+        data?.message ?? 'Operator comment history could not be loaded.',
+      )
+    }
+    return {
+      hasOlder: data.result.has_older,
+      items: data.result.items.map(mapComment),
+    }
   },
 
   async getParticipantState(

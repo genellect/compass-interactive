@@ -35,6 +35,16 @@ export type PublisherExtraction = {
 
 type PublisherResponse<T> = T & { message?: string; ok?: boolean }
 
+export class PublisherRequestError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'PublisherRequestError'
+    this.status = status
+  }
+}
+
 const baseUrl = (
   import.meta.env.VITE_PDF_PUBLISHER_URL || 'http://127.0.0.1:43123'
 ).replace(/\/$/, '')
@@ -44,8 +54,9 @@ async function parseResponse<T>(response: Response) {
     .json()
     .catch(() => null)) as PublisherResponse<T> | null
   if (!response.ok || !body?.ok) {
-    throw new Error(
-      body?.message ?? 'ローカルPublisherへ接続できませんでした。',
+    throw new PublisherRequestError(
+      body?.message ?? '講義資料の公開機能へ接続できませんでした。',
+      response.status,
     )
   }
   return body
@@ -57,6 +68,16 @@ export const publisherClient = {
       cache: 'no-store',
     })
     return parseResponse<{ service: string; version: number }>(response)
+  },
+
+  async verifySession(publisherSessionToken: string) {
+    const response = await fetch(`${baseUrl}/v1/session`, {
+      cache: 'no-store',
+      headers: {
+        'X-Compass-Publisher-Token': publisherSessionToken,
+      },
+    })
+    return parseResponse<{ expiresAt: string }>(response)
   },
 
   async pair(pairingCode: string) {

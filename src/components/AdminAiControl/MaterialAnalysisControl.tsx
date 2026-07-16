@@ -3,6 +3,7 @@ import { issuePdfAccessSession } from '../../pdf/pdfDelivery'
 import { publisherClient } from '../../pdf/publisherClient'
 import {
   type AdminMaterialResults,
+  type AdminMaterialSummaryBody,
   type AdminPdfDocument,
   type AdminPollProposal,
   supabaseAdminRepository,
@@ -30,6 +31,33 @@ function proposalTypeLabel(type: AdminPollProposal['proposalType']) {
   return 'ディスカッション'
 }
 
+function createDefaultSummaryBody(
+  analysis: NonNullable<AdminMaterialResults['analysis']>,
+): AdminMaterialSummaryBody {
+  const points = analysis.materialOutline.slice(0, 3).map((item) => ({
+    detail: '',
+    pageLabel:
+      item.pageStart === item.pageEnd
+        ? `P.${item.pageStart}`
+        : `P.${item.pageStart}–${item.pageEnd}`,
+    title: item.title,
+  }))
+  return {
+    lead: analysis.materialSummary,
+    points:
+      points.length > 0
+        ? points
+        : [
+            {
+              detail: '',
+              pageLabel: '資料全体',
+              title: '講義資料の要点',
+            },
+          ],
+    reflectionQuestion: '',
+  }
+}
+
 export function MaterialAnalysisControl({
   adminToken,
   documents,
@@ -42,6 +70,7 @@ export function MaterialAnalysisControl({
   const [billingPin, setBillingPin] = useState('')
   const [results, setResults] = useState<AdminMaterialResults>({
     analysis: null,
+    publication: null,
     proposals: [],
   })
   const [pageStart, setPageStart] = useState('1')
@@ -52,6 +81,8 @@ export function MaterialAnalysisControl({
   const [draftQuestion, setDraftQuestion] = useState('')
   const [draftType, setDraftType] = useState<'single' | 'multiple'>('single')
   const [draftOptions, setDraftOptions] = useState('')
+  const [summaryDraft, setSummaryDraft] =
+    useState<AdminMaterialSummaryBody | null>(null)
 
   const selectedDocument = useMemo(
     () =>
@@ -78,7 +109,8 @@ export function MaterialAnalysisControl({
 
   useEffect(() => {
     let cancelled = false
-    setResults({ analysis: null, proposals: [] })
+    setResults({ analysis: null, publication: null, proposals: [] })
+    setSummaryDraft(null)
     setMessage('')
     void supabaseAdminRepository
       .manageMaterialAnalysis({
@@ -87,7 +119,14 @@ export function MaterialAnalysisControl({
         lectureSessionId,
       })
       .then((response) => {
-        if (!cancelled) setResults(response.results)
+        if (cancelled) return
+        setResults(response.results)
+        setSummaryDraft(
+          response.results.analysis
+            ? (response.results.publication?.body ??
+              createDefaultSummaryBody(response.results.analysis))
+            : null,
+        )
       })
       .catch((error) => {
         if (!cancelled) {
@@ -105,7 +144,7 @@ export function MaterialAnalysisControl({
 
   async function runAnalysis(action: 'material_analysis' | 'poll_suggestions') {
     if (!selectedDocument || !publisherSessionToken || !billingPin.trim()) {
-      setMessage('PDF、ローカルPublisher接続、Billing PINを確認してください。')
+      setMessage('PDFの公開状態とAPI利用PINを確認してください。')
       return
     }
     const start = Number(pageStart)
@@ -162,9 +201,15 @@ export function MaterialAnalysisControl({
         pageStart: action === 'poll_suggestions' ? start : null,
       })
       setResults(nextResults)
+      setSummaryDraft(
+        nextResults.analysis
+          ? (nextResults.publication?.body ??
+            createDefaultSummaryBody(nextResults.analysis))
+          : null,
+      )
       setMessage(
         action === 'material_analysis'
-          ? '分析が完了しました。Poll候補は未検証のAdmin下書きです。'
+          ? '分析が完了しました。投票候補は教員確認前の下書きです。'
           : '追加候補を作成しました。採用前に根拠と選択肢を確認してください。',
       )
     } catch (error) {
@@ -194,7 +239,7 @@ export function MaterialAnalysisControl({
       .map((option) => option.trim())
       .filter(Boolean)
     if (draftQuestion.trim().length < 10 || optionLabels.length < 2) {
-      setMessage('Poll下書きには10文字以上の質問と2個以上の選択肢が必要です。')
+      setMessage('投票の下書きには10文字以上の質問と2個以上の選択肢が必要です。')
       return
     }
     setBusy(true)
@@ -212,13 +257,13 @@ export function MaterialAnalysisControl({
       setEditingId(null)
       await onPollDraftCreated()
       setMessage(
-        '通常のPoll下書きへ追加しました。学生にはまだ配信されていません。',
+        '通常の投票下書きへ追加しました。学生にはまだ配信されていません。',
       )
     } catch (error) {
       setMessage(
         error instanceof Error
-          ? `Poll下書きへ追加できませんでした: ${error.message}`
-          : 'Poll下書きへ追加できませんでした。',
+          ? `投票下書きへ追加できませんでした: ${error.message}`
+          : '投票下書きへ追加できませんでした。',
       )
     } finally {
       setBusy(false)
@@ -248,20 +293,84 @@ export function MaterialAnalysisControl({
     }
   }
 
+  async function setMaterialSummaryVisibility(
+    visibility: 'hidden' | 'public',
+  ) {
+    if (!results.analysis || !summaryDraft) return
+    const normalized: AdminMaterialSummaryBody = {
+      lead: summaryDraft.lead.trim(),
+      points: summaryDraft.points.map((point) => ({
+        detail: point.detail?.trim() ?? '',
+        pageLabel: point.pageLabel.trim(),
+        title: point.title.trim(),
+      })),
+      reflectionQuestion: summaryDraft.reflectionQuestion?.trim() ?? '',
+    }
+    if (
+      !normalized.lead ||
+      normalized.lead.length > 1_200 ||
+      normalized.points.length < 1 ||
+      normalized.points.length > 3 ||
+      normalized.points.some(
+        (point) =>
+          !point.pageLabel ||
+          point.pageLabel.length > 30 ||
+          !point.title ||
+          point.title.length > 160 ||
+          (point.detail?.length ?? 0) > 500,
+      ) ||
+      (normalized.reflectionQuestion?.length ?? 0) > 300
+    ) {
+      setMessage('公開する要点の文字数と空欄を確認してください。')
+      return
+    }
+    const defaultBody = createDefaultSummaryBody(results.analysis)
+    const reviewState =
+      JSON.stringify(normalized) === JSON.stringify(defaultBody)
+        ? 'admin_confirmed'
+        : 'admin_revised'
+
+    setBusy(true)
+    try {
+      const response = await supabaseAdminRepository.manageMaterialAnalysis({
+        action: visibility === 'public' ? 'publishSummary' : 'hideSummary',
+        adminToken,
+        analysisId: results.analysis.id,
+        lectureSessionId,
+        reviewState,
+        summaryBody: normalized,
+      })
+      setResults(response.results)
+      setSummaryDraft(response.results.publication?.body ?? normalized)
+      setMessage(
+        visibility === 'public'
+          ? '確認済みの要点を学生画面に公開しました。'
+          : '講義資料の要点を学生画面から非表示にしました。',
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `講義資料の要点を更新できませんでした: ${error.message}`
+          : '講義資料の要点を更新できませんでした。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const disabled = busy || lectureStatus === 'closed'
   return (
     <section className="material-analysis-control">
       <div className="material-analysis-heading">
         <div>
-          <strong>資料分析とAI Poll候補</strong>
+          <strong>資料分析とAI投票候補</strong>
           <small>教員が明示的に実行したときだけ課金されます</small>
         </div>
-        <span>Admin only · 既定OFF</span>
+        <span>教員画面のみ・自動実行なし</span>
       </div>
 
       <p className="privacy-notice">
-        PDFの公開だけではOpenAI
-        APIを呼びません。ローカル抽出テキストは分析時だけ送信され、Supabaseには保存されません。初回の予約上限は概算$0.09、追加候補は概算$0.08です。
+        PDFを公開しただけではAI分析は始まりません。教員が明示的に実行した場合だけ処理します。初回の予約上限は概算$0.09、追加候補は概算$0.08です。
       </p>
 
       <div className="material-analysis-actions">
@@ -280,7 +389,7 @@ export function MaterialAnalysisControl({
           </select>
         </label>
         <label className="field compact-field">
-          <span>Billing PIN（毎回）</span>
+          <span>API利用PIN（毎回）</span>
           <input
             autoComplete="off"
             disabled={disabled}
@@ -342,10 +451,176 @@ export function MaterialAnalysisControl({
               </dl>
             </article>
           </div>
-          <small>
-            重要ページ: {results.analysis.importantPages.join(', ')} · model:{' '}
-            {results.analysis.modelId}
-          </small>
+          <small>重要ページ: {results.analysis.importantPages.join(', ')}</small>
+        </div>
+      ) : null}
+
+      {results.analysis && summaryDraft ? (
+        <div className="material-summary-review">
+          <div className="material-summary-review-heading">
+            <div>
+              <p className="eyebrow">STUDENT VIEW · 教員確認必須</p>
+              <h3>学生に見せる「講義資料の要点」</h3>
+              <small>
+                AI案は自動公開されません。内容を確認し、必要なら直してから公開してください。
+              </small>
+            </div>
+            <span
+              className={`status-pill ${
+                results.publication?.visibility === 'public'
+                  ? 'adopted'
+                  : 'draft'
+              }`}
+            >
+              {results.publication?.visibility === 'public'
+                ? '学生に公開中'
+                : '非公開'}
+            </span>
+          </div>
+
+          <label className="field">
+            <span>最初に伝える要点</span>
+            <textarea
+              disabled={disabled}
+              maxLength={1_200}
+              onChange={(event) =>
+                setSummaryDraft((current) =>
+                  current ? { ...current, lead: event.target.value } : current,
+                )
+              }
+              rows={4}
+              value={summaryDraft.lead}
+            />
+          </label>
+
+          <div className="material-summary-point-editor">
+            {summaryDraft.points.map((point, index) => (
+              <article key={`${index}-${point.pageLabel}`}>
+                <strong>要点 {index + 1}</strong>
+                <label className="field compact-field">
+                  <span>参照ページ</span>
+                  <input
+                    disabled={disabled}
+                    maxLength={30}
+                    onChange={(event) =>
+                      setSummaryDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              points: current.points.map(
+                                (currentPoint, currentIndex) =>
+                                  currentIndex === index
+                                    ? {
+                                        ...currentPoint,
+                                        pageLabel: event.target.value,
+                                      }
+                                    : currentPoint,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    value={point.pageLabel}
+                  />
+                </label>
+                <label className="field">
+                  <span>見出し</span>
+                  <input
+                    disabled={disabled}
+                    maxLength={160}
+                    onChange={(event) =>
+                      setSummaryDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              points: current.points.map(
+                                (currentPoint, currentIndex) =>
+                                  currentIndex === index
+                                    ? {
+                                        ...currentPoint,
+                                        title: event.target.value,
+                                      }
+                                    : currentPoint,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    value={point.title}
+                  />
+                </label>
+                <label className="field">
+                  <span>補足（任意）</span>
+                  <textarea
+                    disabled={disabled}
+                    maxLength={500}
+                    onChange={(event) =>
+                      setSummaryDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              points: current.points.map(
+                                (currentPoint, currentIndex) =>
+                                  currentIndex === index
+                                    ? {
+                                        ...currentPoint,
+                                        detail: event.target.value,
+                                      }
+                                    : currentPoint,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    rows={2}
+                    value={point.detail ?? ''}
+                  />
+                </label>
+              </article>
+            ))}
+          </div>
+
+          <label className="field">
+            <span>資料を読むための問い（任意）</span>
+            <input
+              disabled={disabled}
+              maxLength={300}
+              onChange={(event) =>
+                setSummaryDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        reflectionQuestion: event.target.value,
+                      }
+                    : current,
+                )
+              }
+              value={summaryDraft.reflectionQuestion ?? ''}
+            />
+          </label>
+
+          <div className="proposal-card-actions">
+            <button
+              className="primary-button compact"
+              disabled={disabled}
+              onClick={() => void setMaterialSummaryVisibility('public')}
+              type="button"
+            >
+              {results.publication?.visibility === 'public'
+                ? '修正内容を反映する'
+                : '学生に要点を公開する'}
+            </button>
+            {results.publication?.visibility === 'public' ? (
+              <button
+                className="secondary-button"
+                disabled={disabled}
+                onClick={() => void setMaterialSummaryVisibility('hidden')}
+                type="button"
+              >
+                学生画面から非表示にする
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -353,7 +628,7 @@ export function MaterialAnalysisControl({
         <div className="additional-poll-actions">
           <div>
             <strong>指定ページから追加候補</strong>
-            <small>新しいBilling PIN認証とBatch枠を使用します</small>
+            <small>実行時にAPI利用PINをもう一度確認します</small>
           </div>
           <label className="field compact-field">
             <span>開始</span>
@@ -466,7 +741,7 @@ export function MaterialAnalysisControl({
                       onClick={() => void adoptProposal(proposal.id)}
                       type="button"
                     >
-                      通常Pollの下書きへ追加
+                      通常の投票下書きへ追加
                     </button>
                     <button
                       className="secondary-button"

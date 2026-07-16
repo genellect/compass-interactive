@@ -3,7 +3,9 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { isAbsolute, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_PUBLISHER_PORT,
   DOCUMENT_ID_PATTERN,
@@ -25,6 +27,36 @@ type PublisherServerConfiguration = {
   issuer: string
   port: number
   publicJwk: JsonWebKey
+}
+
+const REPOSITORY_ROOT = resolve(
+  fileURLToPath(new URL('../../../', import.meta.url)),
+)
+
+function isWithinDirectory(parent: string, candidate: string) {
+  const relativePath = relative(parent, candidate)
+  return (
+    relativePath === '' ||
+    (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+  )
+}
+
+function getPublisherApplicationDataRoot(environment: NodeJS.ProcessEnv) {
+  const configuredApplicationData =
+    environment.LOCALAPPDATA?.trim() || environment.XDG_DATA_HOME?.trim()
+  const applicationDataRoot =
+    configuredApplicationData && isAbsolute(configuredApplicationData)
+      ? resolve(configuredApplicationData)
+      : resolve(homedir(), '.local', 'share')
+  const publisherRoot = resolve(
+    applicationDataRoot,
+    'COMPASS Interactive',
+    'Publisher',
+  )
+  if (isWithinDirectory(REPOSITORY_ROOT, publisherRoot)) {
+    throw new Error('Publisher data root must be outside the repository.')
+  }
+  return publisherRoot
 }
 
 function sendJson(
@@ -159,6 +191,28 @@ export function createPublisherServer(dependencies: {
             expiresAt: new Date(session.expiresAt).toISOString(),
             ok: true,
             sessionToken: session.token,
+          },
+          origin,
+        )
+        return
+      }
+
+      if (request.method === 'GET' && url.pathname === '/v1/session') {
+        const expiresAt = sessions.getExpiresAt(
+          getHeader(request, 'x-compass-publisher-token') ?? '',
+          origin,
+        )
+        if (!expiresAt) {
+          throw Object.assign(new Error('Publisher session is invalid.'), {
+            status: 401,
+          })
+        }
+        sendJson(
+          response,
+          200,
+          {
+            expiresAt: new Date(expiresAt).toISOString(),
+            ok: true,
           },
           origin,
         )
@@ -366,12 +420,19 @@ export function loadPublisherServerConfiguration(
 }
 
 export function getDefaultPublisherDataRoot(environment = process.env) {
-  const base =
-    environment.COMPASS_PUBLISHER_DATA_DIR ??
-    join(
-      environment.LOCALAPPDATA ?? environment.TEMP ?? process.cwd(),
-      'COMPASS Interactive',
-      'Publisher',
-    )
-  return base
+  const applicationDataRoot = getPublisherApplicationDataRoot(environment)
+  const configuredRoot = environment.COMPASS_PUBLISHER_DATA_DIR?.trim()
+  if (!configuredRoot) return applicationDataRoot
+
+  const resolvedRoot = isAbsolute(configuredRoot)
+    ? resolve(configuredRoot)
+    : resolve(applicationDataRoot, configuredRoot)
+  if (
+    (!isAbsolute(configuredRoot) &&
+      !isWithinDirectory(applicationDataRoot, resolvedRoot)) ||
+    isWithinDirectory(REPOSITORY_ROOT, resolvedRoot)
+  ) {
+    throw new Error('Publisher data root must be outside the repository.')
+  }
+  return resolvedRoot
 }

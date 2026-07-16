@@ -13,9 +13,12 @@ import {
   getAdminTokenClaims,
 } from '../supabase/functions/_shared/adminToken.ts'
 import {
-  createOpenAiRealtimeClientSecret,
+  createOpenAiRealtimeCall,
   createRealtimeTranscriptionSessionConfig,
+  hangupOpenAiRealtimeCall,
+  parseRealtimeCallId,
 } from '../supabase/functions/_shared/openaiRealtime.ts'
+import { runRealtimeProviderHangupSweep } from '../supabase/functions/_shared/realtimeProviderHangup.ts'
 
 assert.deepEqual(normalizeAiFeatures(['summaries', 'captions', 'summaries']), [
   'captions',
@@ -75,43 +78,150 @@ assert.deepEqual(sessionConfig, {
 
 let observedAuthorization = ''
 let observedSafetyIdentifier = ''
-const secret = await createOpenAiRealtimeClientSecret({
+let observedSdp = ''
+let observedSession = null
+const call = await createOpenAiRealtimeCall({
   apiKey: 'test-key-never-logged',
   fetchImpl: async (_input, init) => {
     observedAuthorization =
       new Headers(init?.headers).get('Authorization') ?? ''
     observedSafetyIdentifier =
       new Headers(init?.headers).get('OpenAI-Safety-Identifier') ?? ''
-    return new Response(
-      JSON.stringify({ expires_at: 123456, value: 'ephemeral-test-secret' }),
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-request-id': 'req-test',
-        },
-        status: 200,
+    assert.ok(init?.body instanceof FormData)
+    observedSdp = await init.body.get('sdp').text()
+    observedSession = JSON.parse(await init.body.get('session').text())
+    return new Response('v=0\r\nanswer-test-sdp', {
+      headers: {
+        'Content-Type': 'application/sdp',
+        Location: '/v1/realtime/calls/rtc_test_call',
+        'x-request-id': 'req-test',
       },
-    )
+      status: 201,
+    })
   },
   safetyIdentifier: 'hashed-lecture-admin',
+  sdpOffer: 'v=0\r\noffer-test-sdp',
   sessionConfig,
 })
 assert.equal(observedAuthorization, 'Bearer test-key-never-logged')
 assert.equal(observedSafetyIdentifier, 'hashed-lecture-admin')
-assert.deepEqual(secret, {
-  expiresAt: 123456,
+assert.equal(observedSdp, 'v=0\r\noffer-test-sdp')
+assert.deepEqual(observedSession, sessionConfig.session)
+assert.deepEqual(call, {
+  answerSdp: 'v=0\r\nanswer-test-sdp',
+  callId: 'rtc_test_call',
   requestId: 'req-test',
-  value: 'ephemeral-test-secret',
 })
+assert.equal(
+  parseRealtimeCallId(
+    'https://api.openai.com/v1/realtime/calls/rtc_absolute_call',
+  ),
+  'rtc_absolute_call',
+)
+assert.throws(
+  () => parseRealtimeCallId('/v1/realtime/calls/invalid%2Fcall'),
+  /openai_invalid_realtime_call_location/,
+)
 
 await assert.rejects(
-  createOpenAiRealtimeClientSecret({
+  createOpenAiRealtimeCall({
     apiKey: 'test-key',
     fetchImpl: async () => new Response('{}', { status: 429 }),
     safetyIdentifier: 'hashed',
+    sdpOffer: 'v=0\r\noffer-test-sdp',
     sessionConfig,
   }),
   /openai_http_429/,
 )
 
-console.log('Phase 4 Edge billing, token, and OpenAI request helpers passed.')
+await assert.rejects(
+  createOpenAiRealtimeCall({
+    apiKey: 'test-key',
+    fetchImpl: async () =>
+      new Response('v=0\r\nanswer-test-sdp', { status: 201 }),
+    safetyIdentifier: 'hashed',
+    sdpOffer: 'v=0\r\noffer-test-sdp',
+    sessionConfig,
+  }),
+  /openai_missing_realtime_call_location/,
+)
+
+let observedHangupUrl = ''
+let observedHangupMethod = ''
+const hangup = await hangupOpenAiRealtimeCall({
+  apiKey: 'test-key',
+  callId: 'rtc_test_call',
+  fetchImpl: async (input, init) => {
+    observedHangupUrl = String(input)
+    observedHangupMethod = init?.method ?? ''
+    return new Response(null, {
+      headers: { 'x-request-id': 'req-hangup' },
+      status: 404,
+    })
+  },
+})
+assert.equal(
+  observedHangupUrl,
+  'https://api.openai.com/v1/realtime/calls/rtc_test_call/hangup',
+)
+assert.equal(observedHangupMethod, 'POST')
+assert.deepEqual(hangup, {
+  ok: true,
+  requestId: 'req-hangup',
+  status: 404,
+})
+
+const finalized = []
+const sweep = await runRealtimeProviderHangupSweep({
+  apiKey: 'test-key',
+  claim: async ({ lectureSessionId, limit, operationId }) => {
+    assert.equal(lectureSessionId, 'lecture-test')
+    assert.equal(limit, 2)
+    assert.equal(operationId, null)
+    return [
+      {
+        attempt_count: 1,
+        lecture_session_id: 'lecture-test',
+        operation_id: 'operation-success',
+        provider_call_id: 'rtc_success',
+      },
+      {
+        attempt_count: 2,
+        lecture_session_id: 'lecture-test',
+        operation_id: 'operation-retry',
+        provider_call_id: 'rtc_retry',
+      },
+    ]
+  },
+  fetchImpl: async (input) =>
+    new Response(null, {
+      status: String(input).includes('rtc_success') ? 200 : 500,
+    }),
+  finish: async (input) => {
+    finalized.push(input)
+    return true
+  },
+  lectureSessionId: 'lecture-test',
+  limit: 2,
+})
+assert.deepEqual(sweep, {
+  claimed: 2,
+  retried: 1,
+  stopped: 1,
+})
+assert.deepEqual(finalized, [
+  {
+    error: null,
+    operationId: 'operation-success',
+    succeeded: true,
+  },
+  {
+    error: 'openai_hangup_http_500',
+    operationId: 'operation-retry',
+    succeeded: false,
+  },
+])
+
+console.log(
+  'Phase 4 Edge billing, token, trusted SDP, and provider hangup helpers passed.',
+)

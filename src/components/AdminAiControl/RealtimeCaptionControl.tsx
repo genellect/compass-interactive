@@ -22,9 +22,12 @@ import {
   type RealtimeCaptionLanguage,
 } from '../../repositories/supabaseAdminRepository'
 import { AppIcon } from '../AppIcon'
+import './RealtimeCaptionControl.css'
 
 type CaptionControlStatus =
   'idle' | 'authorizing' | 'connecting' | 'running' | 'stopping' | 'error'
+
+type RealtimeDuration = '600' | '1800' | 'remaining'
 
 type RealtimeCaptionControlProps = {
   adminToken: string
@@ -58,13 +61,16 @@ export function RealtimeCaptionControl({
 }: RealtimeCaptionControlProps) {
   const [billingPin, setBillingPin] = useState('')
   const [language, setLanguage] = useState<RealtimeCaptionLanguage>('auto')
+  const [duration, setDuration] = useState<RealtimeDuration>('600')
   const [status, setStatus] = useState<CaptionControlStatus>('idle')
   const statusRef = useRef<CaptionControlStatus>('idle')
   const [message, setMessage] = useState(
-    '課金PINを入力し、字幕を開始してください。',
+    'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
   )
   const [localCaption, setLocalCaption] = useState('')
   const [savedSegmentCount, setSavedSegmentCount] = useState(0)
+  const [pricingRateMicrousdPerMinute, setPricingRateMicrousdPerMinute] =
+    useState<number | null>(null)
   const sessionRef = useRef<RealtimeCaptionSession | null>(null)
   const operationIdRef = useRef<string | null>(null)
   const sequenceRef = useRef(0)
@@ -74,7 +80,9 @@ export function RealtimeCaptionControl({
   const segmentsRef = useRef<CompletedCaptionSegment[]>([])
   const lastPublishedRef = useRef('')
   const publishTimerRef = useRef<number | null>(null)
+  const publishInFlightRef = useRef<Promise<void> | null>(null)
   const heartbeatTimerRef = useRef<number | null>(null)
+  const durationTimerRef = useRef<number | null>(null)
   const stopInFlightRef = useRef(false)
   const broadcastRef = useRef<BroadcastChannel | null>(null)
   const failClosedRef = useRef<(reason: string) => Promise<void>>(
@@ -94,6 +102,10 @@ export function RealtimeCaptionControl({
     if (heartbeatTimerRef.current !== null) {
       window.clearInterval(heartbeatTimerRef.current)
       heartbeatTimerRef.current = null
+    }
+    if (durationTimerRef.current !== null) {
+      window.clearTimeout(durationTimerRef.current)
+      durationTimerRef.current = null
     }
   }
 
@@ -138,7 +150,7 @@ export function RealtimeCaptionControl({
     sessionRef.current?.stop()
     sessionRef.current = null
     updateStatus('error')
-    setMessage(`${reason} 自動再接続はしません。再開には課金PINが必要です。`)
+    setMessage(`${reason} 自動再接続はしません。再開にはAPI利用PINが必要です。`)
     setLocalCaption('')
     broadcastRef.current?.postMessage({
       caption: null,
@@ -218,22 +230,38 @@ export function RealtimeCaptionControl({
   }
 
   async function publishCompletedWindow() {
-    const operationId = operationIdRef.current
-    if (!operationId) return
-    const window = createCaptionWindow(segmentsRef.current)
-    if (!window) return
-    const fingerprint = `${window.sequence}:${window.lastItemId}:${window.text}`
-    if (fingerprint === lastPublishedRef.current) return
-    await supabaseAdminRepository.publishCaptionWindow({
-      adminToken,
-      language: window.language,
-      lastItemId: window.lastItemId,
-      lectureSessionId,
-      operationId,
-      sequence: window.sequence,
-      text: window.text,
-    })
-    lastPublishedRef.current = fingerprint
+    if (publishInFlightRef.current) {
+      return publishInFlightRef.current
+    }
+
+    const publish = (async () => {
+      const operationId = operationIdRef.current
+      if (!operationId) return
+      const window = createCaptionWindow(segmentsRef.current)
+      if (!window) return
+      const fingerprint = `${window.sequence}:${window.lastItemId}:${window.text}`
+      if (fingerprint === lastPublishedRef.current) return
+      await supabaseAdminRepository.publishCaptionWindow({
+        adminToken,
+        language: window.language,
+        lastItemId: window.lastItemId,
+        lectureSessionId,
+        operationId,
+        sequence: window.sequence,
+        text: window.text,
+      })
+      if (operationIdRef.current === operationId) {
+        lastPublishedRef.current = fingerprint
+      }
+    })()
+    publishInFlightRef.current = publish
+    try {
+      await publish
+    } finally {
+      if (publishInFlightRef.current === publish) {
+        publishInFlightRef.current = null
+      }
+    }
   }
 
   async function heartbeat() {
@@ -247,6 +275,13 @@ export function RealtimeCaptionControl({
     const result = response.result as
       { reason?: string; should_stop?: boolean } | undefined
     if (result?.should_stop) {
+      if (result.reason === 'selected_duration_elapsed') {
+        stopLocal(
+          '選択した利用時間に到達したため字幕を停止しました。再開にはAPI利用PINが必要です。',
+          'idle',
+        )
+        return
+      }
       await failClosed(result.reason ?? '講義または字幕処理が終了しました。')
     }
   }
@@ -260,7 +295,7 @@ export function RealtimeCaptionControl({
     }
 
     updateStatus('authorizing')
-    setMessage('課金PINと講義上限を確認しています。')
+    setMessage('API利用PIN、選択時間、講義上限を確認しています。')
     let stream: MediaStream | null = null
     try {
       const authorization = await supabaseAdminRepository.authorizeAiStart({
@@ -281,26 +316,40 @@ export function RealtimeCaptionControl({
       })
       updateStatus('connecting')
       setMessage('OpenAI Realtimeへ短寿命接続を準備しています。')
-      const secret = await supabaseAdminRepository.issueRealtimeCaptionSecret({
-        adminToken,
-        billingGrant: authorization.billingGrant,
-        delay: 'low',
-        idempotencyKey: createIdempotencyKey(lectureSessionId),
-        language,
-        lectureSessionId,
-      })
-      operationIdRef.current = secret.operationId
       const session = new RealtimeCaptionSession({
-        clientSecret: secret.clientSecret,
         mediaStream: stream,
         onEvent: handleRealtimeEvent,
         onFailure: (failureMessage) => void failClosed(failureMessage),
       })
       sessionRef.current = session
-      await session.connect()
+      const sdpOffer = await session.createOffer()
+      const providerCall =
+        await supabaseAdminRepository.createRealtimeCaptionCall({
+          adminToken,
+          billingGrant: authorization.billingGrant,
+          delay: 'low',
+          idempotencyKey: createIdempotencyKey(lectureSessionId),
+          language,
+          lectureSessionId,
+          maxAudioSeconds: requestedAudioSeconds,
+          sdpOffer,
+        })
+      setPricingRateMicrousdPerMinute(
+        providerCall.pricingRateMicrousdPerMinute,
+      )
+      operationIdRef.current = providerCall.operationId
+      await session.connect(providerCall.sdpAnswer)
       updateStatus('running')
       setMessage(
-        '教員端末だけでRealtime差分を表示し、完了字幕を5秒ごとに同期します。',
+        `字幕を開始しました。最大${Math.ceil(providerCall.reservedAudioSeconds / 60)}分、上限概算$${(
+          providerCall.reservedMicrousd / 1_000_000
+        ).toFixed(2)}です。完了字幕を5秒ごとに同期します。`,
+      )
+      durationTimerRef.current = window.setTimeout(
+        () => {
+          void stopAtSelectedDuration()
+        },
+        Math.max(1_000, Date.parse(providerCall.reservedUntil) - Date.now()),
       )
       publishTimerRef.current = window.setInterval(() => {
         void publishCompletedWindow().catch((error) =>
@@ -327,6 +376,27 @@ export function RealtimeCaptionControl({
     }
   }
 
+  async function stopAtSelectedDuration() {
+    if (statusRef.current !== 'running') return
+    updateStatus('stopping')
+    clearTimers()
+    sessionRef.current?.stop()
+    sessionRef.current = null
+    setLocalCaption('')
+    try {
+      await stopServerOperation('selected_duration_elapsed')
+      stopLocal(
+        '選択した利用時間に到達したため字幕を停止しました。再開にはAPI利用PINが必要です。',
+        'idle',
+      )
+    } catch {
+      stopLocal(
+        '選択した利用時間で音声送信を停止しました。サーバー停止確認に失敗したため再開しないでください。',
+        'error',
+      )
+    }
+  }
+
   async function handleStop() {
     if (status !== 'running' && status !== 'error') return
     updateStatus('stopping')
@@ -336,7 +406,7 @@ export function RealtimeCaptionControl({
     setLocalCaption('')
     try {
       await stopServerOperation('admin_manual_stop')
-      stopLocal('字幕を停止しました。停止には課金PINは不要です。', 'idle')
+      stopLocal('字幕を停止しました。停止にはAPI利用PINは不要です。', 'idle')
     } catch {
       stopLocal(
         '音声送信は停止しましたが、サーバー停止確認に失敗しました。再開しないでください。',
@@ -356,6 +426,32 @@ export function RealtimeCaptionControl({
     setSavedSegmentCount(0)
     setMessage('この端末のレビュー用字幕を削除しました。')
   }
+
+  useEffect(() => {
+    let active = true
+    setPricingRateMicrousdPerMinute(null)
+    void supabaseAdminRepository
+      .manageAiControl({
+        action: 'status',
+        adminToken,
+        lectureSessionId,
+      })
+      .then((response) => {
+        if (!active) return
+        const rate = response.realtimePriceMicrousdPerMinute
+        setPricingRateMicrousdPerMinute(
+          typeof rate === 'number' && Number.isSafeInteger(rate) && rate > 0
+            ? rate
+            : null,
+        )
+      })
+      .catch(() => {
+        if (active) setPricingRateMicrousdPerMinute(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [adminToken, lectureSessionId])
 
   useEffect(() => {
     broadcastRef.current = createCaptionBroadcastChannel(lectureSessionId)
@@ -406,6 +502,20 @@ export function RealtimeCaptionControl({
   }, [hardStopAt, status])
 
   const isStarting = status === 'authorizing' || status === 'connecting'
+  const hardStopMs = Date.parse(hardStopAt ?? '')
+  const remainingAudioSeconds = Number.isFinite(hardStopMs)
+    ? Math.max(
+        1,
+        Math.min(5_400, Math.floor((hardStopMs - Date.now()) / 1_000)),
+      )
+    : 5_400
+  const requestedAudioSeconds =
+    duration === 'remaining' ? remainingAudioSeconds : Number(duration)
+  const estimatedMicrousd = pricingRateMicrousdPerMinute
+    ? Math.ceil(
+        (requestedAudioSeconds * pricingRateMicrousdPerMinute) / 60,
+      )
+    : null
   return (
     <section className="realtime-caption-control">
       <div className="panel-heading">
@@ -432,11 +542,13 @@ export function RealtimeCaptionControl({
       <p className="privacy-notice">
         マイク音声はOpenAIへリアルタイム送信されますが、COMPASSは音声ファイルを保存しません。
         差分字幕は教員端末内だけ、学生には完了済みの短い字幕窓だけを5秒同期します。
+        この「字幕を開始」操作以外から自動でOpenAI
+        Realtimeへ接続することはありません。
       </p>
 
       <div className="caption-control-form">
         <label className="field">
-          <span>課金PIN（Admin PINとは別）</span>
+          <span>API利用PIN（管理PINとは別）</span>
           <input
             autoComplete="new-password"
             disabled={status === 'running' || isStarting}
@@ -445,6 +557,25 @@ export function RealtimeCaptionControl({
             type="password"
             value={billingPin}
           />
+        </label>
+        <label className="field compact-field">
+          <span>利用時間</span>
+          <select
+            disabled={status === 'running' || isStarting}
+            onChange={(event) =>
+              setDuration(event.target.value as RealtimeDuration)
+            }
+            value={duration}
+          >
+            <option value="600">10分</option>
+            <option value="1800">30分</option>
+            <option value="remaining">講義終了まで</option>
+          </select>
+          <small>
+            {estimatedMicrousd === null
+              ? '開始時に現在の単価から上限を確定します'
+              : `上限概算 $${(estimatedMicrousd / 1_000_000).toFixed(2)}（実額は利用時間で変動）`}
+          </small>
         </label>
         <label className="field compact-field">
           <span>主言語</span>

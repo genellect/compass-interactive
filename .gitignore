@@ -31,6 +31,7 @@ supabase/.temp/
 
 # Local Publisher data and local Worker state
 .compass-publisher-data/
+extracted-text/
 .wrangler/
 
 # Editor directories and files

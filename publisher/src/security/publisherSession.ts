@@ -49,4 +49,17 @@ export class PublisherSessionManager {
     )
     return Boolean(match && match[1].expiresAt > this.now())
   }
+
+  getExpiresAt(token: string, origin: string) {
+    for (const [candidate, session] of this.#sessions) {
+      if (session.expiresAt <= this.now()) this.#sessions.delete(candidate)
+    }
+    const match = [...this.#sessions.entries()].find(
+      ([candidate, session]) =>
+        constantTimeEqual(candidate, token) && session.origin === origin,
+    )
+    return match && match[1].expiresAt > this.now()
+      ? match[1].expiresAt
+      : null
+  }
 }

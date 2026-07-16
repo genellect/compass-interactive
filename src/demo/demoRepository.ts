@@ -149,7 +149,7 @@ export const demoRepository = {
   ) {
     const poll = demoPolls.find((item) => item.id === pollId)
     if (!poll || poll.status !== 'open') {
-      throw new Error('このPollは現在回答できません。')
+      throw new Error('この投票には現在回答できません。')
     }
 
     const validOptionIds = new Set(poll.options.map((option) => option.id))
@@ -173,7 +173,7 @@ export const demoRepository = {
             response.participantId === current.participantId,
         )
       ) {
-        throw new Error('このPollは回答済みです。')
+        throw new Error('この投票には回答済みです。')
       }
 
       return {

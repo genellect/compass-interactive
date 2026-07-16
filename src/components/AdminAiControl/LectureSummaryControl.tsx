@@ -45,8 +45,10 @@ function currentRevision(summary: AdminLectureSummary) {
 }
 
 function reviewLabel(summary: AdminLectureSummary) {
-  if (summary.publication?.reviewState === 'admin_revised') return '教員修正済み'
-  if (summary.publication?.reviewState === 'admin_confirmed') return '教員確認済み'
+  if (summary.publication?.reviewState === 'admin_revised')
+    return '教員修正済み'
+  if (summary.publication?.reviewState === 'admin_confirmed')
+    return '教員確認済み'
   return 'AI生成・教員未確認'
 }
 
@@ -202,7 +204,9 @@ export function LectureSummaryControl({
       try {
         pdfContext = await getPdfContext()
       } catch {
-        setMessage('Publisher未接続のため、PDF文脈なしで要約判定を続けます。')
+        setMessage(
+          '資料公開アプリに接続できないため、PDFの内容を含めずに要約判定を続けます。',
+        )
       }
       const generated = await supabaseAdminRepository.generateLectureSummary({
         adminToken,
@@ -263,7 +267,7 @@ export function LectureSummaryControl({
   async function startRun() {
     if (!billingPin.trim() || lectureStatus !== 'open') return
     setBusy(true)
-    setMessage('課金PINと講義状態を確認しています…')
+    setMessage('API利用PINと講義状態を確認しています…')
     try {
       const authorization = await supabaseAdminRepository.authorizeAiStart({
         actions: ['summaries'],
@@ -281,7 +285,9 @@ export function LectureSummaryControl({
       setRunToken(started.runToken)
       setMessage('5分要約を開始しました。各windowはサーバー時刻で判定します。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '要約を開始できませんでした。')
+      setMessage(
+        error instanceof Error ? error.message : '要約を開始できませんでした。',
+      )
     } finally {
       setBillingPin('')
       setBusy(false)
@@ -299,9 +305,11 @@ export function LectureSummaryControl({
       })
       setResults(stopped.results)
       setRunToken(null)
-      setMessage('5分要約を停止しました。停止に課金PINは不要です。')
+      setMessage('5分要約を停止しました。停止にAPI利用PINは不要です。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '要約を停止できませんでした。')
+      setMessage(
+        error instanceof Error ? error.message : '要約を停止できませんでした。',
+      )
     } finally {
       setBusy(false)
     }
@@ -330,7 +338,11 @@ export function LectureSummaryControl({
       setResults(response.results)
       setMessage('表示状態を更新しました。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '表示状態を更新できませんでした。')
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : '表示状態を更新できませんでした。',
+      )
     } finally {
       setBusy(false)
     }
@@ -356,7 +368,11 @@ export function LectureSummaryControl({
       .split('\n')
       .map((item) => item.trim())
       .filter(Boolean)
-    if (lectureRecap.length < 1 || lectureRecap.length > 5 || commentPulse.length > 3) {
+    if (
+      lectureRecap.length < 1 ||
+      lectureRecap.length > 5 ||
+      commentPulse.length > 3
+    ) {
       setMessage('講義要点は1〜5行、コメント動向は0〜3行で入力してください。')
       return
     }
@@ -374,7 +390,9 @@ export function LectureSummaryControl({
       setEditingId(null)
       setMessage('教員revisionを履歴へ追加し、公開しました。')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '訂正を保存できませんでした。')
+      setMessage(
+        error instanceof Error ? error.message : '訂正を保存できませんでした。',
+      )
     } finally {
       setBusy(false)
     }
@@ -392,7 +410,9 @@ export function LectureSummaryControl({
             <AppIcon name="sparkles" size={18} />
           </span>
           <strong>5分要約・コメント動向</strong>
-          <small>最大{results.control?.summaryCallLimit ?? 18}回 · Batch 1枠</small>
+          <small>
+            最大{results.control?.summaryCallLimit ?? 18}回 · 5分ごとに1回
+          </small>
         </div>
         <span className={`support-state ${runActive ? 'is-ready' : ''}`}>
           {runActive ? '実行中' : '停止中'}
@@ -404,7 +424,7 @@ export function LectureSummaryControl({
       </p>
       <div className="summary-control-actions">
         <label className="field compact-field">
-          <span>Billing PIN（開始時のみ）</span>
+          <span>API利用PIN（開始時のみ）</span>
           <input
             autoComplete="off"
             disabled={busy || runActive || lectureStatus !== 'open'}
@@ -416,7 +436,9 @@ export function LectureSummaryControl({
         </label>
         <button
           className="primary-button"
-          disabled={busy || runActive || !billingPin.trim() || lectureStatus !== 'open'}
+          disabled={
+            busy || runActive || !billingPin.trim() || lectureStatus !== 'open'
+          }
           onClick={() => void startRun()}
           type="button"
         >
@@ -459,14 +481,19 @@ export function LectureSummaryControl({
           const revision = currentRevision(summary)
           const visible = summary.publication?.visibility === 'public'
           const pinned = Boolean(summary.publication?.pinnedOrder)
-          const recap = revision?.body.lectureRecap ?? summary.aiOutput.lectureRecap
-          const pulse = revision?.body.commentPulse ?? summary.aiOutput.commentPulse
+          const recap =
+            revision?.body.lectureRecap ?? summary.aiOutput.lectureRecap
+          const pulse =
+            revision?.body.commentPulse ?? summary.aiOutput.commentPulse
           return (
             <article className="admin-summary-card" key={summary.id}>
               <div className="admin-summary-card-heading">
                 <div>
                   <strong>
-                    {formatSummaryWindowLabel(summary.windowStart, summary.windowEnd)}
+                    {formatSummaryWindowLabel(
+                      summary.windowStart,
+                      summary.windowEnd,
+                    )}
                   </strong>
                   <small>{reviewLabel(summary)}</small>
                 </div>
@@ -474,11 +501,19 @@ export function LectureSummaryControl({
                   {visible ? '学生表示中' : '非表示'}
                 </span>
               </div>
-              <ul>{recap.map((item) => <li key={item}>{item}</li>)}</ul>
+              <ul>
+                {recap.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
               {pulse.length ? (
                 <div className="admin-comment-pulse">
                   <strong>コメント動向</strong>
-                  <ul>{pulse.map((item) => <li key={item}>{item}</li>)}</ul>
+                  <ul>
+                    {pulse.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
               {summary.aiOutput.academicQuestionCandidate ? (
@@ -486,7 +521,10 @@ export function LectureSummaryControl({
                   <strong>学術質問候補（Adminのみ）</strong>
                   <p>{summary.aiOutput.academicQuestionCandidate.question}</p>
                   <small>
-                    {summary.aiOutput.academicQuestionCandidate.educationalValue}
+                    {
+                      summary.aiOutput.academicQuestionCandidate
+                        .educationalValue
+                    }
                   </small>
                 </div>
               ) : null}

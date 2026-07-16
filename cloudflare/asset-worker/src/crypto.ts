@@ -23,6 +23,15 @@ export type AssetTicketClaims = {
   ver: string
 }
 
+export type ArchiveAccessClaims = {
+  exp: number
+  iat: number
+  jti: string
+  lec: string
+  lookup: string
+  rev: string
+}
+
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -116,6 +125,98 @@ async function importTicketKey(secret: string, usage: 'sign' | 'verify') {
     false,
     [usage],
   )
+}
+
+async function importArchiveKey(secret: string, usage: 'sign' | 'verify') {
+  if (new TextEncoder().encode(secret).byteLength < 32) {
+    throw new Error('Archive secret must contain at least 32 bytes.')
+  }
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    [usage],
+  )
+}
+
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export async function createArchiveLookupHash(
+  lectureCode: string,
+  secret: string,
+) {
+  const normalizedCode = lectureCode.trim().toUpperCase()
+  if (
+    normalizedCode.length < 4 ||
+    normalizedCode.length > 32 ||
+    !/^[A-Z0-9-]+$/.test(normalizedCode)
+  ) {
+    throw new Error('Lecture code is invalid.')
+  }
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await importArchiveKey(secret, 'sign'),
+    new TextEncoder().encode(`compass-archive-code:v1:${normalizedCode}`),
+  )
+  return bytesToHex(new Uint8Array(signature))
+}
+
+export async function signArchiveAccessToken(
+  claims: ArchiveAccessClaims,
+  secret: string,
+) {
+  const encodedPayload = bytesToBase64Url(
+    new TextEncoder().encode(JSON.stringify(claims)),
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await importArchiveKey(secret, 'sign'),
+    new TextEncoder().encode(encodedPayload),
+  )
+  return `${encodedPayload}.${bytesToBase64Url(new Uint8Array(signature))}`
+}
+
+export async function verifyArchiveAccessToken(input: {
+  nowSeconds: number
+  secret: string
+  token: string
+}) {
+  const parts = input.token.split('.')
+  if (parts.length !== 2) throw new Error('Archive token is malformed.')
+  const [encodedPayload, encodedSignature] = parts
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    await importArchiveKey(input.secret, 'verify'),
+    base64UrlToBytes(encodedSignature!),
+    new TextEncoder().encode(encodedPayload!),
+  )
+  if (!valid) throw new Error('Archive token signature is invalid.')
+  const payload = decodeJson(encodedPayload!)
+  if (
+    typeof payload.lookup !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(payload.lookup) ||
+    typeof payload.lec !== 'string' ||
+    !LECTURE_PUBLIC_ID_PATTERN.test(payload.lec) ||
+    typeof payload.rev !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(payload.rev) ||
+    !Number.isInteger(payload.iat) ||
+    Number(payload.iat) > input.nowSeconds + 30 ||
+    !Number.isInteger(payload.exp) ||
+    Number(payload.exp) <= input.nowSeconds ||
+    Number(payload.exp) > input.nowSeconds + 15 * 60 + 30 ||
+    typeof payload.jti !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      payload.jti,
+    )
+  ) {
+    throw new Error('Archive token claims are invalid or expired.')
+  }
+  return payload as ArchiveAccessClaims
 }
 
 export async function signAssetTicket(

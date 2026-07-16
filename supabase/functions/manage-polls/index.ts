@@ -10,11 +10,13 @@ type ManagePollsRequest =
   | {
       action: 'list'
       adminToken?: string
+      includeHistory?: boolean
       lectureSessionId?: string
     }
   | {
       action: 'create'
       adminToken?: string
+      includeHistory?: boolean
       lectureSessionId?: string
       optionLabels?: string[]
       question?: string
@@ -23,6 +25,7 @@ type ManagePollsRequest =
   | {
       action: 'open' | 'close'
       adminToken?: string
+      includeHistory?: boolean
       lectureSessionId?: string
       pollId?: string
     }
@@ -48,6 +51,9 @@ type PollOptionTotalRow = {
   option_id: string
   response_count: number
 }
+
+const DEFAULT_RECENT_POLL_LIMIT = 5
+const HISTORY_RECENT_POLL_LIMIT = 100
 
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
@@ -107,23 +113,57 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   })
 
-  async function listPolls(lectureSessionId: string) {
-    const { data: pollRows, error: pollError } = await supabase
-      .from('polls')
-      .select(
-        'id,lecture_session_id,question,type,status,created_at,updated_at',
-      )
-      .eq('lecture_session_id', lectureSessionId)
-      .order('created_at', { ascending: true })
+  async function listPolls(
+    lectureSessionId: string,
+    includeHistory = false,
+  ) {
+    const recentLimit = includeHistory
+      ? HISTORY_RECENT_POLL_LIMIT
+      : DEFAULT_RECENT_POLL_LIMIT
+    const pollColumns =
+      'id,lecture_session_id,question,type,status,created_at,updated_at'
+    const [
+      { data: openPollRows, error: openPollError },
+      { data: recentPollRows, error: recentPollError },
+    ] = await Promise.all([
+      supabase
+        .from('polls')
+        .select(pollColumns)
+        .eq('lecture_session_id', lectureSessionId)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('polls')
+        .select(pollColumns)
+        .eq('lecture_session_id', lectureSessionId)
+        .neq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(recentLimit + 1),
+    ])
 
-    if (pollError) {
-      throw new Error(pollError.message)
+    if (openPollError) {
+      throw new Error(openPollError.message)
+    }
+    if (recentPollError) {
+      throw new Error(recentPollError.message)
     }
 
-    const polls = (pollRows ?? []) as PollRow[]
+    const recentPolls = (recentPollRows ?? []) as PollRow[]
+    const pollById = new Map<string, PollRow>()
+    for (const poll of [
+      ...((openPollRows ?? []) as PollRow[]),
+      ...recentPolls.slice(0, recentLimit),
+    ]) {
+      if (!pollById.has(poll.id)) {
+        pollById.set(poll.id, poll)
+      }
+    }
+    const polls = [...pollById.values()]
+    const hasMore = recentPolls.length > recentLimit
     const pollIds = polls.map((poll) => poll.id)
     if (pollIds.length === 0) {
-      return []
+      return { hasMore, polls: [] }
     }
 
     const [
@@ -161,28 +201,31 @@ Deno.serve(async (request) => {
       optionsByPollId.set(option.poll_id, options)
     }
 
-    return polls.map((poll) => ({
-      createdAt: poll.created_at,
-      id: poll.id,
-      lectureSessionId: poll.lecture_session_id,
-      options: (optionsByPollId.get(poll.id) ?? []).map((option) => ({
-        id: option.id,
-        label: option.label,
-        order: option.display_order,
-        responseCount: countByOptionId.get(option.id) ?? 0,
+    return {
+      hasMore,
+      polls: polls.map((poll) => ({
+        createdAt: poll.created_at,
+        id: poll.id,
+        lectureSessionId: poll.lecture_session_id,
+        options: (optionsByPollId.get(poll.id) ?? []).map((option) => ({
+          id: option.id,
+          label: option.label,
+          order: option.display_order,
+          responseCount: countByOptionId.get(option.id) ?? 0,
+        })),
+        question: poll.question,
+        status: poll.status,
+        type: poll.type,
+        updatedAt: poll.updated_at,
       })),
-      question: poll.question,
-      status: poll.status,
-      type: poll.type,
-      updatedAt: poll.updated_at,
-    }))
+    }
   }
 
   try {
     if (body.action === 'list') {
       return jsonResponse({
         ok: true,
-        polls: await listPolls(body.lectureSessionId),
+        ...(await listPolls(body.lectureSessionId, body.includeHistory)),
       })
     }
 
@@ -238,7 +281,10 @@ Deno.serve(async (request) => {
 
     return jsonResponse({
       ok: true,
-      polls: await listPolls(body.lectureSessionId),
+      ...(await listPolls(
+        body.lectureSessionId,
+        'includeHistory' in body && body.includeHistory,
+      )),
     })
   } catch (error) {
     return jsonResponse(

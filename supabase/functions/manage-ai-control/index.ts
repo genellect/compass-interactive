@@ -5,6 +5,11 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { DEFAULT_REALTIME_PRICE_MICROUSD_PER_MINUTE } from '../_shared/openaiRealtime.ts'
+import {
+  runRealtimeProviderHangupSweep,
+  type RealtimeProviderHangupJob,
+} from '../_shared/realtimeProviderHangup.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type AiFeature =
@@ -92,6 +97,15 @@ function getNonNegativeInteger(value: number | undefined, field: string) {
   return normalized
 }
 
+function getRealtimePriceMicrousdPerMinute() {
+  const configured = Deno.env.get('OPENAI_REALTIME_PRICE_MICROUSD_PER_MINUTE')
+  if (!configured) return DEFAULT_REALTIME_PRICE_MICROUSD_PER_MINUTE
+  const parsed = Number(configured)
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 1_000_000
+    ? parsed
+    : null
+}
+
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
@@ -143,6 +157,54 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   })
 
+  async function sweepRealtimeProviderCalls({
+    lectureSessionId = null,
+    operationId = null,
+  }: {
+    lectureSessionId?: string | null
+    operationId?: string | null
+  }) {
+    const openAiApiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
+    if (!openAiApiKey) {
+      return { claimed: 0, pending: true, retried: 0, stopped: 0 }
+    }
+    try {
+      const result = await runRealtimeProviderHangupSweep({
+        apiKey: openAiApiKey,
+        claim: async ({ lectureSessionId, limit, operationId }) => {
+          const { data, error } = await supabase.rpc(
+            'claim_realtime_provider_hangups',
+            {
+              job_limit: limit,
+              target_lecture_session_id: lectureSessionId,
+              target_operation_id: operationId,
+            },
+          )
+          if (error) throw new Error('realtime_hangup_claim_failed')
+          return (data ?? []) as RealtimeProviderHangupJob[]
+        },
+        finish: async ({ error: providerError, operationId, succeeded }) => {
+          const { data, error } = await supabase.rpc(
+            'finish_realtime_provider_hangup',
+            {
+              target_error: providerError,
+              target_operation_id: operationId,
+              target_succeeded: succeeded,
+            },
+          )
+          if (error) throw new Error('realtime_hangup_finalize_failed')
+          return data === true
+        },
+        lectureSessionId,
+        limit: operationId ? 1 : 10,
+        operationId,
+      })
+      return { ...result, pending: result.retried > 0 }
+    } catch {
+      return { claimed: 0, pending: true, retried: 1, stopped: 0 }
+    }
+  }
+
   async function getStatus(lectureSessionId: string) {
     const [controlResult, ledgerResult] = await Promise.all([
       supabase
@@ -181,6 +243,53 @@ Deno.serve(async (request) => {
           400,
         )
       }
+      const { data: operationClock, error: operationClockError } =
+        await supabase
+          .from('ai_usage_ledger')
+          .select(
+            'feature,status,requested_at,requested_by_actor,reserved_audio_seconds',
+          )
+          .eq('id', body.operationId)
+          .maybeSingle()
+      if (operationClockError) {
+        throw new Error(operationClockError.message)
+      }
+      if (
+        operationClock?.feature === 'captions' &&
+        operationClock.status === 'running' &&
+        operationClock.requested_by_actor === actorId
+      ) {
+        const reservedUntil =
+          Date.parse(operationClock.requested_at) +
+          Number(operationClock.reserved_audio_seconds) * 1_000
+        if (Number.isFinite(reservedUntil) && reservedUntil <= Date.now()) {
+          const { error: finishError } = await supabase.rpc(
+            'admin_finish_realtime_caption_operation',
+            {
+              charge_elapsed: true,
+              disable_feature: true,
+              target_actor_id: actorId,
+              target_operation_id: body.operationId,
+              target_reason: 'selected_duration_elapsed',
+            },
+          )
+          if (finishError) {
+            throw new Error(finishError.message)
+          }
+          const providerHangup = await sweepRealtimeProviderCalls({
+            operationId: body.operationId,
+          })
+          return jsonResponse({
+            ok: true,
+            providerHangup,
+            result: {
+              reason: 'selected_duration_elapsed',
+              server_time: new Date().toISOString(),
+              should_stop: true,
+            },
+          })
+        }
+      }
       const { data, error } = await supabase.rpc(
         'admin_heartbeat_realtime_caption_operation',
         {
@@ -189,7 +298,15 @@ Deno.serve(async (request) => {
         },
       )
       if (error) throw new Error(error.message)
-      return jsonResponse({ ok: true, result: data })
+      const shouldStop =
+        data &&
+        typeof data === 'object' &&
+        !Array.isArray(data) &&
+        (data as Record<string, unknown>).should_stop === true
+      const providerHangup = shouldStop
+        ? await sweepRealtimeProviderCalls({ operationId: body.operationId })
+        : null
+      return jsonResponse({ ok: true, providerHangup, result: data })
     }
 
     if (body.action === 'stopFeature') {
@@ -211,7 +328,10 @@ Deno.serve(async (request) => {
         },
       )
       if (error) throw new Error(error.message)
-      return jsonResponse({ ok: true, result: data })
+      const providerHangup = await sweepRealtimeProviderCalls({
+        operationId: body.operationId,
+      })
+      return jsonResponse({ ok: true, providerHangup, result: data })
     }
 
     if (body.action === 'finishOperation') {
@@ -285,6 +405,8 @@ Deno.serve(async (request) => {
       return jsonResponse({
         ok: true,
         ...(await getStatus(body.lectureSessionId)),
+        realtimePriceMicrousdPerMinute:
+          getRealtimePriceMicrousdPerMinute(),
       })
     }
 
@@ -358,7 +480,10 @@ Deno.serve(async (request) => {
       if (error) {
         throw new Error(error.message)
       }
-      return jsonResponse({ control: data, ok: true })
+      const providerHangup = await sweepRealtimeProviderCalls({
+        lectureSessionId: body.lectureSessionId,
+      })
+      return jsonResponse({ control: data, ok: true, providerHangup })
     }
 
     return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)

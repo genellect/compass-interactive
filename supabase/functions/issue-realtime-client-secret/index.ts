@@ -7,12 +7,17 @@ import {
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
-  createOpenAiRealtimeClientSecret,
+  createOpenAiRealtimeCall,
   createRealtimeTranscriptionSessionConfig,
   DEFAULT_REALTIME_PRICE_MICROUSD_PER_MINUTE,
   DEFAULT_REALTIME_TRANSCRIPTION_MODEL,
+  hangupOpenAiRealtimeCall,
   type RealtimeTranscriptionDelay,
 } from '../_shared/openaiRealtime.ts'
+import {
+  runRealtimeProviderHangupSweep,
+  type RealtimeProviderHangupJob,
+} from '../_shared/realtimeProviderHangup.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type IssueRealtimeSecretRequest = {
@@ -22,6 +27,8 @@ type IssueRealtimeSecretRequest = {
   idempotencyKey?: string
   language?: 'auto' | 'en' | 'ja'
   lectureSessionId?: string
+  maxAudioSeconds?: number
+  sdpOffer?: string
 }
 
 type LectureControl = {
@@ -39,8 +46,17 @@ type LectureState = {
 
 type StartResult = {
   accepted?: boolean
-  operations?: Array<{ operation?: { id?: string } }>
+  operations?: Array<{
+    idempotent_replay?: boolean
+    operation?: { id?: string }
+  }>
   reason?: string
+}
+
+type ProviderActivationResult = {
+  accepted?: boolean
+  should_hangup?: boolean
+  status?: string
 }
 
 const VALID_DELAYS = new Set<RealtimeTranscriptionDelay>([
@@ -95,11 +111,30 @@ Deno.serve(async (request) => {
     !body.billingGrant ||
     !body.lectureSessionId ||
     !body.idempotencyKey ||
+    !body.sdpOffer ||
     body.idempotencyKey.length < 8 ||
     body.idempotencyKey.length > 160
   ) {
     return jsonResponse(
       { ok: false, message: 'Realtime start request is incomplete.' },
+      400,
+    )
+  }
+  if (
+    body.sdpOffer.length < 10 ||
+    body.sdpOffer.length > 100_000 ||
+    !body.sdpOffer.startsWith('v=0')
+  ) {
+    return jsonResponse({ ok: false, message: 'Invalid SDP offer.' }, 400)
+  }
+  if (
+    body.maxAudioSeconds !== undefined &&
+    (!Number.isSafeInteger(body.maxAudioSeconds) ||
+      body.maxAudioSeconds < 1 ||
+      body.maxAudioSeconds > 5_400)
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Invalid Realtime duration.' },
       400,
     )
   }
@@ -197,7 +232,9 @@ Deno.serve(async (request) => {
     control.budget_limit_microusd - control.used_microusd,
   )
   const remainingByBudget = Math.floor((remainingBudget * 60) / pricePerMinute)
+  const requestedAudioSeconds = body.maxAudioSeconds ?? remainingByDeadline
   const reservedAudioSeconds = Math.min(
+    requestedAudioSeconds,
     remainingByDeadline,
     remainingByAudio,
     remainingByBudget,
@@ -211,9 +248,12 @@ Deno.serve(async (request) => {
   const reservedMicrousd = Math.ceil(
     (reservedAudioSeconds * pricePerMinute) / 60,
   )
+  const reservedUntil = new Date(
+    Date.now() + reservedAudioSeconds * 1_000,
+  ).toISOString()
   const nonceHash = await sha256Hex(grant.nonce)
   const { data: startData, error: startError } = await supabase.rpc(
-    'admin_consume_ai_billing_grant',
+    'admin_consume_realtime_billing_grant',
     {
       target_actor_id: actorId,
       target_grant_id: grant.grantId,
@@ -235,13 +275,23 @@ Deno.serve(async (request) => {
     },
   )
   const startResult = startData as StartResult | null
+  const operationResult = startResult?.operations?.[0]
   const operationId = startResult?.operations?.[0]?.operation?.id
-  if (startError || !startResult?.accepted || !operationId) {
+  if (
+    startError ||
+    !startResult?.accepted ||
+    !operationId ||
+    operationResult?.idempotent_replay
+  ) {
     return jsonResponse(
       {
         ok: false,
-        message: 'Billing authorization expired or usage limit was reached.',
-        reason: startResult?.reason ?? null,
+        message:
+          'API usage authorization expired or the usage limit was reached.',
+        reason:
+          operationResult?.idempotent_replay === true
+            ? 'idempotent_replay'
+            : (startResult?.reason ?? null),
       },
       409,
     )
@@ -252,32 +302,122 @@ Deno.serve(async (request) => {
     ...(language === 'auto' ? {} : { language }),
     model,
   })
+  let providerCall:
+    | Awaited<ReturnType<typeof createOpenAiRealtimeCall>>
+    | null = null
+  let providerCallRegistered = false
+
+  const sweepOperation = async () =>
+    runRealtimeProviderHangupSweep({
+      apiKey: openAiApiKey,
+      claim: async ({ lectureSessionId, limit, operationId }) => {
+        const { data, error } = await supabase.rpc(
+          'claim_realtime_provider_hangups',
+          {
+            job_limit: limit,
+            target_lecture_session_id: lectureSessionId,
+            target_operation_id: operationId,
+          },
+        )
+        if (error) throw new Error('realtime_hangup_claim_failed')
+        return (data ?? []) as RealtimeProviderHangupJob[]
+      },
+      finish: async ({ error: providerError, operationId, succeeded }) => {
+        const { data, error } = await supabase.rpc(
+          'finish_realtime_provider_hangup',
+          {
+            target_error: providerError,
+            target_operation_id: operationId,
+            target_succeeded: succeeded,
+          },
+        )
+        if (error) throw new Error('realtime_hangup_finalize_failed')
+        return data === true
+      },
+      limit: 1,
+      operationId,
+    })
+
   try {
-    const clientSecret = await createOpenAiRealtimeClientSecret({
+    providerCall = await createOpenAiRealtimeCall({
       apiKey: openAiApiKey,
       safetyIdentifier: await sha256Hex(`${body.lectureSessionId}:${actorId}`),
+      sdpOffer: body.sdpOffer,
       sessionConfig,
     })
+
+    const { data: activationData, error: activationError } = await supabase.rpc(
+      'admin_activate_realtime_provider_call',
+      {
+        target_actor_id: actorId,
+        target_operation_id: operationId,
+        target_provider_call_id: providerCall.callId,
+        target_provider_request_id: providerCall.requestId,
+      },
+    )
+    const activation = activationData as ProviderActivationResult | null
+    if (activationError || !activation) {
+      throw new Error('realtime_provider_call_registration_failed')
+    }
+    providerCallRegistered = true
+    if (!activation.accepted || activation.should_hangup) {
+      throw new Error('realtime_operation_stopped_before_activation')
+    }
 
     await supabase.rpc('admin_record_realtime_token_issue', {
       target_actor_id: actorId,
       target_model_id: model,
       target_operation_id: operationId,
       target_outcome: 'issued',
-      target_provider_request_id: clientSecret.requestId,
+      target_provider_request_id: providerCall.requestId,
     })
 
     return jsonResponse({
-      clientSecret: clientSecret.value,
-      expiresAt: clientSecret.expiresAt,
       model,
       ok: true,
       operationId,
+      pricingRateMicrousdPerMinute: pricePerMinute,
+      reservedAudioSeconds,
+      reservedMicrousd,
+      reservedUntil,
+      sdpAnswer: providerCall.answerSdp,
       sessionConfig,
     })
   } catch (error) {
     const errorCode =
       error instanceof Error ? error.message.slice(0, 120) : 'openai_error'
+
+    if (providerCall && !providerCallRegistered) {
+      let directHangupConfirmed = false
+      try {
+        const directHangup = await hangupOpenAiRealtimeCall({
+          apiKey: openAiApiKey,
+          callId: providerCall.callId,
+        })
+        directHangupConfirmed = directHangup.ok
+      } catch {
+        // A registration retry below gives the durable sweep another chance.
+      }
+      if (!directHangupConfirmed) {
+        const { data: recoveryData, error: recoveryError } =
+          await supabase.rpc('admin_activate_realtime_provider_call', {
+            target_actor_id: actorId,
+            target_operation_id: operationId,
+            target_provider_call_id: providerCall.callId,
+            target_provider_request_id: providerCall.requestId,
+          })
+        if (!recoveryError && recoveryData) {
+          providerCallRegistered = true
+        }
+      }
+    }
+    if (!providerCallRegistered) {
+      await supabase.rpc('admin_fail_realtime_provider_call_creation', {
+        target_actor_id: actorId,
+        target_error: errorCode,
+        target_operation_id: operationId,
+      })
+    }
     await supabase.rpc('admin_finish_realtime_caption_operation', {
       charge_elapsed: false,
       disable_feature: true,
@@ -292,6 +432,13 @@ Deno.serve(async (request) => {
       target_outcome: 'failed',
       target_provider_request_id: null,
     })
+    if (providerCallRegistered) {
+      try {
+        await sweepOperation()
+      } catch {
+        // The DB outbox remains retryable by the machine sweep.
+      }
+    }
     return jsonResponse(
       {
         ok: false,

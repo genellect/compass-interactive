@@ -12,6 +12,7 @@ type LiveBoardProps = {
   onToggleLike?: (commentId: string) => void | Promise<void>
   onTogglePinned?: (commentId: string) => void
   onToggleVisibility?: (commentId: string) => void
+  totalCount?: number
 }
 
 function sortForDisplay(comments: LiveComment[]) {
@@ -33,6 +34,7 @@ export function LiveBoard({
   onToggleLike,
   onTogglePinned,
   onToggleVisibility,
+  totalCount,
 }: LiveBoardProps) {
   const visibleComments =
     mode === 'admin'
@@ -54,7 +56,9 @@ export function LiveBoard({
             <h2>{mode === 'admin' ? 'みんなの声を管理' : 'みんなの声'}</h2>
           </div>
         </div>
-        <span className="metric">{displayedComments.length}件</span>
+        <span className="metric">
+          {totalCount ?? displayedComments.length}件
+        </span>
       </div>
 
       <div className="comment-list">

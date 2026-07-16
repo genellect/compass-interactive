@@ -51,7 +51,7 @@ assert.match(learningSupportSource, /講演者のポイント/)
 assert.match(learningSupportSource, /みんなの反応/)
 assert.match(learningSupportSource, /MATERIAL SUMMARY/)
 assert.match(learningSupportSource, /講義資料の要点/)
-assert.match(lecturePageSource, /href="#lecture-recap"/)
+assert.match(lecturePageSource, /lecture-area-recap/)
 assert.doesNotMatch(adminPageSource, /API接続待ち/)
 
 const withComment = demoRepository.addComment(

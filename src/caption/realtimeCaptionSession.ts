@@ -3,7 +3,6 @@ export type RealtimeCaptionEvent =
   | { itemId: string; transcript: string; type: 'completed' }
 
 type RealtimeCaptionSessionOptions = {
-  clientSecret: string
   mediaStream: MediaStream
   onEvent: (event: RealtimeCaptionEvent) => void
   onFailure: (message: string) => void
@@ -44,7 +43,10 @@ export class RealtimeCaptionSession {
     this.options = options
   }
 
-  async connect() {
+  async createOffer() {
+    if (this.peerConnection) {
+      throw new Error('Realtime transcription connection is already prepared.')
+    }
     const peerConnection = new RTCPeerConnection()
     this.peerConnection = peerConnection
     for (const track of this.options.mediaStream.getAudioTracks()) {
@@ -82,20 +84,25 @@ export class RealtimeCaptionSession {
 
     const offer = await peerConnection.createOffer()
     await peerConnection.setLocalDescription(offer)
-    const response = await fetch('https://api.openai.com/v1/realtime/calls', {
-      body: offer.sdp,
-      headers: {
-        Authorization: `Bearer ${this.options.clientSecret}`,
-        'Content-Type': 'application/sdp',
-      },
-      method: 'POST',
-    })
-    if (!response.ok) {
+    if (!offer.sdp || !offer.sdp.startsWith('v=0')) {
       this.stop()
-      throw new Error(`Realtime WebRTC connection failed (${response.status}).`)
+      throw new Error('Realtime WebRTC offer could not be prepared.')
+    }
+    return offer.sdp
+  }
+
+  async connect(answerSdp: string) {
+    const peerConnection = this.peerConnection
+    const dataChannel = this.dataChannel
+    if (!peerConnection || !dataChannel || this.stopped) {
+      throw new Error('Realtime transcription connection is not prepared.')
+    }
+    if (!answerSdp.startsWith('v=0')) {
+      this.stop()
+      throw new Error('Realtime WebRTC answer is invalid.')
     }
     await peerConnection.setRemoteDescription({
-      sdp: await response.text(),
+      sdp: answerSdp,
       type: 'answer',
     })
     this.commitTimer = window.setInterval(() => {
