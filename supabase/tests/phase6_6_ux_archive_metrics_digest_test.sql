@@ -416,6 +416,7 @@ CREATE TEMP TABLE p66_fixture (
   legacy_lecture_id uuid,
   duration_lecture_id uuid,
   presence_load_lecture_id uuid,
+  codeless_lecture_id uuid,
   caption_operation_id uuid,
   participant_a uuid,
   participant_b uuid,
@@ -512,6 +513,14 @@ SET presence_load_lecture_id = public.admin_create_lecture_v2(
   null,
   null
 );
+UPDATE p66_fixture
+SET codeless_lecture_id = public.admin_create_lecture_v2(
+  'Phase 6.6 code-less archive fixture',
+  encode(extensions.digest(convert_to('285468', 'UTF8'), 'sha256'), 'hex'),
+  '285468',
+  null,
+  null
+);
 SELECT ok(
   public.admin_set_lecture_status(
     (SELECT lecture_id FROM p66_fixture),
@@ -543,6 +552,39 @@ SELECT ok(
     null
   ),
   'presence load fixture starts'
+);
+SELECT ok(
+  public.admin_set_lecture_status(
+    (SELECT codeless_lecture_id FROM p66_fixture),
+    'start',
+    null
+  )
+  AND public.admin_set_lecture_status(
+    (SELECT codeless_lecture_id FROM p66_fixture),
+    'close',
+    null
+  ),
+  'code-less archive fixture reaches the canonical closed state'
+);
+DELETE FROM public.lecture_admin_codes AS code
+USING p66_fixture AS fixture
+WHERE code.lecture_session_id = fixture.codeless_lecture_id;
+SELECT is(
+  (
+    SELECT count(*)::integer
+    FROM public.claim_lecture_archive_exports(1)
+  ),
+  0,
+  'archive claim skips a legacy closed lecture without an access code'
+);
+SELECT is(
+  (
+    SELECT export.status
+    FROM public.lecture_archive_exports AS export, p66_fixture AS fixture
+    WHERE export.lecture_session_id = fixture.codeless_lecture_id
+  ),
+  'pending',
+  'skipping a code-less lecture does not establish an invisible export lease'
 );
 SELECT ok(
   (
