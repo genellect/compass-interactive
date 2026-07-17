@@ -34,6 +34,12 @@ supabase/.temp/
 extracted-text/
 .wrangler/
 
+# Browser test artifacts and stored authentication state
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -26,6 +26,10 @@ const productionGateMigrationName =
   '20260716073719_production_gate_hardening.sql'
 const phase66MigrationName =
   '20260716140920_phase6_6_ux_archive_metrics_digest.sql'
+const phase66PgNetSchedulerMigrationName =
+  '20260716222345_phase6_6_enable_pg_net_scheduler.sql'
+const phase66ArchiveClaimMigrationName =
+  '20260716224012_phase6_6_archive_claim_requires_code.sql'
 const phase66RealtimeProviderMigrationName =
   '20260717090500_phase6_6_realtime_provider_control.sql'
 const baselinePath = join(migrationsDir, baselineName)
@@ -52,6 +56,8 @@ assert.deepEqual(
     phase65MigrationName,
     productionGateMigrationName,
     phase66MigrationName,
+    phase66PgNetSchedulerMigrationName,
+    phase66ArchiveClaimMigrationName,
     phase66RealtimeProviderMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',

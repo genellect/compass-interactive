@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: '1'
+
+jobs:
+  quality:
+    name: Quality and non-live regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run typecheck:phase3
+      - run: npm run typecheck:e2e
+      - run: npm run lint
+      - run: npm run test:ci:nonlive
+      - run: npm run build
+      - run: git diff --check
+
+  demo-e2e:
+    name: Demo browser E2E
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:demo
+      - name: Upload demo E2E evidence
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: demo-e2e-evidence-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/demo/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  local-supabase:
+    name: Local Supabase, pgTAP and live browser E2E
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TEST_ADMIN_PIN: '246810'
+      TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+
+      - name: Start isolated local Supabase
+        run: npx supabase start
+
+      - name: Apply every migration from zero
+        run: npx supabase db reset --local --no-seed
+
+      - name: Run pgTAP regression
+        run: npx supabase test db --local
+
+      - name: Run real-database AI concurrency regression
+        run: npm run test:phase4-1-concurrency
+
+      - name: Lint the local database
+        run: npx supabase db lint --local --fail-on error
+
+      - name: Export local-only browser variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(npx supabase status -o env)"
+          local_key="${PUBLISHABLE_KEY:-${ANON_KEY:-}}"
+          test -n "${API_URL:-}"
+          test -n "$local_key"
+          case "$API_URL" in
+            http://127.0.0.1:*|http://localhost:*) ;;
+            *) echo "Refusing non-local Supabase URL" >&2; exit 1 ;;
+          esac
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_PUBLISHABLE_KEY=$local_key" >> "$GITHUB_ENV"
+
+      - name: Start local Edge Functions with synthetic test secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          edge_env="$RUNNER_TEMP/compass-edge.env"
+          cat > "$edge_env" <<'EOF'
+          ADMIN_PIN=246810
+          ADMIN_SESSION_SECRET=compass-ci-only-admin-session-secret-2026-at-least-32-bytes
+          BILLING_PIN=135790
+          COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
+          PHASE4_REALTIME_CAPTIONS_ENABLED=false
+          PHASE5_MATERIAL_ANALYSIS_ENABLED=false
+          PHASE6_SUMMARIES_ENABLED=false
+          EOF
+          npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/compass-edge.pid"
+
+      - name: Wait for local Edge Functions
+        run: node scripts/ci/wait-for-local-edge.mjs
+
+      - name: Verify local Auth, CORS and fail-closed paid features
+        run: npm run test:production-local-edge
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run teacher-student browser lifecycle
+        run: npm run test:e2e:local
+
+      - name: Upload local integration evidence
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: local-integration-evidence-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/local/
+            ${{ runner.temp }}/compass-edge.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup
