@@ -10,6 +10,9 @@ import {
   isPhase66UxIntegrationEnabled,
   isPhase6SummariesEnabled,
 } from '../lib/featureFlags'
+
+const LIVE_RPC_TIMEOUT_MS = 12_000
+const OPERATOR_FUNCTION_TIMEOUT_MS = 15_000
 import { normalizeCommentNickname } from '../lib/commentNickname'
 
 export type PublicCaption = {
@@ -608,17 +611,19 @@ async function getLegacySnapshot({
   lectureSessionId,
   versions,
 }: SnapshotRequest) {
-  const { data, error } = await supabase.rpc('get_lecture_live_snapshot', {
-    comment_cursor_created_at: commentCursor?.createdAt,
-    comment_cursor_id: commentCursor?.id,
-    comment_limit: 100,
-    known_comments_version: versions.comments ?? undefined,
-    known_display_version: versions.display ?? undefined,
-    known_likes_version: versions.likes ?? undefined,
-    known_polls_version: versions.polls ?? undefined,
-    known_state_version: versions.state ?? undefined,
-    target_lecture_session_id: lectureSessionId,
-  })
+  const { data, error } = await supabase
+    .rpc('get_lecture_live_snapshot', {
+      comment_cursor_created_at: commentCursor?.createdAt,
+      comment_cursor_id: commentCursor?.id,
+      comment_limit: 100,
+      known_comments_version: versions.comments ?? undefined,
+      known_display_version: versions.display ?? undefined,
+      known_likes_version: versions.likes ?? undefined,
+      known_polls_version: versions.polls ?? undefined,
+      known_state_version: versions.state ?? undefined,
+      target_lecture_session_id: lectureSessionId,
+    })
+    .abortSignal(AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS))
 
   if (error) {
     throw new Error(error.message)
@@ -639,22 +644,24 @@ async function getPublicSnapshotV2({
       : isPhase4RealtimeCaptionsEnabled
         ? 'get_lecture_public_snapshot_v3'
         : 'get_lecture_public_snapshot_v2'
-  const { data, error } = await supabase.rpc(rpcName, {
-    comment_cursor_created_at: commentCursor?.createdAt,
-    comment_cursor_id: commentCursor?.id,
-    comment_limit: isPhase66UxIntegrationEnabled ? 5 : 100,
-    known_caption_version: versions.caption ?? undefined,
-    known_comments_version: versions.comments ?? undefined,
-    known_lecture_version: versions.lecture ?? undefined,
-    known_likes_version: versions.likes ?? undefined,
-    ...(isPhase66UxIntegrationEnabled
-      ? { known_metrics_version: versions.metrics ?? undefined }
-      : {}),
-    known_pdf_version: versions.pdf ?? undefined,
-    known_polls_version: versions.polls ?? undefined,
-    known_summaries_version: versions.summaries ?? undefined,
-    target_lecture_session_id: lectureSessionId,
-  })
+  const { data, error } = await supabase
+    .rpc(rpcName, {
+      comment_cursor_created_at: commentCursor?.createdAt,
+      comment_cursor_id: commentCursor?.id,
+      comment_limit: isPhase66UxIntegrationEnabled ? 5 : 100,
+      known_caption_version: versions.caption ?? undefined,
+      known_comments_version: versions.comments ?? undefined,
+      known_lecture_version: versions.lecture ?? undefined,
+      known_likes_version: versions.likes ?? undefined,
+      ...(isPhase66UxIntegrationEnabled
+        ? { known_metrics_version: versions.metrics ?? undefined }
+        : {}),
+      known_pdf_version: versions.pdf ?? undefined,
+      known_polls_version: versions.polls ?? undefined,
+      known_summaries_version: versions.summaries ?? undefined,
+      target_lecture_session_id: lectureSessionId,
+    })
+    .abortSignal(AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS))
 
   if (error) {
     throw new Error(error.message)
@@ -668,9 +675,11 @@ async function getPublicSnapshotV2({
 async function getTerminalSnapshot(
   lectureSessionId: string,
 ): Promise<LiveSnapshot | null> {
-  const { data, error } = await supabase.rpc('get_lecture_terminal_state_v2', {
-    target_lecture_session_id: lectureSessionId,
-  })
+  const { data, error } = await supabase
+    .rpc('get_lecture_terminal_state_v2', {
+      target_lecture_session_id: lectureSessionId,
+    })
+    .abortSignal(AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS))
 
   if (error) {
     throw new Error(error.message)
@@ -802,6 +811,7 @@ export const supabaseLiveStateRepository = {
             lectureSessionId: request.lectureSessionId,
             ...credential,
           },
+          timeout: OPERATOR_FUNCTION_TIMEOUT_MS,
         },
       )
 
@@ -848,6 +858,7 @@ export const supabaseLiveStateRepository = {
         lectureSessionId,
         limit,
       },
+      timeout: OPERATOR_FUNCTION_TIMEOUT_MS,
     })
     if (error) {
       throw new Error(
@@ -874,10 +885,11 @@ export const supabaseLiveStateRepository = {
     assertSupabaseConfigured()
     await ensureAnonymousAuthSession()
 
-    const { data, error } = await supabase.rpc(
-      'get_lecture_participant_state_v2',
-      { target_lecture_session_id: lectureSessionId },
-    )
+    const { data, error } = await supabase
+      .rpc('get_lecture_participant_state_v2', {
+        target_lecture_session_id: lectureSessionId,
+      })
+      .abortSignal(AbortSignal.timeout(LIVE_RPC_TIMEOUT_MS))
 
     if (error) {
       throw new Error(error.message)

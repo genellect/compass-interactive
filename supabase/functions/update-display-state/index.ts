@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { getPdfAsset } from '../_shared/pdfAssets.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -66,9 +67,13 @@ Deno.serve(async (request) => {
 
   let body: UpdateDisplayStateRequest
   try {
-    body = (await request.json()) as UpdateDisplayStateRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<UpdateDisplayStateRequest>(request, 16 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
 
   let tokenSecret: string
@@ -86,7 +91,7 @@ Deno.serve(async (request) => {
 
   if (
     !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret))
+    !(await verifyAdminToken(body.adminToken, tokenSecret, request))
   ) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }

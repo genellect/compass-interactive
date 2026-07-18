@@ -8,17 +8,19 @@ secret change and paid call still require an explicit task.
 
 ## 1. Current canonical documents
 
-| Need                         | Document                                  |
-| ---------------------------- | ----------------------------------------- |
-| Product and local entrypoint | `README.md`                               |
-| Current component/data flow  | `docs/architecture.md`                    |
-| Security controls and gaps   | `docs/SECURITY.md`                        |
-| Data collection/retention    | `docs/data_policy.md`                     |
-| Database responsibility map  | `docs/database_schema.md`                 |
-| Future phases and gates      | `docs/ROADMAP.md`                         |
-| Development trajectory       | `docs/CHANGELOG.md`                       |
-| Phase 6.7 acceptance         | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md` |
-| Phase 6.7 local evidence     | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`  |
+| Need                         | Document                                      |
+| ---------------------------- | --------------------------------------------- |
+| Product and local entrypoint | `README.md`                                   |
+| Current component/data flow  | `docs/architecture.md`                        |
+| Security controls and gaps   | `docs/SECURITY.md`                            |
+| Data collection/retention    | `docs/data_policy.md`                         |
+| Database responsibility map  | `docs/database_schema.md`                     |
+| Future phases and gates      | `docs/ROADMAP.md`                             |
+| Development trajectory       | `docs/CHANGELOG.md`                           |
+| Phase 6.7 acceptance         | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md`     |
+| Phase 6.7 local evidence     | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`      |
+| Phase 6.8 design             | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md` |
+| Phase 6.8 local evidence     | `docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`      |
 
 If an older Phase document conflicts with these current documents and the real
 code/migrations, treat the older document as historical evidence.
@@ -38,6 +40,7 @@ npm run typecheck:phase3
 npm run typecheck:e2e
 npm run lint
 npm run test:phase6-7-docs
+npm run test:phase6-8-static
 npm run build
 git diff --check
 ```

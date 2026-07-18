@@ -13,6 +13,7 @@ import {
 import {
   readJsonBody,
   RequestBodyTooLargeError,
+  UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -75,7 +76,13 @@ Deno.serve(async (request) => {
     body = await readJsonBody<RequestBody>(request, 64 * 1024)
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return jsonResponse({ message: 'Request body is too large.', ok: false }, 413)
+      return jsonResponse(
+        { message: 'Request body is too large.', ok: false },
+        413,
+      )
+    }
+    if (error instanceof UnsupportedJsonContentTypeError) {
+      return jsonResponse({ message: 'Request must be JSON.', ok: false }, 415)
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
@@ -91,6 +98,7 @@ Deno.serve(async (request) => {
     const claims = await getAdminTokenClaims(
       body.adminToken,
       getAdminTokenSecret(),
+      request,
     )
     if (!claims) {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
@@ -183,7 +191,11 @@ Deno.serve(async (request) => {
         run?: { id?: string }
       }
       if (!result.accepted || !result.run?.id) {
-        return jsonResponse({ ok: true, reason: result.reason, results: result.results })
+        return jsonResponse({
+          ok: true,
+          reason: result.reason,
+          results: result.results,
+        })
       }
       return jsonResponse({
         ok: true,
@@ -203,7 +215,10 @@ Deno.serve(async (request) => {
         },
       )
       if (error) throw error
-      return jsonResponse({ ok: true, results: (data as { results?: unknown }).results })
+      return jsonResponse({
+        ok: true,
+        results: (data as { results?: unknown }).results,
+      })
     }
 
     if (!body.summaryId) {

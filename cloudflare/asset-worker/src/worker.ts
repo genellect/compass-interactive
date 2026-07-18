@@ -11,6 +11,7 @@ import {
   signArchiveAccessToken,
   verifyArchiveAccessToken,
   verifyAssetTicket,
+  verifyLectureResumeToken,
   verifyLectureToken,
 } from './crypto.ts'
 import type { R2BucketLike, R2ObjectLike } from './r2Types.ts'
@@ -45,6 +46,7 @@ export type AssetWorkerEnvironment = {
   ARCHIVE_RATE_LIMITER?: {
     limit(input: { key: string }): Promise<{ success: boolean }>
   }
+  LECTURE_RESUME_TOKEN_SECRET?: string
   PDF_ACCESS_AUDIENCE: string
   PDF_ACCESS_ISSUER: string
   PDF_ACCESS_PUBLIC_JWK: string
@@ -73,13 +75,23 @@ type PublicLectureArchivePayload = {
   comments: Array<Record<string, unknown>>
   comments_has_more: boolean
   material_summary?: Record<string, unknown> | null
+  lecture_public_id?: string
   participant_count_approximate: number
   pdf: PublicArchivePdf | null
   polls: Array<Record<string, unknown>>
+  resume_token_version?: number
   schema_version: 1
   started_at: string | null
   summaries: Array<Record<string, unknown>>
   title: string
+}
+
+type StoredLectureArchiveIndex = {
+  archive_expires_at: string
+  lookup_hash: string
+  payload_sha256: string
+  schema_version: 1
+  source_version: number
 }
 
 type StoredLectureArchive = {
@@ -209,6 +221,20 @@ function manifestKey(lecturePublicId: string) {
 
 function archiveKey(lookupHash: string) {
   return `archives/by-code/${lookupHash}.json`
+}
+
+function archivePublicIndexKey(lecturePublicId: string) {
+  return `archives/by-public-id/${lecturePublicId}.json`
+}
+
+function requireResumeTokenSecret(env: AssetWorkerEnvironment) {
+  const secret = env.LECTURE_RESUME_TOKEN_SECRET ?? ''
+  if (new TextEncoder().encode(secret).byteLength < 32) {
+    throw Object.assign(new Error('Archive resume is unavailable.'), {
+      status: 503,
+    })
+  }
+  return secret
 }
 
 function requireArchiveConfiguration(env: AssetWorkerEnvironment) {
@@ -381,6 +407,19 @@ function parsePublicArchivePayload(
     if (Date.parse(startedAt) > Date.parse(closedAt)) {
       throw new Error('Archive start time is invalid.')
     }
+  }
+
+  const hasResumeScope =
+    payload.lecture_public_id !== undefined ||
+    payload.resume_token_version !== undefined
+  if (
+    hasResumeScope &&
+    (typeof payload.lecture_public_id !== 'string' ||
+      !/^lecture_[a-z0-9]{16,64}$/.test(payload.lecture_public_id) ||
+      !Number.isInteger(payload.resume_token_version) ||
+      Number(payload.resume_token_version) < 1)
+  ) {
+    throw new Error('Archive resume scope is invalid.')
   }
 
   if (payload.pdf !== null) {
@@ -848,6 +887,96 @@ async function loadLectureArchive(
   return { archive, object }
 }
 
+function parseStoredLectureArchiveIndex(value: Uint8Array) {
+  const index = JSON.parse(new TextDecoder().decode(value)) as Record<
+    string,
+    unknown
+  >
+  if (
+    index.schema_version !== 1 ||
+    !Number.isSafeInteger(index.source_version) ||
+    Number(index.source_version) < 1 ||
+    typeof index.lookup_hash !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(index.lookup_hash) ||
+    typeof index.payload_sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(index.payload_sha256) ||
+    typeof index.archive_expires_at !== 'string' ||
+    !Number.isFinite(Date.parse(index.archive_expires_at))
+  ) {
+    throw new Error('Stored lecture archive index is invalid.')
+  }
+  return index as StoredLectureArchiveIndex
+}
+
+async function storeLectureArchivePublicIndex(
+  env: AssetWorkerEnvironment,
+  lookupHash: string,
+  archive: StoredLectureArchive,
+) {
+  const lecturePublicId = archive.payload.lecture_public_id
+  if (!lecturePublicId) return
+  const key = archivePublicIndexKey(lecturePublicId)
+  const index: StoredLectureArchiveIndex = {
+    archive_expires_at: archive.archive_expires_at,
+    lookup_hash: lookupHash,
+    payload_sha256: archive.payload_sha256,
+    schema_version: 1,
+    source_version: archive.source_version,
+  }
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const existingObject = await env.PDF_BUCKET.get(key)
+    if (existingObject) {
+      const existingIndex = parseStoredLectureArchiveIndex(
+        await objectBytes(existingObject),
+      )
+      if (existingIndex.source_version > archive.source_version) return
+      if (
+        existingIndex.source_version === archive.source_version &&
+        existingIndex.payload_sha256 === archive.payload_sha256 &&
+        existingIndex.lookup_hash === lookupHash
+      ) {
+        return
+      }
+    }
+    const committed = await env.PDF_BUCKET.put(
+      key,
+      `${JSON.stringify(index)}\n`,
+      {
+        httpMetadata: {
+          cacheControl: 'no-store',
+          contentType: 'application/json',
+        },
+        onlyIf: existingObject
+          ? { etagMatches: existingObject.etag }
+          : { etagDoesNotMatch: '*' },
+      },
+    )
+    if (committed) return
+  }
+  throw new Error('Archive resume index publication conflicted.')
+}
+
+async function loadLectureArchiveByPublicId(
+  env: AssetWorkerEnvironment,
+  lecturePublicId: string,
+) {
+  const indexObject = await env.PDF_BUCKET.get(
+    archivePublicIndexKey(lecturePublicId),
+  )
+  if (!indexObject) return null
+  const index = parseStoredLectureArchiveIndex(await objectBytes(indexObject))
+  const loaded = await loadLectureArchive(env, index.lookup_hash)
+  if (
+    !loaded ||
+    loaded.archive.source_version !== index.source_version ||
+    loaded.archive.payload_sha256 !== index.payload_sha256 ||
+    loaded.archive.payload.lecture_public_id !== lecturePublicId
+  ) {
+    throw new Error('Archive resume index integrity check failed.')
+  }
+  return { ...loaded, lookupHash: index.lookup_hash }
+}
+
 async function storeLectureArchive(
   env: AssetWorkerEnvironment,
   lookupHash: string,
@@ -867,6 +996,7 @@ async function storeLectureArchive(
         throw new Error('Stored lecture archive integrity check failed.')
       }
       if (existingArchive.source_version >= archive.source_version) {
+        await storeLectureArchivePublicIndex(env, lookupHash, existingArchive)
         return {
           accepted:
             existingArchive.source_version === archive.source_version &&
@@ -890,6 +1020,7 @@ async function storeLectureArchive(
       },
     )
     if (committed) {
+      await storeLectureArchivePublicIndex(env, lookupHash, archive)
       return { accepted: true, sourceVersion: archive.source_version }
     }
   }
@@ -970,6 +1101,39 @@ async function handleArchiveIngest(
   return { lookupHash, ...result }
 }
 
+async function createArchiveAccessResult(
+  loaded: NonNullable<Awaited<ReturnType<typeof loadLectureArchive>>>,
+  lookupHash: string,
+  accessSecret: string,
+  now: Date,
+) {
+  const nowSeconds = Math.floor(now.getTime() / 1000)
+  const expiresAt = Math.min(
+    nowSeconds + 15 * 60,
+    Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
+  )
+  const archiveAccessToken = await signArchiveAccessToken(
+    {
+      exp: expiresAt,
+      iat: nowSeconds,
+      jti: crypto.randomUUID(),
+      lec:
+        loaded.archive.payload.lecture_public_id ??
+        loaded.archive.payload.pdf?.lecture_public_id ??
+        'lecture_0000000000000000',
+      lookup: lookupHash,
+      rev: loaded.archive.payload_sha256,
+    },
+    accessSecret,
+  )
+  return {
+    archive: loaded.archive.payload,
+    archiveAccessToken,
+    archiveAccessTokenExpiresAt: new Date(expiresAt * 1000).toISOString(),
+    lookupHash,
+  }
+}
+
 async function handleArchiveResolve(
   request: Request,
   env: AssetWorkerEnvironment,
@@ -1021,41 +1185,66 @@ async function handleArchiveResolve(
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
   if (!loaded) {
-    await updateArchiveFailureGuard(
-      request,
-      env,
-      now,
-      'record_failure',
-    )
+    await updateArchiveFailureGuard(request, env, now, 'record_failure')
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
   if (Date.parse(loaded.archive.archive_expires_at) <= now.getTime()) {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
 
-  const pdf = loaded.archive.payload.pdf
-  const nowSeconds = Math.floor(now.getTime() / 1000)
-  const expiresAt = Math.min(
-    nowSeconds + 15 * 60,
-    Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
-  )
-  const archiveAccessToken = await signArchiveAccessToken(
-    {
-      exp: expiresAt,
-      iat: nowSeconds,
-      jti: crypto.randomUUID(),
-      lec: pdf?.lecture_public_id ?? 'lecture_0000000000000000',
-      lookup: lookupHash,
-      rev: loaded.archive.payload_sha256,
-    },
-    configuration.accessSecret,
-  )
-  return {
-    archive: loaded.archive.payload,
-    archiveAccessToken,
-    archiveAccessTokenExpiresAt: new Date(expiresAt * 1000).toISOString(),
+  return createArchiveAccessResult(
+    loaded,
     lookupHash,
+    configuration.accessSecret,
+    now,
+  )
+}
+
+async function handleArchiveResume(
+  request: Request,
+  env: AssetWorkerEnvironment,
+  now: Date,
+) {
+  let body: Record<string, unknown>
+  try {
+    body = await parseBoundedJsonRequest(request, MAX_ARCHIVE_RESOLVE_BYTES)
+  } catch {
+    throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
+  const resumeToken =
+    typeof body.resumeToken === 'string' ? body.resumeToken.trim() : ''
+  if (resumeToken.length < 80 || resumeToken.length > 2_048) {
+    throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
+  }
+  const claims = await verifyLectureResumeToken({
+    nowSeconds: Math.floor(now.getTime() / 1000),
+    secret: requireResumeTokenSecret(env),
+    token: resumeToken,
+  }).catch(() => null)
+  if (!claims) {
+    throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
+  }
+
+  let loaded: Awaited<ReturnType<typeof loadLectureArchiveByPublicId>>
+  try {
+    loaded = await loadLectureArchiveByPublicId(env, claims.lec)
+  } catch {
+    throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
+  }
+  if (
+    !loaded ||
+    Date.parse(loaded.archive.archive_expires_at) <= now.getTime() ||
+    loaded.archive.payload.resume_token_version !== claims.ver
+  ) {
+    throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
+  }
+  const configuration = requireArchiveConfiguration(env)
+  return createArchiveAccessResult(
+    loaded,
+    loaded.lookupHash,
+    configuration.accessSecret,
+    now,
+  )
 }
 
 async function handleArchiveDocumentAccess(
@@ -1279,6 +1468,14 @@ async function handleFetch(
       throw Object.assign(new Error('Origin is required.'), { status: 403 })
     }
     const result = await handleArchiveResolve(request, env, now, fetcher)
+    return jsonResponse({ ok: true, ...result }, 200, origin)
+  }
+
+  if (request.method === 'POST' && url.pathname === '/v1/archives/resume') {
+    if (!origin) {
+      throw Object.assign(new Error('Origin is required.'), { status: 403 })
+    }
+    const result = await handleArchiveResume(request, env, now)
     return jsonResponse({ ok: true, ...result }, 200, origin)
   }
 
@@ -1618,6 +1815,11 @@ export async function cleanupExpiredLectureArchives(
           now.getTime()
         ) {
           continue
+        }
+        if (archive.payload.lecture_public_id) {
+          await env.PDF_BUCKET.delete(
+            archivePublicIndexKey(archive.payload.lecture_public_id),
+          )
         }
         await env.PDF_BUCKET.delete(summary.key)
         deleted += 1

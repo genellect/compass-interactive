@@ -115,6 +115,9 @@ jobs:
           cat > "$edge_env" <<'EOF'
           ADMIN_PIN=246810
           ADMIN_SESSION_SECRET=compass-ci-only-admin-session-secret-2026-at-least-32-bytes
+          PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true
+          PHASE68_RESUME_TOKENS_ENABLED=true
+          LECTURE_RESUME_TOKEN_SECRET=compass-ci-only-lecture-resume-token-secret-at-least-32-bytes
           BILLING_PIN=135790
           COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
           PHASE4_REALTIME_CAPTIONS_ENABLED=false

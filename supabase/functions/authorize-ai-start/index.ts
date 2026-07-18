@@ -12,6 +12,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type AuthorizeAiStartRequest = {
@@ -49,9 +50,13 @@ Deno.serve(async (request) => {
 
   let body: AuthorizeAiStartRequest
   try {
-    body = (await request.json()) as AuthorizeAiStartRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<AuthorizeAiStartRequest>(request, 16 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
 
   let actions
@@ -114,7 +119,11 @@ Deno.serve(async (request) => {
       500,
     )
   }
-  const claims = await getAdminTokenClaims(body.adminToken, tokenSecret)
+  const claims = await getAdminTokenClaims(
+    body.adminToken,
+    tokenSecret,
+    request,
+  )
   if (!claims) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }

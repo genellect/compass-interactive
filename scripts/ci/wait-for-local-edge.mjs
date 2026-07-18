@@ -16,6 +16,7 @@ if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
 const deadline = Date.now() + 120_000
 const endpoint = `${supabaseUrl}/functions/v1/verify-admin-pin`
 let lastStatus = 'not started'
+let ready = false
 
 while (Date.now() < deadline) {
   try {
@@ -30,7 +31,8 @@ while (Date.now() < deadline) {
     lastStatus = String(response.status)
     if (response.status === 200) {
       console.log('Local Edge Functions are ready.')
-      process.exit(0)
+      ready = true
+      break
     }
   } catch (error) {
     lastStatus = error instanceof Error ? error.message : String(error)
@@ -39,4 +41,6 @@ while (Date.now() < deadline) {
   await new Promise((resolve) => setTimeout(resolve, 1_000))
 }
 
-throw new Error(`Local Edge Functions did not become ready: ${lastStatus}`)
+if (!ready) {
+  throw new Error(`Local Edge Functions did not become ready: ${lastStatus}`)
+}

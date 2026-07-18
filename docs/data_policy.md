@@ -109,11 +109,14 @@ No email is sent on a day without relevant activity.
 ## 8. Browser storage
 
 The browser may keep only bounded session/support state needed for re-entry and
-optimistic UX. Current archive tokens remain memory-only where implemented.
-Lecture codes or local participant hints must not be treated as authorization.
+optimistic UX. Archive/PDF access tokens remain memory-only. Lecture codes or
+local participant hints must not be treated as authorization.
 
-Phase 6.8 will introduce a short-lived high-entropy resume token. That token
-must never be placed in a URL, analytics event, console log or long-term profile.
+Phase 6.8 may keep at most ten lecture-scoped high-entropy resume tokens in
+local storage for seven days. A token must never be placed in a URL, analytics
+event, console log or long-term user profile. Server-side storage contains only
+Admin-token hashes, keyed rate-limit identifiers and resume revocation/version
+metadata, never plaintext Admin or resume tokens.
 
 ## 9. Retention lifecycle
 

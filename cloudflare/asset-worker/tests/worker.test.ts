@@ -10,7 +10,10 @@ import {
   sanitizeArchiveExportClaim,
   sha256CanonicalJson,
 } from '../../../supabase/functions/_shared/archiveExport.ts'
-import { createArchiveLookupHash } from '../src/crypto.ts'
+import {
+  createArchiveLookupHash,
+  signLectureResumeToken,
+} from '../src/crypto.ts'
 import {
   ArchiveFailureGuard,
   cleanupExpiredLectureArchives,
@@ -319,6 +322,7 @@ function enableArchiveEnvironment(
     ARCHIVE_CODE_LOOKUP_SECRET: 'archive-lookup-secret-at-least-32-bytes-long',
     ARCHIVE_FAILURE_GUARD: failureGuard,
     ARCHIVE_INGEST_SECRET: 'archive-ingest-secret-at-least-32-bytes-long',
+    LECTURE_RESUME_TOKEN_SECRET: 'lecture-resume-secret-at-least-32-bytes-long',
     ARCHIVE_IP_RATE_LIMITER: {
       limit: async ({ key }: { key: string }) => {
         ipKeys.push(key)
@@ -934,21 +938,11 @@ test('archive failure guard blocks repeated unknown codes without penalizing suc
     )
 
   assert.equal(
-    (
-      await resolve(
-        '285463',
-        '32345678-1234-4123-8123-123456789abc',
-      )
-    ).status,
+    (await resolve('285463', '32345678-1234-4123-8123-123456789abc')).status,
     200,
   )
   assert.equal(
-    (
-      await resolve(
-        '285463',
-        '42345678-1234-4123-8123-123456789abc',
-      )
-    ).status,
+    (await resolve('285463', '42345678-1234-4123-8123-123456789abc')).status,
     200,
   )
 
@@ -966,12 +960,7 @@ test('archive failure guard blocks repeated unknown codes without penalizing suc
   }
   const checksBeforeBlockedAttempt = turnstileChecks
   assert.equal(
-    (
-      await resolve(
-        '900008',
-        '62345678-1234-4123-8123-123456789abc',
-      )
-    ).status,
+    (await resolve('900008', '62345678-1234-4123-8123-123456789abc')).status,
     404,
   )
   assert.equal(
@@ -1052,6 +1041,71 @@ test('archive document access is short-lived, scoped and revoked by a new archiv
     value.env,
   )
   assert.equal(staleAccess.status, 401)
+})
+
+test('archive resume tokens are lecture-scoped, short-lived and version-revocable', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const worker = createAssetWorker(() => new Date(value.now * 1000))
+  const payload = archivePayload(value, {
+    lecture_public_id: value.lecture,
+    resume_token_version: 1,
+  })
+  assert.equal((await ingestArchive({ payload, value, worker })).status, 200)
+  assert.equal(
+    value.r2.objects.has(`archives/by-public-id/${value.lecture}.json`),
+    true,
+  )
+
+  const createResumeToken = (overrides: Record<string, unknown> = {}) =>
+    signLectureResumeToken(
+      {
+        aud: 'compass-lecture-resume',
+        exp: value.now + 7 * 24 * 60 * 60,
+        iat: value.now,
+        jti: crypto.randomUUID(),
+        lec: value.lecture,
+        ver: 1,
+        ...overrides,
+      },
+      value.env.LECTURE_RESUME_TOKEN_SECRET!,
+    )
+  const resumeToken = await createResumeToken()
+  const resume = await worker.fetch(
+    new Request('https://pdf.example/v1/archives/resume', {
+      body: JSON.stringify({ resumeToken }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://compass.example',
+      },
+      method: 'POST',
+    }),
+    value.env,
+  )
+  assert.equal(resume.status, 200)
+  const resumeBody = (await resume.json()) as Record<string, unknown>
+  assert.equal(resumeBody.ok, true)
+  assert.match(String(resumeBody.lookupHash), /^[0-9a-f]{64}$/)
+  assert.equal(JSON.stringify(resumeBody).includes(resumeToken), false)
+
+  for (const token of [
+    await createResumeToken({ lec: 'lecture_ffffffffffffffff' }),
+    await createResumeToken({ ver: 2 }),
+    await createResumeToken({ exp: value.now - 1, iat: value.now - 60 }),
+  ]) {
+    const rejected = await worker.fetch(
+      new Request('https://pdf.example/v1/archives/resume', {
+        body: JSON.stringify({ resumeToken: token }),
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: 'https://compass.example',
+        },
+        method: 'POST',
+      }),
+      value.env,
+    )
+    assert.equal(rejected.status, 404)
+  }
 })
 
 test('archive cleanup honors the seven-day recovery window and resumes across pages', async () => {

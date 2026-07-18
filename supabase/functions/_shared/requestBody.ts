@@ -5,10 +5,37 @@ export class RequestBodyTooLargeError extends Error {
   }
 }
 
+export class UnsupportedJsonContentTypeError extends Error {
+  constructor() {
+    super('Request body must use application/json.')
+    this.name = 'UnsupportedJsonContentTypeError'
+  }
+}
+
+export const describeJsonBodyError = (error: unknown) => {
+  if (error instanceof RequestBodyTooLargeError) {
+    return { message: 'Request body is too large.', status: 413 }
+  }
+  if (error instanceof UnsupportedJsonContentTypeError) {
+    return { message: 'Request must use application/json.', status: 415 }
+  }
+  return { message: 'Invalid JSON body.', status: 400 }
+}
+
 export const readJsonBody = async <T>(
   request: Request,
   maxBytes: number,
 ): Promise<T> => {
+  const mediaType =
+    request.headers
+      .get('content-type')
+      ?.split(';', 1)[0]
+      ?.trim()
+      .toLowerCase() ?? ''
+  if (mediaType !== 'application/json') {
+    throw new UnsupportedJsonContentTypeError()
+  }
+
   const declaredLength = Number(request.headers.get('content-length') ?? 0)
   if (
     !Number.isFinite(declaredLength) ||

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type PdfDocument = {
@@ -58,18 +59,15 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return jsonResponse({ message: 'Method not allowed.', ok: false }, 405)
   }
-  if (Number(request.headers.get('content-length') ?? 0) > 64 * 1024) {
-    return jsonResponse(
-      { message: 'Request body is too large.', ok: false },
-      413,
-    )
-  }
-
   let body: RequestBody
   try {
-    body = (await request.json()) as RequestBody
-  } catch {
-    return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
+    body = await readJsonBody<RequestBody>(request, 64 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { message: bodyError.message, ok: false },
+      bodyError.status,
+    )
   }
   if (!body.action || !body.lectureSessionId || !body.adminToken) {
     return jsonResponse(
@@ -93,7 +91,7 @@ Deno.serve(async (request) => {
       500,
     )
   }
-  if (!(await verifyAdminToken(body.adminToken, adminSecret))) {
+  if (!(await verifyAdminToken(body.adminToken, adminSecret, request))) {
     return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
   }
 

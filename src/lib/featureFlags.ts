@@ -26,3 +26,7 @@ export const isPhase65CommentNicknamesEnabled =
 export const isPhase66UxIntegrationEnabled =
   isPhase1SyncProtocolEnabled &&
   import.meta.env.VITE_PHASE6_6_UX_INTEGRATION === 'true'
+
+export const isPhase68SecurityEnabled =
+  isPhase66UxIntegrationEnabled &&
+  import.meta.env.VITE_PHASE6_8_SECURITY === 'true'

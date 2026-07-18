@@ -2,7 +2,13 @@ import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { LectureStatus } from '../types'
-import { isPhase66UxIntegrationEnabled } from '../lib/featureFlags'
+import {
+  isPhase66UxIntegrationEnabled,
+  isPhase68SecurityEnabled,
+} from '../lib/featureFlags'
+
+const LECTURE_RPC_TIMEOUT_MS = 12_000
+const LECTURE_FUNCTION_TIMEOUT_MS = 15_000
 
 type JoinLectureByCodeRow = {
   lecture_session_id: string
@@ -16,6 +22,15 @@ type JoinLectureByCodeRow = {
 export type JoinedLectureWithParticipant = {
   lecture: JoinedLectureSession
   participantId: string
+  resumeToken?: string
+  resumeTokenExpiresAt?: string
+}
+
+type IssueResumeTokenResponse = {
+  expiresAt?: string
+  lectureSessionId?: string
+  ok?: boolean
+  resumeToken?: string
 }
 
 function getJoinErrorMessage(message: string) {
@@ -61,9 +76,11 @@ export const supabaseLectureRepository = {
     assertSupabaseConfigured()
     await ensureAnonymousAuthSession()
 
-    const { data, error } = await supabase.rpc('get_lecture_session_state', {
-      target_lecture_session_id: lectureSessionId,
-    })
+    const { data, error } = await supabase
+      .rpc('get_lecture_session_state', {
+        target_lecture_session_id: lectureSessionId,
+      })
+      .abortSignal(AbortSignal.timeout(LECTURE_RPC_TIMEOUT_MS))
 
     if (error) {
       throw new Error(error.message)
@@ -89,14 +106,16 @@ export const supabaseLectureRepository = {
 
     await ensureAnonymousAuthSession(captchaToken)
 
-    const { data, error } = await supabase.rpc(
-      isPhase66UxIntegrationEnabled
-        ? 'join_lecture_by_code_v2'
-        : 'join_lecture_by_code',
-      {
-        lecture_code: trimmedCode,
-      },
-    )
+    const { data, error } = await supabase
+      .rpc(
+        isPhase66UxIntegrationEnabled
+          ? 'join_lecture_by_code_v2'
+          : 'join_lecture_by_code',
+        {
+          lecture_code: trimmedCode,
+        },
+      )
+      .abortSignal(AbortSignal.timeout(LECTURE_RPC_TIMEOUT_MS))
 
     if (error) {
       throw new Error(getJoinErrorMessage(error.message))
@@ -113,9 +132,35 @@ export const supabaseLectureRepository = {
       throw new Error('参加者IDを発行できませんでした。')
     }
 
+    let resumeToken: string | undefined
+    let resumeTokenExpiresAt: string | undefined
+    if (isPhase68SecurityEnabled) {
+      const { data: resumeData, error: resumeError } =
+        await supabase.functions.invoke<IssueResumeTokenResponse>(
+          'issue-lecture-resume-token',
+          {
+            body: { lectureSessionId: row.lecture_session_id },
+            timeout: LECTURE_FUNCTION_TIMEOUT_MS,
+          },
+        )
+      if (
+        !resumeError &&
+        resumeData?.ok &&
+        resumeData.lectureSessionId === row.lecture_session_id &&
+        resumeData.resumeToken &&
+        resumeData.expiresAt
+      ) {
+        resumeToken = resumeData.resumeToken
+        resumeTokenExpiresAt = resumeData.expiresAt
+      }
+    }
+
     return {
       lecture: mapJoinedLecture(row),
       participantId: row.participant_id,
+      ...(resumeToken && resumeTokenExpiresAt
+        ? { resumeToken, resumeTokenExpiresAt }
+        : {}),
     }
   },
 }

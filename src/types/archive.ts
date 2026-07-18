@@ -67,6 +67,7 @@ export type LectureArchiveSession = {
   pdf: ArchivedPdf | null
   polls: ArchivedPoll[]
   lectureCode: string
+  resumeToken?: string
   startedAt: string | null
   summaries: ArchivedSummary[]
   title: string

@@ -3,12 +3,41 @@ import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { PublisherExtraction } from '../pdf/publisherClient'
 import type { LectureStatus } from '../types'
 
+const ADMIN_FUNCTION_TIMEOUT_MS = 15_000
+const AI_FUNCTION_TIMEOUT_MS = 65_000
+const REALTIME_START_TIMEOUT_MS = 30_000
+
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 
 type VerifyAdminPinResponse = {
   adminToken?: string
   message?: string
   ok?: boolean
+}
+
+export type AdminSessionSummary = {
+  expiresAt: string
+  id: string
+  idleExpiresAt: string
+  issuedAt: string
+  lastSeenAt: string
+  revokeReason: string | null
+  revokedAt: string | null
+}
+
+type ManageAdminSessionsResponse = {
+  currentSessionId?: string
+  message?: string
+  ok?: boolean
+  sessions?: Array<{
+    expires_at: string
+    id: string
+    idle_expires_at: string
+    issued_at: string
+    last_seen_at: string
+    revoke_reason: string | null
+    revoked_at: string | null
+  }>
 }
 
 type IssueDisplaySessionResponse = {
@@ -769,6 +798,7 @@ export const supabaseAdminRepository = {
         'verify-admin-pin',
         {
           body: { pin: trimmedPin },
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
         },
       )
 
@@ -789,6 +819,41 @@ export const supabaseAdminRepository = {
     return data.adminToken
   },
 
+  async manageAdminSessions(request: {
+    action: 'list' | 'logout' | 'revoke' | 'revokeAll'
+    adminToken: string
+    sessionId?: string
+  }) {
+    await ensureAnonymousAuthSession()
+    const { data, error } =
+      await supabase.functions.invoke<ManageAdminSessionsResponse>(
+        'manage-admin-sessions',
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+      )
+    if (error || !data?.ok) {
+      throw new Error(
+        error
+          ? await getFunctionErrorMessage(
+              error,
+              'Admin session operation failed.',
+            )
+          : (data?.message ?? 'Admin session operation failed.'),
+      )
+    }
+    return {
+      currentSessionId: data.currentSessionId ?? null,
+      sessions: (data.sessions ?? []).map((session) => ({
+        expiresAt: session.expires_at,
+        id: session.id,
+        idleExpiresAt: session.idle_expires_at,
+        issuedAt: session.issued_at,
+        lastSeenAt: session.last_seen_at,
+        revokeReason: session.revoke_reason,
+        revokedAt: session.revoked_at,
+      })) satisfies AdminSessionSummary[],
+    }
+  },
+
   async issueDisplaySession(request: {
     adminToken: string
     lectureSessionId: string
@@ -798,7 +863,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<IssueDisplaySessionResponse>(
         'issue-display-session',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -832,6 +897,7 @@ export const supabaseAdminRepository = {
         'update-display-state',
         {
           body: request,
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
         },
       )
 
@@ -856,6 +922,7 @@ export const supabaseAdminRepository = {
         'manage-lectures',
         {
           body: request,
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
         },
       )
 
@@ -876,7 +943,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<ManageAiControlResponse>(
         'manage-ai-control',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
 
     if (error) {
@@ -900,7 +967,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<AuthorizeAiStartResponse>(
         'authorize-ai-start',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -930,7 +997,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<RealtimeCaptionCallResponse>(
         'issue-realtime-client-secret',
-        { body: request },
+        { body: request, timeout: REALTIME_START_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -979,7 +1046,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<PublishCaptionResponse>(
         'publish-caption-window',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -998,7 +1065,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<ManagePdfDocumentsResponse>(
         'manage-pdf-documents',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -1027,7 +1094,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<MaterialFunctionResponse>(
         'analyze-lecture-material',
-        { body: request },
+        { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -1082,7 +1149,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<MaterialFunctionResponse>(
         'manage-material-analysis',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -1147,7 +1214,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<SummaryFunctionResponse>(
         'manage-lecture-summaries',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -1189,7 +1256,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<SummaryFunctionResponse>(
         'generate-lecture-summary',
-        { body: request },
+        { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
       )
     if (error) {
       throw new Error(
@@ -1211,6 +1278,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<ManagePollsResponse>('manage-polls', {
         body: request,
+        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
       })
 
     if (error) {
@@ -1238,7 +1306,7 @@ export const supabaseAdminRepository = {
     const { data, error } =
       await supabase.functions.invoke<ManageCommentsResponse>(
         'manage-comments',
-        { body: request },
+        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
 
     if (error) {

@@ -32,6 +32,15 @@ export type ArchiveAccessClaims = {
   rev: string
 }
 
+export type LectureResumeClaims = {
+  aud: 'compass-lecture-resume'
+  exp: number
+  iat: number
+  jti: string
+  lec: string
+  ver: number
+}
+
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -217,6 +226,59 @@ export async function verifyArchiveAccessToken(input: {
     throw new Error('Archive token claims are invalid or expired.')
   }
   return payload as ArchiveAccessClaims
+}
+
+export async function verifyLectureResumeToken(input: {
+  nowSeconds: number
+  secret: string
+  token: string
+}) {
+  const parts = input.token.split('.')
+  if (parts.length !== 2) throw new Error('Resume token is malformed.')
+  const [encodedPayload, encodedSignature] = parts
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    await importArchiveKey(input.secret, 'verify'),
+    base64UrlToBytes(encodedSignature!),
+    new TextEncoder().encode(encodedPayload!),
+  )
+  if (!valid) throw new Error('Resume token signature is invalid.')
+  const payload = decodeJson(encodedPayload!)
+  if (
+    payload.aud !== 'compass-lecture-resume' ||
+    typeof payload.lec !== 'string' ||
+    !LECTURE_PUBLIC_ID_PATTERN.test(payload.lec) ||
+    !Number.isInteger(payload.ver) ||
+    Number(payload.ver) < 1 ||
+    !Number.isInteger(payload.iat) ||
+    Number(payload.iat) > input.nowSeconds + 30 ||
+    Number(payload.iat) < input.nowSeconds - 7 * 24 * 60 * 60 - 30 ||
+    !Number.isInteger(payload.exp) ||
+    Number(payload.exp) <= input.nowSeconds ||
+    Number(payload.exp) > Number(payload.iat) + 7 * 24 * 60 * 60 + 30 ||
+    typeof payload.jti !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      payload.jti,
+    )
+  ) {
+    throw new Error('Resume token claims are invalid or expired.')
+  }
+  return payload as LectureResumeClaims
+}
+
+export async function signLectureResumeToken(
+  claims: LectureResumeClaims,
+  secret: string,
+) {
+  const encodedPayload = bytesToBase64Url(
+    new TextEncoder().encode(JSON.stringify(claims)),
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await importArchiveKey(secret, 'sign'),
+    new TextEncoder().encode(encodedPayload),
+  )
+  return `${encodedPayload}.${bytesToBase64Url(new Uint8Array(signature))}`
 }
 
 export async function signAssetTicket(

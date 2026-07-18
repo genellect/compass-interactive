@@ -1,5 +1,6 @@
 const ADMIN_TOKEN_SCOPE = 'compass-admin'
 const TOKEN_TTL_SECONDS = 8 * 60 * 60
+const IDLE_TTL_SECONDS = 30 * 60
 const textDecoder = new TextDecoder()
 const textEncoder = new TextEncoder()
 
@@ -57,6 +58,40 @@ async function signToken(payload: string, secret: string) {
   return base64UrlEncode(new Uint8Array(signature))
 }
 
+function bytesToHex(value: Uint8Array) {
+  return Array.from(value)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export async function sha256Hex(value: string) {
+  return bytesToHex(
+    new Uint8Array(
+      await crypto.subtle.digest('SHA-256', textEncoder.encode(value)),
+    ),
+  )
+}
+
+export async function hashAdminContext(
+  value: string,
+  secret: string,
+  domain: 'global' | 'network' | 'pin-version' | 'user' | 'user-agent',
+) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    textEncoder.encode(secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    textEncoder.encode(`${domain}:${value}`),
+  )
+  return bytesToHex(new Uint8Array(signature))
+}
+
 export function timingSafeEqual(left: string, right: string) {
   if (left.length !== right.length) {
     return false
@@ -83,24 +118,77 @@ export function getAdminTokenSecret() {
   return tokenSecret
 }
 
-export async function createAdminToken(secret: string) {
+async function getServiceClient() {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Admin session storage is not configured.')
+  }
+  const { createClient } = await import('npm:@supabase/supabase-js@2')
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  })
+}
+
+export function trackedAdminSessionsEnabled() {
+  return (
+    typeof Deno !== 'undefined' &&
+    Deno.env.get('PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') === 'true'
+  )
+}
+
+async function getPinVersionHash(secret: string) {
+  const adminPin = Deno.env.get('ADMIN_PIN')
+  if (!adminPin) throw new Error('Admin credential is not configured.')
+  return hashAdminContext(adminPin, secret, 'pin-version')
+}
+
+export async function createAdminToken(
+  secret: string,
+  context?: {
+    authUserId: string
+    networkHash: string | null
+    userAgentHash: string | null
+  },
+) {
   const now = Math.floor(Date.now() / 1000)
+  const sessionId = crypto.randomUUID()
   const payload = base64UrlEncode(
     JSON.stringify({
       exp: now + TOKEN_TTL_SECONDS,
       iat: now,
       scope: ADMIN_TOKEN_SCOPE,
-      sid: crypto.randomUUID(),
+      sid: sessionId,
     }),
   )
   const signature = await signToken(payload, secret)
+  const token = `${payload}.${signature}`
 
-  return `${payload}.${signature}`
+  if (trackedAdminSessionsEnabled()) {
+    if (!context) throw new Error('Admin session context is required.')
+    const serviceClient = await getServiceClient()
+    const { error } = await serviceClient.from('admin_sessions').insert({
+      auth_user_id: context.authUserId,
+      expires_at: new Date((now + TOKEN_TTL_SECONDS) * 1000).toISOString(),
+      id: sessionId,
+      idle_expires_at: new Date((now + IDLE_TTL_SECONDS) * 1000).toISOString(),
+      issued_at: new Date(now * 1000).toISOString(),
+      last_seen_at: new Date(now * 1000).toISOString(),
+      network_hash: context.networkHash,
+      pin_version_hash: await getPinVersionHash(secret),
+      token_hash: await sha256Hex(token),
+      user_agent_hash: context.userAgentHash,
+    })
+    if (error) throw new Error('Admin session could not be created.')
+  }
+
+  return token
 }
 
 export async function getAdminTokenClaims(
   token: string,
   secret: string,
+  request?: Request,
 ): Promise<AdminTokenClaims | null> {
   const [payload, signature, extra] = token.split('.')
 
@@ -137,14 +225,46 @@ export async function getAdminTokenClaims(
       return null
     }
 
+    if (trackedAdminSessionsEnabled()) {
+      if (!parsedPayload.sid || !request) return null
+      const serviceClient = await getServiceClient()
+      const authorization = request.headers.get('authorization') ?? ''
+      const bearerToken = authorization.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length).trim()
+        : ''
+      if (!bearerToken) return null
+      const { data: authData, error: authError } =
+        await serviceClient.auth.getUser(bearerToken)
+      if (authError || !authData.user) return null
+      const { data, error } = await serviceClient.rpc(
+        'verify_and_touch_admin_session',
+        {
+          target_pin_version_hash: await getPinVersionHash(secret),
+          target_session_id: parsedPayload.sid,
+          target_token_hash: await sha256Hex(token),
+        },
+      )
+      if (
+        error ||
+        !data ||
+        (data as { auth_user_id?: string }).auth_user_id !== authData.user.id
+      ) {
+        return null
+      }
+    }
+
     return parsedPayload as AdminTokenClaims
   } catch {
     return null
   }
 }
 
-export async function verifyAdminToken(token: string, secret: string) {
-  return (await getAdminTokenClaims(token, secret)) !== null
+export async function verifyAdminToken(
+  token: string,
+  secret: string,
+  request?: Request,
+) {
+  return (await getAdminTokenClaims(token, secret, request)) !== null
 }
 
 export function getAdminActorId(claims: AdminTokenClaims) {

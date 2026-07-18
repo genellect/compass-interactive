@@ -37,6 +37,11 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()
+    await admin.page.getByRole('button', { name: 'セッション管理' }).click()
+    await expect(
+      admin.page.getByRole('heading', { name: '管理セッション' }),
+    ).toBeVisible()
+    await expect(admin.page.getByText('現在のセッション')).toBeVisible()
 
     await admin.page.getByLabel('講義タイトル').fill(lectureTitle)
     await admin.page.getByRole('button', { name: '新しい講義を作成' }).click()
@@ -53,6 +58,18 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
     await student.page.goto('/join')
     await student.page.getByLabel('講義コード').fill(lectureCode ?? '')
+    const studentFunctionRequests: string[] = []
+    let resumeIssueStatus: number | null = null
+    student.page.on('request', (request) => {
+      if (request.url().includes('/functions/v1/')) {
+        studentFunctionRequests.push(request.url())
+      }
+    })
+    student.page.on('response', (response) => {
+      if (response.url().includes('/functions/v1/issue-lecture-resume-token')) {
+        resumeIssueStatus = response.status()
+      }
+    })
     await student.page.getByRole('button', { name: '参加する' }).click()
     await expect(
       student.page.getByRole('heading', { name: lectureTitle }),
@@ -60,6 +77,24 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       student.page.getByText('いま講義とつながっています'),
     ).toBeVisible({ timeout: 20_000 })
+    expect(studentFunctionRequests).toContainEqual(
+      expect.stringContaining('/functions/v1/issue-lecture-resume-token'),
+    )
+    await expect.poll(() => resumeIssueStatus).not.toBeNull()
+    expect(resumeIssueStatus).toBe(200)
+    const resumeEntries = await student.page.evaluate(() =>
+      JSON.parse(
+        window.localStorage.getItem(
+          'compass-interactive-lecture-resume-tokens-v1',
+        ) ?? '[]',
+      ),
+    )
+    expect(resumeEntries).toHaveLength(1)
+    expect(resumeEntries[0]).toMatchObject({
+      lectureCode,
+      token: expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
+    })
+    expect(student.page.url()).not.toContain(resumeEntries[0].token)
 
     const composer = student.page.locator('#lecture-question')
     await composer.getByLabel('ニックネームを表示する').check()
@@ -88,6 +123,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       composer.getByRole('button', { name: 'みんなに共有' }),
     ).toBeDisabled()
+
+    await admin.page.getByRole('button', { name: 'ログアウト' }).click()
+    await expect(admin.page.getByLabel('管理PIN')).toBeVisible()
 
     await admin.safety.assertClean()
     await student.safety.assertClean()

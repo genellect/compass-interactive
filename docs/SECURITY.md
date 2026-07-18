@@ -1,8 +1,8 @@
 # COMPASS Interactive Security Contract
 
 Last reviewed: 2026-07-18
-Status: implemented controls through Phase 6.6 plus explicitly tracked Phase
-6.8 gaps
+Status: locally implemented controls through Phase 6.8; Phase 6.8 remains
+default-OFF and pending hosted/human production evidence
 
 ## 1. Security objectives
 
@@ -71,9 +71,13 @@ The Admin PIN and API-use PIN are separate credentials with different purposes.
   or idempotency checks.
 - Admin/paid errors use generic messages and must not disclose credential state.
 
-Current Admin sessions use the implemented signed-token design. Phase 6.8 must
-add an application-level Admin PIN rate limit and server-tracked, individually
-revocable sessions before this area receives final production certification.
+Phase 6.8 application-level Admin PIN defense stores only the SHA-256 hash of
+each signed Admin token, binds the
+session to the authenticated user and PIN-version fingerprint, supports
+individual/logout revocation, and enforces eight-hour absolute and 30-minute
+inactivity expiry. A PIN rotation invalidates every prior session. PIN checks
+consume keyed user, trusted-network-when-available and coarse global buckets;
+raw PINs and IP addresses are not stored.
 
 ## 6. AI and provider safety
 
@@ -90,9 +94,11 @@ revocable sessions before this area receives final production certification.
 - AI Poll proposals and summaries require the existing quality/publication
   rules; proposals are not automatically converted to live Polls.
 
-Phase 6.8 must add explicit end-to-end timeouts and ambiguous-start
-reconciliation. Phase 7.2 must validate literature identifiers independently of
-model output.
+Phase 6.8 adds explicit client, Edge and provider deadlines. A provider create
+request receives a durable client request ID before transmission. A timeout at
+the provider boundary is recorded as an uncertain outcome, conservatively
+accounted and not automatically replayed. Phase 7.2 must validate literature
+identifiers independently of model output.
 
 ## 7. Browser-safe and server-only configuration
 
@@ -144,18 +150,20 @@ secret-bearing variable names/patterns without printing secret values.
 - The current archive code/session path is not equivalent to a high-entropy
   login credential.
 
-Phase 6.8 will issue a lecture-scoped high-entropy resume token after successful
-live join. Valid resume tokens should be preferred on re-entry, must never
-appear in URLs/logs and must support expiry/version revocation.
+When its default-OFF flags are enabled, Phase 6.8 issues a lecture-scoped,
+seven-day high-entropy resume token only after an owned successful join. The
+browser keeps a bounded set in local storage, prefers a valid token on archive
+re-entry and falls back to code plus Turnstile. Tokens never enter URLs or
+responses after exchange; expiry, cross-lecture mismatch and lecture version
+revocation fail closed.
 
 ## 10. HTTP and browser hardening
 
-Current static headers provide the implemented baseline. Phase 6.8 will add CSP
-in two stages:
+Phase 6.8 adds two CSP layers to the static Pages headers:
 
 1. report-only with a narrow allowlist for application, Supabase, Worker,
    Turnstile and necessary loopback Publisher communication;
-2. enforced CSP after all core flows and reports are clean.
+2. an enforced minimal allowlist compatible with the current core flows.
 
 CSP reports must remove query strings/fragments and must not become a token
 leak. Clickjacking, MIME sniffing, referrer and permissions policies remain part
@@ -208,7 +216,8 @@ forward. A destructive cleanup is not an acceptable first response.
 
 ## 14. Phase 6.8 security acceptance summary
 
-Phase 6.8 cannot pass until application-level PIN limiting, individual Admin
-session revocation, CSP enforcement, resume-token replay/expiry/cross-lecture
-tests and explicit communication/provider deadlines all pass the global gates
-in `docs/ROADMAP.md`.
+The Phase 6.8 local gate covers application-level PIN limiting, tracked Admin
+session revocation, CSP header contracts, resume-token expiry/version/
+cross-lecture rejection, bounded Edge input and explicit communication/provider
+deadlines. Hosted CSP route inspection and a human Admin/Join/Archive UX review
+remain blocking production evidence under `docs/ROADMAP.md`.

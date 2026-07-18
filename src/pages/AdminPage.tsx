@@ -7,6 +7,7 @@ import {
   type AdminPdfDocument,
   type AdminPoll,
   type AdminPollList,
+  type AdminSessionSummary,
   supabaseAdminRepository,
 } from '../repositories/supabaseAdminRepository'
 import { type DisplayState } from '../repositories/supabaseDisplayStateRepository'
@@ -16,12 +17,10 @@ import {
   isPhase4RealtimeCaptionsEnabled,
   isPhase5MaterialAnalysisEnabled,
   isPhase6SummariesEnabled,
+  isPhase68SecurityEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
-import {
-  PublisherRequestError,
-  publisherClient,
-} from '../pdf/publisherClient'
+import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
 import {
   LectureSummaryControl,
   MaterialAnalysisControl,
@@ -79,6 +78,11 @@ export function AdminPage() {
   } = useCompassState()
   const [isAuthenticated, setIsAuthenticated] = useState(restoreAdminSession)
   const [adminToken, setAdminToken] = useState(restoreAdminToken)
+  const [adminSessions, setAdminSessions] = useState<AdminSessionSummary[]>([])
+  const [adminCurrentSessionId, setAdminCurrentSessionId] = useState('')
+  const [adminSessionsError, setAdminSessionsError] = useState('')
+  const [adminSessionsLoading, setAdminSessionsLoading] = useState(false)
+  const [showAdminSessions, setShowAdminSessions] = useState(false)
   const [pin, setPin] = useState('')
   const [authError, setAuthError] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
@@ -318,10 +322,7 @@ export function AdminPage() {
         try {
           await publisherClient.verifySession(publisherSessionToken)
         } catch (error) {
-          if (
-            error instanceof PublisherRequestError &&
-            error.status === 401
-          ) {
+          if (error instanceof PublisherRequestError && error.status === 401) {
             window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
             setPublisherSessionToken('')
             setPublisherStatus('connected')
@@ -562,7 +563,7 @@ export function AdminPage() {
     }
   }, [isAuthenticated, publisherSessionToken])
 
-  function handleLogout() {
+  function clearLocalAdminSession() {
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
     window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
     setIsAuthenticated(false)
@@ -572,8 +573,64 @@ export function AdminPage() {
     setAdminPollsHasMore(false)
     setAdminPollsError(null)
     setAdminPdfDocuments([])
+    setAdminSessions([])
+    setAdminCurrentSessionId('')
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
+  }
+
+  async function handleLogout() {
+    try {
+      if (isPhase68SecurityEnabled && adminToken) {
+        await supabaseAdminRepository.manageAdminSessions({
+          action: 'logout',
+          adminToken,
+        })
+      }
+    } catch {
+      // Local logout is fail-safe even when the revoke request times out.
+    } finally {
+      clearLocalAdminSession()
+    }
+  }
+
+  async function refreshAdminSessions() {
+    if (!adminToken || !isPhase68SecurityEnabled) return
+    setAdminSessionsLoading(true)
+    setAdminSessionsError('')
+    try {
+      const result = await supabaseAdminRepository.manageAdminSessions({
+        action: 'list',
+        adminToken,
+      })
+      setAdminSessions(result.sessions)
+      setAdminCurrentSessionId(result.currentSessionId ?? '')
+    } catch {
+      setAdminSessionsError('管理セッションを確認できませんでした。')
+    } finally {
+      setAdminSessionsLoading(false)
+    }
+  }
+
+  async function revokeAdminSession(sessionId: string) {
+    if (!adminToken) return
+    setAdminSessionsLoading(true)
+    setAdminSessionsError('')
+    try {
+      await supabaseAdminRepository.manageAdminSessions({
+        action: 'revoke',
+        adminToken,
+        sessionId,
+      })
+      if (sessionId === adminCurrentSessionId) {
+        clearLocalAdminSession()
+      } else if (adminSessions.some((session) => session.id === sessionId)) {
+        await refreshAdminSessions()
+      }
+    } catch {
+      setAdminSessionsError('管理セッションを失効できませんでした。')
+      setAdminSessionsLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -786,17 +843,15 @@ export function AdminPage() {
         (item) => !existingIds.has(item.id),
       )
       if (duplicatedLecture) {
-        const startedLectures =
-          await supabaseAdminRepository.manageLectures({
-            action: 'start',
-            adminToken,
-            lectureSessionId: duplicatedLecture.id,
-          })
+        const startedLectures = await supabaseAdminRepository.manageLectures({
+          action: 'start',
+          adminToken,
+          lectureSessionId: duplicatedLecture.id,
+        })
         setLectures(startedLectures)
         const startedLecture =
-          startedLectures.find(
-            (item) => item.id === duplicatedLecture.id,
-          ) ?? duplicatedLecture
+          startedLectures.find((item) => item.id === duplicatedLecture.id) ??
+          duplicatedLecture
         selectLectureSession(makeJoinedLecture(startedLecture))
         setShowLectureHistory(false)
       }
@@ -947,11 +1002,7 @@ export function AdminPage() {
     commentId: string,
     action: 'togglePin' | 'toggleVisibility',
   ) {
-    if (
-      !adminToken ||
-      !activeLectureSessionId ||
-      commentModerationPendingId
-    ) {
+    if (!adminToken || !activeLectureSessionId || commentModerationPendingId) {
       return
     }
 
@@ -1058,15 +1109,69 @@ export function AdminPage() {
           </button>
           <button
             className="secondary-button"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             type="button"
           >
             ログアウト
           </button>
+          {isPhase68SecurityEnabled ? (
+            <button
+              className="secondary-button"
+              onClick={() => {
+                const next = !showAdminSessions
+                setShowAdminSessions(next)
+                if (next) void refreshAdminSessions()
+              }}
+              type="button"
+            >
+              セッション管理
+            </button>
+          ) : null}
         </div>
       </section>
       {displayLaunchError ? (
         <p className="error-note">{displayLaunchError}</p>
+      ) : null}
+      {showAdminSessions && isPhase68SecurityEnabled ? (
+        <section className="control-card admin-session-panel">
+          <div>
+            <p className="eyebrow">SECURITY</p>
+            <h2>管理セッション</h2>
+            <p>利用していない端末のセッションを個別に失効できます。</p>
+          </div>
+          {adminSessionsError ? (
+            <p className="error-note" role="alert">
+              {adminSessionsError}
+            </p>
+          ) : null}
+          <div className="admin-session-list">
+            {adminSessions.map((session) => (
+              <div className="admin-session-row" key={session.id}>
+                <span>
+                  <strong>
+                    {session.revokedAt
+                      ? '失効済み'
+                      : session.id === adminCurrentSessionId
+                        ? '現在のセッション'
+                        : '有効なセッション'}
+                  </strong>
+                  <small>
+                    最終確認{' '}
+                    {new Date(session.lastSeenAt).toLocaleString('ja-JP')}
+                  </small>
+                </span>
+                <button
+                  className="secondary-button compact"
+                  disabled={adminSessionsLoading || Boolean(session.revokedAt)}
+                  onClick={() => void revokeAdminSession(session.id)}
+                  type="button"
+                >
+                  失効する
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       <nav className="admin-workflow" aria-label="講義運営の流れ">
@@ -1624,9 +1729,7 @@ export function AdminPage() {
             <div>
               <strong>5分ハイライト</strong>
               <small>
-                {isPhase6SummariesEnabled
-                  ? '話の要点とみんなの反応'
-                  : '停止中'}
+                {isPhase6SummariesEnabled ? '話の要点とみんなの反応' : '停止中'}
               </small>
             </div>
             <span

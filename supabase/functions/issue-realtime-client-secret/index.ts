@@ -6,6 +6,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import {
   createOpenAiRealtimeCall,
   createRealtimeTranscriptionSessionConfig,
@@ -102,9 +103,13 @@ Deno.serve(async (request) => {
 
   let body: IssueRealtimeSecretRequest
   try {
-    body = (await request.json()) as IssueRealtimeSecretRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<IssueRealtimeSecretRequest>(request, 128 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
   if (
     !body.adminToken ||
@@ -153,7 +158,7 @@ Deno.serve(async (request) => {
   let pricePerMinute: number
   try {
     const tokenSecret = getAdminTokenSecret()
-    claims = await getAdminTokenClaims(body.adminToken, tokenSecret)
+    claims = await getAdminTokenClaims(body.adminToken, tokenSecret, request)
     grant = parseBillingGrantToken(body.billingGrant)
     pricePerMinute = parsePrice(
       Deno.env.get('OPENAI_REALTIME_PRICE_MICROUSD_PER_MINUTE'),
@@ -302,10 +307,11 @@ Deno.serve(async (request) => {
     ...(language === 'auto' ? {} : { language }),
     model,
   })
-  let providerCall:
-    | Awaited<ReturnType<typeof createOpenAiRealtimeCall>>
-    | null = null
+  let providerCall: Awaited<
+    ReturnType<typeof createOpenAiRealtimeCall>
+  > | null = null
   let providerCallRegistered = false
+  const clientRequestId = crypto.randomUUID()
 
   const sweepOperation = async () =>
     runRealtimeProviderHangupSweep({
@@ -339,8 +345,20 @@ Deno.serve(async (request) => {
     })
 
   try {
+    const { error: requestIdError } = await supabase.rpc(
+      'record_realtime_provider_client_request',
+      {
+        target_actor_id: actorId,
+        target_client_request_id: clientRequestId,
+        target_operation_id: operationId,
+      },
+    )
+    if (requestIdError) {
+      throw new Error('realtime_client_request_registration_failed')
+    }
     providerCall = await createOpenAiRealtimeCall({
       apiKey: openAiApiKey,
+      clientRequestId,
       safetyIdentifier: await sha256Hex(`${body.lectureSessionId}:${actorId}`),
       sdpOffer: body.sdpOffer,
       sessionConfig,
@@ -386,6 +404,11 @@ Deno.serve(async (request) => {
   } catch (error) {
     const errorCode =
       error instanceof Error ? error.message.slice(0, 120) : 'openai_error'
+    const creationOutcomeUncertain =
+      !providerCall &&
+      (error instanceof DOMException
+        ? error.name === 'TimeoutError' || error.name === 'AbortError'
+        : errorCode === 'TimeoutError' || errorCode === 'AbortError')
 
     if (providerCall && !providerCallRegistered) {
       let directHangupConfirmed = false
@@ -399,38 +422,49 @@ Deno.serve(async (request) => {
         // A registration retry below gives the durable sweep another chance.
       }
       if (!directHangupConfirmed) {
-        const { data: recoveryData, error: recoveryError } =
-          await supabase.rpc('admin_activate_realtime_provider_call', {
+        const { data: recoveryData, error: recoveryError } = await supabase.rpc(
+          'admin_activate_realtime_provider_call',
+          {
             target_actor_id: actorId,
             target_operation_id: operationId,
             target_provider_call_id: providerCall.callId,
             target_provider_request_id: providerCall.requestId,
-          })
+          },
+        )
         if (!recoveryError && recoveryData) {
           providerCallRegistered = true
         }
       }
     }
     if (!providerCallRegistered) {
-      await supabase.rpc('admin_fail_realtime_provider_call_creation', {
-        target_actor_id: actorId,
-        target_error: errorCode,
-        target_operation_id: operationId,
-      })
+      await supabase.rpc(
+        creationOutcomeUncertain
+          ? 'mark_realtime_provider_creation_uncertain'
+          : 'admin_fail_realtime_provider_call_creation',
+        {
+          target_actor_id: actorId,
+          target_error: creationOutcomeUncertain
+            ? 'openai_realtime_create_timeout'
+            : errorCode,
+          target_operation_id: operationId,
+        },
+      )
     }
     await supabase.rpc('admin_finish_realtime_caption_operation', {
-      charge_elapsed: false,
+      charge_elapsed: creationOutcomeUncertain,
       disable_feature: true,
       target_actor_id: actorId,
       target_operation_id: operationId,
-      target_reason: errorCode,
+      target_reason: creationOutcomeUncertain
+        ? 'openai_realtime_create_timeout'
+        : errorCode,
     })
     await supabase.rpc('admin_record_realtime_token_issue', {
       target_actor_id: actorId,
       target_model_id: model,
       target_operation_id: operationId,
       target_outcome: 'failed',
-      target_provider_request_id: null,
+      target_provider_request_id: clientRequestId,
     })
     if (providerCallRegistered) {
       try {

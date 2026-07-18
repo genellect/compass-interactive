@@ -70,3 +70,32 @@
     grid-template-columns: 1fr;
   }
 }
+.admin-session-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-session-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-session-row {
+  align-items: center;
+  border: 1px solid var(--border-color, #dce4ed);
+  border-radius: 0.85rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+}
+
+.admin-session-row span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-session-row small {
+  color: var(--text-muted, #5f6b78);
+}

@@ -177,6 +177,10 @@ PASS. An automated or human test that has not run is `BLOCKED`, not `PASS`.
 
 ## 5. Phase 6.8 - security, sessions and timeout
 
+Repository status: implemented and locally verified on 2026-07-18 with every
+new flag default-OFF. Production status remains HOLD until hosted CSP/header
+inspection and the required human flow evidence are recorded.
+
 ### Tasks
 
 - Add application-level Admin PIN rate limiting using user, trusted network hash

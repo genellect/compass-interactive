@@ -77,16 +77,21 @@ assert.deepEqual(sessionConfig, {
 })
 
 let observedAuthorization = ''
+let observedClientRequestId = ''
 let observedSafetyIdentifier = ''
 let observedSdp = ''
 let observedSession = null
 const call = await createOpenAiRealtimeCall({
   apiKey: 'test-key-never-logged',
+  clientRequestId: '12345678-1234-4123-8123-123456789012',
   fetchImpl: async (_input, init) => {
     observedAuthorization =
       new Headers(init?.headers).get('Authorization') ?? ''
     observedSafetyIdentifier =
       new Headers(init?.headers).get('OpenAI-Safety-Identifier') ?? ''
+    observedClientRequestId =
+      new Headers(init?.headers).get('X-Client-Request-Id') ?? ''
+    assert.ok(init?.signal)
     assert.ok(init?.body instanceof FormData)
     observedSdp = await init.body.get('sdp').text()
     observedSession = JSON.parse(await init.body.get('session').text())
@@ -104,6 +109,7 @@ const call = await createOpenAiRealtimeCall({
   sessionConfig,
 })
 assert.equal(observedAuthorization, 'Bearer test-key-never-logged')
+assert.equal(observedClientRequestId, '12345678-1234-4123-8123-123456789012')
 assert.equal(observedSafetyIdentifier, 'hashed-lecture-admin')
 assert.equal(observedSdp, 'v=0\r\noffer-test-sdp')
 assert.deepEqual(observedSession, sessionConfig.session)
@@ -126,6 +132,7 @@ assert.throws(
 await assert.rejects(
   createOpenAiRealtimeCall({
     apiKey: 'test-key',
+    clientRequestId: '22345678-1234-4123-8123-123456789012',
     fetchImpl: async () => new Response('{}', { status: 429 }),
     safetyIdentifier: 'hashed',
     sdpOffer: 'v=0\r\noffer-test-sdp',
@@ -137,6 +144,7 @@ await assert.rejects(
 await assert.rejects(
   createOpenAiRealtimeCall({
     apiKey: 'test-key',
+    clientRequestId: '32345678-1234-4123-8123-123456789012',
     fetchImpl: async () =>
       new Response('v=0\r\nanswer-test-sdp', { status: 201 }),
     safetyIdentifier: 'hashed',

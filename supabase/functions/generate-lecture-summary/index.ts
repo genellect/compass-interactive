@@ -30,6 +30,7 @@ import {
 import {
   readJsonBody,
   RequestBodyTooLargeError,
+  UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -62,10 +63,17 @@ function responseForError(
   error: unknown,
 ) {
   if (error instanceof LectureSummaryError) {
-    return jsonResponse({ code: error.code, message: error.message, ok: false }, error.status)
+    return jsonResponse(
+      { code: error.code, message: error.message, ok: false },
+      error.status,
+    )
   }
   return jsonResponse(
-    { code: 'summary_failed', message: 'Lecture summary generation failed.', ok: false },
+    {
+      code: 'summary_failed',
+      message: 'Lecture summary generation failed.',
+      ok: false,
+    },
     502,
   )
 }
@@ -89,7 +97,13 @@ Deno.serve(async (request) => {
     body = await readJsonBody<RequestBody>(request, PHASE6_MAX_REQUEST_BYTES)
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return jsonResponse({ message: 'Request body is too large.', ok: false }, 413)
+      return jsonResponse(
+        { message: 'Request body is too large.', ok: false },
+        413,
+      )
+    }
+    if (error instanceof UnsupportedJsonContentTypeError) {
+      return jsonResponse({ message: 'Request must be JSON.', ok: false }, 415)
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
@@ -102,7 +116,10 @@ Deno.serve(async (request) => {
     (body.windowIndex ?? 0) > 18
   ) {
     return jsonResponse(
-      { message: 'Admin session, run and valid window are required.', ok: false },
+      {
+        message: 'Admin session, run and valid window are required.',
+        ok: false,
+      },
       400,
     )
   }
@@ -112,6 +129,7 @@ Deno.serve(async (request) => {
     const claims = await getAdminTokenClaims(
       body.adminToken,
       getAdminTokenSecret(),
+      request,
     )
     if (!claims) {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
@@ -144,21 +162,23 @@ Deno.serve(async (request) => {
     const pdf = await normalizePdfContext(body.pdfContext)
 
     if (pdf.context) {
-      const [{ data: document, error: documentError }, { data: live, error: liveError }] =
-        await Promise.all([
-          supabase
-            .from('lecture_pdf_documents')
-            .select('document_id,document_version,page_count,visible')
-            .eq('lecture_session_id', body.lectureSessionId)
-            .eq('document_id', pdf.context.documentId)
-            .eq('document_version', pdf.context.documentVersion)
-            .maybeSingle(),
-          supabase
-            .from('lecture_live_state')
-            .select('pdf_document_id,pdf_document_version,pdf_page_count')
-            .eq('lecture_session_id', body.lectureSessionId)
-            .maybeSingle(),
-        ])
+      const [
+        { data: document, error: documentError },
+        { data: live, error: liveError },
+      ] = await Promise.all([
+        supabase
+          .from('lecture_pdf_documents')
+          .select('document_id,document_version,page_count,visible')
+          .eq('lecture_session_id', body.lectureSessionId)
+          .eq('document_id', pdf.context.documentId)
+          .eq('document_version', pdf.context.documentVersion)
+          .maybeSingle(),
+        supabase
+          .from('lecture_live_state')
+          .select('pdf_document_id,pdf_document_version,pdf_page_count')
+          .eq('lecture_session_id', body.lectureSessionId)
+          .maybeSingle(),
+      ])
       if (documentError || liveError) throw documentError ?? liveError
       if (
         !document ||
@@ -217,7 +237,11 @@ Deno.serve(async (request) => {
         results?: unknown
       }
       if (skipped.accepted !== false) {
-        return jsonResponse({ ok: true, results: skipped.results, skipped: true })
+        return jsonResponse({
+          ok: true,
+          results: skipped.results,
+          skipped: true,
+        })
       }
       if (skipped.reason !== 'comment_context_available') {
         throw new LectureSummaryError(
@@ -259,7 +283,11 @@ Deno.serve(async (request) => {
       const start = startData as StartResult
       if (!start.accepted || !start.operation?.id || !start.window) {
         if (start.reason === 'window_final') {
-          return jsonResponse({ idempotentReplay: true, ok: true, results: start.results })
+          return jsonResponse({
+            idempotentReplay: true,
+            ok: true,
+            results: start.results,
+          })
         }
         throw new LectureSummaryError(
           start.reason ?? 'summary_start_rejected',
@@ -270,13 +298,16 @@ Deno.serve(async (request) => {
 
       const operationId = start.operation.id
       let provider: OpenAiSummaryResponse | null = null
+      const clientRequestId = crypto.randomUUID()
       try {
         const openAiRequest = buildSummaryOpenAiRequest({
           commentContext: start.comment_context,
           materialContext: start.material_context,
           pdfContext: pdf.context,
           previousSummary: start.previous_summary,
-          safetyIdentifier: await sha256Hex(`${actorId}:${body.lectureSessionId}`),
+          safetyIdentifier: await sha256Hex(
+            `${actorId}:${body.lectureSessionId}`,
+          ),
           transcript: transcript.segments,
           windowEnd: start.window.window_end ?? '',
           windowStart: start.window.window_start ?? '',
@@ -286,6 +317,7 @@ Deno.serve(async (request) => {
           headers: {
             Authorization: `Bearer ${openAiKey}`,
             'Content-Type': 'application/json',
+            'X-Client-Request-Id': clientRequestId,
           },
           method: 'POST',
           signal: AbortSignal.timeout(45_000),
@@ -365,7 +397,7 @@ Deno.serve(async (request) => {
           actual_input_tokens: accounting.actualInputTokens,
           actual_microusd: accounting.actualMicrousd,
           actual_output_tokens: accounting.actualOutputTokens,
-          provider_request_id: provider?.id ?? null,
+          provider_request_id: provider?.id ?? clientRequestId,
           target_actor_id: actorId,
           target_error_code: code,
           target_operation_id: operationId,
@@ -381,7 +413,14 @@ Deno.serve(async (request) => {
         break
       }
     }
-    throw lastError ?? new LectureSummaryError('summary_failed', 'Summary generation failed.', 502)
+    throw (
+      lastError ??
+      new LectureSummaryError(
+        'summary_failed',
+        'Summary generation failed.',
+        502,
+      )
+    )
   } catch (error) {
     return responseForError(jsonResponse, error)
   }

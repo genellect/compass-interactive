@@ -10,6 +10,9 @@ export type RealtimeProviderCall = {
   requestId: string | null
 }
 
+const REALTIME_CREATE_TIMEOUT_MS = 20_000
+const REALTIME_HANGUP_TIMEOUT_MS = 10_000
+
 export function createRealtimeTranscriptionSessionConfig({
   delay = 'low',
   language,
@@ -62,12 +65,14 @@ export function parseRealtimeCallId(location: string | null) {
 
 export async function createOpenAiRealtimeCall({
   apiKey,
+  clientRequestId,
   fetchImpl = fetch,
   safetyIdentifier,
   sdpOffer,
   sessionConfig,
 }: {
   apiKey: string
+  clientRequestId: string
   fetchImpl?: typeof fetch
   safetyIdentifier: string
   sdpOffer: string
@@ -79,6 +84,9 @@ export async function createOpenAiRealtimeCall({
     !sdpOffer.startsWith('v=0')
   ) {
     throw new Error('invalid_realtime_sdp_offer')
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(clientRequestId)) {
+    throw new Error('invalid_realtime_client_request_id')
   }
 
   const formData = new FormData()
@@ -101,8 +109,10 @@ export async function createOpenAiRealtimeCall({
       Accept: 'application/sdp',
       Authorization: `Bearer ${apiKey}`,
       'OpenAI-Safety-Identifier': safetyIdentifier,
+      'X-Client-Request-Id': clientRequestId,
     },
     method: 'POST',
+    signal: AbortSignal.timeout(REALTIME_CREATE_TIMEOUT_MS),
   })
 
   if (!response.ok) {
@@ -148,8 +158,10 @@ export async function hangupOpenAiRealtimeCall({
       headers: {
         Accept: '*/*',
         Authorization: `Bearer ${apiKey}`,
+        'X-Client-Request-Id': crypto.randomUUID(),
       },
       method: 'POST',
+      signal: AbortSignal.timeout(REALTIME_HANGUP_TIMEOUT_MS),
     },
   )
 

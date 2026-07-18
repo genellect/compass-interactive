@@ -80,6 +80,7 @@ const appEnvironment = {
   VITE_PHASE6_SUMMARIES: 'false',
   VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
+  VITE_PHASE6_8_SECURITY: mode === 'local' ? 'true' : 'false',
 }
 
 const viteProcess = spawn(

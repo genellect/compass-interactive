@@ -1,6 +1,7 @@
 ARCHIVE_ACCESS_SECRET=replace-with-a-random-local-secret-of-at-least-32-bytes
 ARCHIVE_CODE_LOOKUP_SECRET=replace-with-a-different-random-secret-of-at-least-32-bytes
 ARCHIVE_INGEST_SECRET=replace-with-the-same-Edge-ingest-secret-of-at-least-32-bytes
+LECTURE_RESUME_TOKEN_SECRET=replace-with-the-same-Edge-resume-secret-of-at-least-32-bytes
 PDF_ACCESS_PUBLIC_JWK={"kty":"EC","crv":"P-256","x":"replace-with-local-public-x","y":"replace-with-local-public-y"}
 PDF_ASSET_TICKET_SECRET=replace-with-a-random-local-secret-of-at-least-32-bytes
 PDF_RETENTION_SYNC_SECRET=replace-with-the-same-random-Edge-secret-of-at-least-32-bytes

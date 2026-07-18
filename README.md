@@ -13,9 +13,11 @@ secrets.
 
 ## Current status
 
-- Application version: `0.7.0` development preview.
+- Application version: `0.8.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 6.6 are implemented in the repository.
+- Phase 0 through Phase 6.8 are implemented in the repository. Phase 6.8 is
+  locally verified, remains default-OFF and has not been reflected to hosted
+  services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -24,8 +26,9 @@ secrets.
   gates are recorded separately.
 - GitHub Actions now runs non-live regression, a Supabase-independent Demo E2E
   and a disposable local-Supabase teacher/student E2E.
-- Phase 6.7 is the documentation and release-baseline phase. It does not add a
-  classroom feature or authorize a production deployment.
+- Phase 6.7 established the documentation/release baseline. Phase 6.8 adds
+  tracked Admin sessions, PIN throttling, lecture resume tokens, CSP and
+  bounded communication/provider behavior without authorizing deployment.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -154,6 +157,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE6_SUMMARIES`
 - `VITE_PHASE6_5_COMMENT_NICKNAMES`
 - `VITE_PHASE6_6_UX_INTEGRATION`
+- `VITE_PHASE6_8_SECURITY`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -169,6 +173,7 @@ npm run typecheck:phase3
 npm run typecheck:e2e
 npm run lint
 npm run test:phase6-7-docs
+npm run test:phase6-8-static
 npm run build
 git diff --check
 ```
@@ -231,6 +236,8 @@ flags before attempting a destructive rollback.
 - Development history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 - Phase 6.7 baseline and acceptance: [`docs/PHASE6_7_DOCUMENTATION_BASELINE.md`](docs/PHASE6_7_DOCUMENTATION_BASELINE.md)
 - Phase 6.7 local evidence: [`docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_7_LOCAL_GATE_2026-07-18.md)
+- Phase 6.8 security/session design: [`docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`](docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md)
+- Phase 6.8 local evidence: [`docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_8_LOCAL_GATE_2026-07-18.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)

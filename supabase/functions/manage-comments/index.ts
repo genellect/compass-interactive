@@ -5,6 +5,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type ManageCommentsRequest = {
@@ -30,9 +31,13 @@ Deno.serve(async (request) => {
 
   let body: ManageCommentsRequest
   try {
-    body = (await request.json()) as ManageCommentsRequest
-  } catch {
-    return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
+    body = await readJsonBody<ManageCommentsRequest>(request, 8 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { message: bodyError.message, ok: false },
+      bodyError.status,
+    )
   }
 
   if (
@@ -54,12 +59,12 @@ Deno.serve(async (request) => {
     claims = await getAdminTokenClaims(
       body.adminToken,
       getAdminTokenSecret(),
+      request,
     )
   } catch (error) {
     return jsonResponse(
       {
-        message:
-          error instanceof Error ? error.message : 'Admin auth failed.',
+        message: error instanceof Error ? error.message : 'Admin auth failed.',
         ok: false,
       },
       500,
@@ -81,16 +86,13 @@ Deno.serve(async (request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
-  const { data, error } = await supabase.rpc(
-    'admin_moderate_lecture_comment',
-    {
-      target_action:
-        body.action === 'togglePin' ? 'toggle_pin' : 'toggle_visibility',
-      target_actor_id: getAdminActorId(claims),
-      target_comment_id: body.commentId,
-      target_lecture_session_id: body.lectureSessionId,
-    },
-  )
+  const { data, error } = await supabase.rpc('admin_moderate_lecture_comment', {
+    target_action:
+      body.action === 'togglePin' ? 'toggle_pin' : 'toggle_visibility',
+    target_actor_id: getAdminActorId(claims),
+    target_comment_id: body.commentId,
+    target_lecture_session_id: body.lectureSessionId,
+  })
 
   if (error) {
     const denied = error.code === '42501'

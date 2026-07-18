@@ -33,7 +33,12 @@ import {
   isPhase1SyncProtocolEnabled,
   isPhase2LectureLifecycleEnabled,
   isPhase66UxIntegrationEnabled,
+  isPhase68SecurityEnabled,
 } from '../lib/featureFlags'
+import {
+  persistLectureResumeToken,
+  restoreLectureResumeTokenByCode,
+} from '../lib/lectureResumeStorage'
 import {
   advanceLiveStateVersions,
   getRequestedLiveStateVersions,
@@ -427,10 +432,19 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setIsArchiveResumePending(true)
     setArchiveResumeError(null)
     let active = true
-    void getLectureJoinCaptchaToken()
-      .then((turnstileToken) =>
-        archiveClient.resolveLectureCode(lectureCode, turnstileToken),
-      )
+    void (async () => {
+      const storedResume = isPhase68SecurityEnabled
+        ? restoreLectureResumeTokenByCode(lectureCode)
+        : null
+      if (storedResume) {
+        const resumed = await archiveClient
+          .resumeLecture(storedResume.token, lectureCode)
+          .catch(() => null)
+        if (resumed) return resumed
+      }
+      const turnstileToken = await getLectureJoinCaptchaToken()
+      return archiveClient.resolveLectureCode(lectureCode, turnstileToken)
+    })()
       .then((archive) => {
         if (!active) return
         if (!archive) {
@@ -1262,15 +1276,29 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
 
           if (isPhase66UxIntegrationEnabled && archiveClient.isConfigured()) {
-            const archiveCaptchaToken = await getLectureJoinCaptchaToken()
-            const archive = await archiveClient
-              .resolveLectureCode(lectureCode, archiveCaptchaToken)
-              .catch((error) => {
-                if (error instanceof ArchiveLookupError && error.status < 500) {
-                  throw error
-                }
-                return null
-              })
+            const storedResume = isPhase68SecurityEnabled
+              ? restoreLectureResumeTokenByCode(lectureCode)
+              : null
+            const resumedArchive = storedResume
+              ? await archiveClient
+                  .resumeLecture(storedResume.token, lectureCode)
+                  .catch(() => null)
+              : null
+            const archive =
+              resumedArchive ??
+              (await getLectureJoinCaptchaToken().then((archiveCaptchaToken) =>
+                archiveClient
+                  .resolveLectureCode(lectureCode, archiveCaptchaToken)
+                  .catch((error) => {
+                    if (
+                      error instanceof ArchiveLookupError &&
+                      error.status < 500
+                    ) {
+                      throw error
+                    }
+                    return null
+                  }),
+              ))
             if (archive) {
               lifecycleRequestEpochRef.current += 1
               clearJoinedLectureSession()
@@ -1302,11 +1330,15 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          const { lecture: joinedLecture, participantId } =
-            await supabaseLectureRepository.joinLectureByCode(
-              lectureCode,
-              undefined,
-            )
+          const {
+            lecture: joinedLecture,
+            participantId,
+            resumeToken,
+            resumeTokenExpiresAt,
+          } = await supabaseLectureRepository.joinLectureByCode(
+            lectureCode,
+            undefined,
+          )
 
           clearLectureArchiveResumeCode()
           archiveResumeAttemptedCodeRef.current = null
@@ -1315,6 +1347,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           setArchiveSession(null)
           persistJoinedLectureSession(joinedLecture)
           persistLocalParticipantIdentity(participantId, joinedLecture.id)
+          if (resumeToken && resumeTokenExpiresAt) {
+            persistLectureResumeToken({
+              expiresAt: resumeTokenExpiresAt,
+              lectureCode: lectureCode.trim().toUpperCase(),
+              lectureSessionId: joinedLecture.id,
+              token: resumeToken,
+            })
+          }
           setSessionSyncPauseReason(null)
           recordSessionActivity()
 

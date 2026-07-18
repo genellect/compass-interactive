@@ -58,10 +58,7 @@ type RawArchiveResponse = {
       lecture_recap: string[]
       pinned: boolean
       published_at: string
-      review_state:
-        | 'admin_confirmed'
-        | 'admin_revised'
-        | 'ai_unreviewed'
+      review_state: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
       revision_id: string
       window_end: string
       window_index: number
@@ -106,6 +103,7 @@ function mapArchive(
   body: RawArchiveResponse,
   lectureCode: string,
   workerBaseUrl: string,
+  resumeToken?: string,
 ): LectureArchiveSession {
   if (
     !body.ok ||
@@ -145,9 +143,8 @@ function mapArchive(
         }
       : null,
     lectureCode,
-    participantCountApproximate: Number(
-      archive.participant_count_approximate,
-    ),
+    ...(resumeToken ? { resumeToken } : {}),
+    participantCountApproximate: Number(archive.participant_count_approximate),
     pdf: archive.pdf
       ? {
           currentPage: Number(archive.pdf.current_page),
@@ -245,9 +242,9 @@ export const archiveClient = {
       method: 'POST',
     })
     if (response.status === 404) return null
-    const body = (await response.json().catch(() => null)) as
-      | RawArchiveResponse
-      | null
+    const body = (await response
+      .json()
+      .catch(() => null)) as RawArchiveResponse | null
     if (!response.ok || !body) {
       throw new ArchiveLookupError(
         body?.message ?? '講義アーカイブの確認に失敗しました。',
@@ -255,6 +252,43 @@ export const archiveClient = {
       )
     }
     return mapArchive(body, normalizedLectureCode, workerBaseUrl)
+  },
+
+  async resumeLecture(
+    resumeToken: string,
+    lectureCode: string,
+  ): Promise<LectureArchiveSession | null> {
+    const workerBaseUrl = getWorkerBaseUrl()
+    if (!workerBaseUrl) return null
+    if (
+      resumeToken.length < 80 ||
+      resumeToken.length > 2_048 ||
+      !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(resumeToken)
+    ) {
+      return null
+    }
+    const response = await fetch(`${workerBaseUrl}/v1/archives/resume`, {
+      body: JSON.stringify({ resumeToken }),
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+    if ([401, 403, 404, 410].includes(response.status)) return null
+    const body = (await response
+      .json()
+      .catch(() => null)) as RawArchiveResponse | null
+    if (!response.ok || !body) {
+      throw new ArchiveLookupError(
+        body?.message ?? 'Lecture archive resume failed.',
+        response.status,
+      )
+    }
+    return mapArchive(
+      body,
+      lectureCode.trim().toUpperCase(),
+      workerBaseUrl,
+      resumeToken,
+    )
   },
 
   async getDocumentAccessUrl(
@@ -270,11 +304,14 @@ export const archiveClient = {
 
     let activeArchive = archive
     if (shouldRefreshArchiveAccess(activeArchive)) {
-      const turnstileToken = await getLectureJoinCaptchaToken()
-      const refreshed = await this.resolveLectureCode(
-        archive.lectureCode,
-        turnstileToken,
-      )
+      const refreshed = activeArchive.resumeToken
+        ? await this.resumeLecture(
+            activeArchive.resumeToken,
+            activeArchive.lectureCode,
+          )
+        : await getLectureJoinCaptchaToken().then((turnstileToken) =>
+            this.resolveLectureCode(activeArchive.lectureCode, turnstileToken),
+          )
       if (!refreshed) {
         throw new Error('講義記録へのアクセスを更新できませんでした。')
       }
@@ -283,11 +320,11 @@ export const archiveClient = {
 
     let result = await requestDocumentAccessUrl(activeArchive, mode)
     if (result.response.status === 401 && activeArchive === archive) {
-      const turnstileToken = await getLectureJoinCaptchaToken()
-      const refreshed = await this.resolveLectureCode(
-        archive.lectureCode,
-        turnstileToken,
-      )
+      const refreshed = archive.resumeToken
+        ? await this.resumeLecture(archive.resumeToken, archive.lectureCode)
+        : await getLectureJoinCaptchaToken().then((turnstileToken) =>
+            this.resolveLectureCode(archive.lectureCode, turnstileToken),
+          )
       if (!refreshed) {
         throw new Error('講義記録へのアクセスを更新できませんでした。')
       }

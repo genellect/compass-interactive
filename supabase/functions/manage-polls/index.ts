@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type PollStatus = 'draft' | 'open' | 'closed'
@@ -77,9 +78,13 @@ Deno.serve(async (request) => {
 
   let body: ManagePollsRequest
   try {
-    body = (await request.json()) as ManagePollsRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<ManagePollsRequest>(request, 64 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
 
   let tokenSecret: string
@@ -97,7 +102,7 @@ Deno.serve(async (request) => {
 
   if (
     !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret))
+    !(await verifyAdminToken(body.adminToken, tokenSecret, request))
   ) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
@@ -113,10 +118,7 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   })
 
-  async function listPolls(
-    lectureSessionId: string,
-    includeHistory = false,
-  ) {
+  async function listPolls(lectureSessionId: string, includeHistory = false) {
     const recentLimit = includeHistory
       ? HISTORY_RECENT_POLL_LIMIT
       : DEFAULT_RECENT_POLL_LIMIT

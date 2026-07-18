@@ -236,6 +236,7 @@ test('reads a valid bounded JSON request body', async () => {
   const body = await readJsonBody<{ ok: boolean }>(
     new Request('http://localhost/test', {
       body: JSON.stringify({ ok: true }),
+      headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     }),
     64,
@@ -248,6 +249,7 @@ test('rejects an oversized streamed body even without Content-Length', async () 
     readJsonBody(
       new Request('http://localhost/test', {
         body: JSON.stringify({ payload: 'x'.repeat(128) }),
+        headers: { 'Content-Type': 'application/json' },
         method: 'POST',
       }),
       32,

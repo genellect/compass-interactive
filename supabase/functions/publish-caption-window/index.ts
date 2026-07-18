@@ -5,6 +5,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type PublishCaptionRequest = {
@@ -42,9 +43,13 @@ Deno.serve(async (request) => {
 
   let body: PublishCaptionRequest
   try {
-    body = (await request.json()) as PublishCaptionRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<PublishCaptionRequest>(request, 64 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
 
   const text = body.text?.trim() ?? ''
@@ -66,7 +71,11 @@ Deno.serve(async (request) => {
 
   let claims
   try {
-    claims = await getAdminTokenClaims(body.adminToken, getAdminTokenSecret())
+    claims = await getAdminTokenClaims(
+      body.adminToken,
+      getAdminTokenSecret(),
+      request,
+    )
   } catch (error) {
     return jsonResponse(
       {

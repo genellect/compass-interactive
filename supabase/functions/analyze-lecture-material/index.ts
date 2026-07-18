@@ -26,6 +26,7 @@ import {
 import {
   readJsonBody,
   RequestBodyTooLargeError,
+  UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -121,6 +122,9 @@ Deno.serve(async (request) => {
         413,
       )
     }
+    if (error instanceof UnsupportedJsonContentTypeError) {
+      return jsonResponse({ message: 'Request must be JSON.', ok: false }, 415)
+    }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
   if (
@@ -161,6 +165,7 @@ Deno.serve(async (request) => {
     const claims = await getAdminTokenClaims(
       body.adminToken,
       getAdminTokenSecret(),
+      request,
     )
     if (!claims) {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
@@ -177,16 +182,31 @@ Deno.serve(async (request) => {
   let actualInputTokens = 0
   let actualOutputTokens = 0
   let providerRequestId: string | null = null
+  let reservedInputTokens = 0
+  let reservedOutputTokens = 0
 
   async function finishFailure(code: string) {
     if (!operationId) return
+    const definitelyUncharged =
+      /^provider_http_(?:400|401|403|404|409|422|429)$/.test(code)
+    const conservativeUnknownUsage =
+      providerRequestId !== null &&
+      actualInputTokens === 0 &&
+      actualOutputTokens === 0 &&
+      !definitelyUncharged
+    const accountedInputTokens = conservativeUnknownUsage
+      ? reservedInputTokens
+      : actualInputTokens
+    const accountedOutputTokens = conservativeUnknownUsage
+      ? reservedOutputTokens
+      : actualOutputTokens
     await supabase.rpc('admin_fail_material_ai_operation', {
-      actual_input_tokens: actualInputTokens,
+      actual_input_tokens: accountedInputTokens,
       actual_microusd: calculateCostMicrousd(
-        actualInputTokens,
-        actualOutputTokens,
+        accountedInputTokens,
+        accountedOutputTokens,
       ),
-      actual_output_tokens: actualOutputTokens,
+      actual_output_tokens: accountedOutputTokens,
       error_code: code.slice(0, 120),
       provider_request_id: providerRequestId,
       target_actor_id: actorId,
@@ -289,6 +309,8 @@ Deno.serve(async (request) => {
       )
       .reduce((sum, page) => sum + page.characterCount, 0)
     const reservation = estimateReservation(selectedCharacterCount, body.action)
+    reservedInputTokens = reservation.estimatedInputTokens
+    reservedOutputTokens = reservation.estimatedOutputTokens
     const { grantId, nonce } = parseBillingGrantToken(body.billingGrant)
     const { data: startedData, error: startError } = await supabase.rpc(
       'admin_start_material_ai_operation',
@@ -340,6 +362,7 @@ Deno.serve(async (request) => {
     const safetyIdentifier = `compass_${(
       await sha256Hex(`phase5:${body.lectureSessionId}:${actorId}`)
     ).slice(0, 48)}`
+    providerRequestId = crypto.randomUUID()
     const providerResponse = await fetch(
       'https://api.openai.com/v1/responses',
       {
@@ -356,6 +379,7 @@ Deno.serve(async (request) => {
         headers: {
           Authorization: `Bearer ${openAiKey}`,
           'Content-Type': 'application/json',
+          'X-Client-Request-Id': providerRequestId,
         },
         method: 'POST',
         signal: AbortSignal.timeout(55_000),
@@ -375,7 +399,7 @@ Deno.serve(async (request) => {
     const parsed = parseMaterialOpenAiResponse(providerPayload)
     actualInputTokens = parsed.inputTokens
     actualOutputTokens = parsed.outputTokens
-    providerRequestId = parsed.providerRequestId
+    providerRequestId = parsed.providerRequestId ?? providerRequestId
     const gatedResult = applyMaterialQualityGates({
       action: body.action,
       existingQuestions,
@@ -430,7 +454,7 @@ Deno.serve(async (request) => {
       error instanceof MaterialAnalysisError
         ? error.code
         : error instanceof DOMException && error.name === 'TimeoutError'
-          ? 'provider_timeout'
+          ? 'provider_timeout_ambiguous'
           : 'material_analysis_failed'
     await finishFailure(code).catch(() => undefined)
     return errorResponse(jsonResponse, error)

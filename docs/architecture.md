@@ -174,8 +174,12 @@ attached to live Supabase state.
   code, code hash, raw PDF text, raw transcript or audio.
 - At expiry, access fails closed before eventual physical deletion.
 
-Phase 6.8 will add a higher-entropy short-lived resume token. Until that phase
-passes, the current archive-session behavior remains the implemented contract.
+Phase 6.8 can issue a seven-day, lecture-scoped resume token after an owned live
+join. The browser exchanges it in a request body, never a URL, and the Worker
+resolves a private public-ID index before issuing the existing short-lived
+archive/PDF credentials. Code plus Turnstile remains the compatibility fallback.
+The capability is default-OFF until the database, Edge and Worker deployment
+sequence and hosted CSP gate pass.
 
 ## 9. Daily operations digest
 
@@ -194,7 +198,8 @@ available to the browser or database client.
 | Cloudflare Worker secrets   | archive ingest/verification secrets and bindings                      | plaintext lecture codes or Supabase service role            |
 | PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                         | PDF/audio bytes, raw local transcript, plaintext secrets    |
 
-See `docs/SECURITY.md` for the enforceable security contract and Phase 6.8 gaps.
+See `docs/SECURITY.md` for the enforceable security contract and remaining
+hosted/human Phase 6.8 evidence.
 
 ## 11. Migration and compatibility policy
 

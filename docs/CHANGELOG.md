@@ -3,6 +3,19 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-18 - Phase 6.8 security/session foundation
+
+- Added keyed application-level Admin PIN throttling and hash-at-rest,
+  individually revocable Admin sessions with absolute/inactivity expiry.
+- Added lecture-scoped seven-day resume tokens, version revocation and a private
+  Worker archive index while retaining code plus Turnstile compatibility.
+- Added CSP enforcement/report-only policy, bounded JSON/content-type handling
+  across exposed Edge Functions and explicit frontend/provider deadlines.
+- Added durable provider request correlation and conservative ambiguous-timeout
+  accounting without an automatic paid-operation replay.
+- Kept every new capability default-OFF; no hosted service, public web, secret,
+  paid call or deployment was changed by the local Phase.
+
 ## 2026-07-18 - Phase 6.7 documentation baseline
 
 - Replaced the Phase 0-only README with the Phase 0-6.6 implementation entrypoint.
@@ -65,7 +78,6 @@ describe mock-only or Realtime behavior that the Phase 1-6 design replaced.
 
 ## Planned trajectory
 
-- Phase 6.8: Admin security, revocable sessions, CSP, resume token and timeouts.
 - Phase 6.9: internal modularization and deterministic CI/supply-chain quality.
 - Phase 7.1: summary language, own comments and lecture QR.
 - Phase 7.2: verified-primary-literature academic reference answers.

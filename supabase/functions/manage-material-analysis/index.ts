@@ -8,6 +8,7 @@ import { handleCors } from '../_shared/cors.ts'
 import {
   readJsonBody,
   RequestBodyTooLargeError,
+  UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -92,6 +93,9 @@ Deno.serve(async (request) => {
         413,
       )
     }
+    if (error instanceof UnsupportedJsonContentTypeError) {
+      return jsonResponse({ message: 'Request must be JSON.', ok: false }, 415)
+    }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
   if (!body.action || !body.adminToken || !body.lectureSessionId) {
@@ -110,6 +114,7 @@ Deno.serve(async (request) => {
     const claims = await getAdminTokenClaims(
       body.adminToken,
       getAdminTokenSecret(),
+      request,
     )
     if (!claims) {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
@@ -185,8 +190,7 @@ Deno.serve(async (request) => {
       if (!actorSessionId) {
         return jsonResponse(
           {
-            message:
-              '要点を公開する前に、管理画面へ再ログインしてください。',
+            message: '要点を公開する前に、管理画面へ再ログインしてください。',
             ok: false,
           },
           401,
@@ -200,7 +204,10 @@ Deno.serve(async (request) => {
         !['admin_confirmed', 'admin_revised'].includes(body.reviewState)
       ) {
         return jsonResponse(
-          { message: 'Reviewed material summary fields are required.', ok: false },
+          {
+            message: 'Reviewed material summary fields are required.',
+            ok: false,
+          },
           400,
         )
       }

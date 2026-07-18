@@ -32,6 +32,8 @@ const phase66ArchiveClaimMigrationName =
   '20260716224012_phase6_6_archive_claim_requires_code.sql'
 const phase66RealtimeProviderMigrationName =
   '20260717090500_phase6_6_realtime_provider_control.sql'
+const phase68SecuritySessionsMigrationName =
+  '20260718193306_phase6_8_security_sessions_resume.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -59,6 +61,7 @@ assert.deepEqual(
     phase66PgNetSchedulerMigrationName,
     phase66ArchiveClaimMigrationName,
     phase66RealtimeProviderMigrationName,
+    phase68SecuritySessionsMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

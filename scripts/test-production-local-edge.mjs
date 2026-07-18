@@ -41,8 +41,10 @@ for (const functionName of [
   'authorize-ai-start',
   'generate-lecture-summary',
   'issue-pdf-access-token',
+  'issue-lecture-resume-token',
   'issue-realtime-client-secret',
   'manage-ai-control',
+  'manage-admin-sessions',
   'manage-lecture-summaries',
   'manage-lectures',
   'manage-material-analysis',
@@ -98,6 +100,21 @@ assert.ok(
   'the local Edge gateway may normalize the response CORS header',
 )
 
+const unsupportedBodyResponse = await fetch(
+  `${supabaseUrl}/functions/v1/verify-admin-pin`,
+  {
+    body: JSON.stringify({ pin: adminPin }),
+    headers: {
+      apikey: publishableKey,
+      Authorization: `Bearer ${authData.session.access_token}`,
+      'Content-Type': 'text/plain',
+      Origin: allowedOrigin,
+    },
+    method: 'POST',
+  },
+)
+assert.equal(unsupportedBodyResponse.status, 415)
+
 const { data: loginData, error: loginError } = await client.functions.invoke(
   'verify-admin-pin',
   {
@@ -109,9 +126,70 @@ assert.equal(loginData?.ok, true)
 assert.equal(typeof loginData?.adminToken, 'string')
 assert.ok(loginData.adminToken.length > 40)
 
+const { data: secondLoginData, error: secondLoginError } =
+  await client.functions.invoke('verify-admin-pin', {
+    body: { pin: adminPin },
+  })
+assert.ifError(secondLoginError)
+assert.equal(secondLoginData?.ok, true)
+assert.equal(typeof secondLoginData?.adminToken, 'string')
+
+const crossUserClient = createClient(supabaseUrl, publishableKey, {
+  auth: {
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    persistSession: false,
+  },
+  global: { headers: { Origin: allowedOrigin } },
+})
+const { error: crossUserAuthError } =
+  await crossUserClient.auth.signInAnonymously()
+assert.ifError(crossUserAuthError)
+const { error: crossUserReplayError } = await crossUserClient.functions.invoke(
+  'manage-lectures',
+  {
+    body: { action: 'list', adminToken: secondLoginData.adminToken },
+  },
+)
+assert.ok(crossUserReplayError)
+assert.equal((await readFunctionError(crossUserReplayError)).status, 401)
+
+const { data: sessionData, error: sessionError } =
+  await client.functions.invoke('manage-admin-sessions', {
+    body: { action: 'list', adminToken: secondLoginData.adminToken },
+  })
+assert.ifError(sessionError)
+assert.equal(sessionData?.ok, true)
+assert.equal(typeof sessionData?.currentSessionId, 'string')
+const firstSession = sessionData.sessions.find(
+  (session) =>
+    session.id !== sessionData.currentSessionId && session.revoked_at === null,
+)
+assert.ok(firstSession?.id)
+
+const { data: revokeData, error: revokeError } = await client.functions.invoke(
+  'manage-admin-sessions',
+  {
+    body: {
+      action: 'revoke',
+      adminToken: secondLoginData.adminToken,
+      sessionId: firstSession.id,
+    },
+  },
+)
+assert.ifError(revokeError)
+assert.equal(revokeData?.ok, true)
+
+const { error: replayError } = await client.functions.invoke(
+  'manage-lectures',
+  { body: { action: 'list', adminToken: loginData.adminToken } },
+)
+assert.ok(replayError)
+assert.equal((await readFunctionError(replayError)).status, 401)
+
 const { data: lectureData, error: lectureError } =
   await client.functions.invoke('manage-lectures', {
-    body: { action: 'list', adminToken: loginData.adminToken },
+    body: { action: 'list', adminToken: secondLoginData.adminToken },
   })
 assert.ifError(lectureError)
 assert.equal(lectureData?.ok, true)
@@ -122,7 +200,7 @@ const { data: paidData, error: paidError } = await client.functions.invoke(
   {
     body: {
       actions: ['captions'],
-      adminToken: loginData.adminToken,
+      adminToken: secondLoginData.adminToken,
       lectureSessionId: '00000000-0000-4000-8000-000000000000',
       pin: 'test-billing-pin',
     },
@@ -135,7 +213,55 @@ assert.equal(paidResponse.status, 503)
 assert.equal(paidResponse.body.ok, false)
 assert.match(paidResponse.body.message ?? '', /disabled/i)
 
-await client.auth.signOut()
+const { data: revokeAllData, error: revokeAllError } =
+  await client.functions.invoke('manage-admin-sessions', {
+    body: { action: 'revokeAll', adminToken: secondLoginData.adminToken },
+  })
+assert.ifError(revokeAllError)
+assert.equal(revokeAllData?.ok, true)
+const { error: revokedCurrentError } = await client.functions.invoke(
+  'manage-lectures',
+  { body: { action: 'list', adminToken: secondLoginData.adminToken } },
+)
+assert.ok(revokedCurrentError)
+assert.equal((await readFunctionError(revokedCurrentError)).status, 401)
+
+const concurrentPinResults = await Promise.all(
+  Array.from({ length: 16 }, async () => {
+    const { error } = await client.functions.invoke('verify-admin-pin', {
+      body: { pin: `${adminPin}-blocked` },
+    })
+    assert.ok(error)
+    const response = await readFunctionError(error)
+    assert.equal(response.body.message, 'Admin PIN could not be verified.')
+    return response.status
+  }),
+)
+assert.equal(concurrentPinResults.filter((status) => status === 401).length, 8)
+assert.equal(concurrentPinResults.filter((status) => status === 429).length, 8)
+
+const rotatedClient = createClient(supabaseUrl, publishableKey, {
+  auth: {
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+    persistSession: false,
+  },
+  global: { headers: { Origin: allowedOrigin } },
+})
+const { error: rotatedAuthError } = await rotatedClient.auth.signInAnonymously()
+assert.ifError(rotatedAuthError)
+const { error: rotatedPinError } = await rotatedClient.functions.invoke(
+  'verify-admin-pin',
+  { body: { pin: `${adminPin}-rotated` } },
+)
+assert.ok(rotatedPinError)
+const rotatedPinResponse = await readFunctionError(rotatedPinError)
+assert.equal(rotatedPinResponse.status, 401)
+assert.equal(
+  rotatedPinResponse.body.message,
+  'Admin PIN could not be verified.',
+)
+
 console.log(
-  'Local Supabase Auth, Edge CORS, Admin token and fail-closed checks passed.',
+  'Local Auth, bounded Edge input, tracked Admin sessions, PIN throttling and fail-closed paid features passed.',
 )

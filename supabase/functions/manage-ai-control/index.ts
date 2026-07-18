@@ -5,6 +5,7 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { DEFAULT_REALTIME_PRICE_MICROUSD_PER_MINUTE } from '../_shared/openaiRealtime.ts'
 import {
   runRealtimeProviderHangupSweep,
@@ -127,9 +128,13 @@ Deno.serve(async (request) => {
 
   let body: ManageAiControlRequest
   try {
-    body = (await request.json()) as ManageAiControlRequest
-  } catch {
-    return jsonResponse({ ok: false, message: 'Invalid JSON body.' }, 400)
+    body = await readJsonBody<ManageAiControlRequest>(request, 16 * 1024)
+  } catch (error) {
+    const bodyError = describeJsonBodyError(error)
+    return jsonResponse(
+      { ok: false, message: bodyError.message },
+      bodyError.status,
+    )
   }
 
   let tokenSecret: string
@@ -146,7 +151,7 @@ Deno.serve(async (request) => {
   }
 
   const adminClaims = body.adminToken
-    ? await getAdminTokenClaims(body.adminToken, tokenSecret)
+    ? await getAdminTokenClaims(body.adminToken, tokenSecret, request)
     : null
   if (!adminClaims) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
@@ -405,8 +410,7 @@ Deno.serve(async (request) => {
       return jsonResponse({
         ok: true,
         ...(await getStatus(body.lectureSessionId)),
-        realtimePriceMicrousdPerMinute:
-          getRealtimePriceMicrousdPerMinute(),
+        realtimePriceMicrousdPerMinute: getRealtimePriceMicrousdPerMinute(),
       })
     }
 

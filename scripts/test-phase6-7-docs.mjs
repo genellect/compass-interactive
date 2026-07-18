@@ -19,6 +19,8 @@ const requiredDocuments = [
   'docs/RUNBOOK_INDEX.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
+  'docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md',
+  'docs/PHASE6_8_LOCAL_GATE_2026-07-18.md',
   'docs/CI_AND_BROWSER_E2E.md',
   'docs/supabase_setup.md',
   'docs/cloudflare_pages_deploy.md',
@@ -33,7 +35,7 @@ for (const document of requiredDocuments) {
 
 const packageJson = JSON.parse(read('package.json'))
 const packageLock = JSON.parse(read('package-lock.json'))
-assert.equal(packageJson.version, '0.7.0')
+assert.equal(packageJson.version, '0.8.0')
 assert.equal(packageLock.version, packageJson.version)
 assert.equal(packageLock.packages?.['']?.version, packageJson.version)
 
@@ -44,7 +46,7 @@ const security = read('docs/SECURITY.md')
 const changelog = read('docs/CHANGELOG.md')
 
 for (const requiredText of [
-  'Phase 0 through Phase 6.6',
+  'Phase 0 through Phase 6.8',
   'Phase 6.7',
   'Phase 7 Production Gate',
   'docs/ROADMAP.md',

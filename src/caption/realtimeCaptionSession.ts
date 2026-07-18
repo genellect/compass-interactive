@@ -8,6 +8,52 @@ type RealtimeCaptionSessionOptions = {
   onFailure: (message: string) => void
 }
 
+const WEBRTC_OPERATION_TIMEOUT_MS = 12_000
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  message: string,
+): Promise<T> {
+  let timeoutId: number | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(
+      () => reject(new Error(message)),
+      WEBRTC_OPERATION_TIMEOUT_MS,
+    )
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+  }
+}
+
+function waitForDataChannelOpen(dataChannel: RTCDataChannel) {
+  if (dataChannel.readyState === 'open') return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      dataChannel.removeEventListener('open', handleOpen)
+      dataChannel.removeEventListener('close', handleClose)
+      dataChannel.removeEventListener('error', handleError)
+    }
+    const handleOpen = () => {
+      cleanup()
+      resolve()
+    }
+    const handleClose = () => {
+      cleanup()
+      reject(new Error('Realtime transcription data channel closed.'))
+    }
+    const handleError = () => {
+      cleanup()
+      reject(new Error('Realtime transcription data channel failed.'))
+    }
+    dataChannel.addEventListener('open', handleOpen, { once: true })
+    dataChannel.addEventListener('close', handleClose, { once: true })
+    dataChannel.addEventListener('error', handleError, { once: true })
+  })
+}
+
 function parseRealtimeEvent(value: string): RealtimeCaptionEvent | null {
   let payload: Record<string, unknown>
   try {
@@ -82,8 +128,14 @@ export class RealtimeCaptionSession {
       }
     })
 
-    const offer = await peerConnection.createOffer()
-    await peerConnection.setLocalDescription(offer)
+    const offer = await withTimeout(
+      peerConnection.createOffer(),
+      'Realtime WebRTC offer timed out.',
+    )
+    await withTimeout(
+      peerConnection.setLocalDescription(offer),
+      'Realtime WebRTC local setup timed out.',
+    )
     if (!offer.sdp || !offer.sdp.startsWith('v=0')) {
       this.stop()
       throw new Error('Realtime WebRTC offer could not be prepared.')
@@ -101,10 +153,22 @@ export class RealtimeCaptionSession {
       this.stop()
       throw new Error('Realtime WebRTC answer is invalid.')
     }
-    await peerConnection.setRemoteDescription({
-      sdp: answerSdp,
-      type: 'answer',
-    })
+    try {
+      await withTimeout(
+        peerConnection.setRemoteDescription({
+          sdp: answerSdp,
+          type: 'answer',
+        }),
+        'Realtime WebRTC remote setup timed out.',
+      )
+      await withTimeout(
+        waitForDataChannelOpen(dataChannel),
+        'Realtime transcription connection timed out.',
+      )
+    } catch (error) {
+      this.stop()
+      throw error
+    }
     this.commitTimer = window.setInterval(() => {
       if (dataChannel.readyState === 'open') {
         dataChannel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }))
