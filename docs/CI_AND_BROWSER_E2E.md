@@ -18,8 +18,8 @@ non-local Supabase URL for the live E2E suite.
 `.github/workflows/ci.yml` contains three independent gates:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of existing non-live Phase 0-6.6 tests, the production
-   build and `git diff --check`.
+   explicit allowlist of existing non-live Phase 0-6.7 tests, documentation
+   consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow. It covers route entry, content order,
    comments, anonymous-by-default behavior, the 10-character nickname limit,
@@ -57,6 +57,7 @@ npm run typecheck
 npm run typecheck:phase3
 npm run typecheck:e2e
 npm run lint
+npm run test:phase6-7-docs
 npm run test:ci:nonlive
 npm run build
 git diff --check

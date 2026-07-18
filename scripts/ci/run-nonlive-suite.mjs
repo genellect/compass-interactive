@@ -38,6 +38,7 @@ const safeTestScripts = [
   'test:phase6-6-digest',
   'test:phase6-6-static',
   'test:phase6-6-load',
+  'test:phase6-7-docs',
   'test:production-gate:static',
   'test:production-env',
   'test:admin-lifecycle',

@@ -1,19 +1,19 @@
 # COMPASS Interactive Project Guide
 
-- 最終更新: 2026-07-16
-- 対象リポジトリ: `C:\Users\emers\OneDrive\Desktop\COMPASS Interactive`
-- 対象範囲: Phase 0〜6.5の実装、統合監査、Development Production Review
-- 状態: ローカル実装・統合監査完了、本番反映準備中
+- 最終更新: 2026-07-18（Phase 6.7 documentation baseline）
+- 対象リポジトリ: COMPASS Interactive repository root
+- 対象範囲: Phase 0〜6.6の実装判断とDevelopment Production Reviewの履歴
+- 状態: Phase 0〜6.6実装済み。現在の進捗・運用入口・Phase 6.7〜9はREADMEおよび`docs/ROADMAP.md`を正本とする
 
 ## 1. このガイドの位置付け
 
-この文書は、既存の`PROJECT_GUIDE.md`、現行コードとSupabaseの監査、OpenAI API実装計画、添付GPTレビュー、PDFアップロード／ダウンロード、AI Poll提案、5分要約、任意ニックネーム要件を統合した実装上の正本である。
+この文書は、現行コードとSupabaseの監査、OpenAI API実装計画、添付GPTレビュー、PDFアップロード／ダウンロード、AI Poll提案、5分要約、任意ニックネーム要件を統合したPhase 0〜6の詳細設計記録である。現在のリポジトリ入口は`README.md`、現行構成は`docs/architecture.md`、セキュリティ契約は`docs/SECURITY.md`、Phase 6.7以降の正本は`docs/ROADMAP.md`とする。
 
 既存Project Guideに記載されていた古いPhase番号、未実装状況、ローカルPDFだけを前提としたロードマップは、この文書のPhase 1〜6については置き換える。既に実装済みのコメント、Poll、Display、Admin lifecycle、5秒snapshot、PDFページ同期は破棄せず、現在の基盤として段階的に拡張する。
 
-Phase 0〜6.5のコード、migration、RPC、RLS、Edge Functions、Publisher、Cloudflare Worker、UIおよびテストはローカル実装済みである。2026-07-16の統合監査では、空DBからの全migration、既存Phase 6.5からのupgrade、pgTAP 613項目、DB lint、型検査、Lint、production build、20人／300人負荷モデルがPASSした。
+Phase 0〜6.5のコード、migration、RPC、RLS、Edge Functions、Publisher、Cloudflare Worker、UIおよびテストはローカル実装済みである。2026-07-16の統合監査では、空DBからの全migration、既存Phase 6.5からのupgrade、pgTAP 613項目、DB lint、型検査、Lint、production build、20人／300人負荷モデルがPASSした。その後Phase 6.6で統合UX、参加人数概算、R2アーカイブ、日次運用メールおよびRealtime provider停止制御を実装し、Playwright／GitHub Actionsの非live CI基盤を追加した。
 
-本番Supabase、Hosted Auth、R2、Worker、Pages、Git remoteへの反映は、Development Production Reviewのrunbookに従って、データベースとバックエンドを先に準備し、main pushを最後の公開操作として行う。
+Phase 0〜6.5 Development Production Reviewの反映証跡は`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`に記録されている。以降の本番反映は`docs/RUNBOOK_INDEX.md`と対象Phaseのrunbookに従い、データベースとバックエンドをexpand-firstで準備し、flag OFFのfrontend、所有権試験、限定canaryの順に行う。
 
 ## 2. プロダクト目標
 
@@ -1220,11 +1220,18 @@ Phase 1〜6は、次をすべて満たした時点で完了とする。
 
 ## 18. Phase 6以降の予約範囲
 
-次はPhase 1〜6の外だが、schemaと認可を妨げないよう予約する。
+次はPhase 1〜6の外だが、schemaと認可を妨げないよう予約する。2026-07-18以降の詳細な要件、順序、G0〜G7の停止条件は`docs/ROADMAP.md`を正本とする。
 
-- Phase 7: 一次文献取得、PMID／DOI検証、Terra参考回答、教員承認
-- Phase 8: コメント・要約・ローカルtranscriptをまとめたZIP export、削除証跡
-- Phase 9: 長時間負荷試験、教育評価、運用訓練、本番移行判定
+- Phase 6.7: READMEを中心とする現行文書・履歴・runbook・roadmap整備
+- Phase 6.8: Admin PIN rate limit、個別失効session、CSP、resume token、timeout
+- Phase 6.9: 巨大module分割、DB型生成CI、供給網防御、WebKit／a11y／視覚回帰
+- Phase 7.1: 要約言語、自分のコメント、講義QR
+- Phase 7.2: 一次文献取得、PMID／DOI検証、Luna参考回答、教員承認
+- Phase 7 Production Gate: 上記をまとめた次回本番反映判定
+- Phase 8: コメント・要約・ローカルtranscriptのZIP export、削除証跡、AI review統合
+- Phase 8.1: 教員が明示選択するTerra高度解析
+- Phase 8.2: 時系列／直近5分の注目順を選択できるcomment表示
+- Phase 9: 長時間負荷試験、教育評価、運用訓練、最終本番移行判定
 
 Phase 6では学術質問候補を保存できるところまで実装し、学生向け回答を自動生成・公開しない。
 

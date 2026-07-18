@@ -1,38 +1,244 @@
 # COMPASS Interactive
 
-COMPASS Interactive is a real-time classroom participation system for pharmacy English lectures and related COMPASS learning events.
+COMPASS Interactive is a mobile-first classroom participation system for
+Journal Clubs, pharmacy education and other COMPASS learning events. Students
+join with a six-digit lecture code, follow the lecturer's PDF page, post
+anonymous or optionally nicknamed comments, answer Polls and receive only the
+AI learning support that has passed the configured quality and publication
+gates.
 
-Phase 0 establishes the application foundation only:
+This repository is independent from the COMPASS official website. The two
+products can link to each other without sharing deployment cycles, databases or
+secrets.
 
-- Vite + React + TypeScript
-- React Router routes for `/join`, `/lecture`, `/admin`, and `/display`
-- Shared TypeScript domain types
-- Mock lecture, participant, comment, poll, and response data
-- Minimal responsive UI for future implementation
+## Current status
 
-This repository is intentionally independent from the existing COMPASS official website. The official site can later link to this application by URL or QR code without coupling release cycles.
+- Application version: `0.7.0` development preview.
+- Repository baseline before Phase 6.7: `cc1ae93` on `main`.
+- Phase 0 through Phase 6.6 are implemented in the repository.
+- The Phase 0-6.5 Development Production Review deployment is recorded in
+  [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
+- Phase 6.6 added the integrated teacher/student UX, approximate participant
+  presence, private R2 archives, the daily operations digest and server-side
+  Realtime provider shutdown. Its local evidence and remaining hosted/human
+  gates are recorded separately.
+- GitHub Actions now runs non-live regression, a Supabase-independent Demo E2E
+  and a disposable local-Supabase teacher/student E2E.
+- Phase 6.7 is the documentation and release-baseline phase. It does not add a
+  classroom feature or authorize a production deployment.
 
-## Scripts
+The authoritative future plan and stop-the-line gates are in
+[`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
+they must not be read as the current implementation status unless the roadmap
+or a newer gate report points to them.
 
-```powershell
-& "C:\Program Files\nodejs\npm.cmd" run dev
-& "C:\Program Files\nodejs\npm.cmd" run build
-& "C:\Program Files\nodejs\npm.cmd" run typecheck
-& "C:\Program Files\nodejs\npm.cmd" run preview
+The next combined hosted release is the **Phase 7 Production Gate**. It remains
+blocked until Phase 6.7, 6.8, 6.9, 7.1 and 7.2 have each passed their own local,
+security, UX/UI, browser, load/cost, rollback and required human gates.
+
+## Implemented product surface
+
+### Student
+
+- anonymous Supabase Auth and lecture-code join protected by Turnstile;
+- PDF-first mobile lecture view with lecturer page synchronization;
+- five-second versioned snapshots with adaptive background/backoff behavior;
+- latest-five comments plus on-demand cursor-paginated comment history;
+- nullable per-comment nickname, maximum ten characters, with
+  `匿名の参加者` as the display fallback;
+- comment likes, Poll answers, useful published summaries and captions;
+- explicit exit that stops polling and pending client work;
+- read-only closed-lecture archive delivered through Cloudflare rather than a
+  continuing Supabase live loop.
+
+### Teacher and classroom display
+
+- Admin PIN session plus a separate API-use PIN for paid actions;
+- lecture create/start/close/restart-as-new flows and an enforced 90-minute
+  server-time hard stop;
+- Poll creation, publication and closure;
+- comment moderation and pinning through authorized server operations;
+- local Publisher to private R2 PDF publication, download and synchronized page
+  control without storing PDF bytes in Supabase;
+- explicit Realtime transcription start/stop with bounded duration and no audio
+  retention by COMPASS;
+- PDF material analysis and AI Poll proposals that are never automatically
+  published;
+- five-minute summary/comment-pulse generation with immutable revisions and
+  teacher publish, hide, pin and correction controls;
+- approximate active-participant and visible-comment metrics folded into the
+  existing snapshot path;
+- scoped classroom Display sessions and a light fullscreen view.
+
+## Routes
+
+| Route               | Purpose                               | Backend behavior                                             |
+| ------------------- | ------------------------------------- | ------------------------------------------------------------ |
+| `/join`             | Live-code and archive-code entry      | Supabase live join or Cloudflare archive lookup              |
+| `/demo`             | Redirect to the isolated Demo lecture | Browser-only data; no Supabase, OpenAI or Cloudflare request |
+| `/lecture`          | Student lecture experience            | Authenticated five-second snapshot while joined              |
+| `/lecture/comments` | On-demand comment history             | Cursor RPC only while the page is opened                     |
+| `/lecture/archive`  | Read-only closed lecture              | Short-lived Cloudflare archive/PDF access                    |
+| `/admin`            | Teacher controls                      | Admin Edge Functions and local Publisher                     |
+| `/display`          | Classroom fullscreen display          | Scoped Display credential, not an Admin session              |
+
+The production build creates static entrypoints for every route so Cloudflare
+Pages does not depend on a catch-all redirect.
+
+## Architecture boundaries
+
+- **React/Vite:** presentation, optimistic UX, local Demo and bounded local
+  state. The browser is never an authorization authority.
+- **Supabase Auth/Postgres/Edge Functions:** participant ownership, RLS,
+  lifecycle, versioned snapshots, audit, AI admission and small metadata.
+- **Local Publisher:** PDF validation, text extraction for teacher-controlled AI
+  input and private R2 publication. Publisher credentials remain local.
+- **Cloudflare Worker/R2:** private PDF byte delivery and sanitized read-only
+  archives. PDF bytes and archive download traffic do not pass through
+  Supabase.
+- **OpenAI:** only explicitly authorized, bounded text/audio needed by the
+  selected feature. The API key remains in Supabase Edge secrets.
+- **Email provider:** one content-bounded daily operations digest when activity
+  occurred; it does not call AI.
+
+See [`docs/architecture.md`](docs/architecture.md),
+[`docs/SECURITY.md`](docs/SECURITY.md) and
+[`docs/data_policy.md`](docs/data_policy.md) for the complete trust and data
+boundaries.
+
+## Local requirements
+
+- Node.js `24` (the repository currently requires `>=22.13.0`)
+- npm using the committed `package-lock.json`
+- Docker Desktop with the WSL2 per-user backend for local Supabase integration
+- Supabase CLI and Wrangler from this repository's pinned dev dependencies
+
+Install dependencies:
+
+```bash
+npm ci
 ```
 
-## Phase 0 Boundaries
+Start the frontend:
 
-Not implemented in Phase 0:
+```bash
+npm run dev
+```
 
-- Supabase / Firebase
-- Google Apps Script
-- Google Form or Spreadsheet integration
-- Authentication or admin login
-- WebSocket or real-time transport
-- API server
-- Production database
-- QR code generation
-- Real lecture code verification
+The app can start without Supabase variables and will fail closed for hosted
+features. Use `/demo` for the no-backend product preview.
 
-The app uses `src/lib/mockData.ts` only.
+## Environment files and secrets
+
+Copy only the example that matches the process you are starting:
+
+- `.env.local.example` → `.env.local` for the Vite frontend and local Edge
+  preparation;
+- `.env.publisher.example` → `.env.publisher.local` for the local Publisher;
+- `cloudflare/asset-worker/.dev.vars.example` for local Worker development.
+
+All real `*.local` environment files are ignored. Example files contain names
+and placeholders only.
+
+Browser-safe values use the `VITE_` prefix. Never use that prefix for an Admin
+PIN, API-use PIN, OpenAI key, Supabase service-role key, Turnstile secret, R2
+credential, archive ingest secret or email-provider key.
+
+The frontend feature flags are additive and fail closed:
+
+- `VITE_PHASE1_SYNC_PROTOCOL`
+- `VITE_PHASE2_LECTURE_LIFECYCLE`
+- `VITE_PHASE3_PRIVATE_PDF`
+- `VITE_PHASE4_REALTIME_CAPTIONS`
+- `VITE_PHASE5_MATERIAL_ANALYSIS`
+- `VITE_PHASE6_SUMMARIES`
+- `VITE_PHASE6_5_COMMENT_NICKNAMES`
+- `VITE_PHASE6_6_UX_INTEGRATION`
+
+Do not enable a flag merely because the frontend contains the code. The
+matching migration, Edge Function, Worker binding, secret, ownership test and
+rollback gate must pass first.
+
+## Verification
+
+Fast local quality checks:
+
+```bash
+npm run typecheck
+npm run typecheck:phase3
+npm run typecheck:e2e
+npm run lint
+npm run test:phase6-7-docs
+npm run build
+git diff --check
+```
+
+Run every non-live regression group used by CI:
+
+```bash
+npm run test:ci:nonlive
+```
+
+Run the Supabase-independent Demo browser E2E:
+
+```bash
+npm run test:e2e:demo
+```
+
+With Docker Desktop running, the local integration sequence is:
+
+```bash
+npx supabase start
+npx supabase db reset --local --no-seed
+npx supabase test db --local
+npx supabase db lint --local --fail-on error
+```
+
+Serve Edge Functions with synthetic local secrets in one terminal, then run:
+
+```bash
+npm run test:e2e:local
+```
+
+Detailed setup and safety constraints are in
+[`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md) and
+[`docs/supabase_setup.md`](docs/supabase_setup.md).
+
+The default CI must never run live OpenAI tests, deploy, link or push a hosted
+database, upload to R2, or use production credentials.
+
+## Deployment
+
+Deployment is a separate, explicitly authorized operation. Documentation work,
+a successful local gate or a successful CI run does not authorize it.
+
+Use the current runbook index:
+
+- [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
+- [`docs/cloudflare_pages_deploy.md`](docs/cloudflare_pages_deploy.md)
+- [`docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)
+
+Always deploy expand-first: database and server capability, frontend with flags
+OFF, ownership and hosted smoke tests, then a controlled flag canary. Disable
+flags before attempting a destructive rollback.
+
+## Documentation map
+
+- Current architecture: [`docs/architecture.md`](docs/architecture.md)
+- Security contract and known gaps: [`docs/SECURITY.md`](docs/SECURITY.md)
+- Data collection and retention: [`docs/data_policy.md`](docs/data_policy.md)
+- Database responsibility map: [`docs/database_schema.md`](docs/database_schema.md)
+- Development history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+- Phase 6.7 baseline and acceptance: [`docs/PHASE6_7_DOCUMENTATION_BASELINE.md`](docs/PHASE6_7_DOCUMENTATION_BASELINE.md)
+- Phase 6.7 local evidence: [`docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_7_LOCAL_GATE_2026-07-18.md)
+- Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
+- Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)
+
+## Development rule
+
+No phase advances because implementation is merely present. A phase advances
+only after its requirements traceability, database/security, code, UX/UI,
+Chromium/WebKit E2E, accessibility, visual, load/cost, compatibility, rollback
+and evidence gates all pass. A manual gate is blocking until a human records
+the evidence; it is not an automatic exception.

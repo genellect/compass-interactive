@@ -1,22 +1,44 @@
-# Cloudflare Pages Deploy Guide
+# Cloudflare Pages Deployment Guide
 
-## Recommended Path: GitHub Integration
+Last reviewed: 2026-07-18
 
-Use Cloudflare Pages GitHub integration first.
+Deployment is a separate authorized operation. Local PASS, CI PASS or a
+documentation commit does not authorize a Pages/Worker/R2 change.
 
-Settings:
+## 1. Application build
 
-```text
-Repository: my270yuto0413-cmyk/compass-interactive
-Production branch: main
-Framework preset: Vite
-Build command: npm run build
-Build output directory: dist
-Root directory: empty
-Node version: 24
+```bash
+npm ci
+npm run production:check
+npm run build
 ```
 
-Production environment variables:
+The Pages build settings are:
+
+```text
+Framework: Vite
+Build command: npm run build
+Output directory: dist
+Node: repository .node-version
+```
+
+`scripts/create-route-entrypoints.mjs` creates entry files for:
+
+```text
+/join
+/demo
+/lecture
+/lecture/comments
+/lecture/archive
+/admin
+/display
+```
+
+Do not add a catch-all redirect that conflicts with these route entrypoints.
+
+## 2. Browser environment
+
+The production frontend may receive only browser-safe values:
 
 ```text
 VITE_SUPABASE_URL
@@ -31,131 +53,75 @@ VITE_PHASE4_REALTIME_CAPTIONS
 VITE_PHASE5_MATERIAL_ANALYSIS
 VITE_PHASE6_SUMMARIES
 VITE_PHASE6_5_COMMENT_NICKNAMES
+VITE_PHASE6_6_UX_INTEGRATION
 ```
 
-Run `npm run production:check` before a direct upload. The initial deployment
-must set every feature flag explicitly to `false`.
-
-Do not set these in Cloudflare Pages frontend environment variables:
+Never configure the following as Pages/Vite variables:
 
 ```text
 ADMIN_PIN
 ADMIN_SESSION_SECRET
+BILLING_PIN
+OPENAI_API_KEY
 SUPABASE_SERVICE_ROLE_KEY
-SUPABASE_URL
 DATABASE_URL
 DATABASE_PASSWORD
-OPENAI_API_KEY
 VITE_ADMIN_PIN
 VITE_OPENAI_API_KEY
 VITE_TURNSTILE_SECRET_KEY
+COMPASS_R2_ACCESS_KEY_ID
+COMPASS_R2_SECRET_ACCESS_KEY
+ARCHIVE_INGEST_SECRET
+RESEND_API_KEY
 ```
 
-Admin and service-role secrets belong in Supabase Edge Function Secrets, not in Cloudflare Pages.
-The Turnstile site key is public and belongs in Cloudflare Pages. The Turnstile
-secret key belongs only in Supabase Dashboard > Authentication > Attack
-Protection and must never use a `VITE_` prefix.
+The Turnstile site key is public. Its secret belongs only in the trusted
+server/Auth configuration.
 
-## If Cloudflare GitHub Login Fails
+## 3. Deployment mode
 
-Common causes:
+Use the existing Pages project's configured deployment mode. Do not create a
+replacement project merely to switch between Git integration and Direct Upload
+without a migration/rollback decision.
 
-```text
-- Cloudflare browser session is stale
-- GitHub OAuth authorization popup was blocked
-- Browser blocks third-party cookies or cross-site tracking
-- GitHub account is different from the repository owner account
-- Cloudflare GitHub App was authorized for selected repositories, but compass-interactive was not selected
-- GitHub organization or account requires extra approval/SSO
-- Browser extension, VPN, or network filter blocks OAuth callback
-```
+For an explicitly approved Direct Upload:
 
-Recommended checks:
-
-```text
-1. Open Cloudflare in a private/incognito window.
-2. Disable ad blockers or privacy extensions temporarily.
-3. Sign out of GitHub, then sign in as my270yuto0413-cmyk.
-4. Retry: Workers & Pages -> Create application -> Pages -> Connect to Git.
-5. In GitHub, check Settings -> Applications -> Installed GitHub Apps -> Cloudflare Pages.
-6. Ensure the compass-interactive private repository is included in repository access.
-```
-
-## SPA Routes
-
-The app uses React Router routes such as `/join`, `/lecture`, `/display`, and
-`/admin`.
-
-Cloudflare Direct Upload may reject a catch-all `_redirects` rule such as:
-
-```text
-/* /index.html 200
-```
-
-because some deploy paths detect it as a possible infinite loop. For that
-reason this project does not rely on `public/_redirects`.
-
-Instead, the production build runs:
-
-```text
-node scripts/create-route-entrypoints.mjs
-```
-
-This copies `dist/index.html` into:
-
-```text
-dist/join/index.html
-dist/lecture/index.html
-dist/admin/index.html
-dist/display/index.html
-```
-
-Those files allow direct access to the main routes without a redirect rule.
-
-## Emergency Fallback: Direct Upload
-
-Direct Upload can deploy without GitHub integration, but it is not the preferred long-term path.
-
-Important limitation:
-
-```text
-Cloudflare Pages projects created by Direct Upload cannot later be converted to Git integration.
-Use this only if GitHub OAuth remains blocked and a temporary public URL is urgently needed.
-```
-
-Run from the project root:
-
-```powershell
+```bash
 npm run deploy:cloudflare:direct
 ```
 
-The first run may ask you to authenticate with Cloudflare in the browser.
+That script validates the environment and builds before calling Wrangler. It
+may open an interactive Cloudflare authentication flow. API tokens remain local
+and uncommitted.
 
-If you prefer an API token instead of browser login, set a Cloudflare API token in your local shell only. Do not commit it.
+## 4. Expand-first order
 
-## Post-deploy Smoke Test
+1. Record backup, owner, stop thresholds and rollback versions.
+2. Apply the compatible database expansion.
+3. Deploy required Edge Functions and Worker bindings with server flags OFF.
+4. Verify private bucket, exact origins, Turnstile and machine secrets.
+5. Deploy Pages with frontend flags OFF.
+6. Run route, Auth, ownership, Worker and closed-lecture smoke tests.
+7. Enable one controlled feature/canary at a time.
+8. Record telemetry and the gate result.
 
-After Cloudflare issues a URL, check:
+On incident, disable flags and restore the previous Pages/Edge/Worker version
+before considering a database contract change.
 
-```text
-/join
-/lecture
-/display
-/admin
-```
+## 5. Post-deploy smoke
 
-Flow:
+- Every route above returns the React application on direct navigation.
+- `/demo` works with hosted-service requests blocked.
+- Live join requires real Anonymous Auth and Turnstile.
+- Teacher and student are separate identities and cannot cross ownership.
+- Comment, Poll and page updates arrive through the expected snapshot cadence.
+- Admin operations require a valid Admin session.
+- Paid starts require the separate API-use authorization.
+- PDF and archive requests use the configured Worker and remain inaccessible
+  without scoped access.
+- Lecture close stops writes, Poll answers, AI starts and live polling.
+- Browser console and network logs contain no secret.
 
-```text
-1. Open /join.
-2. Enter JC2026.
-3. Confirm /lecture opens.
-4. Submit a comment.
-5. Open another browser and confirm comments/likes arrive through the
-   five-second snapshot protocol without a comment Realtime subscription.
-6. Answer a poll and confirm poll results.
-7. Open /display and confirm comments, likes, poll results, and PDF area.
-8. Open /admin and confirm PIN gate.
-```
-
-If deploy build fails, copy the Cloudflare build log and fix the first actual error line first.
+Use `docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md` and
+`docs/PHASE6_6_HUMAN_TEST_CHECKLIST.md` for the current integrated feature
+sequence. Future Phase 7 deployment must follow the gate in `docs/ROADMAP.md`.
