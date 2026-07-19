@@ -3936,7 +3936,7 @@ input:disabled {
 }
 
 .theme-light .eyebrow {
-  color: #1677a8;
+  color: #0b638f;
 }
 
 .theme-light .primary-button {
@@ -3986,7 +3986,7 @@ input:disabled {
 }
 
 .theme-light .note {
-  color: #6a7c91;
+  color: #52677d;
 }
 
 .theme-light .error-note {
@@ -4413,7 +4413,13 @@ input:disabled {
 
 .theme-light .comment-meta,
 .theme-light .comment-actions {
-  color: #718398;
+  color: #52677d;
+}
+
+.theme-light .nickname-toggle small,
+.theme-light .nickname-field small,
+.theme-light .composer-footer > span {
+  color: #52677d;
 }
 
 .theme-light .comment-author i {

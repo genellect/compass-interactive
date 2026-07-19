@@ -1,7 +1,7 @@
 {
   "name": "compass-interactive",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -45,14 +45,23 @@
     "test:phase6-6-load": "node scripts/test-phase6-6-load.mjs",
     "test:phase6-7-docs": "node scripts/test-phase6-7-docs.mjs",
     "test:phase6-8-static": "node --experimental-strip-types scripts/test-phase6-8-static.mjs",
+    "test:phase6-9-static": "node scripts/test-phase6-9-static.mjs",
+    "test:phase6-9-load": "node scripts/test-phase6-9-load.mjs",
+    "test:phase6-9-bundle": "node scripts/test-phase6-9-bundle.mjs",
     "test:production-gate:static": "node --experimental-strip-types scripts/test-production-gate-static.mjs",
     "test:production-env": "node scripts/test-production-env.mjs",
     "test:production-local-edge": "node scripts/test-production-local-edge.mjs",
     "test:ci:nonlive": "node scripts/ci/run-nonlive-suite.mjs",
     "test:e2e:demo": "node scripts/ci/run-browser-e2e.mjs demo",
+    "test:e2e:demo:triple": "node scripts/ci/run-browser-e2e.mjs demo --repeat-each=3",
     "test:e2e:demo:direct": "playwright test --config playwright.config.ts",
     "test:e2e:local": "node scripts/ci/run-browser-e2e.mjs local",
+    "test:e2e:local:triple": "node scripts/ci/run-browser-e2e.mjs local --repeat-each=3",
     "test:e2e:local:direct": "playwright test --config playwright.local.config.ts",
+    "db:types:generate": "node scripts/ci/database-types.mjs --write",
+    "db:types:check": "node scripts/ci/database-types.mjs",
+    "security:secrets": "node scripts/ci/scan-secrets.mjs",
+    "security:audit": "npm audit --audit-level=high",
     "test:admin-lifecycle": "node --experimental-strip-types scripts/test-admin-lifecycle.mjs",
     "test:pdf-sync": "node scripts/test-pdf-sync.mjs",
     "test:supabase:static": "node scripts/test-supabase-baseline.mjs",
@@ -76,6 +85,7 @@
     "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
     "@playwright/test": "1.61.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",

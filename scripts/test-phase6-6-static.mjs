@@ -8,6 +8,7 @@ const [
   flags,
   migration,
   context,
+  archiveResume,
   liveRepository,
   lecturePage,
   commentInput,
@@ -36,8 +37,11 @@ const [
 ] = await Promise.all([
   read('.env.local.example'),
   read('src/lib/featureFlags.ts'),
-  read('supabase/migrations/20260716140920_phase6_6_ux_archive_metrics_digest.sql'),
+  read(
+    'supabase/migrations/20260716140920_phase6_6_ux_archive_metrics_digest.sql',
+  ),
   read('src/context/CompassStateContext.tsx'),
+  read('src/context/compass/useArchiveResume.ts'),
   read('src/repositories/supabaseLiveStateRepository.ts'),
   read('src/pages/LecturePage.tsx'),
   read('src/components/LiveBoard/CommentInput.tsx'),
@@ -71,7 +75,10 @@ assert.doesNotMatch(env, /^VITE_(?:OPENAI|RESEND|SUPABASE_SERVICE_ROLE)/m)
 
 assert.match(migration, /add column participant_count bigint/)
 assert.match(migration, /add column visible_comment_count bigint/)
-assert.match(migration, /create function public\.get_lecture_public_snapshot_v5/)
+assert.match(
+  migration,
+  /create function public\.get_lecture_public_snapshot_v5/,
+)
 assert.match(migration, /create function public\.join_lecture_by_code_v2/)
 assert.match(migration, /create function public\.admin_duplicate_lecture_v1/)
 assert.match(migration, /polls_one_open_per_lecture_uidx/)
@@ -110,9 +117,12 @@ assert.match(liveRepository, /materialSummary/)
 assert.match(context, /setParticipantCount\(/)
 assert.match(context, /setVisibleCommentCount\(/)
 assert.match(context, /persistLectureArchiveResumeCode\(lectureCode\)/)
-assert.match(context, /archiveResumeAttemptedCodeRef\.current = null/)
-assert.match(context, /const retryArchiveResume = useCallback/)
-assert.match(context, /setArchiveResumeNonce\(\(current\) => current \+ 1\)/)
+assert.match(archiveResume, /attemptedCodeRef\.current = null/)
+assert.match(archiveResume, /const retryArchiveResume = useCallback/)
+assert.match(
+  archiveResume,
+  /setArchiveResumeNonce\(\(current\) => current \+ 1\)/,
+)
 assert.doesNotMatch(
   context,
   /const isLiveSyncRoute = \[[\s\S]*?'\/lecture\/comments'/,
@@ -157,7 +167,10 @@ const mobileOrder = [
 let previousPosition = -1
 for (const marker of mobileOrder) {
   const position = lecturePage.indexOf(marker)
-  assert.ok(position > previousPosition, `${marker} must follow mobile DOM order`)
+  assert.ok(
+    position > previousPosition,
+    `${marker} must follow mobile DOM order`,
+  )
   previousPosition = position
 }
 
@@ -171,12 +184,12 @@ assert.match(app, /path="\/lecture\/comments"/)
 assert.match(app, /path="\/lecture\/archive"/)
 assert.match(app, /const appTheme = 'theme-light'/)
 assert.match(displayView, /comments\.slice\(0, 5\)/)
-assert.match(css, /display-layout:fullscreen \.display-poll-rail[\s\S]*display: grid/)
-assert.match(css, /\.theme-light \.display-shell/)
 assert.match(
   css,
-  /\.student-pdf-panel \.pdf-stage[\s\S]*?order: 0/,
+  /display-layout:fullscreen \.display-poll-rail[\s\S]*display: grid/,
 )
+assert.match(css, /\.theme-light \.display-shell/)
+assert.match(css, /\.student-pdf-panel \.pdf-stage[\s\S]*?order: 0/)
 
 assert.doesNotMatch(archiveClient, /supabase|ensureAnonymousAuthSession/i)
 assert.match(archiveClient, /shouldRefreshArchiveAccess/)
@@ -187,10 +200,7 @@ assert.match(archivePage, /archiveSession\.materialSummary/)
 assert.match(archivePage, /archiveResumeError/)
 assert.match(archivePage, /retryArchiveResume/)
 assert.match(archivePage, /もう一度読み込む/)
-assert.match(
-  archivePage,
-  /約\{archiveSession\.participantCountApproximate\}/,
-)
+assert.match(archivePage, /約\{archiveSession\.participantCountApproximate\}/)
 assert.match(archiveStorage, /window\.sessionStorage/)
 assert.match(archiveStorage, /ARCHIVE_RESUME_CODE_STORAGE_KEY/)
 assert.doesNotMatch(archiveStorage, /archiveAccessToken|comments|pdf/i)

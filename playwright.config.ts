@@ -8,11 +8,14 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   failOnFlakyTests: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  timeout: 60_000,
+  workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI
     ? [['line'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
   outputDir: 'test-results/demo',
+  snapshotPathTemplate:
+    '{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}',
   expect: { timeout: 10_000 },
   use: {
     baseURL,
@@ -32,6 +35,17 @@ export default defineConfig({
       name: 'mobile-chromium',
       use: {
         ...devices['Pixel 7'],
+        viewport: { width: 390, height: 844 },
+      },
+    },
+    {
+      name: 'desktop-webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+    {
+      name: 'mobile-webkit',
+      use: {
+        ...devices['iPhone 15'],
         viewport: { width: 390, height: 844 },
       },
     },

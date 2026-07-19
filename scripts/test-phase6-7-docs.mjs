@@ -21,6 +21,8 @@ const requiredDocuments = [
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
   'docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md',
   'docs/PHASE6_8_LOCAL_GATE_2026-07-18.md',
+  'docs/PHASE6_9_MODULARIZATION_AND_CI.md',
+  'docs/PHASE6_9_LOCAL_GATE_2026-07-19.md',
   'docs/CI_AND_BROWSER_E2E.md',
   'docs/supabase_setup.md',
   'docs/cloudflare_pages_deploy.md',
@@ -35,7 +37,7 @@ for (const document of requiredDocuments) {
 
 const packageJson = JSON.parse(read('package.json'))
 const packageLock = JSON.parse(read('package-lock.json'))
-assert.equal(packageJson.version, '0.8.0')
+assert.match(packageJson.version, /^\d+\.\d+\.\d+$/)
 assert.equal(packageLock.version, packageJson.version)
 assert.equal(packageLock.packages?.['']?.version, packageJson.version)
 
@@ -46,7 +48,8 @@ const security = read('docs/SECURITY.md')
 const changelog = read('docs/CHANGELOG.md')
 
 for (const requiredText of [
-  'Phase 0 through Phase 6.8',
+  `Application version: \`${packageJson.version}\``,
+  'Phase 0 through Phase 6.9',
   'Phase 6.7',
   'Phase 7 Production Gate',
   'docs/ROADMAP.md',

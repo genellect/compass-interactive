@@ -1,0 +1,54 @@
+{
+  "body": {
+    "backgroundColor": "rgba(0, 0, 0, 0)",
+    "color": "rgb(247, 251, 255)"
+  },
+  "grid": {
+    "columns": "767.219px 434.766px",
+    "areas": "\"material poll\" \"caption caption\" \"recap recap\" \"voices summary\" \"composer summary\" \"exit exit\""
+  },
+  "mode": "desktop",
+  "overflowFree": true,
+  "sections": [
+    {
+      "display": "block",
+      "gridArea": "material",
+      "selector": "#lecture-material"
+    },
+    {
+      "display": "block",
+      "gridArea": "caption",
+      "selector": "#lecture-caption"
+    },
+    {
+      "display": "grid",
+      "gridArea": "voices",
+      "selector": "#lecture-voices"
+    },
+    {
+      "display": "block",
+      "gridArea": "auto",
+      "selector": "#lecture-question"
+    },
+    {
+      "display": "block",
+      "gridArea": "poll",
+      "selector": "#lecture-poll"
+    },
+    {
+      "display": "block",
+      "gridArea": "recap",
+      "selector": ".lecture-area-recap"
+    },
+    {
+      "display": "block",
+      "gridArea": "summary",
+      "selector": ".lecture-area-summary"
+    },
+    {
+      "display": "flex",
+      "gridArea": "exit",
+      "selector": ".lecture-area-exit"
+    }
+  ]
+}

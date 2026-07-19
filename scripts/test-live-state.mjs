@@ -130,10 +130,9 @@ assert.deepEqual(
   'An in-flight optimistic comment survives an initial snapshot refresh.',
 )
 const saved = { ...optimistic, id: 'saved-comment', isPending: undefined }
-assert.deepEqual(
-  settleOptimisticComment([optimistic], optimistic.id, saved),
-  [saved],
-)
+assert.deepEqual(settleOptimisticComment([optimistic], optimistic.id, saved), [
+  saved,
+])
 assert.deepEqual(rollbackOptimisticComment([optimistic], optimistic.id), [])
 
 const context = read('src/context/CompassStateContext.tsx')
@@ -144,6 +143,8 @@ const commentsRepository = read('src/repositories/supabaseCommentRepository.ts')
 const liveStateRepository = read(
   'src/repositories/supabaseLiveStateRepository.ts',
 )
+const liveStateMappers = read('src/repositories/supabase/liveStateMappers.ts')
+const liveStateImplementation = liveStateRepository + liveStateMappers
 const learningSupport = read(
   'src/components/LearningSupport/LearningSupport.tsx',
 )
@@ -174,7 +175,10 @@ assert.match(adaptiveSyncHook, /BACKGROUND_LIVE_SYNC_INTERVAL_MS/)
 assert.match(adaptiveSyncHook, /hiddenSyncCompleted/)
 assert.match(adaptiveSyncHook, /getHiddenLiveSyncDelay/)
 assert.match(adaptiveSyncHook, /visibilityState === 'visible'/)
-assert.doesNotMatch(context, /IDLE_SYNC_TIMEOUT_MS|setSessionSyncPauseReason\('idle'\)/)
+assert.doesNotMatch(
+  context,
+  /IDLE_SYNC_TIMEOUT_MS|setSessionSyncPauseReason\('idle'\)/,
+)
 assert.doesNotMatch(
   displayPage,
   /useAdaptiveLiveSync|supabaseDisplayStateRepository/,
@@ -200,8 +204,8 @@ assert.doesNotMatch(
 assert.doesNotMatch(pollsRepository, /ensureAnonymousParticipant|participants/)
 assert.doesNotMatch(commentsRepository, /\.channel\(|postgres_changes/)
 assert.doesNotMatch(commentsRepository, /from\('participants'\)/)
-assert.doesNotMatch(liveStateRepository, /target_participant_id/)
-assert.match(liveStateRepository, /current_participant_id/)
+assert.doesNotMatch(liveStateImplementation, /target_participant_id/)
+assert.match(liveStateImplementation, /current_participant_id/)
 assert.match(liveStateRepository, /get_lecture_public_snapshot_v2/)
 assert.match(liveStateRepository, /get_lecture_participant_state_v2/)
 assert.match(liveStateRepository, /get_lecture_comment_history_v2/)

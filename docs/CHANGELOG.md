@@ -3,6 +3,20 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-19 - Phase 6.9 modularization and deterministic CI
+
+- Split the Admin workspace into auth/session, lecture, PDF, AI, Poll and
+  moderation units without changing its route or user-visible workflow.
+- Split state/archive helpers and Supabase mapping, transport and timeout/error
+  policy while preserving the existing public context and repository APIs.
+- Added deterministic local Supabase type generation and CI drift rejection.
+- Pinned GitHub Actions to immutable SHAs and added dependency review, CodeQL,
+  secret scanning, high-severity audit policy and CycloneDX SBOM evidence.
+- Added Chromium/WebKit Desktop/Mobile accessibility, keyboard and deterministic
+  visual-contract tests with three-consecutive-run gates.
+- Adopted development preview version `0.9.0`. No hosted setting, public web,
+  migration, secret, paid API call, push or deployment was changed.
+
 ## 2026-07-18 - Phase 6.8 security/session foundation
 
 - Added keyed application-level Admin PIN throttling and hash-at-rest,
@@ -78,7 +92,6 @@ describe mock-only or Realtime behavior that the Phase 1-6 design replaced.
 
 ## Planned trajectory
 
-- Phase 6.9: internal modularization and deterministic CI/supply-chain quality.
 - Phase 7.1: summary language, own comments and lecture QR.
 - Phase 7.2: verified-primary-literature academic reference answers.
 - Phase 7 Gate: next controlled production reflection.

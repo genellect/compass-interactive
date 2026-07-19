@@ -13,10 +13,10 @@ secrets.
 
 ## Current status
 
-- Application version: `0.8.0` development preview.
+- Application version: `0.9.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 6.8 are implemented in the repository. Phase 6.8 is
-  locally verified, remains default-OFF and has not been reflected to hosted
+- Phase 0 through Phase 6.9 are implemented in the repository. Phase 6.9 is
+  locally verified and has not been pushed, deployed or reflected to hosted
   services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
@@ -29,6 +29,10 @@ secrets.
 - Phase 6.7 established the documentation/release baseline. Phase 6.8 adds
   tracked Admin sessions, PIN throttling, lecture resume tokens, CSP and
   bounded communication/provider behavior without authorizing deployment.
+- Phase 6.9 preserves the public UI/data contracts while splitting internal
+  Admin, state and Supabase repository responsibilities. CI now rejects DB type
+  drift, mutable Action refs, high-severity dependency findings and browser or
+  accessibility regressions across Chromium and WebKit.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -184,10 +188,25 @@ Run every non-live regression group used by CI:
 npm run test:ci:nonlive
 ```
 
+Generate or verify the deterministic public Supabase database types after a
+clean local migration reset:
+
+```bash
+npm run db:types:generate
+npm run db:types:check
+```
+
 Run the Supabase-independent Demo browser E2E:
 
 ```bash
 npm run test:e2e:demo
+```
+
+The Phase 6.9 stability gate runs the same Demo browser contracts three times
+across Desktop/Mobile Chromium and WebKit:
+
+```bash
+npm run test:e2e:demo:triple
 ```
 
 With Docker Desktop running, the local integration sequence is:
@@ -203,6 +222,12 @@ Serve Edge Functions with synthetic local secrets in one terminal, then run:
 
 ```bash
 npm run test:e2e:local
+```
+
+The corresponding local-Supabase Chromium/WebKit stability gate is:
+
+```bash
+npm run test:e2e:local:triple
 ```
 
 Detailed setup and safety constraints are in
@@ -238,6 +263,8 @@ flags before attempting a destructive rollback.
 - Phase 6.7 local evidence: [`docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_7_LOCAL_GATE_2026-07-18.md)
 - Phase 6.8 security/session design: [`docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`](docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md)
 - Phase 6.8 local evidence: [`docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_8_LOCAL_GATE_2026-07-18.md)
+- Phase 6.9 modularization and CI design: [`docs/PHASE6_9_MODULARIZATION_AND_CI.md`](docs/PHASE6_9_MODULARIZATION_AND_CI.md)
+- Phase 6.9 local evidence: [`docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`](docs/PHASE6_9_LOCAL_GATE_2026-07-19.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)

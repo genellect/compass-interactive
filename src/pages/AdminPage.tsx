@@ -1,7 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { LiveBoard } from '../components/LiveBoard'
-import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
+import {
+  AdminAiControlPanel,
+  AdminAuthPanel,
+  AdminLectureControl,
+  AdminModerationPanel,
+  AdminPdfControl,
+  AdminPollControl,
+  AdminSessionPanel,
+} from '../components/AdminWorkspace'
 import {
   type AdminLecture,
   type AdminPdfDocument,
@@ -21,12 +28,6 @@ import {
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
-import {
-  LectureSummaryControl,
-  MaterialAnalysisControl,
-  RealtimeCaptionControl,
-} from '../components/AdminAiControl'
-import { SyncedPdfViewer } from '../components/DisplayView/SyncedPdfViewer'
 import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
@@ -44,18 +45,6 @@ function restoreAdminToken() {
 
 function restorePublisherSessionToken() {
   return window.sessionStorage.getItem(PUBLISHER_SESSION_STORAGE_KEY) ?? ''
-}
-
-function getStatusLabel(status: string) {
-  if (status === 'open') {
-    return '受付中'
-  }
-
-  if (status === 'closed') {
-    return '締切'
-  }
-
-  return '準備中'
 }
 
 export function AdminPage() {
@@ -186,22 +175,6 @@ export function AdminPage() {
     setOperatorLiveAccess({ kind: 'admin', token: adminToken })
     return () => setOperatorLiveAccess(null)
   }, [adminToken, isAuthenticated, setOperatorLiveAccess])
-
-  function toDatetimeLocalValue(value: string | null) {
-    if (!value) {
-      return ''
-    }
-
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) {
-      return ''
-    }
-
-    const offsetDate = new Date(
-      date.getTime() - date.getTimezoneOffset() * 60000,
-    )
-    return offsetDate.toISOString().slice(0, 16)
-  }
 
   function fromDatetimeLocalValue(value: string) {
     return value ? new Date(value).toISOString() : null
@@ -1050,39 +1023,13 @@ export function AdminPage() {
 
   if (!isAuthenticated) {
     return (
-      <main className="page-shell join-page">
-        <form className="join-card" onSubmit={handleLogin}>
-          <span className="admin-login-icon">
-            <AppIcon name="compass" size={25} />
-          </span>
-          <p className="eyebrow">FOR EDUCATORS</p>
-          <h1>講義を運営する</h1>
-          <p>管理PINを入力して、講義コントロールを開きます。</p>
-
-          <label className="field">
-            <span>PIN</span>
-            <input
-              aria-label="管理PIN"
-              autoComplete="off"
-              disabled={isVerifying}
-              inputMode="numeric"
-              onChange={(event) => setPin(event.target.value)}
-              type="password"
-              value={pin}
-            />
-          </label>
-
-          {authError ? <p className="error-note">{authError}</p> : null}
-
-          <button
-            className="primary-button"
-            disabled={isVerifying || pin.trim().length === 0}
-            type="submit"
-          >
-            {isVerifying ? '確認中…' : '講義コントロールを開く'}
-          </button>
-        </form>
-      </main>
+      <AdminAuthPanel
+        authError={authError}
+        isVerifying={isVerifying}
+        onPinChange={setPin}
+        onSubmit={handleLogin}
+        pin={pin}
+      />
     )
   }
 
@@ -1133,45 +1080,13 @@ export function AdminPage() {
         <p className="error-note">{displayLaunchError}</p>
       ) : null}
       {showAdminSessions && isPhase68SecurityEnabled ? (
-        <section className="control-card admin-session-panel">
-          <div>
-            <p className="eyebrow">SECURITY</p>
-            <h2>管理セッション</h2>
-            <p>利用していない端末のセッションを個別に失効できます。</p>
-          </div>
-          {adminSessionsError ? (
-            <p className="error-note" role="alert">
-              {adminSessionsError}
-            </p>
-          ) : null}
-          <div className="admin-session-list">
-            {adminSessions.map((session) => (
-              <div className="admin-session-row" key={session.id}>
-                <span>
-                  <strong>
-                    {session.revokedAt
-                      ? '失効済み'
-                      : session.id === adminCurrentSessionId
-                        ? '現在のセッション'
-                        : '有効なセッション'}
-                  </strong>
-                  <small>
-                    最終確認{' '}
-                    {new Date(session.lastSeenAt).toLocaleString('ja-JP')}
-                  </small>
-                </span>
-                <button
-                  className="secondary-button compact"
-                  disabled={adminSessionsLoading || Boolean(session.revokedAt)}
-                  onClick={() => void revokeAdminSession(session.id)}
-                  type="button"
-                >
-                  失効する
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+        <AdminSessionPanel
+          currentSessionId={adminCurrentSessionId}
+          error={adminSessionsError}
+          isLoading={adminSessionsLoading}
+          onRevoke={(sessionId) => void revokeAdminSession(sessionId)}
+          sessions={adminSessions}
+        />
       ) : null}
 
       <nav className="admin-workflow" aria-label="講義運営の流れ">
@@ -1192,727 +1107,156 @@ export function AdminPage() {
         </a>
       </nav>
 
-      <section className="panel" id="admin-prepare">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">PREPARE</p>
-            <h2>講義を準備する</h2>
-          </div>
-          <button
-            className="secondary-button"
-            disabled={lecturesLoading}
-            onClick={() => void refreshLectures()}
-            type="button"
-          >
-            再読み込み
-          </button>
-        </div>
-
-        <form className="lecture-create-form" onSubmit={handleCreateLecture}>
-          <label className="field compact-field">
-            <span>講義タイトル</span>
-            <input
-              disabled={lecturesLoading}
-              onChange={(event) => setNewLectureTitle(event.target.value)}
-              type="text"
-              value={newLectureTitle}
-            />
-          </label>
-          <label className="field compact-field">
-            <span>開始予定</span>
-            <input
-              disabled={lecturesLoading}
-              onChange={(event) => setNewLectureStartsAt(event.target.value)}
-              type="datetime-local"
-              value={newLectureStartsAt}
-            />
-          </label>
-          <label className="field compact-field">
-            <span>終了予定</span>
-            <input
-              disabled={lecturesLoading}
-              onChange={(event) => setNewLectureEndsAt(event.target.value)}
-              type="datetime-local"
-              value={newLectureEndsAt}
-            />
-          </label>
-          <button
-            className="primary-button compact"
-            disabled={lecturesLoading || newLectureTitle.trim().length === 0}
-            type="submit"
-          >
-            新しい講義を作成
-          </button>
-        </form>
-
-        {lecturesError ? <p className="error-note">{lecturesError}</p> : null}
-        {lecturesLoading ? (
-          <p className="note">講義情報を更新しています。</p>
-        ) : null}
-
-        <div className="table-like lecture-table">
-          {orderedLectures.length > 0 ? (
-            visibleLectures.map((lectureRow) => {
-              const isActive = activeLectureSessionId === lectureRow.id
-
-              return (
-                <div
-                  className={`table-row lecture-admin-row ${isActive ? 'is-active' : ''}`}
-                  key={lectureRow.id}
-                >
-                  <span>
-                    <strong>{lectureRow.title}</strong>
-                    <small>
-                      {lectureRow.startsAt
-                        ? `開始 ${toDatetimeLocalValue(lectureRow.startsAt).replace('T', ' ')}`
-                        : '開始未設定'}
-                      {' / '}
-                      {lectureRow.endsAt
-                        ? `終了 ${toDatetimeLocalValue(lectureRow.endsAt).replace('T', ' ')}`
-                        : '終了未設定'}
-                    </small>
-                  </span>
-                  <span className="lecture-code-cell">
-                    <code>{lectureRow.lectureCode || '未発行'}</code>
-                    <button
-                      className="secondary-button compact"
-                      disabled={!lectureRow.lectureCode}
-                      onClick={() =>
-                        void copyLectureCode(lectureRow.lectureCode)
-                      }
-                      type="button"
-                    >
-                      コピー
-                    </button>
-                  </span>
-                  <span className={`status-pill ${lectureRow.status}`}>
-                    {getStatusLabel(lectureRow.status)}
-                  </span>
-                  <div className="lecture-row-actions">
-                    <button
-                      className="secondary-button"
-                      onClick={() =>
-                        selectLectureSession(makeJoinedLecture(lectureRow))
-                      }
-                      type="button"
-                    >
-                      {isActive ? '操作対象' : '選択'}
-                    </button>
-                    <button
-                      className="secondary-button"
-                      disabled={
-                        lecturesLoading || lectureRow.status !== 'draft'
-                      }
-                      onClick={() =>
-                        void updateLectureStatus('start', lectureRow.id)
-                      }
-                      type="button"
-                    >
-                      開始
-                    </button>
-                    <button
-                      className="secondary-button danger-button"
-                      disabled={lecturesLoading || lectureRow.status !== 'open'}
-                      onClick={() =>
-                        void updateLectureStatus('close', lectureRow.id)
-                      }
-                      type="button"
-                    >
-                      終了
-                    </button>
-                    {lectureRow.status === 'closed' ? (
-                      <button
-                        className="secondary-button"
-                        disabled={lecturesLoading}
-                        onClick={() => {
-                          const confirmed = window.confirm(
-                            '同じタイトルで新しい講義コードを発行し、講義を開始します。過去の記録は変更されず、資料と投票は引き継がれません。続けますか？',
-                          )
-                          if (confirmed) {
-                            void duplicateLecture(lectureRow.id)
-                          }
-                        }}
-                        type="button"
-                      >
-                        もう一度開催する
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              )
-            })
-          ) : (
-            <p className="note">
-              まだ講義がありません。最初の講義を作成しましょう。
-            </p>
-          )}
-        </div>
-        {orderedLectures.length > 2 ? (
-          <button
-            className="secondary-button admin-history-toggle"
-            onClick={() => {
-              if (showLectureHistory) {
-                setShowLectureHistory(false)
-                return
-              }
-              void refreshLectures(adminToken, true).then(() =>
-                setShowLectureHistory(true),
-              )
-            }}
-            type="button"
-          >
-            {showLectureHistory ? '講義履歴を閉じる' : '講義履歴を表示する'}
-          </button>
-        ) : null}
-      </section>
-
-      <section className="dashboard-grid">
-        <article className="stat-card">
-          <span>講義状態</span>
-          <strong>{getStatusLabel(lecture.status)}</strong>
-        </article>
-        <article className="stat-card">
-          <span>参加者数</span>
-          <strong>約{participantCount}</strong>
-        </article>
-        <article className="stat-card">
-          <span>表示コメント</span>
-          <strong>{visibleCommentCount}</strong>
-        </article>
-        <article className="stat-card">
-          <span>非表示コメント</span>
-          <strong>{hiddenCommentCount}</strong>
-        </article>
-      </section>
-
-      <section className="panel" id="admin-live">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">LIVE MATERIAL</p>
-            <h2>講義資料を操作する</h2>
-          </div>
-          <span className="metric">
-            現在のページ: {displayState?.currentPdfPage ?? 1}
-          </span>
-        </div>
-
-        {isPhase3PrivatePdfEnabled ? (
-          <div className="display-control-grid publisher-control-panel">
-            <div className="panel-heading">
-              <div>
-                <p className="eyebrow">LECTURE MATERIAL</p>
-                <h3>講義資料を公開する</h3>
-              </div>
-              <span className="metric">
-                {publisherStatus === 'paired'
-                  ? '公開できます'
-                  : publisherStatus === 'connected'
-                    ? '初回確認が必要'
-                    : publisherStatus === 'checking'
-                      ? '準備を確認中'
-                      : '公開アプリを確認'}
-              </span>
-            </div>
-
-            {publisherStatus !== 'paired' ? (
-              <details className="admin-publisher-setup">
-                <summary>初回接続の設定</summary>
-                <div className="display-control-form">
-                  <label className="field compact-field">
-                    <span>教員PCに表示された8桁コード</span>
-                    <input
-                      autoComplete="off"
-                      disabled={pdfPublishing}
-                      inputMode="numeric"
-                      maxLength={8}
-                      onChange={(event) =>
-                        setPublisherPairingCode(
-                          event.target.value.replace(/\D/g, ''),
-                        )
-                      }
-                      value={publisherPairingCode}
-                    />
-                  </label>
-                  <button
-                    className="secondary-button"
-                    disabled={publisherStatus === 'checking' || pdfPublishing}
-                    onClick={() => void checkPublisher()}
-                    type="button"
-                  >
-                    公開準備を再確認
-                  </button>
-                </div>
-              </details>
-            ) : null}
-
-            <div className="display-control-form">
-              <label className="field compact-field">
-                <span>PDFを選択（15MB・75ページ・20,000文字以下）</span>
-                <input
-                  accept="application/pdf,.pdf"
-                  disabled={pdfPublishing || lecture.status === 'closed'}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null
-                    setPdfFile(file)
-                    setPdfPublicationDraftId('')
-                    if (file && !pdfDisplayName) {
-                      setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
-                    }
-                  }}
-                  type="file"
-                />
-              </label>
-              <label className="field compact-field">
-                <span>学生に表示する資料名</span>
-                <input
-                  disabled={pdfPublishing}
-                  maxLength={160}
-                  onChange={(event) => setPdfDisplayName(event.target.value)}
-                  value={pdfDisplayName}
-                />
-              </label>
-              <label className="field compact-field">
-                <span>ダウンロード</span>
-                <select
-                  disabled={pdfPublishing}
-                  onChange={(event) =>
-                    setPdfDownloadEnabled(event.target.value === 'enabled')
-                  }
-                  value={pdfDownloadEnabled ? 'enabled' : 'disabled'}
-                >
-                  <option value="enabled">学生に許可する</option>
-                  <option value="disabled">閲覧のみ</option>
-                </select>
-              </label>
-              <button
-                className="primary-button"
-                disabled={
-                  !pdfFile ||
-                  pdfPublishing ||
-                  lecture.status === 'closed' ||
-                  (!publisherSessionToken &&
-                    publisherPairingCode.trim().length !== 8)
-                }
-                onClick={() => void publishPdfDocument()}
-                type="button"
-              >
-                {pdfPublishing
-                  ? '学生画面へ反映中…'
-                  : '学生に講義資料を公開する'}
-              </button>
-            </div>
-
-            <p
-              className={
-                publisherMessage.includes('失敗') ? 'error-note' : 'note'
-              }
-            >
-              {publisherMessage || 'PDFを選択して公開してください。'}
-            </p>
-            <p className="note">
-              大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。
-            </p>
-          </div>
-        ) : null}
-
-        {!activeLectureSessionId ? (
-          <p className="note">講義へ参加後、共有画面を操作できます。</p>
-        ) : (
-          <div className="display-control-grid">
-            <div className="display-control-form pdf-document-control">
-              <label className="field compact-field">
-                <span>PDF資料</span>
-                <select
-                  disabled={displayStateLoading || lecture.status === 'closed'}
-                  onChange={(event) => setPdfDocumentInput(event.target.value)}
-                  value={pdfDocumentInput}
-                >
-                  <option value="">資料を表示しない</option>
-                  {availablePdfAssets.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.title}（{asset.pageCount}ページ）
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="secondary-button"
-                disabled={displayStateLoading || lecture.status === 'closed'}
-                onClick={() =>
-                  void updateDisplayState('setDocument', {
-                    pdfDocumentId: pdfDocumentInput || null,
-                  })
-                }
-                type="button"
-              >
-                この資料を表示
-              </button>
-            </div>
-
-            <div className="display-control-actions">
-              <button
-                className="secondary-button"
-                disabled={
-                  displayStateLoading ||
-                  lecture.status === 'closed' ||
-                  !selectedPdfAsset ||
-                  (displayState?.currentPdfPage ?? 1) <= 1
-                }
-                onClick={() => void updateDisplayState('previous')}
-                type="button"
-              >
-                前へ
-              </button>
-              <button
-                className="secondary-button"
-                disabled={
-                  displayStateLoading ||
-                  lecture.status === 'closed' ||
-                  !selectedPdfAsset ||
-                  (displayState?.currentPdfPage ?? 1) >=
-                    selectedPdfAsset.pageCount
-                }
-                onClick={() => void updateDisplayState('next')}
-                type="button"
-              >
-                次へ
-              </button>
-            </div>
-
-            <form className="display-control-form" onSubmit={handleGoToPage}>
-              <label className="field compact-field">
-                <span>ページ番号</span>
-                <input
-                  disabled={displayStateLoading || lecture.status === 'closed'}
-                  max={selectedPdfAsset?.pageCount ?? 1}
-                  min={1}
-                  onChange={(event) => setDisplayPageInput(event.target.value)}
-                  type="number"
-                  value={displayPageInput}
-                />
-              </label>
-              <button
-                className="secondary-button"
-                disabled={
-                  displayStateLoading ||
-                  lecture.status === 'closed' ||
-                  !selectedPdfAsset
-                }
-                type="submit"
-              >
-                移動
-              </button>
-            </form>
-          </div>
-        )}
-
-        {activeLectureSessionId && displayState?.pdfDocumentId ? (
-          <div className="admin-current-pdf-preview">
-            <h3>現在、学生に表示しているページ</h3>
-            <SyncedPdfViewer
-              adminToken={adminToken}
-              documentId={displayState.pdfDocumentId}
-              documentVersion={displayState.pdfDocumentVersion}
-              lectureSessionId={activeLectureSessionId}
-              manifestVersion={displayState.pdfManifestVersion}
-              pageCount={displayState.pdfPageCount}
-              presenterLocked
-              remotePage={displayState.currentPdfPage}
-              viewMode={lecture.status === 'closed' ? 'closed' : 'live'}
-              visible={displayState.pdfVisible}
-            />
-          </div>
-        ) : null}
-
-        {displayStateError ? (
-          <p className="error-note">{displayStateError}</p>
-        ) : null}
-        <p className="note">
-          {lecture.status === 'closed'
-            ? '講義終了時点で表示していた資料とページです。'
-            : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
-        </p>
-      </section>
-
-      <section className="panel ai-readiness-panel">
-        <div className="panel-heading">
-          <div className="section-intro">
-            <span className="section-icon violet">
-              <AppIcon name="sparkles" size={18} />
-            </span>
-            <div>
-              <p className="eyebrow">LEARNING SUPPORT</p>
-              <h2>講義の理解サポート</h2>
-            </div>
-          </div>
-          <span
-            className={`support-state ${isPhase4RealtimeCaptionsEnabled || isPhase5MaterialAnalysisEnabled || isPhase6SummariesEnabled ? 'is-ready' : ''}`}
-          >
-            {isPhase4RealtimeCaptionsEnabled ||
-            isPhase5MaterialAnalysisEnabled ||
-            isPhase6SummariesEnabled
-              ? '利用可能'
-              : '停止中'}
-          </span>
-        </div>
-        <p className="panel-description">
-          字幕、直近5分のハイライト、講義資料の要点が、学生の理解を途切れさせずに支えます。
-        </p>
-        {isPhase4RealtimeCaptionsEnabled &&
-        adminToken &&
-        activeLectureSessionId ? (
-          <RealtimeCaptionControl
-            adminToken={adminToken}
-            hardStopAt={activeAdminLecture?.hardStopAt ?? lecture.expiresAt}
-            lectureSessionId={activeLectureSessionId}
-            lectureStatus={activeAdminLecture?.status ?? lecture.status}
-          />
-        ) : (
-          <p className="note">
-            リアルタイム字幕は現在停止しています。利用設定が完了すると、ここから開始できます。
-          </p>
-        )}
-        {isPhase6SummariesEnabled && adminToken && activeLectureSessionId ? (
-          <LectureSummaryControl
-            adminToken={adminToken}
-            displayState={displayState}
-            documents={adminPdfDocuments}
-            getServerNow={getServerNow}
-            hardStopAt={activeAdminLecture?.hardStopAt ?? null}
-            lectureSessionId={activeLectureSessionId}
-            lectureStatus={activeAdminLecture?.status ?? lecture.status}
-            publisherSessionToken={publisherSessionToken}
-            startedAt={activeAdminLecture?.startsAt ?? null}
-          />
-        ) : (
-          <p className="note">
-            5分ハイライトは現在停止しています。利用時は開始にAPI利用PINが必要です。
-          </p>
-        )}
-        {isPhase5MaterialAnalysisEnabled &&
-        adminToken &&
-        activeLectureSessionId ? (
-          <MaterialAnalysisControl
-            adminToken={adminToken}
-            documents={adminPdfDocuments}
-            lectureSessionId={activeLectureSessionId}
-            lectureStatus={activeAdminLecture?.status ?? lecture.status}
-            onPollDraftCreated={async () => {
-              await refreshAdminPolls()
-            }}
-            publisherSessionToken={publisherSessionToken}
-          />
-        ) : (
-          <p className="note">
-            資料分析と投票案の提案は現在停止しています。PDFを公開するだけではAPI利用は発生しません。
-          </p>
-        )}
-        <div className="api-readiness-grid">
-          <article>
-            <span className="support-icon">
-              <AppIcon name="message" size={18} />
-            </span>
-            <div>
-              <strong>リアルタイム字幕</strong>
-              <small>
-                {isPhase4RealtimeCaptionsEnabled ? '開始待ち' : '停止中'}
-              </small>
-            </div>
-            <span
-              className={`readiness-dot ${isPhase4RealtimeCaptionsEnabled ? 'is-active' : ''}`}
-            />
-          </article>
-          <article>
-            <span className="support-icon violet">
-              <AppIcon name="sparkles" size={18} />
-            </span>
-            <div>
-              <strong>5分ハイライト</strong>
-              <small>
-                {isPhase6SummariesEnabled ? '話の要点とみんなの反応' : '停止中'}
-              </small>
-            </div>
-            <span
-              className={`readiness-dot ${isPhase6SummariesEnabled ? 'is-active' : ''}`}
-            />
-          </article>
-          <article>
-            <span className="support-icon violet">
-              <AppIcon name="book" size={18} />
-            </span>
-            <div>
-              <strong>講義資料の要点</strong>
-              <small>
-                {isPhase5MaterialAnalysisEnabled
-                  ? 'ページと一緒に整理して表示'
-                  : '停止中'}
-              </small>
-            </div>
-            <span
-              className={`readiness-dot ${isPhase5MaterialAnalysisEnabled ? 'is-active' : ''}`}
-            />
-          </article>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">LIVE POLL</p>
-            <h2>ライブ投票をつくる</h2>
-          </div>
-          <button
-            className="secondary-button"
-            disabled={adminPollsLoading || !activeLectureSessionId}
-            onClick={() => void refreshAdminPolls()}
-            type="button"
-          >
-            再読み込み
-          </button>
-        </div>
-
-        <form
-          className="lecture-create-form poll-create-form"
-          onSubmit={handleCreatePoll}
-        >
-          <label className="field">
-            <span>質問</span>
-            <input
-              disabled={adminPollsLoading || lecture.status === 'closed'}
-              maxLength={300}
-              onChange={(event) => setNewPollQuestion(event.target.value)}
-              type="text"
-              value={newPollQuestion}
-            />
-          </label>
-          <label className="field compact-field">
-            <span>回答形式</span>
-            <select
-              disabled={adminPollsLoading || lecture.status === 'closed'}
-              onChange={(event) =>
-                setNewPollType(event.target.value as AdminPoll['type'])
-              }
-              value={newPollType}
-            >
-              <option value="single">単一選択</option>
-              <option value="multiple">複数選択</option>
-            </select>
-          </label>
-          <label className="field poll-options-field">
-            <span>選択肢（1行に1件、2～8件）</span>
-            <textarea
-              disabled={adminPollsLoading || lecture.status === 'closed'}
-              onChange={(event) => setNewPollOptions(event.target.value)}
-              rows={4}
-              value={newPollOptions}
-            />
-          </label>
-          <button
-            className="primary-button compact"
-            disabled={
-              adminPollsLoading ||
-              lecture.status === 'closed' ||
-              !activeLectureSessionId ||
-              newPollQuestion.trim().length === 0
-            }
-            type="submit"
-          >
-            投票を作成
-          </button>
-        </form>
-
-        {adminPollsError ? (
-          <p className="error-note">{adminPollsError}</p>
-        ) : null}
-        {adminPollsLoading ? (
-          <p className="note">投票情報を更新しています。</p>
-        ) : null}
-        <p className="note">
-          新しい投票を開始すると、配信中の投票は自動で締め切られます。
-        </p>
-
-        <div className="table-like">
-          {visibleAdminPolls.map((poll) => (
-            <div className="table-row poll-admin-row" key={poll.id}>
-              <span>
-                <strong>{poll.question}</strong>
-                <small>
-                  {poll.options
-                    .map(
-                      (option) => `${option.label}: ${option.responseCount}件`,
-                    )
-                    .join(' / ')}
-                </small>
-              </span>
-              <span>{poll.type === 'single' ? '単一選択' : '複数選択'}</span>
-              <span className={`status-pill ${poll.status}`}>
-                {getStatusLabel(poll.status)}
-              </span>
-              <button
-                className="secondary-button"
-                disabled={
-                  adminPollsLoading ||
-                  (poll.status !== 'open' && lecture.status !== 'open')
-                }
-                onClick={() => void updatePollStatus(poll)}
-                type="button"
-              >
-                {poll.status === 'open' ? '締め切る' : '開始する'}
-              </button>
-            </div>
-          ))}
-          {!adminPollsLoading && adminPolls.length === 0 ? (
-            <p className="note">
-              まだ投票はありません。講義の問いを作ってみましょう。
-            </p>
-          ) : null}
-        </div>
-        {canShowPollHistory ? (
-          <button
-            className="secondary-button admin-history-toggle"
-            onClick={() => {
-              if (showPollHistory) {
-                setShowPollHistory(false)
-                return
-              }
-              void refreshAdminPolls(
-                activeLectureSessionId,
-                adminToken,
-                true,
-              ).then((loaded) => {
-                if (loaded) {
-                  setShowPollHistory(true)
-                }
-              })
-            }}
-            type="button"
-          >
-            {showPollHistory ? '投票履歴を閉じる' : '投票履歴を見る'}
-          </button>
-        ) : null}
-      </section>
-
-      <div id="admin-voices">
-        {commentModerationError ? (
-          <p className="error-note">{commentModerationError}</p>
-        ) : null}
-        <LiveBoard
-          comments={comments}
-          hasOlderComments={hasOlderComments}
-          isLoadingOlderComments={isLoadingOlderComments}
-          mode="admin"
-          onLoadOlderComments={loadOlderComments}
-          onTogglePinned={(commentId) =>
-            void moderateComment(commentId, 'togglePin')
+      <AdminLectureControl
+        activeLectureSessionId={activeLectureSessionId}
+        error={lecturesError}
+        hiddenCommentCount={hiddenCommentCount}
+        isLoading={lecturesLoading}
+        lectures={orderedLectures}
+        newEndsAt={newLectureEndsAt}
+        newStartsAt={newLectureStartsAt}
+        newTitle={newLectureTitle}
+        onClose={(lectureSessionId) =>
+          void updateLectureStatus('close', lectureSessionId)
+        }
+        onCopyCode={(lectureCode) => void copyLectureCode(lectureCode)}
+        onCreate={handleCreateLecture}
+        onDuplicate={(lectureSessionId) =>
+          void duplicateLecture(lectureSessionId)
+        }
+        onEndsAtChange={setNewLectureEndsAt}
+        onRefresh={() => void refreshLectures()}
+        onSelect={(lectureRow) =>
+          selectLectureSession(makeJoinedLecture(lectureRow))
+        }
+        onStart={(lectureSessionId) =>
+          void updateLectureStatus('start', lectureSessionId)
+        }
+        onStartsAtChange={setNewLectureStartsAt}
+        onTitleChange={setNewLectureTitle}
+        onToggleHistory={() => {
+          if (showLectureHistory) {
+            setShowLectureHistory(false)
+            return
           }
-          onToggleVisibility={(commentId) =>
-            void moderateComment(commentId, 'toggleVisibility')
+          void refreshLectures(adminToken, true).then(() =>
+            setShowLectureHistory(true),
+          )
+        }}
+        participantCount={participantCount}
+        selectedLectureStatus={lecture.status}
+        showHistory={showLectureHistory}
+        visibleCommentCount={visibleCommentCount}
+        visibleLectures={visibleLectures}
+      />
+
+      <AdminPdfControl
+        activeLectureSessionId={activeLectureSessionId}
+        adminToken={adminToken}
+        availableAssets={availablePdfAssets}
+        displayPageInput={displayPageInput}
+        displayState={displayState}
+        displayStateError={displayStateError}
+        displayStateLoading={displayStateLoading}
+        lectureStatus={lecture.status}
+        onCheckPublisher={() => void checkPublisher()}
+        onDisplayNameChange={setPdfDisplayName}
+        onDownloadEnabledChange={setPdfDownloadEnabled}
+        onFileChange={(file) => {
+          setPdfFile(file)
+          setPdfPublicationDraftId('')
+          if (file && !pdfDisplayName) {
+            setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
           }
-        />
-        {commentModerationPendingId ? (
-          <p className="note">コメントを更新しています…</p>
-        ) : null}
-      </div>
+        }}
+        onGoToPage={handleGoToPage}
+        onNext={() => void updateDisplayState('next')}
+        onPageInputChange={setDisplayPageInput}
+        onPairingCodeChange={setPublisherPairingCode}
+        onPrevious={() => void updateDisplayState('previous')}
+        onPublish={() => void publishPdfDocument()}
+        onSelectDocument={setPdfDocumentInput}
+        onSetDocument={() =>
+          void updateDisplayState('setDocument', {
+            pdfDocumentId: pdfDocumentInput || null,
+          })
+        }
+        pdfDisplayName={pdfDisplayName}
+        pdfDocumentInput={pdfDocumentInput}
+        pdfDownloadEnabled={pdfDownloadEnabled}
+        pdfFile={pdfFile}
+        pdfPublishing={pdfPublishing}
+        privatePdfEnabled={isPhase3PrivatePdfEnabled}
+        publisherMessage={publisherMessage}
+        publisherPairingCode={publisherPairingCode}
+        publisherSessionToken={publisherSessionToken}
+        publisherStatus={publisherStatus}
+        selectedAsset={selectedPdfAsset}
+      />
+
+      <AdminAiControlPanel
+        activeLecture={activeAdminLecture}
+        activeLectureSessionId={activeLectureSessionId}
+        adminToken={adminToken}
+        displayState={displayState}
+        documents={adminPdfDocuments}
+        fallbackHardStopAt={lecture.expiresAt}
+        getServerNow={getServerNow}
+        lectureStatus={lecture.status}
+        materialEnabled={isPhase5MaterialAnalysisEnabled}
+        onPollDraftCreated={async () => {
+          await refreshAdminPolls()
+        }}
+        publisherSessionToken={publisherSessionToken}
+        realtimeEnabled={isPhase4RealtimeCaptionsEnabled}
+        summariesEnabled={isPhase6SummariesEnabled}
+      />
+
+      <AdminPollControl
+        activeLectureSessionId={activeLectureSessionId}
+        canShowHistory={canShowPollHistory}
+        error={adminPollsError}
+        isLoading={adminPollsLoading}
+        lectureStatus={lecture.status}
+        newOptions={newPollOptions}
+        newQuestion={newPollQuestion}
+        newType={newPollType}
+        onCreate={handleCreatePoll}
+        onOptionsChange={setNewPollOptions}
+        onQuestionChange={setNewPollQuestion}
+        onRefresh={() => void refreshAdminPolls()}
+        onToggleHistory={() => {
+          if (showPollHistory) {
+            setShowPollHistory(false)
+            return
+          }
+          void refreshAdminPolls(activeLectureSessionId, adminToken, true).then(
+            (loaded) => {
+              if (loaded) setShowPollHistory(true)
+            },
+          )
+        }}
+        onTogglePoll={(poll) => void updatePollStatus(poll)}
+        onTypeChange={setNewPollType}
+        polls={adminPolls}
+        showHistory={showPollHistory}
+        visiblePolls={visibleAdminPolls}
+      />
+
+      <AdminModerationPanel
+        comments={comments}
+        error={commentModerationError}
+        hasOlderComments={hasOlderComments}
+        isLoadingOlderComments={isLoadingOlderComments}
+        onLoadOlderComments={loadOlderComments}
+        onTogglePinned={(commentId) =>
+          void moderateComment(commentId, 'togglePin')
+        }
+        onToggleVisibility={(commentId) =>
+          void moderateComment(commentId, 'toggleVisibility')
+        }
+        pendingCommentId={commentModerationPendingId}
+      />
     </main>
   )
 }

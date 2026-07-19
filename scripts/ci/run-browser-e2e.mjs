@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
+const playwrightArguments = process.argv.slice(3)
 const baseURL = 'http://127.0.0.1:4173'
 
 if (!['demo', 'local'].includes(mode)) {
@@ -143,7 +144,13 @@ try {
     mode === 'local' ? 'playwright.local.config.ts' : 'playwright.config.ts'
   const playwrightProcess = spawn(
     process.execPath,
-    ['node_modules/@playwright/test/cli.js', 'test', '--config', config],
+    [
+      'node_modules/@playwright/test/cli.js',
+      'test',
+      '--config',
+      config,
+      ...playwrightArguments,
+    ],
     {
       cwd: root,
       env: appEnvironment,

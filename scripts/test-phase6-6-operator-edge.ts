@@ -73,6 +73,7 @@ const [
   config,
   adminRepository,
   liveRepository,
+  liveStateMappers,
   context,
 ] = await Promise.all([
   read('supabase/functions/issue-display-session/index.ts'),
@@ -83,6 +84,7 @@ const [
   read('supabase/config.toml'),
   read('src/repositories/supabaseAdminRepository.ts'),
   read('src/repositories/supabaseLiveStateRepository.ts'),
+  read('src/repositories/supabase/liveStateMappers.ts'),
   read('src/context/CompassStateContext.tsx'),
 ])
 
@@ -149,7 +151,7 @@ assert.match(
 assert.match(adminRepository, /async issueDisplaySession\(/)
 assert.match(liveRepository, /async getOperatorSnapshot\(/)
 assert.match(liveRepository, /async getOperatorCommentHistory\(/)
-assert.match(liveRepository, /status: row\.status/)
+assert.match(liveRepository + liveStateMappers, /status: row\.status/)
 assert.match(liveRepository, /hiddenCommentCount/)
 assert.match(context, /commentCursor: commentCursorRef\.current/)
 

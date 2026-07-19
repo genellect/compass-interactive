@@ -208,6 +208,10 @@ inspection and the required human flow evidence are recorded.
 
 ## 6. Phase 6.9 - modularization and CI foundation
 
+Repository status: locally implemented and automatically verified on
+2026-07-19. Hosted CI, human UX review and any production reflection remain
+separate gates; see `PHASE6_9_LOCAL_GATE_2026-07-19.md`.
+
 ### Tasks
 
 - Split `AdminPage` into auth, lecture, PDF, Poll, AI and moderation units.

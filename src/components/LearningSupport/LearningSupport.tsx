@@ -216,6 +216,7 @@ export function LiveCaptionPanel({
             <div
               className="caption-sequence"
               aria-label={`${demoCaptionIndex + 1} / ${demoCaptionSequence.length}`}
+              role="img"
             >
               {demoCaptionSequence.map((item, index) => (
                 <i

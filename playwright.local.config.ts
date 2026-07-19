@@ -31,6 +31,8 @@ export default defineConfig({
     ? [['line'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
   outputDir: 'test-results/local',
+  snapshotPathTemplate:
+    '{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}',
   expect: { timeout: 15_000 },
   use: {
     baseURL,
@@ -45,6 +47,10 @@ export default defineConfig({
     {
       name: 'local-supabase-chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'local-supabase-webkit',
+      use: { ...devices['Desktop Safari'] },
     },
   ],
 })

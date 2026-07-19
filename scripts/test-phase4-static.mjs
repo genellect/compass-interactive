@@ -61,6 +61,12 @@ const control = read(
   'RealtimeCaptionControl.tsx',
 )
 const adminPage = read('src', 'pages', 'AdminPage.tsx')
+const adminAiControlPanel = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'AdminAiControlPanel.tsx',
+)
 const config = read('supabase', 'config.toml')
 
 assert.match(envExample, /VITE_PHASE4_REALTIME_CAPTIONS=false/)
@@ -75,14 +81,8 @@ assert.match(authorize, /verifyBillingPin/)
 assert.match(authorize, /pin_succeeded: pinSucceeded/)
 assert.doesNotMatch(authorize, /billingPin[^\n]*(insert|update|rpc)/i)
 assert.match(realtimeCallEndpoint, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
-assert.match(
-  realtimeCallEndpoint,
-  /admin_consume_realtime_billing_grant/,
-)
-assert.match(
-  realtimeCallEndpoint,
-  /admin_activate_realtime_provider_call/,
-)
+assert.match(realtimeCallEndpoint, /admin_consume_realtime_billing_grant/)
+assert.match(realtimeCallEndpoint, /admin_activate_realtime_provider_call/)
 assert.match(realtimeCallEndpoint, /admin_finish_realtime_caption_operation/)
 assert.match(realtimeCallEndpoint, /sdpOffer/)
 assert.match(realtimeCallEndpoint, /sdpAnswer/)
@@ -120,9 +120,10 @@ assert.match(
   /const activeAdminLecture = lectures\.find\([\s\S]*?item\.id === activeLectureSessionId/,
 )
 assert.match(
-  adminPage,
-  /lectureStatus=\{activeAdminLecture\?\.status \?\? lecture\.status\}/,
+  adminAiControlPanel,
+  /const status = activeLecture\?\.status \?\? lectureStatus/,
 )
+assert.match(adminAiControlPanel, /lectureStatus=\{status\}/)
 assert.match(migration, /lecture_public_captions/)
 assert.match(
   migration,
@@ -145,7 +146,10 @@ assert.match(
   /ai_usage_ledger_enqueue_realtime_provider_hangup/,
 )
 assert.match(providerControlMigration, /idempotent_replay/)
-assert.match(providerControlMigration, /provider_call\.activated_at is not null/)
+assert.match(
+  providerControlMigration,
+  /provider_call\.activated_at is not null/,
+)
 assert.match(providerControlMigration, /reason', 'stale_sequence'/)
 assert.match(
   providerControlMigration,

@@ -36,7 +36,7 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
   ).toBeVisible()
   await expect(page.getByText(/21[6-9]|22[0-4]/).first()).toBeVisible()
 
-  if (testInfo.project.name === 'mobile-chromium') {
+  if (testInfo.project.name.startsWith('mobile-')) {
     const topPositions = await page.evaluate(() => {
       const selectors = [
         '#lecture-material',
@@ -108,13 +108,18 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
 
   await commentInput.fill('E2E履歴リンク確認')
   await composer.getByRole('button', { name: 'みんなに共有' }).click()
-  await page.getByRole('link', { name: 'コメント履歴を見る' }).click()
+  const historyLink = page.getByRole('link', { name: 'コメント履歴を見る' })
+  await historyLink.scrollIntoViewIfNeeded()
+  await historyLink.focus()
+  await page.keyboard.press('Enter')
   await expect(
     page.getByRole('heading', { name: 'コメント履歴' }),
   ).toBeVisible()
   await expect(page.getByText('E2E履歴リンク確認')).toBeVisible()
 
-  await page.getByRole('link', { name: '講義へ戻る' }).click()
+  const lectureLink = page.getByRole('link', { name: '講義へ戻る' })
+  await lectureLink.focus()
+  await page.keyboard.press('Enter')
   await page.getByRole('button', { name: '講義から退出する' }).click()
   await expect(page).toHaveURL(/\/join$/)
   await expect(

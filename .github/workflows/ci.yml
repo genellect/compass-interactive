@@ -22,18 +22,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - run: npm run security:secrets
+      - run: npm run security:audit
       - run: npm run typecheck
       - run: npm run typecheck:phase3
       - run: npm run typecheck:e2e
       - run: npm run lint
       - run: npm run test:ci:nonlive
       - run: npm run build
+      - run: npm run test:phase6-9-bundle
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: npm sbom --sbom-format cyclonedx > "$RUNNER_TEMP/compass-sbom.cdx.json"
+      - name: Upload SBOM evidence
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: compass-sbom-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/compass-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
       - run: git diff --check
 
   demo-e2e:
@@ -42,17 +57,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:demo
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e:demo:triple
       - name: Upload demo E2E evidence
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: demo-e2e-evidence-${{ github.run_attempt }}
           path: |
@@ -70,8 +87,10 @@ jobs:
       TEST_ADMIN_PIN: '246810'
       TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: npm
@@ -82,6 +101,9 @@ jobs:
 
       - name: Apply every migration from zero
         run: npx supabase db reset --local --no-seed
+
+      - name: Reject generated database type drift
+        run: npm run db:types:check
 
       - name: Run pgTAP regression
         run: npx supabase test db --local
@@ -133,15 +155,15 @@ jobs:
       - name: Verify local Auth, CORS and fail-closed paid features
         run: npm run test:production-local-edge
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
 
-      - name: Run teacher-student browser lifecycle
-        run: npm run test:e2e:local
+      - name: Run teacher-student browser lifecycle three times
+        run: npm run test:e2e:local:triple
 
       - name: Upload local integration evidence
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: local-integration-evidence-${{ github.run_attempt }}
           path: |
@@ -154,3 +176,35 @@ jobs:
       - name: Stop local Supabase
         if: always()
         run: npx supabase stop --no-backup
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime,development
+
+  codeql:
+    name: CodeQL JavaScript and TypeScript
+    permissions:
+      contents: read
+      security-events: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1

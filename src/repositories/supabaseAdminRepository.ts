@@ -1,11 +1,26 @@
-import { supabase } from '../lib/supabaseClient'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import type { PublisherExtraction } from '../pdf/publisherClient'
 import type { LectureStatus } from '../types'
 
-const ADMIN_FUNCTION_TIMEOUT_MS = 15_000
-const AI_FUNCTION_TIMEOUT_MS = 65_000
-const REALTIME_START_TIMEOUT_MS = 30_000
+import {
+  getFunctionErrorMessage,
+  SUPABASE_REQUEST_TIMEOUT_MS,
+} from './supabase/requestPolicy'
+import { invokeEdgeFunction } from './supabase/transport'
+import {
+  toAdminDisplayState,
+  toAdminMaterialResults,
+  toAdminSummaryResults,
+  type DisplayStateRow,
+  type RawMaterialResults,
+  type RawSummaryResults,
+} from './supabase/adminMappers'
+
+const {
+  adminFunction: ADMIN_FUNCTION_TIMEOUT_MS,
+  aiFunction: AI_FUNCTION_TIMEOUT_MS,
+  realtimeStart: REALTIME_START_TIMEOUT_MS,
+} = SUPABASE_REQUEST_TIMEOUT_MS
 
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 
@@ -46,18 +61,6 @@ type IssueDisplaySessionResponse = {
   lectureSessionId?: string
   message?: string
   ok?: boolean
-}
-
-type DisplayStateRow = {
-  current_pdf_page: number
-  display_mode: DisplayMode
-  lecture_session_id: string
-  pdf_document_id: string | null
-  pdf_document_version: string | null
-  pdf_manifest_version: number
-  pdf_page_count: number | null
-  pdf_visible: boolean
-  updated_at: string
 }
 
 export type AdminDisplayState = {
@@ -290,51 +293,6 @@ export type AdminMaterialResults = {
   proposals: AdminPollProposal[]
 }
 
-type RawMaterialResults = {
-  analysis?: null | {
-    created_at: string
-    id: string
-    important_pages: number[]
-    key_terms: AdminMaterialAnalysis['keyTerms']
-    material_outline: AdminMaterialAnalysis['materialOutline']
-    material_summary: string
-    model_id: string
-    operation_id: string
-    section_boundaries: AdminMaterialAnalysis['sectionBoundaries']
-    source_document_id: string
-    source_document_version: string
-  }
-  publication?: null | {
-    analysis_id: string
-    body: AdminMaterialSummaryBody
-    published_at: string | null
-    review_state: AdminMaterialPublication['reviewState']
-    updated_at: string
-    version: number | string
-    visibility: AdminMaterialPublication['visibility']
-  }
-  proposals?: Array<{
-    adopted_poll_id: string | null
-    analysis_id: string
-    correct_option_ids: string[]
-    created_at: string
-    difficulty: AdminPollProposal['difficulty']
-    educational_value: string
-    evidence_excerpt_ids: string[]
-    evidence_pages: number[]
-    explanation: string
-    id: string
-    learning_objective: string
-    misconception_target: string | null
-    options: AdminPollProposal['options']
-    proposal_type: AdminPollProposal['proposalType']
-    quality_score: number | string
-    reviewed_at: string | null
-    status: AdminPollProposal['status']
-    stem: string
-  }>
-}
-
 type MaterialFunctionResponse = {
   message?: string
   ok?: boolean
@@ -413,13 +371,6 @@ export type AdminSummaryResults = {
     windowIndex: number
     windowStart: string
   }>
-}
-
-type RawSummaryResults = {
-  control?: null | Record<string, unknown>
-  run?: null | Record<string, unknown>
-  summaries?: Array<Record<string, unknown>>
-  windows?: Array<Record<string, unknown>>
 }
 
 type SummaryFunctionResponse = {
@@ -567,222 +518,6 @@ export type ManagePollsRequest =
       lectureSessionId: string
       pollId: string
     }
-
-function toAdminDisplayState(row: DisplayStateRow): AdminDisplayState {
-  return {
-    currentPdfPage: row.current_pdf_page,
-    displayMode: row.display_mode,
-    lectureSessionId: row.lecture_session_id,
-    pdfDocumentId: row.pdf_document_id,
-    pdfDocumentVersion: row.pdf_document_version,
-    pdfManifestVersion: row.pdf_manifest_version,
-    pdfPageCount: row.pdf_page_count,
-    pdfVisible: row.pdf_visible,
-    updatedAt: row.updated_at,
-  }
-}
-
-function toAdminMaterialResults(
-  value: RawMaterialResults | null | undefined,
-): AdminMaterialResults {
-  const analysis = value?.analysis
-  const publication = value?.publication
-  return {
-    analysis: analysis
-      ? {
-          createdAt: analysis.created_at,
-          id: analysis.id,
-          importantPages: analysis.important_pages,
-          keyTerms: analysis.key_terms,
-          materialOutline: analysis.material_outline,
-          materialSummary: analysis.material_summary,
-          modelId: analysis.model_id,
-          operationId: analysis.operation_id,
-          sectionBoundaries: analysis.section_boundaries,
-          sourceDocumentId: analysis.source_document_id,
-          sourceDocumentVersion: analysis.source_document_version,
-        }
-      : null,
-    publication: publication
-      ? {
-          analysisId: publication.analysis_id,
-          body: publication.body,
-          publishedAt: publication.published_at,
-          reviewState: publication.review_state,
-          updatedAt: publication.updated_at,
-          version: Number(publication.version),
-          visibility: publication.visibility,
-        }
-      : null,
-    proposals: (value?.proposals ?? []).map((proposal) => ({
-      adoptedPollId: proposal.adopted_poll_id,
-      analysisId: proposal.analysis_id,
-      correctOptionIds: proposal.correct_option_ids,
-      createdAt: proposal.created_at,
-      difficulty: proposal.difficulty,
-      educationalValue: proposal.educational_value,
-      evidenceExcerptIds: proposal.evidence_excerpt_ids,
-      evidencePages: proposal.evidence_pages,
-      explanation: proposal.explanation,
-      id: proposal.id,
-      learningObjective: proposal.learning_objective,
-      misconceptionTarget: proposal.misconception_target,
-      options: proposal.options,
-      proposalType: proposal.proposal_type,
-      qualityScore: Number(proposal.quality_score),
-      reviewedAt: proposal.reviewed_at,
-      status: proposal.status,
-      stem: proposal.stem,
-    })),
-  }
-}
-
-function toStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
-}
-
-function toAdminSummaryResults(raw?: RawSummaryResults): AdminSummaryResults {
-  const control = raw?.control ?? null
-  const run = raw?.run ?? null
-  return {
-    control: control
-      ? {
-          budgetLimitMicrousd: Number(control.budget_limit_microusd ?? 0),
-          inputTokenLimit: Number(control.input_token_limit ?? 0),
-          inputTokensUsed: Number(control.input_tokens_used ?? 0),
-          outputTokenLimit: Number(control.output_token_limit ?? 0),
-          outputTokensUsed: Number(control.output_tokens_used ?? 0),
-          status: String(control.status ?? 'disabled'),
-          summariesEnabled: Boolean(control.summaries_enabled),
-          summaryCallLimit: Number(control.summary_call_limit ?? 18),
-          summaryCallsUsed: Number(control.summary_calls_used ?? 0),
-          usedMicrousd: Number(control.used_microusd ?? 0),
-        }
-      : null,
-    run: run
-      ? {
-          expiresAt: String(run.expires_at ?? ''),
-          id: String(run.id ?? ''),
-          lastWindowIndex: Number(run.last_window_index ?? 0),
-          status: String(
-            run.status ?? 'stopped',
-          ) as AdminSummaryResults['run'] extends infer T
-            ? T extends { status: infer S }
-              ? S
-              : never
-            : never,
-        }
-      : null,
-    summaries: (raw?.summaries ?? []).map((item) => {
-      const output = (item.ai_output ?? {}) as Record<string, unknown>
-      const publication = (item.publication ?? null) as Record<
-        string,
-        unknown
-      > | null
-      return {
-        aiOutput: {
-          academicQuestionCandidate:
-            (output.academic_question_candidate as AdminLectureSummary['aiOutput']['academicQuestionCandidate']) ??
-            null,
-          commentPulse: toStringArray(output.comment_pulse),
-          lectureRecap: toStringArray(output.lecture_recap),
-        },
-        createdAt: String(item.created_at ?? ''),
-        id: String(item.id ?? ''),
-        modelId: String(item.model_id ?? ''),
-        promptVersion: String(item.prompt_version ?? ''),
-        publication: publication
-          ? {
-              activeRevisionId: String(publication.active_revision_id ?? ''),
-              pinnedOrder:
-                publication.pinned_order == null
-                  ? null
-                  : Number(publication.pinned_order),
-              pinnedUntil:
-                publication.pinned_until == null
-                  ? null
-                  : String(publication.pinned_until),
-              publishedAt:
-                publication.published_at == null
-                  ? null
-                  : String(publication.published_at),
-              reviewState: String(
-                publication.review_state ?? 'ai_unreviewed',
-              ) as AdminLectureSummary['publication'] extends infer T
-                ? T extends { reviewState: infer S }
-                  ? S
-                  : never
-                : never,
-              visibility: String(publication.visibility ?? 'hidden') as
-                'hidden' | 'public',
-            }
-          : null,
-        qualityResult: (item.quality_result ?? {}) as Record<string, unknown>,
-        revisions: (
-          (item.revisions ?? []) as Array<Record<string, unknown>>
-        ).map((revision) => {
-          const revisionBody = (revision.body ?? {}) as Record<string, unknown>
-          return {
-            authorActorId:
-              revision.author_actor_id == null
-                ? null
-                : String(revision.author_actor_id),
-            authorType: String(revision.author_type ?? 'ai') as 'admin' | 'ai',
-            body: {
-              commentPulse: toStringArray(revisionBody.comment_pulse),
-              lectureRecap: toStringArray(revisionBody.lecture_recap),
-            },
-            createdAt: String(revision.created_at ?? ''),
-            id: String(revision.id ?? ''),
-            reason: revision.reason == null ? null : String(revision.reason),
-            revisionNumber: Number(revision.revision_number ?? 0),
-          }
-        }),
-        status: String(
-          item.status ?? 'accepted',
-        ) as AdminLectureSummary['status'],
-        windowEnd: String(item.window_end ?? ''),
-        windowIndex: Number(item.window_index ?? 0),
-        windowStart: String(item.window_start ?? ''),
-      }
-    }),
-    windows: (raw?.windows ?? []).map((item) => ({
-      attemptCount: Number(item.attempt_count ?? 0),
-      id: String(item.id ?? ''),
-      lastErrorCode:
-        item.last_error_code == null ? null : String(item.last_error_code),
-      status: String(item.status ?? 'pending'),
-      windowEnd: String(item.window_end ?? ''),
-      windowIndex: Number(item.window_index ?? 0),
-      windowStart: String(item.window_start ?? ''),
-    })),
-  }
-}
-
-async function getFunctionErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
-  if (!(error instanceof Error)) {
-    return fallbackMessage
-  }
-
-  const maybeResponse = (error as { context?: unknown }).context
-
-  if (maybeResponse instanceof Response) {
-    try {
-      const body = (await maybeResponse.clone().json()) as { message?: string }
-      return body.message ?? error.message
-    } catch {
-      return error.message
-    }
-  }
-
-  return error.message
-}
-
 export const supabaseAdminRepository = {
   async verifyAdminPin(pin: string) {
     const trimmedPin = pin.trim()
@@ -793,14 +528,13 @@ export const supabaseAdminRepository = {
 
     await ensureAnonymousAuthSession()
 
-    const { data, error } =
-      await supabase.functions.invoke<VerifyAdminPinResponse>(
-        'verify-admin-pin',
-        {
-          body: { pin: trimmedPin },
-          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-        },
-      )
+    const { data, error } = await invokeEdgeFunction<VerifyAdminPinResponse>(
+      'verify-admin-pin',
+      {
+        body: { pin: trimmedPin },
+        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+      },
+    )
 
     if (error) {
       throw new Error(
@@ -826,7 +560,7 @@ export const supabaseAdminRepository = {
   }) {
     await ensureAnonymousAuthSession()
     const { data, error } =
-      await supabase.functions.invoke<ManageAdminSessionsResponse>(
+      await invokeEdgeFunction<ManageAdminSessionsResponse>(
         'manage-admin-sessions',
         { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
@@ -861,7 +595,7 @@ export const supabaseAdminRepository = {
     await ensureAnonymousAuthSession()
 
     const { data, error } =
-      await supabase.functions.invoke<IssueDisplaySessionResponse>(
+      await invokeEdgeFunction<IssueDisplaySessionResponse>(
         'issue-display-session',
         { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
@@ -893,7 +627,7 @@ export const supabaseAdminRepository = {
     request: UpdateDisplayStateRequest,
   ): Promise<AdminDisplayState> {
     const { data, error } =
-      await supabase.functions.invoke<UpdateDisplayStateResponse>(
+      await invokeEdgeFunction<UpdateDisplayStateResponse>(
         'update-display-state',
         {
           body: request,
@@ -917,14 +651,13 @@ export const supabaseAdminRepository = {
   async manageLectures(
     request: ManageLecturesRequest,
   ): Promise<AdminLecture[]> {
-    const { data, error } =
-      await supabase.functions.invoke<ManageLecturesResponse>(
-        'manage-lectures',
-        {
-          body: request,
-          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-        },
-      )
+    const { data, error } = await invokeEdgeFunction<ManageLecturesResponse>(
+      'manage-lectures',
+      {
+        body: request,
+        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+      },
+    )
 
     if (error) {
       throw new Error(
@@ -940,11 +673,10 @@ export const supabaseAdminRepository = {
   },
 
   async manageAiControl(request: ManageAiControlRequest) {
-    const { data, error } =
-      await supabase.functions.invoke<ManageAiControlResponse>(
-        'manage-ai-control',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<ManageAiControlResponse>(
+      'manage-ai-control',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
 
     if (error) {
       throw new Error(
@@ -964,11 +696,10 @@ export const supabaseAdminRepository = {
     billingPin: string
     lectureSessionId: string
   }) {
-    const { data, error } =
-      await supabase.functions.invoke<AuthorizeAiStartResponse>(
-        'authorize-ai-start',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<AuthorizeAiStartResponse>(
+      'authorize-ai-start',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, 'API usage authorization failed.'),
@@ -995,7 +726,7 @@ export const supabaseAdminRepository = {
     sdpOffer: string
   }): Promise<RealtimeCaptionCall> {
     const { data, error } =
-      await supabase.functions.invoke<RealtimeCaptionCallResponse>(
+      await invokeEdgeFunction<RealtimeCaptionCallResponse>(
         'issue-realtime-client-secret',
         { body: request, timeout: REALTIME_START_TIMEOUT_MS },
       )
@@ -1043,11 +774,10 @@ export const supabaseAdminRepository = {
     sequence: number
     text: string
   }) {
-    const { data, error } =
-      await supabase.functions.invoke<PublishCaptionResponse>(
-        'publish-caption-window',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<PublishCaptionResponse>(
+      'publish-caption-window',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, 'Caption publishing failed.'),
@@ -1063,7 +793,7 @@ export const supabaseAdminRepository = {
     request: ManagePdfDocumentsRequest,
   ): Promise<AdminPdfDocument[]> {
     const { data, error } =
-      await supabase.functions.invoke<ManagePdfDocumentsResponse>(
+      await invokeEdgeFunction<ManagePdfDocumentsResponse>(
         'manage-pdf-documents',
         { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
       )
@@ -1091,11 +821,10 @@ export const supabaseAdminRepository = {
     pageEnd?: number | null
     pageStart?: number | null
   }): Promise<AdminMaterialResults> {
-    const { data, error } =
-      await supabase.functions.invoke<MaterialFunctionResponse>(
-        'analyze-lecture-material',
-        { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<MaterialFunctionResponse>(
+      'analyze-lecture-material',
+      { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, 'Material analysis failed.'),
@@ -1146,11 +875,10 @@ export const supabaseAdminRepository = {
           summaryBody: AdminMaterialSummaryBody
         },
   ): Promise<{ pollId: string | null; results: AdminMaterialResults }> {
-    const { data, error } =
-      await supabase.functions.invoke<MaterialFunctionResponse>(
-        'manage-material-analysis',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<MaterialFunctionResponse>(
+      'manage-material-analysis',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, '資料分析の操作に失敗しました。'),
@@ -1211,11 +939,10 @@ export const supabaseAdminRepository = {
     results: AdminSummaryResults
     runToken: string | null
   }> {
-    const { data, error } =
-      await supabase.functions.invoke<SummaryFunctionResponse>(
-        'manage-lecture-summaries',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<SummaryFunctionResponse>(
+      'manage-lecture-summaries',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, '講義要約の操作に失敗しました。'),
@@ -1253,11 +980,10 @@ export const supabaseAdminRepository = {
     results: AdminSummaryResults
     skipped: boolean
   }> {
-    const { data, error } =
-      await supabase.functions.invoke<SummaryFunctionResponse>(
-        'generate-lecture-summary',
-        { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<SummaryFunctionResponse>(
+      'generate-lecture-summary',
+      { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
+    )
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, '講義要約の生成に失敗しました。'),
@@ -1275,11 +1001,13 @@ export const supabaseAdminRepository = {
   },
 
   async managePolls(request: ManagePollsRequest): Promise<AdminPollList> {
-    const { data, error } =
-      await supabase.functions.invoke<ManagePollsResponse>('manage-polls', {
+    const { data, error } = await invokeEdgeFunction<ManagePollsResponse>(
+      'manage-polls',
+      {
         body: request,
         timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-      })
+      },
+    )
 
     if (error) {
       throw new Error(
@@ -1303,11 +1031,10 @@ export const supabaseAdminRepository = {
     commentId: string
     lectureSessionId: string
   }) {
-    const { data, error } =
-      await supabase.functions.invoke<ManageCommentsResponse>(
-        'manage-comments',
-        { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-      )
+    const { data, error } = await invokeEdgeFunction<ManageCommentsResponse>(
+      'manage-comments',
+      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
+    )
 
     if (error) {
       throw new Error(

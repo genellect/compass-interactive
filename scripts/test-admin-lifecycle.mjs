@@ -67,6 +67,7 @@ const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
 const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
+const edgeTransport = read('src/repositories/supabase/transport.ts')
 const config = read('supabase/config.toml')
 
 for (const functionName of [
@@ -121,8 +122,9 @@ assert.match(managePolls, /hasMore/)
 assert.match(adminRepository, /async managePolls/)
 assert.match(
   adminRepository,
-  /async verifyAdminPin[\s\S]*?await ensureAnonymousAuthSession\(\)[\s\S]*?functions\.invoke/,
+  /async verifyAdminPin[\s\S]*?await ensureAnonymousAuthSession\(\)[\s\S]*?invokeEdgeFunction/,
 )
+assert.match(edgeTransport, /supabase\.functions\.invoke/)
 assert.match(adminPage, /handleCreatePoll/)
 assert.doesNotMatch(adminPage, /setPollStatus/)
 assert.match(config, /\[functions\.manage-polls\][\s\S]*?verify_jwt = true/)
