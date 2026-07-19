@@ -11,8 +11,20 @@ export default defineConfig({
   timeout: 60_000,
   workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI
-    ? [['line'], ['html', { open: 'never' }]]
-    : [['list'], ['html', { open: 'never' }]],
+    ? [
+        ['line'],
+        [
+          'html',
+          { open: 'never', outputFolder: 'test-results/reports/demo' },
+        ],
+      ]
+    : [
+        ['list'],
+        [
+          'html',
+          { open: 'never', outputFolder: 'test-results/reports/demo' },
+        ],
+      ],
   outputDir: 'test-results/demo',
   snapshotPathTemplate:
     '{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}',

@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-19
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -21,6 +21,10 @@ secret change and paid call still require an explicit task.
 | Phase 6.7 local evidence     | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`      |
 | Phase 6.8 design             | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md` |
 | Phase 6.8 local evidence     | `docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`      |
+| Phase 6.9 design             | `docs/PHASE6_9_MODULARIZATION_AND_CI.md`      |
+| Phase 6.9 local evidence     | `docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`      |
+| Phase 7.1 design             | `docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md`    |
+| Phase 7.1 local evidence     | `docs/PHASE7_1_LOCAL_GATE_2026-07-19.md`      |
 
 If an older Phase document conflicts with these current documents and the real
 code/migrations, treat the older document as historical evidence.
@@ -41,6 +45,8 @@ npm run typecheck:e2e
 npm run lint
 npm run test:phase6-7-docs
 npm run test:phase6-8-static
+npm run test:phase7-1-edge
+npm run test:phase7-1-static
 npm run build
 git diff --check
 ```

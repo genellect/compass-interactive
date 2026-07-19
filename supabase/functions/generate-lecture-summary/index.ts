@@ -24,6 +24,10 @@ import {
   PHASE6_MODEL,
   PHASE6_OUTPUT_PRICE_MICROUSD_PER_MILLION,
   PHASE6_PROMPT_VERSION,
+  PHASE71_PROMPT_VERSION,
+  resolveSummaryLanguage,
+  type SummaryLanguagePreference,
+  type SummaryLanguageResolution,
   type SummaryPdfContext,
   type SummaryTranscriptSegment,
 } from '../_shared/lectureSummaries.ts'
@@ -53,6 +57,8 @@ type StartResult = {
   results?: unknown
   window?: {
     attempt_count?: number
+    id?: string
+    requested_language?: string
     window_end?: string
     window_start?: string
   }
@@ -153,6 +159,11 @@ Deno.serve(async (request) => {
   })
 
   try {
+    const phase71Enabled =
+      Deno.env.get('PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED') === 'true'
+    const promptVersion = phase71Enabled
+      ? PHASE71_PROMPT_VERSION
+      : PHASE6_PROMPT_VERSION
     const run = parseSummaryRunToken(body.runToken)
     const runTokenHash = await sha256Hex(run.nonce)
     const transcript = await normalizeTranscriptSegments(
@@ -160,6 +171,47 @@ Deno.serve(async (request) => {
       body.transcriptSegments ?? [],
     )
     const pdf = await normalizePdfContext(body.pdfContext)
+
+    async function resolveAndRecordWindowLanguage(window: {
+      id?: string
+      requested_language?: string
+    }): Promise<SummaryLanguageResolution> {
+      if (!window.id) {
+        throw new LectureSummaryError(
+          'summary_language_window_missing',
+          'Summary language could not be bound to the window.',
+          409,
+        )
+      }
+      const preference = ['auto', 'ja', 'en'].includes(
+        window.requested_language ?? '',
+      )
+        ? (window.requested_language as SummaryLanguagePreference)
+        : 'auto'
+      const resolution = resolveSummaryLanguage({
+        pdfContext: pdf.context,
+        preference,
+        transcript: transcript.segments,
+      })
+      const { data, error } = await supabase.rpc(
+        'admin_record_summary_window_language',
+        {
+          target_actor_id: actorId,
+          target_language_reason: resolution.reason,
+          target_resolved_language: resolution.language,
+          target_run_id: run.runId,
+          target_window_id: window.id,
+        },
+      )
+      if (error || (data as { accepted?: boolean } | null)?.accepted !== true) {
+        throw new LectureSummaryError(
+          'summary_language_record_failed',
+          'Summary language could not be recorded.',
+          409,
+        )
+      }
+      return resolution
+    }
 
     if (pdf.context) {
       const [
@@ -222,7 +274,7 @@ Deno.serve(async (request) => {
       const { data, error } = await supabase.rpc('admin_skip_summary_window', {
         target_actor_id: actorId,
         target_lecture_session_id: body.lectureSessionId,
-        target_prompt_version: PHASE6_PROMPT_VERSION,
+        target_prompt_version: promptVersion,
         target_reason: 'insufficient_source_context',
         target_run_id: run.runId,
         target_run_token_hash: runTokenHash,
@@ -235,8 +287,12 @@ Deno.serve(async (request) => {
         accepted?: boolean
         reason?: string
         results?: unknown
+        window?: { id?: string; requested_language?: string }
       }
       if (skipped.accepted !== false) {
+        if (phase71Enabled && skipped.window) {
+          await resolveAndRecordWindowLanguage(skipped.window)
+        }
         return jsonResponse({
           ok: true,
           results: skipped.results,
@@ -271,7 +327,7 @@ Deno.serve(async (request) => {
           target_actor_id: actorId,
           target_lecture_session_id: body.lectureSessionId,
           target_model_id: PHASE6_MODEL,
-          target_prompt_version: PHASE6_PROMPT_VERSION,
+          target_prompt_version: promptVersion,
           target_run_id: run.runId,
           target_run_token_hash: runTokenHash,
           target_source_coverage: sourceCoverage,
@@ -297,6 +353,9 @@ Deno.serve(async (request) => {
       }
 
       const operationId = start.operation.id
+      const languageResolution = phase71Enabled
+        ? await resolveAndRecordWindowLanguage(start.window)
+        : null
       let provider: OpenAiSummaryResponse | null = null
       const clientRequestId = crypto.randomUUID()
       try {
@@ -305,6 +364,7 @@ Deno.serve(async (request) => {
           materialContext: start.material_context,
           pdfContext: pdf.context,
           previousSummary: start.previous_summary,
+          resolvedLanguage: languageResolution?.language,
           safetyIdentifier: await sha256Hex(
             `${actorId}:${body.lectureSessionId}`,
           ),

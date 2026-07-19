@@ -3,6 +3,23 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-19 - Phase 7.1 classroom UX extensions
+
+- Added `auto / ja / en` teacher summary-language control with an immutable
+  per-window snapshot and recorded deterministic resolution reason.
+- Kept one provider call per five-minute window: auto reads teacher transcript
+  first and current PDF second, never student comments alone, and does not call
+  a model to detect language.
+- Added an authenticated on-demand `みんな / 自分` cursor RPC that derives the
+  participant through `auth.uid()` and adds no polling, preference row or
+  Realtime subscription.
+- Added local SVG lecture QR generation on the selected open Admin lecture and
+  open Display; no external QR service or stored image is used.
+- Fixed Display fragment initialization and operator-credential sync races
+  found by the new Admin/Display browser E2E.
+- Adopted development preview version `0.10.0`; hosted services, public web and
+  paid OpenAI were not changed.
+
 ## 2026-07-19 - Phase 6.9 modularization and deterministic CI
 
 - Split the Admin workspace into auth/session, lecture, PDF, AI, Poll and
@@ -92,7 +109,7 @@ describe mock-only or Realtime behavior that the Phase 1-6 design replaced.
 
 ## Planned trajectory
 
-- Phase 7.1: summary language, own comments and lecture QR.
+- Phase 7.1: locally implemented; real-phone/human sign-off remains.
 - Phase 7.2: verified-primary-literature academic reference answers.
 - Phase 7 Gate: next controlled production reflection.
 - Phase 8/8.1/8.2: export/deletion evidence, Terra advanced analysis and optional

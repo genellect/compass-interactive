@@ -28,9 +28,22 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: process.env.CI
-    ? [['line'], ['html', { open: 'never' }]]
-    : [['list'], ['html', { open: 'never' }]],
+    ? [
+        ['line'],
+        [
+          'html',
+          { open: 'never', outputFolder: 'test-results/reports/local' },
+        ],
+      ]
+    : [
+        ['list'],
+        [
+          'html',
+          { open: 'never', outputFolder: 'test-results/reports/local' },
+        ],
+      ],
   outputDir: 'test-results/local',
+  timeout: 90_000,
   snapshotPathTemplate:
     '{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}',
   expect: { timeout: 15_000 },
@@ -51,6 +64,13 @@ export default defineConfig({
     {
       name: 'local-supabase-webkit',
       use: { ...devices['Desktop Safari'] },
+    },
+    {
+      name: 'local-supabase-mobile-chromium',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { width: 390, height: 844 },
+      },
     },
   ],
 })

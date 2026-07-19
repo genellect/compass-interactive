@@ -30,3 +30,7 @@ export const isPhase66UxIntegrationEnabled =
 export const isPhase68SecurityEnabled =
   isPhase66UxIntegrationEnabled &&
   import.meta.env.VITE_PHASE6_8_SECURITY === 'true'
+
+export const isPhase71ClassroomExtensionsEnabled =
+  isPhase1SyncProtocolEnabled &&
+  import.meta.env.VITE_PHASE7_1_CLASSROOM_EXTENSIONS === 'true'

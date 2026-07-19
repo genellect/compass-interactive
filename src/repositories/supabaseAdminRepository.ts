@@ -353,6 +353,7 @@ export type AdminSummaryResults = {
     summariesEnabled: boolean
     summaryCallLimit: number
     summaryCallsUsed: number
+    summaryLanguage: SummaryLanguagePreference
     usedMicrousd: number
   } | null
   run: {
@@ -366,12 +367,17 @@ export type AdminSummaryResults = {
     attemptCount: number
     id: string
     lastErrorCode: string | null
+    languageReason: string | null
+    requestedLanguage: SummaryLanguagePreference
+    resolvedLanguage: 'ja' | 'en' | null
     status: string
     windowEnd: string
     windowIndex: number
     windowStart: string
   }>
 }
+
+export type SummaryLanguagePreference = 'auto' | 'ja' | 'en'
 
 type SummaryFunctionResponse = {
   actualInputTokens?: number
@@ -415,7 +421,7 @@ export type ManageAiControlRequest =
   | {
       action: 'configure'
       adminToken: string
-      configuration: Record<string, boolean | number>
+      configuration: Record<string, boolean | number | string>
       lectureSessionId: string
     }
   | {

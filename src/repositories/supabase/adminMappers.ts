@@ -165,6 +165,11 @@ export function toAdminSummaryResults(
           summariesEnabled: Boolean(control.summaries_enabled),
           summaryCallLimit: Number(control.summary_call_limit ?? 18),
           summaryCallsUsed: Number(control.summary_calls_used ?? 0),
+          summaryLanguage: ['auto', 'ja', 'en'].includes(
+            String(control.summary_language ?? ''),
+          )
+            ? (String(control.summary_language) as 'auto' | 'ja' | 'en')
+            : 'auto',
           usedMicrousd: Number(control.used_microusd ?? 0),
         }
       : null,
@@ -260,6 +265,18 @@ export function toAdminSummaryResults(
       id: String(item.id ?? ''),
       lastErrorCode:
         item.last_error_code == null ? null : String(item.last_error_code),
+      languageReason:
+        item.language_reason == null ? null : String(item.language_reason),
+      requestedLanguage: ['auto', 'ja', 'en'].includes(
+        String(item.requested_language ?? ''),
+      )
+        ? (String(item.requested_language) as 'auto' | 'ja' | 'en')
+        : 'auto',
+      resolvedLanguage: ['ja', 'en'].includes(
+        String(item.resolved_language ?? ''),
+      )
+        ? (String(item.resolved_language) as 'ja' | 'en')
+        : null,
       status: String(item.status ?? 'pending'),
       windowEnd: String(item.window_end ?? ''),
       windowIndex: Number(item.window_index ?? 0),

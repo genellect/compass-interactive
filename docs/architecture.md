@@ -1,8 +1,7 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-07-18
-Applies to: repository implementation through Phase 6.6 and the Phase 6.7
-documentation baseline
+Last reviewed: 2026-07-19
+Applies to: repository implementation through Phase 7.1
 
 ## 1. Architectural goals
 
@@ -80,6 +79,8 @@ ambiguous catch-all redirect.
 - No public application table is intended to be in the Supabase Realtime
   publication.
 - Comment history is fetched only when requested.
+- Phase 7.1 `mine` history resolves the current participant from `auth.uid()`
+  inside the database; the client never supplies an owner participant ID.
 - Presence heartbeat writes are folded into the authenticated snapshot and
   throttled independently from the five-second reads.
 
@@ -154,6 +155,17 @@ Stop is intentionally easier than start and does not require the API-use PIN.
 - AI Poll proposals and summary revisions are not automatically published.
 - Teacher correction creates a new revision rather than overwriting history.
 - PDF text, comments and transcript input are bounded before a provider call.
+- Phase 7.1 snapshots `auto / ja / en` when a summary window is inserted.
+  Manual selection is authoritative; `auto` resolves from that window's
+  teacher transcript, then current PDF text, with Japanese as the deterministic
+  final fallback. Resolution is local and adds no model call.
+
+### 7.4 Lecture join QR
+
+Admin and Display generate an SVG from the same-origin canonical
+`/join?code=######` URL. The QR contains no token, lecture UUID, Admin state or
+secret, calls no external QR service and is not stored in Supabase or R2. It is
+rendered only for the currently selected open Admin lecture and an open Display.
 
 The application model router and the Codex model used to develop the repository
 are separate concerns. Runtime application calls remain governed by the AI

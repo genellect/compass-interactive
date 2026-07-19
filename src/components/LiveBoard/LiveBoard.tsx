@@ -12,6 +12,7 @@ type LiveBoardProps = {
   onToggleLike?: (commentId: string) => void | Promise<void>
   onTogglePinned?: (commentId: string) => void
   onToggleVisibility?: (commentId: string) => void
+  title?: string
   totalCount?: number
 }
 
@@ -34,6 +35,7 @@ export function LiveBoard({
   onToggleLike,
   onTogglePinned,
   onToggleVisibility,
+  title,
   totalCount,
 }: LiveBoardProps) {
   const visibleComments =
@@ -53,7 +55,10 @@ export function LiveBoard({
           </span>
           <div>
             <p className="eyebrow">CLASS VOICES</p>
-            <h2>{mode === 'admin' ? 'みんなの声を管理' : 'みんなの声'}</h2>
+            <h2>
+              {title ??
+                (mode === 'admin' ? 'みんなの声を管理' : 'みんなの声')}
+            </h2>
           </div>
         </div>
         <span className="metric">

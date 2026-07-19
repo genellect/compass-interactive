@@ -719,6 +719,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     if (
       runtimeMode !== 'live' ||
       !hasActiveLectureSessionId ||
+      !hasRequiredOperatorAccess ||
       !isLectureOpen ||
       !isLiveSyncRoute
     ) {
@@ -729,6 +730,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   }, [
     activeLectureSessionId,
     hasActiveLectureSessionId,
+    hasRequiredOperatorAccess,
     isLectureOpen,
     isLiveSyncRoute,
     refreshLiveSnapshot,

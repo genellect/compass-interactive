@@ -808,6 +808,7 @@ export type Database = {
           summaries_enabled: boolean
           summary_call_limit: number
           summary_calls_used: number
+          summary_language: string
           updated_at: string
           used_microusd: number
           version: number
@@ -844,6 +845,7 @@ export type Database = {
           summaries_enabled?: boolean
           summary_call_limit?: number
           summary_calls_used?: number
+          summary_language?: string
           updated_at?: string
           used_microusd?: number
           version?: number
@@ -880,6 +882,7 @@ export type Database = {
           summaries_enabled?: boolean
           summary_call_limit?: number
           summary_calls_used?: number
+          summary_language?: string
           updated_at?: string
           used_microusd?: number
           version?: number
@@ -1787,9 +1790,13 @@ export type Database = {
           created_at: string
           current_operation_id: string | null
           id: string
+          language_reason: string | null
+          language_recorded_at: string | null
           last_error_code: string | null
           lecture_session_id: string
           prompt_version: string
+          requested_language: string
+          resolved_language: string | null
           run_id: string
           source_coverage: Json
           source_hashes: Json
@@ -1804,9 +1811,13 @@ export type Database = {
           created_at?: string
           current_operation_id?: string | null
           id?: string
+          language_reason?: string | null
+          language_recorded_at?: string | null
           last_error_code?: string | null
           lecture_session_id: string
           prompt_version: string
+          requested_language?: string
+          resolved_language?: string | null
           run_id: string
           source_coverage?: Json
           source_hashes?: Json
@@ -1821,9 +1832,13 @@ export type Database = {
           created_at?: string
           current_operation_id?: string | null
           id?: string
+          language_reason?: string | null
+          language_recorded_at?: string | null
           last_error_code?: string | null
           lecture_session_id?: string
           prompt_version?: string
+          requested_language?: string
+          resolved_language?: string | null
           run_id?: string
           source_coverage?: Json
           source_hashes?: Json
@@ -2548,6 +2563,16 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_record_summary_window_language: {
+        Args: {
+          target_actor_id: string
+          target_language_reason: string
+          target_resolved_language: string
+          target_run_id: string
+          target_window_id: string
+        }
+        Returns: Json
+      }
       admin_register_pdf_document: {
         Args: {
           target_byte_size: number
@@ -2620,6 +2645,14 @@ export type Database = {
           transition_at?: string
         }
         Returns: boolean
+      }
+      admin_set_lecture_summary_language: {
+        Args: {
+          target_actor_id: string
+          target_lecture_session_id: string
+          target_summary_language: string
+        }
+        Returns: Json
       }
       admin_set_material_summary_publication: {
         Args: {
@@ -2878,6 +2911,16 @@ export type Database = {
           before_comment_id: string
           before_created_at: string
           history_limit?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      get_lecture_comment_history_v3: {
+        Args: {
+          before_comment_id?: string
+          before_created_at?: string
+          history_limit?: number
+          history_scope?: string
           target_lecture_session_id: string
         }
         Returns: Json

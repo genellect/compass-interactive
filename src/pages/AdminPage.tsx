@@ -955,6 +955,7 @@ export function AdminPage() {
         lectureSessionId: activeLectureSessionId,
       })
       const fragment = new URLSearchParams({
+        code: activeAdminLecture?.lectureCode ?? '',
         lecture: session.lectureSessionId,
         token: session.displayToken,
       })

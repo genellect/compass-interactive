@@ -201,9 +201,10 @@ export type RawParticipantStateV2 = {
 }
 
 export type RawCommentHistoryV2 = {
-  contract_version: 2
+  contract_version: 2 | 3
   has_older: boolean
   items: RawComment[]
+  scope?: 'all' | 'mine'
 }
 
 export type RawTerminalStateV2 = {

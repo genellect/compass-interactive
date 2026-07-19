@@ -3,10 +3,12 @@ import { listCompletedCaptionSegments } from '../../caption/captionTranscriptSto
 import { issuePdfAccessSession } from '../../pdf/pdfDelivery'
 import { publisherClient } from '../../pdf/publisherClient'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
+import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
 import {
   type AdminLectureSummary,
   type AdminPdfDocument,
   type AdminSummaryResults,
+  type SummaryLanguagePreference,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
 import {
@@ -71,6 +73,8 @@ export function LectureSummaryControl({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftRecap, setDraftRecap] = useState('')
   const [draftPulse, setDraftPulse] = useState('')
+  const [summaryLanguage, setSummaryLanguage] =
+    useState<SummaryLanguagePreference>('auto')
   const schedulerBusyRef = useRef(false)
   const runTokenRef = useRef<string | null>(null)
 
@@ -92,6 +96,7 @@ export function LectureSummaryControl({
 
   useEffect(() => {
     let cancelled = false
+    setSummaryLanguage('auto')
     void supabaseAdminRepository
       .manageLectureSummaries({
         action: 'status',
@@ -101,6 +106,7 @@ export function LectureSummaryControl({
       .then(async (response) => {
         if (cancelled) return
         setResults(response.results)
+        setSummaryLanguage(response.results.control?.summaryLanguage ?? 'auto')
         if (
           response.results.run?.status === 'running' &&
           lectureStatus === 'open'
@@ -294,6 +300,38 @@ export function LectureSummaryControl({
     }
   }
 
+  async function updateSummaryLanguage(next: SummaryLanguagePreference) {
+    if (busy || lectureStatus === 'closed') return
+    setBusy(true)
+    setMessage('要約言語を更新しています…')
+    try {
+      await supabaseAdminRepository.manageAiControl({
+        action: 'configure',
+        adminToken,
+        configuration: { summary_language: next },
+        lectureSessionId,
+      })
+      setSummaryLanguage(next)
+      setResults((current) => ({
+        ...current,
+        control: current.control
+          ? { ...current.control, summaryLanguage: next }
+          : current.control,
+      }))
+      setMessage(
+        '要約言語を更新しました。処理中の要約には影響せず、次の5分枠から反映されます。',
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : '要約言語を更新できませんでした。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function stopRun() {
     setBusy(true)
     try {
@@ -422,6 +460,30 @@ export function LectureSummaryControl({
       <p className="note">
         講義発話・現在のPDF文脈・直近コメントを1回の低コスト呼び出しで整理します。情報量不足時はAPIを呼びません。
       </p>
+      {isPhase71ClassroomExtensionsEnabled ? (
+        <div className="summary-language-control">
+          <label className="field compact-field">
+            <span>要約言語</span>
+            <select
+              aria-describedby="summary-language-help"
+              disabled={busy || lectureStatus === 'closed'}
+              onChange={(event) =>
+                void updateSummaryLanguage(
+                  event.target.value as SummaryLanguagePreference,
+                )
+              }
+              value={summaryLanguage}
+            >
+              <option value="auto">自動判定</option>
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <p className="note" id="summary-language-help">
+            自動判定は直近の教員字幕を優先し、情報が少ない場合のみ講義資料を参照します。変更は次の5分枠から反映され、API呼び出し回数は増えません。
+          </p>
+        </div>
+      ) : null}
       <div className="summary-control-actions">
         <label className="field compact-field">
           <span>API利用PIN（開始時のみ）</span>

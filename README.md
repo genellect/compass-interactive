@@ -13,11 +13,11 @@ secrets.
 
 ## Current status
 
-- Application version: `0.9.0` development preview.
+- Application version: `0.10.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 6.9 are implemented in the repository. Phase 6.9 is
-  locally verified and has not been pushed, deployed or reflected to hosted
-  services.
+- Phase 0 through Phase 7.1 are implemented in the repository. Phase 7.1 is
+  locally automated-verified; its real-phone QR and human classroom review are
+  still HOLD. It has not been pushed, deployed or reflected to hosted services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -33,6 +33,10 @@ secrets.
   Admin, state and Supabase repository responsibilities. CI now rejects DB type
   drift, mutable Action refs, high-severity dependency findings and browser or
   accessibility regressions across Chromium and WebKit.
+- Phase 7.1 adds teacher-selected or source-resolved summary language, an
+  ownership-safe on-demand `自分` comment history and local lecture QR on the
+  selected Admin lecture and open classroom Display without extra paid calls,
+  periodic requests or stored QR images.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -51,6 +55,8 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
 - PDF-first mobile lecture view with lecturer page synchronization;
 - five-second versioned snapshots with adaptive background/backoff behavior;
 - latest-five comments plus on-demand cursor-paginated comment history;
+- `みんな / 自分` history tabs, with own rows resolved on the server from
+  `auth.uid()` and no participant-ID preference stored in the browser;
 - nullable per-comment nickname, maximum ten characters, with
   `匿名の参加者` as the display fallback;
 - comment likes, Poll answers, useful published summaries and captions;
@@ -76,6 +82,10 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
 - approximate active-participant and visible-comment metrics folded into the
   existing snapshot path;
 - scoped classroom Display sessions and a light fullscreen view.
+- a locally generated six-digit lecture QR in Admin and open Display, encoding
+  only the canonical same-origin join URL.
+- `auto / 日本語 / English` five-minute summary language control; automatic
+  resolution uses teacher transcript first and current PDF text second.
 
 ## Routes
 
@@ -162,6 +172,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE6_5_COMMENT_NICKNAMES`
 - `VITE_PHASE6_6_UX_INTEGRATION`
 - `VITE_PHASE6_8_SECURITY`
+- `VITE_PHASE7_1_CLASSROOM_EXTENSIONS`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -178,6 +189,8 @@ npm run typecheck:e2e
 npm run lint
 npm run test:phase6-7-docs
 npm run test:phase6-8-static
+npm run test:phase7-1-edge
+npm run test:phase7-1-static
 npm run build
 git diff --check
 ```
@@ -265,6 +278,8 @@ flags before attempting a destructive rollback.
 - Phase 6.8 local evidence: [`docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`](docs/PHASE6_8_LOCAL_GATE_2026-07-18.md)
 - Phase 6.9 modularization and CI design: [`docs/PHASE6_9_MODULARIZATION_AND_CI.md`](docs/PHASE6_9_MODULARIZATION_AND_CI.md)
 - Phase 6.9 local evidence: [`docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`](docs/PHASE6_9_LOCAL_GATE_2026-07-19.md)
+- Phase 7.1 classroom UX design: [`docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md`](docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md)
+- Phase 7.1 local evidence: [`docs/PHASE7_1_LOCAL_GATE_2026-07-19.md`](docs/PHASE7_1_LOCAL_GATE_2026-07-19.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)

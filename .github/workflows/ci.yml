@@ -144,7 +144,8 @@ jobs:
           COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
           PHASE4_REALTIME_CAPTIONS_ENABLED=false
           PHASE5_MATERIAL_ANALYSIS_ENABLED=false
-          PHASE6_SUMMARIES_ENABLED=false
+          PHASE6_SUMMARIES_ENABLED=true
+          PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED=true
           EOF
           npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/compass-edge.pid"

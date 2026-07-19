@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-19
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -33,6 +33,9 @@ of ownership. Participant joins and writes must bind to `(select auth.uid())`.
 
 Phase 1 snapshot RPCs separate shared state from participant-specific state.
 History is cursor-paginated and is not part of the periodic snapshot.
+Phase 7.1 adds a participant-scoped partial history index and v3 on-demand RPC;
+`mine` ownership is resolved from `auth.uid()` and does not expose a participant
+identifier in the response.
 
 `poll_result_refresh_events` is a legacy compatibility artifact. New work must
 not create a new student Realtime dependency around it.
@@ -71,6 +74,11 @@ download byte ranges through the Cloudflare Worker, not through Supabase.
 | `ai_realtime_token_audit`                      | Realtime secret issuance audit                                  |
 | `ai_realtime_provider_calls`                   | Provider-call identity, deadline and idempotent hangup state    |
 | `lecture_public_captions`                      | Bounded completed caption windows for snapshot delivery         |
+
+`lecture_ai_control.summary_language` stores the future-window preference.
+Each `lecture_summary_windows` row snapshots `requested_language` and later
+records `resolved_language`, reason and timestamp exactly once. These fields
+contain metadata only, never source text.
 
 Realtime and Batch use separate concurrency lanes. A failed or closed operation
 must release its lane and finalize/discard through the existing idempotent
@@ -125,8 +133,8 @@ documented query.
 
 ## 9. Migration and generated types
 
-Current migrations are ordered from the remote baseline through Phase 6.6
-provider control. The accepted workflow is:
+Current migrations are ordered from the remote baseline through Phase 7.1.
+The accepted workflow is:
 
 1. create an additive migration with the pinned Supabase CLI;
 2. apply all migrations from an empty local database;

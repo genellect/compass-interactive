@@ -1,5 +1,7 @@
 import type { FormEventHandler } from 'react'
 import type { AdminLecture } from '../../repositories/supabaseAdminRepository'
+import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
+import { LectureJoinQr } from '../LectureJoinQr'
 
 function getStatusLabel(status: string) {
   if (status === 'open') return '受付中'
@@ -71,6 +73,11 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
     visibleCommentCount,
     visibleLectures,
   } = props
+  const qrLecture =
+    lectures.find(
+      (lecture) =>
+        lecture.id === activeLectureSessionId && lecture.status === 'open',
+    ) ?? null
   return (
     <>
       <section className="panel" id="admin-prepare">
@@ -218,6 +225,12 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
           >
             {showHistory ? '講義履歴を閉じる' : '講義履歴を表示する'}
           </button>
+        ) : null}
+        {isPhase71ClassroomExtensionsEnabled && qrLecture ? (
+          <LectureJoinQr
+            code={qrLecture.lectureCode}
+            title={`${qrLecture.title}に参加`}
+          />
         ) : null}
       </section>
       <section className="dashboard-grid">

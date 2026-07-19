@@ -1,7 +1,13 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
+const decodeQrPixels = jsQR as unknown as (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+) => { data: string } | null
 
 async function openMonitoredPage(context: BrowserContext) {
   const page = await context.newPage()
@@ -12,6 +18,32 @@ async function openMonitoredPage(context: BrowserContext) {
 async function closeContext(context: BrowserContext, page: Page) {
   if (!page.isClosed()) await page.close()
   await context.close()
+}
+
+async function decodeQrImage(page: Page, selector: string) {
+  const raster = await page.locator(selector).evaluate((element) => {
+    if (!(element instanceof HTMLImageElement)) {
+      throw new Error('QR target is not an image.')
+    }
+    const width = element.naturalWidth
+    const height = element.naturalHeight
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('QR canvas is unavailable.')
+    context.drawImage(element, 0, 0, width, height)
+    return {
+      data: Array.from(context.getImageData(0, 0, width, height).data),
+      height,
+      width,
+    }
+  })
+  return decodeQrPixels(
+    Uint8ClampedArray.from(raster.data),
+    raster.width,
+    raster.height,
+  )?.data
 }
 
 test('teacher and student complete a lecture lifecycle on local Supabase', async ({
@@ -26,6 +58,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   const studentContext = await browser.newContext()
   const admin = await openMonitoredPage(adminContext)
   const student = await openMonitoredPage(studentContext)
+  let displayPage: Page | null = null
   const lectureTitle = `CI講義 ${Date.now()}`
 
   try {
@@ -55,6 +88,46 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
     await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
     await expect(lectureRow).toContainText('受付中')
+
+    const adminQr = admin.page
+      .locator('.lecture-join-qr')
+      .filter({ hasText: lectureTitle })
+    await expect(adminQr.locator('img')).toBeVisible()
+    const canonicalJoinUrl = `http://127.0.0.1:4173/join?code=${lectureCode}`
+    await expect(adminQr).toHaveAttribute(
+      'data-lecture-join-url',
+      canonicalJoinUrl,
+    )
+    expect(await decodeQrImage(admin.page, '.lecture-join-qr img')).toBe(
+      canonicalJoinUrl,
+    )
+
+    const summaryLanguage = admin.page.getByLabel('要約言語')
+    await expect(summaryLanguage).toHaveValue('auto')
+    await summaryLanguage.selectOption('en')
+    await expect(
+      admin.page.getByText(
+        '要約言語を更新しました。処理中の要約には影響せず、次の5分枠から反映されます。',
+      ),
+    ).toBeVisible()
+    await expect(summaryLanguage).toHaveValue('en')
+
+    const displayPopup = admin.page.waitForEvent('popup')
+    await admin.page.getByRole('button', { name: '共有画面を開く' }).click()
+    displayPage = await displayPopup
+    const displaySafety = await installBrowserSafetyMonitor(displayPage)
+    await expect(
+      displayPage.getByRole('heading', { name: lectureTitle }),
+    ).toBeVisible()
+    const displayQr = displayPage.locator('.lecture-join-qr')
+    await expect(displayQr.locator('img')).toBeVisible()
+    await expect(displayQr).toHaveAttribute(
+      'data-lecture-join-url',
+      canonicalJoinUrl,
+    )
+    expect(await decodeQrImage(displayPage, '.lecture-join-qr img')).toBe(
+      canonicalJoinUrl,
+    )
 
     await student.page.goto('/join')
     await student.page.getByLabel('講義コード').fill(lectureCode ?? '')
@@ -108,9 +181,38 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       .filter({ hasText: 'ローカルE2Eからの質問です' })
     await expect(comment).toContainText('CI学生')
 
+    const ownHistoryRequests: string[] = []
+    student.page.on('request', (request) => {
+      if (request.url().includes('/rpc/get_lecture_comment_history_v3')) {
+        ownHistoryRequests.push(request.url())
+      }
+    })
+    await student.page.goto('/lecture/comments')
+    await student.page.getByRole('tab', { name: '自分' }).click()
+    await expect(
+      student.page.getByRole('heading', { name: '自分のコメント' }),
+    ).toBeVisible()
+    await expect(
+      student.page.getByText('ローカルE2Eからの質問です'),
+    ).toBeVisible()
+    await expect.poll(() => ownHistoryRequests.length).toBe(1)
+    await student.page.waitForTimeout(5_500)
+    expect(ownHistoryRequests).toHaveLength(1)
+    await student.page.goto('/lecture')
+    await expect(
+      student.page.getByRole('heading', { name: lectureTitle }),
+    ).toBeVisible()
+
     admin.page.once('dialog', (dialog) => dialog.accept())
     await lectureRow.getByRole('button', { name: '終了', exact: true }).click()
     await expect(lectureRow).toContainText('締切')
+    await expect(admin.page.locator('.lecture-join-qr')).toHaveCount(0)
+    if (displayPage) {
+      await expect(displayPage.locator('.lecture-join-qr')).toHaveCount(0, {
+        timeout: 25_000,
+      })
+      await displaySafety.assertClean()
+    }
 
     await expect(
       student.page.getByRole('heading', { name: '講義は終了しました。' }),
@@ -130,6 +232,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await admin.safety.assertClean()
     await student.safety.assertClean()
   } finally {
+    if (displayPage && !displayPage.isClosed()) await displayPage.close()
     await closeContext(studentContext, student.page)
     await closeContext(adminContext, admin.page)
   }

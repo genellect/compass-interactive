@@ -63,6 +63,7 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
 test('demo comments, nickname limit, poll, history and exit work locally', async ({
   page,
 }) => {
+  test.setTimeout(90_000)
   const safety = await installBrowserSafetyMonitor(page)
   await page.goto('/demo')
   await expect(
@@ -101,13 +102,25 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
     .locator('.choice-row')
     .filter({ hasText: '世界中の仲間と一緒に挑戦できる' })
     .click()
-  await page.getByRole('button', { name: 'この回答を送る' }).click()
+  const pollSubmitButton = page.getByRole('button', {
+    name: 'この回答を送る',
+  })
+  await pollSubmitButton.focus()
+  await expect(pollSubmitButton).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(
     page.getByText('回答しました。みんなの考えを見てみましょう。'),
   ).toBeVisible()
 
   await commentInput.fill('E2E履歴リンク確認')
-  await composer.getByRole('button', { name: 'みんなに共有' }).click()
+  await composer.evaluate((element) =>
+    element.scrollIntoView({ block: 'center', behavior: 'auto' }),
+  )
+  const finalShareButton = composer.getByRole('button', {
+    name: 'みんなに共有',
+  })
+  await expect(finalShareButton).toBeInViewport()
+  await finalShareButton.click()
   const historyLink = page.getByRole('link', { name: 'コメント履歴を見る' })
   await historyLink.scrollIntoViewIfNeeded()
   await historyLink.focus()
@@ -116,11 +129,29 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
     page.getByRole('heading', { name: 'コメント履歴' }),
   ).toBeVisible()
   await expect(page.getByText('E2E履歴リンク確認')).toBeVisible()
+  await page.getByRole('tab', { name: '自分' }).click()
+  await expect(
+    page.getByRole('heading', { name: '自分のコメント' }),
+  ).toBeVisible()
+  await expect(page.getByText('E2E匿名コメント')).toBeVisible()
+  await expect(page.getByText('E2Eニックネームコメント')).toBeVisible()
+  await expect(
+    page.getByText(
+      '翻訳結果が正しいか判断するには、自分にも基礎が必要だと思いました。',
+    ),
+  ).toHaveCount(0)
 
   const lectureLink = page.getByRole('link', { name: '講義へ戻る' })
   await lectureLink.focus()
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: '講義から退出する' }).click()
+  const exitButton = page.getByRole('button', { name: '講義から退出する' })
+  await exitButton.evaluate((element) =>
+    element.scrollIntoView({ block: 'center', behavior: 'auto' }),
+  )
+  await expect(exitButton).toBeInViewport()
+  await exitButton.focus()
+  await expect(exitButton).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/join$/)
   await expect(
     page.getByRole('heading', { name: '講義に参加する' }),

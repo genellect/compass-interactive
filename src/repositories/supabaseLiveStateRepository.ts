@@ -8,6 +8,7 @@ import {
   isPhase4RealtimeCaptionsEnabled,
   isPhase66UxIntegrationEnabled,
   isPhase6SummariesEnabled,
+  isPhase71ClassroomExtensionsEnabled,
 } from '../lib/featureFlags'
 
 import {
@@ -95,6 +96,8 @@ export type CommentCursor = {
   createdAt: string
   id: string
 }
+
+export type CommentHistoryScope = 'all' | 'mine'
 
 export type CommentLikeTotal = {
   commentId: string
@@ -412,23 +415,38 @@ export const supabaseLiveStateRepository = {
     before,
     lectureSessionId,
     limit = 50,
+    scope = 'all',
   }: {
-    before: CommentCursor
+    before: CommentCursor | null
     lectureSessionId: string
     limit?: number
+    scope?: CommentHistoryScope
   }): Promise<CommentHistoryPage> {
     assertSupabaseConfigured()
     await ensureAnonymousAuthSession()
 
-    const { data, error } = await supabase.rpc(
-      'get_lecture_comment_history_v2',
-      {
-        before_comment_id: before.id,
-        before_created_at: before.createdAt,
-        history_limit: limit,
-        target_lecture_session_id: lectureSessionId,
-      },
-    )
+    if (!isPhase71ClassroomExtensionsEnabled && !before) {
+      throw new Error('A comment history cursor is required.')
+    }
+
+    const { data, error } = isPhase71ClassroomExtensionsEnabled
+      ? await supabase.rpc('get_lecture_comment_history_v3', {
+          ...(before
+            ? {
+                before_comment_id: before.id,
+                before_created_at: before.createdAt,
+              }
+            : {}),
+          history_limit: limit,
+          history_scope: scope,
+          target_lecture_session_id: lectureSessionId,
+        })
+      : await supabase.rpc('get_lecture_comment_history_v2', {
+          before_comment_id: before!.id,
+          before_created_at: before!.createdAt,
+          history_limit: limit,
+          target_lecture_session_id: lectureSessionId,
+        })
 
     if (error) {
       throw new Error(error.message)

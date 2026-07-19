@@ -4,7 +4,9 @@ import { LivePoll } from '../LivePoll'
 import { SyncedPdfViewer } from './SyncedPdfViewer'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { AppIcon } from '../AppIcon'
+import { LectureJoinQr } from '../LectureJoinQr'
 import { LiveCaptionPanel, type CaptionContent } from '../LearningSupport'
+import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
 import type {
@@ -25,6 +27,7 @@ type DisplayViewProps = {
   hasJoinedLectureSession: boolean
   isSessionSyncPaused: boolean
   lecture: LectureSession
+  lectureCode: string
   participantCount: number
   pollResults: PollResultSummary[]
   pollResultsError: string | null
@@ -47,6 +50,7 @@ export function DisplayView({
   hasJoinedLectureSession,
   isSessionSyncPaused,
   lecture,
+  lectureCode,
   participantCount,
   pollResults,
   pollResultsError,
@@ -113,6 +117,9 @@ export function DisplayView({
         ) : null}
         {displayStateError ? (
           <p className="error-note">教室表示の更新に時間がかかっています。</p>
+        ) : null}
+        {isPhase71ClassroomExtensionsEnabled && !isLectureClosed ? (
+          <LectureJoinQr code={lectureCode} compact title="スマートフォンで参加" />
         ) : null}
       </section>
 

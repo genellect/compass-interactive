@@ -236,6 +236,10 @@ separate gates; see `PHASE6_9_LOCAL_GATE_2026-07-19.md`.
 
 ## 7. Phase 7.1 - classroom UX extensions
 
+Status: locally implemented on 2026-07-19. Automated local gates are PASS;
+real-phone QR decoding and human Admin/student/Display review remain HOLD, so
+Phase 7.2 and production enablement are not authorized by this status.
+
 ### Summary language
 
 - Add `auto | ja | en`, default `auto`, to teacher-controlled lecture AI

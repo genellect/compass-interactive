@@ -35,6 +35,7 @@ type AiConfiguration = Partial<{
   poll_suggestions_enabled: boolean
   summaries_enabled: boolean
   summary_call_limit: number
+  summary_language: 'auto' | 'ja' | 'en'
 }>
 
 type ManageAiControlRequest =
@@ -433,6 +434,42 @@ Deno.serve(async (request) => {
           },
           403,
         )
+      }
+      if ('summary_language' in body.configuration) {
+        if (
+          Deno.env.get('PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED') !== 'true'
+        ) {
+          return jsonResponse(
+            { ok: false, message: 'Summary language control is disabled.' },
+            503,
+          )
+        }
+        if (Object.keys(body.configuration).length !== 1) {
+          return jsonResponse(
+            {
+              ok: false,
+              message: 'Summary language must be configured independently.',
+            },
+            400,
+          )
+        }
+        const summaryLanguage = body.configuration.summary_language
+        if (!['auto', 'ja', 'en'].includes(summaryLanguage ?? '')) {
+          return jsonResponse(
+            { ok: false, message: 'Invalid summary language.' },
+            400,
+          )
+        }
+        const { data, error } = await supabase.rpc(
+          'admin_set_lecture_summary_language',
+          {
+            target_actor_id: actorId,
+            target_lecture_session_id: body.lectureSessionId,
+            target_summary_language: summaryLanguage,
+          },
+        )
+        if (error) throw new Error(error.message)
+        return jsonResponse({ control: data, ok: true })
       }
       const { data, error } = await supabase.rpc(
         'admin_configure_lecture_ai_control',

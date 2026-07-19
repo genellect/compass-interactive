@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DisplayView } from '../components/DisplayView'
 import { useCompassState } from '../hooks/useCompassState'
 import {
@@ -34,6 +34,15 @@ export function DisplayPage() {
   const [displayAccessError, setDisplayAccessError] = useState<string | null>(
     null,
   )
+  const [displayLaunch] = useState(() => {
+    const fragment = new URLSearchParams(window.location.hash.slice(1))
+    return {
+      displayToken: fragment.get('token') ?? '',
+      lectureCode: fragment.get('code') ?? '',
+      lectureSessionId: fragment.get('lecture') ?? '',
+    }
+  })
+  const operatorCleanupTimerRef = useRef<number | null>(null)
   const [localCaption, setLocalCaption] = useState<{
     content: CaptionContent
     updatedAt: number
@@ -41,9 +50,11 @@ export function DisplayPage() {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    const fragment = new URLSearchParams(window.location.hash.slice(1))
-    const displayToken = fragment.get('token') ?? ''
-    const lectureSessionId = fragment.get('lecture') ?? ''
+    const { displayToken, lectureSessionId } = displayLaunch
+    if (operatorCleanupTimerRef.current !== null) {
+      window.clearTimeout(operatorCleanupTimerRef.current)
+      operatorCleanupTimerRef.current = null
+    }
     window.history.replaceState(
       null,
       '',
@@ -70,8 +81,13 @@ export function DisplayPage() {
       status: 'open',
       title: '講義共有画面',
     })
-    return () => setOperatorLiveAccess(null)
-  }, [selectLectureSession, setOperatorLiveAccess])
+    return () => {
+      operatorCleanupTimerRef.current = window.setTimeout(() => {
+        setOperatorLiveAccess(null)
+        operatorCleanupTimerRef.current = null
+      }, 0)
+    }
+  }, [displayLaunch, selectLectureSession, setOperatorLiveAccess])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 5_000)
@@ -134,6 +150,11 @@ export function DisplayPage() {
       hasJoinedLectureSession={hasJoinedLectureSession}
       isSessionSyncPaused={isSessionSyncPaused}
       lecture={lecture}
+      lectureCode={
+        /^[0-9]{6}$/.test(displayLaunch.lectureCode)
+          ? displayLaunch.lectureCode
+          : ''
+      }
       participantCount={participantCount}
       pollResults={pollResults}
       pollResultsError={pollResultsError}
