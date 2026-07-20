@@ -1,6 +1,6 @@
-# Phase 7.2 Safe-Stop Handoff - 2026-07-20
+# Phase 7.2 Safe-Stop Handoff and Resume Completion - 2026-07-20
 
-Status: paused by user request at a safe local-only checkpoint
+Status: resumed from the safe checkpoint; automated Local Gate complete
 Production/hosted state: unchanged
 Expected local branch: `phase7-2-local-checkpoint-20260720`
 
@@ -29,16 +29,17 @@ Expected local branch: `phase7-2-local-checkpoint-20260720`
 | --- | --- |
 | Clean migration from zero | PASS |
 | Full pgTAP | PASS - 20 files / 963 assertions |
-| Phase 7.1 to 7.2 upgrade fixture | PASS - 12 assertions before the final prompt-audit refinement |
+| Phase 7.1 to 7.2 upgrade fixture | PASS - 12/12 after the final prompt-audit refinement |
 | App-schema DB lint | PASS - zero errors; only two older compatibility warnings |
 | DB generated type drift | PASS - zero |
 | Phase 7.2 Edge/static/load/quality | PASS - 9 Edge tests; 100% identifier validity; 20/20 claim support; zero per-student periodic load |
-| Complete non-live suite | PASS - 45 groups before the final UI/bundle fixes |
-| TypeScript and production build | PASS after mapper/lazy-load fixes |
-| Bundle budget | PASS - Admin 78,758 / 92,109 B; CSS 85,555 / 88,449 B |
+| Complete non-live suite | PASS - 45/45 groups after the final UI/bundle fixes |
+| TypeScript, lint and production build | PASS - all three typechecks, oxlint and production build |
+| Bundle budget | PASS - Admin 78,758 / 92,109 B; CSS 85,774 / 88,449 B; index and PDF also within ceilings |
 | Demo browser | PASS - 60/60, Desktop/Mobile Chromium/WebKit, three repetitions |
 | Local Edge smoke | PASS - Auth, bounded input, tracked Admin sessions, PIN throttle and paid flags fail closed |
-| Dependency audit | PASS - zero vulnerabilities |
+| Local Supabase browser | PASS - 9/9 full lecture lifecycles, Desktop/Mobile Chromium and WebKit, three repetitions |
+| Security and dependency audit | PASS - 400-file secret scan and zero npm vulnerabilities |
 
 No live OpenAI call was made. No microphone, hosted Supabase, Cloudflare,
 production flag, public site, push or deployment was changed.
@@ -53,31 +54,24 @@ production flag, public site, push or deployment was changed.
 - Pre-existing user edits in the three protected Phase 6.6 documents remain
   outside the checkpoint commit.
 
-## 4. Mandatory work on resume
+## 4. Resume work completed
 
-Do not mark the Phase 7.2 Local Gate PASS until all items below pass after the
-checkpoint commit:
+All mandatory checkpoint-resume items completed successfully:
 
-1. Repeat the Phase 7.1-data upgrade sequence because the migration later added
-   prompt-version audit storage:
-   - reset through migration `20260719114320` with
-     `validation/phase7_2_upgrade_fixture.sql`;
-   - apply remaining migrations;
-   - run `validation/phase7_2_upgrade_check.sql`;
-   - restore the latest schema with a clean no-seed reset.
-2. Recreate the ignored synthetic Edge env exactly as documented in
-   `docs/CI_AND_BROWSER_E2E.md`, start local Functions and wait for readiness.
-3. Run `npm run test:production-local-edge` and
-   `npm run test:e2e:local:triple` with the matching synthetic Admin PIN.
-4. Stop the local Edge process and delete the synthetic env again.
-5. Run the final post-fix regression: full pgTAP, app-schema DB lint,
-   `db:types:check`, all three typechecks, lint, `test:ci:nonlive`, production
-   build, bundle test, secret scan, npm audit and `git diff --check`.
-6. Inspect all staged files and confirm the protected Phase 6.6 documents,
-   local env, test artifacts, credentials and generated transient output are
-   absent.
-7. Replace the checkpoint decision in the Local Gate report only after the
-   evidence above is recorded. Human and Hosted gates must remain HOLD.
+1. repeated the Phase 7.1 fixture upgrade after prompt-version audit storage
+   and passed all 12 assertions;
+2. restored the latest schema through a clean no-seed reset and passed all 963
+   pgTAP assertions;
+3. passed the default-OFF Local Edge smoke, then matched the synthetic Edge and
+   frontend Phase 7.2 flags for browser testing;
+4. passed all nine repeated local lecture lifecycles across Desktop Chromium,
+   WebKit and Mobile Chromium without external traffic or runtime errors;
+5. stopped the Edge process and removed the ignored synthetic environment;
+6. passed final DB lint/type drift, all TypeScript checks, lint, 45 non-live
+   groups, production build, bundle ceilings, secret scan, npm audit and diff
+   check;
+7. kept the three protected Phase 6.6 documents outside Phase 7.2 staging and
+   retained Human and Hosted gates as HOLD.
 
 ## 5. Human and hosted items that remain HOLD
 
