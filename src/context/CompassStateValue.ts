@@ -12,6 +12,7 @@ import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { DisplayState } from '../repositories/supabaseDisplayStateRepository'
 import type {
   PublicCaption,
+  PublicAcademicAnswer,
   PublicLectureSummary,
   PublicMaterialSummary,
 } from '../repositories/supabaseLiveStateRepository'
@@ -32,6 +33,7 @@ export type OperatorLiveAccess =
   | { kind: 'display'; token: string }
 
 export type CompassStateValue = {
+  academicAnswers: PublicAcademicAnswer[]
   caption: PublicCaption | null
   summaries: PublicLectureSummary[]
   materialSummary: PublicMaterialSummary | null

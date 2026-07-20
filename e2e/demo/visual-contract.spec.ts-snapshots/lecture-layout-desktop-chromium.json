@@ -5,7 +5,7 @@
   },
   "grid": {
     "columns": "767.219px 434.766px",
-    "areas": "\"material poll\" \"caption caption\" \"recap recap\" \"voices summary\" \"composer summary\" \"exit exit\""
+    "areas": "\"material poll\" \"caption caption\" \"recap recap\" \"voices summary\" \"composer summary\" \"academic academic\" \"exit exit\""
   },
   "mode": "desktop",
   "overflowFree": true,
@@ -44,6 +44,11 @@
       "display": "block",
       "gridArea": "summary",
       "selector": ".lecture-area-summary"
+    },
+    {
+      "display": "block",
+      "gridArea": "academic",
+      "selector": ".lecture-area-academic"
     },
     {
       "display": "flex",

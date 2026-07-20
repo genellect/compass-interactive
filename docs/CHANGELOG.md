@@ -3,6 +3,22 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-20 - Phase 7.2 evidence-grounded academic answers
+
+- Added teacher-triggered, API-PIN-gated academic reference drafts using a
+  bounded primary-literature workflow and one low-cost Luna Responses call.
+- Added fixed-host PubMed retrieval, exact Crossref DOI corroboration,
+  retraction/context classification and deterministic claim-source gates; the
+  model cannot create identifiers or invoke browsing tools.
+- Added exact-once reservation settlement, explicit provider-dispatch audit,
+  free pre-dispatch cancellation and idempotent stale-operation recovery.
+- Added hidden immutable drafts, teacher approve/hide/reject control and a
+  maximum-three public answer projection in live snapshots and R2 archives.
+- Tightened direct compatibility reads to lecture participants and preserved
+  Phase 7.1 data/old RPCs through an expand-first upgrade test.
+- Adopted development preview version `0.11.0`; no hosted service, production
+  flag, live paid request, push or deployment was changed.
+
 ## 2026-07-19 - Phase 7.1 classroom UX extensions
 
 - Added `auto / ja / en` teacher summary-language control with an immutable

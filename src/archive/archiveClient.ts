@@ -3,6 +3,29 @@ import { getLectureJoinCaptchaToken } from '../lib/turnstile'
 
 type RawArchiveResponse = {
   archive?: {
+    academic_answers?: Array<{
+      body: {
+        answer_points: Array<{ source_ids: string[]; text: string }>
+        limitations: string[]
+      }
+      id: string
+      published_at: string
+      question: string
+      review_state: 'admin_confirmed' | 'admin_revised'
+      revision_id: string
+      sources: Array<{
+        authors: string[]
+        doi: string | null
+        journal: string
+        pmid: string
+        publication_types: string[]
+        publication_year: number
+        source_id: string
+        source_role: 'context' | 'primary'
+        study_type: string
+        title: string
+      }>
+    }>
     archive_expires_at: string
     closed_at: string
     comments: Array<{
@@ -116,6 +139,32 @@ function mapArchive(
   }
   const archive = body.archive
   return {
+    academicAnswers: (archive.academic_answers ?? []).map((answer) => ({
+      body: {
+        answerPoints: answer.body.answer_points.map((point) => ({
+          sourceIds: point.source_ids,
+          text: point.text,
+        })),
+        limitations: answer.body.limitations,
+      },
+      id: answer.id,
+      publishedAt: answer.published_at,
+      question: answer.question,
+      reviewState: answer.review_state,
+      revisionId: answer.revision_id,
+      sources: answer.sources.map((source) => ({
+        authors: source.authors,
+        doi: source.doi,
+        journal: source.journal,
+        pmid: source.pmid,
+        publicationTypes: source.publication_types,
+        publicationYear: Number(source.publication_year),
+        sourceId: source.source_id,
+        sourceRole: source.source_role,
+        studyType: source.study_type,
+        title: source.title,
+      })),
+    })),
     archiveAccessToken: body.archiveAccessToken,
     archiveAccessTokenExpiresAt: body.archiveAccessTokenExpiresAt,
     archiveExpiresAt: archive.archive_expires_at,

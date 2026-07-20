@@ -59,6 +59,7 @@ import {
   type CommentCursor,
   type LiveStateVersions,
   type ParticipantLiveState,
+  type PublicAcademicAnswer,
   type PublicCaption,
   type PublicLectureSummary,
   type PublicMaterialSummary,
@@ -140,6 +141,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [caption, setCaption] = useState<PublicCaption | null>(null)
   const [summaries, setSummaries] = useState<PublicLectureSummary[]>([])
+  const [academicAnswers, setAcademicAnswers] =
+    useState<PublicAcademicAnswer[]>([])
   const [materialSummary, setMaterialSummary] =
     useState<PublicMaterialSummary | null>(null)
   const {
@@ -240,6 +243,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setDisplayState(snapshot.displayState)
       setCaption(null)
       setSummaries([])
+      setAcademicAnswers([])
       setMaterialSummary(null)
       setParticipantCount(snapshot.lecture.expectedParticipants)
       setVisibleCommentCount(
@@ -339,6 +343,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setDisplayState(null)
       setCaption(null)
       setSummaries([])
+      setAcademicAnswers([])
       setMaterialSummary(null)
       setParticipantCount(0)
       setVisibleCommentCount(0)
@@ -529,6 +534,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
           if (snapshot.summaries) {
             setSummaries(snapshot.summaries)
+          }
+
+          if (snapshot.academicAnswers) {
+            setAcademicAnswers(snapshot.academicAnswers)
           }
 
           if (snapshot.materialSummary !== undefined) {
@@ -762,6 +771,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
         persistJoinedLectureSession(archive.lecture)
         setJoinedLectureSession(archive.lecture)
+        setAcademicAnswers(archive.academicAnswers)
         setComments(archive.comments)
         setDisplayState(archive.pdf)
         setSummaries(archive.summaries)
@@ -921,6 +931,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     setDisplayState(null)
     setCaption(null)
     setSummaries([])
+    setAcademicAnswers([])
     setMaterialSummary(null)
     setCommentsError(null)
     setCommentLikesError(null)
@@ -951,6 +962,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CompassStateValue>(
     () => ({
       archiveSession,
+      academicAnswers,
       caption,
       summaries,
       materialSummary,
@@ -1058,6 +1070,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               setDisplayState(null)
               setCaption(null)
               setSummaries([])
+              setAcademicAnswers([])
               setMaterialSummary(null)
               setSessionSyncPauseReason(null)
               setLastSuccessfulSyncAt(null)
@@ -1415,6 +1428,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     [
       acceptArchiveSession,
       archiveSession,
+      academicAnswers,
       caption,
       summaries,
       materialSummary,

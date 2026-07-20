@@ -70,6 +70,7 @@ type PublicArchivePdf = {
 }
 
 type PublicLectureArchivePayload = {
+  academic_answers?: Array<Record<string, unknown>>
   archive_expires_at: string
   closed_at: string
   comments: Array<Record<string, unknown>>
@@ -358,6 +359,7 @@ function parsePublicArchivePayload(
     throw new Error('Archive payload is invalid.')
   }
   const payload = value as Record<string, unknown>
+  const academicAnswers = payload.academic_answers ?? []
   if (
     payload.schema_version !== 1 ||
     typeof payload.title !== 'string' ||
@@ -372,7 +374,14 @@ function parsePublicArchivePayload(
     payload.polls.length > 100 ||
     !Array.isArray(payload.summaries) ||
     payload.summaries.length > 12 ||
-    ![...payload.comments, ...payload.polls, ...payload.summaries].every(
+    !Array.isArray(academicAnswers) ||
+    academicAnswers.length > 3 ||
+    ![
+      ...payload.comments,
+      ...payload.polls,
+      ...payload.summaries,
+      ...academicAnswers,
+    ].every(
       (item) =>
         Boolean(item) && typeof item === 'object' && !Array.isArray(item),
     )

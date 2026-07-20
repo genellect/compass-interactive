@@ -21,6 +21,7 @@ test('lecture layout matches the deterministic visual contract', async ({
       '#lecture-poll',
       '.lecture-area-recap',
       '.lecture-area-summary',
+      '.lecture-area-academic',
       '.lecture-area-exit',
     ]
     const sections = selectors.map((selector) => {

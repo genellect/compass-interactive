@@ -1,0 +1,44 @@
+{
+  "sources": [
+    {
+      "doi": "10.1056/NEJMoa1511939",
+      "pmid": "26551272",
+      "sourceId": "pmid:26551272",
+      "title": "A Randomized Trial of Intensive versus Standard Blood-Pressure Control"
+    },
+    {
+      "doi": "10.1056/NEJMoa1911303",
+      "pmid": "31535829",
+      "sourceId": "pmid:31535829",
+      "title": "Dapagliflozin in Patients with Heart Failure and Reduced Ejection Fraction"
+    },
+    {
+      "doi": "10.1056/NEJMoa2021436",
+      "pmid": "32678530",
+      "sourceId": "pmid:32678530",
+      "title": "Dexamethasone in Hospitalized Patients with Covid-19"
+    }
+  ],
+  "reviewedClaims": [
+    { "sourceId": "pmid:26551272", "supported": true, "text": "SPRINT randomly assigned 9361 participants." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "SPRINT compared systolic blood-pressure targets below 120 and below 140 mm Hg." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "The intensive group had a lower primary composite cardiovascular outcome rate." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "All-cause mortality was lower in the intensive-treatment group." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "Selected serious adverse events were more frequent with intensive treatment." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "People with diabetes were excluded from SPRINT." },
+    { "sourceId": "pmid:26551272", "supported": true, "text": "The SPRINT intervention was stopped early after a median 3.26 years." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "DAPA-HF randomly assigned 4744 patients." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "DAPA-HF enrolled patients with heart failure and ejection fraction of 40 percent or less." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "Dapagliflozin was compared with placebo in addition to recommended therapy." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "The primary outcome combined worsening heart failure or cardiovascular death." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "The primary outcome was less frequent with dapagliflozin." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "The finding was similar in patients with and without diabetes." },
+    { "sourceId": "pmid:31535829", "supported": true, "text": "Median follow-up in DAPA-HF was 18.2 months." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "RECOVERY compared dexamethasone with usual care in hospitalized Covid-19 patients." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "The dexamethasone regimen was 6 mg once daily for up to 10 days." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "The primary outcome was 28-day mortality." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "Mortality was lower among participants receiving invasive mechanical ventilation." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "Mortality was lower among participants receiving oxygen without invasive ventilation." },
+    { "sourceId": "pmid:32678530", "supported": true, "text": "No mortality benefit was observed among participants receiving no respiratory support." }
+  ]
+}

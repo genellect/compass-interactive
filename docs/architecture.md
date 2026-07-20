@@ -1,7 +1,7 @@
 # COMPASS Interactive Architecture
 
 Last reviewed: 2026-07-19
-Applies to: repository implementation through Phase 7.1
+Applies to: repository implementation through Phase 7.2
 
 ## 1. Architectural goals
 
@@ -159,6 +159,13 @@ Stop is intentionally easier than start and does not require the API-use PIN.
   Manual selection is authoritative; `auto` resolves from that window's
   teacher transcript, then current PDF text, with Japanese as the deterministic
   final fallback. Resolution is local and adds no model call.
+- Phase 7.2 accepts only a teacher-selected academic question, verifies at most
+  five PubMed records and corroborates DOI metadata through Crossref before one
+  Luna structured-output call. A primary study must support every material
+  point. Retrieved abstracts are transient; only bounded citation metadata,
+  claim-source mapping and immutable hidden revisions are stored. Students and
+  archives receive at most three teacher-approved projections through the
+  existing snapshot/export paths.
 
 ### 7.4 Lecture join QR
 

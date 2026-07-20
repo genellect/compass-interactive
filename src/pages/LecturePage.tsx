@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AppIcon } from '../components/AppIcon'
 import { SyncedPdfViewer } from '../components/DisplayView'
 import {
+  AcademicAnswerPanel,
   FiveMinuteRecapPanel,
   LiveCaptionPanel,
   MaterialSummaryPanel,
@@ -19,6 +20,7 @@ const CONNECTED_FRESHNESS_MS = 20_000
 export function LecturePage() {
   const {
     addComment,
+    academicAnswers,
     activeLectureSessionId,
     caption,
     commentLikesError,
@@ -427,6 +429,16 @@ export function LecturePage() {
               summary={materialSummary?.body}
             />
           </aside>
+        ) : null}
+
+        {runtimeMode === 'demo' || academicAnswers.length > 0 ? (
+          <div className="lecture-area-academic">
+            <AcademicAnswerPanel
+              answers={academicAnswers}
+              isDemo={runtimeMode === 'demo'}
+              viewMode={isLectureClosed ? 'closed' : 'live'}
+            />
+          </div>
         ) : null}
 
         <section className="lecture-area-exit">

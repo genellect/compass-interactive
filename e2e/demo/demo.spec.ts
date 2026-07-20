@@ -35,6 +35,16 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
     }),
   ).toBeVisible()
   await expect(page.getByText(/21[6-9]|22[0-4]/).first()).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '文献から考える参考回答' }),
+  ).toBeVisible()
+  await expect(page.getByText('教員確認済み')).toBeVisible()
+  await page.getByText('根拠文献を見る（1件）').click()
+  await expect(
+    page.getByRole('link', {
+      name: 'A Randomized Trial of Intensive versus Standard Blood-Pressure Control',
+    }),
+  ).toHaveAttribute('href', 'https://pubmed.ncbi.nlm.nih.gov/26551272/')
 
   if (testInfo.project.name.startsWith('mobile-')) {
     const topPositions = await page.evaluate(() => {
@@ -46,6 +56,7 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
         '#lecture-poll',
         '.lecture-area-recap',
         '.lecture-area-summary',
+        '.lecture-area-academic',
         '.lecture-area-exit',
       ]
       return selectors.map((selector) => {

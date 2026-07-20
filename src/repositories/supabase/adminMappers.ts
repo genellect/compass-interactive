@@ -1,4 +1,5 @@
 import type {
+  AdminAcademicResults,
   AdminDisplayState,
   AdminLectureSummary,
   AdminMaterialAnalysis,
@@ -8,6 +9,13 @@ import type {
   AdminPollProposal,
   AdminSummaryResults,
 } from '../supabaseAdminRepository'
+
+export type RawAcademicResults = {
+  active_requests?: Array<Record<string, unknown>>
+  answers?: Array<Record<string, unknown>>
+  candidates?: Array<Record<string, unknown>>
+  control?: null | Record<string, unknown>
+}
 
 export type DisplayStateRow = {
   current_pdf_page: number
@@ -146,6 +154,98 @@ function toStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : []
+}
+
+export function toAdminAcademicResults(
+  raw?: RawAcademicResults,
+): AdminAcademicResults {
+  const control = raw?.control ?? null
+  return {
+    activeRequests: (raw?.active_requests ?? []).map((item) => ({
+      id: String(item.id ?? ''),
+      operationId:
+        item.operation_id == null ? null : String(item.operation_id),
+      question: String(item.question ?? ''),
+      status: String(item.status ?? 'evidence_checking') as
+        | 'evidence_checking'
+        | 'running',
+      updatedAt: String(item.updated_at ?? ''),
+    })),
+    answers: (raw?.answers ?? []).map((item) => {
+      const revisions = (item.revisions ?? []) as Array<Record<string, unknown>>
+      const publication = (item.publication ?? null) as Record<
+        string,
+        unknown
+      > | null
+      const activeRevisionId = publication?.active_revision_id
+      const revision =
+        revisions.find((candidate) => candidate.id === activeRevisionId) ??
+        revisions.at(-1)
+      const body = (revision?.body ?? {}) as Record<string, unknown>
+      return {
+        body: {
+          answerPoints: (
+            (body.answer_points ?? []) as Array<Record<string, unknown>>
+          ).map((point) => ({
+            sourceIds: toStringArray(point.source_ids),
+            text: String(point.text ?? ''),
+          })),
+          limitations: toStringArray(body.limitations),
+        },
+        createdAt: String(item.created_at ?? ''),
+        id: String(item.id ?? ''),
+        publication: publication
+          ? {
+              reviewState: String(
+                publication.review_state ?? 'ai_unreviewed',
+              ) as 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed',
+              visibility: String(publication.visibility ?? 'hidden') as
+                | 'hidden'
+                | 'public',
+            }
+          : null,
+        question: String(item.question ?? ''),
+        sources: (
+          (item.sources ?? []) as Array<Record<string, unknown>>
+        ).map((source) => ({
+          authors: toStringArray(source.authors),
+          doi: source.doi == null ? null : String(source.doi),
+          journal: String(source.journal ?? ''),
+          pmid: String(source.pmid ?? ''),
+          publicationTypes: toStringArray(source.publication_types),
+          publicationYear: Number(source.publication_year ?? 0),
+          sourceId: String(source.source_id ?? ''),
+          sourceRole:
+            source.source_role === 'context' ? 'context' : 'primary',
+          studyType: String(source.study_type ?? ''),
+          title: String(source.title ?? ''),
+        })),
+        status: String(item.status ?? 'awaiting_review') as
+          | 'awaiting_review'
+          | 'hidden'
+          | 'published'
+          | 'rejected',
+      }
+    }),
+    candidates: (raw?.candidates ?? []).map((item) => ({
+      educationalValue: String(item.educational_value ?? ''),
+      qualityScore: Number(item.quality_score ?? 0),
+      question: String(item.question ?? ''),
+      summaryId: String(item.summary_id ?? ''),
+      windowIndex: Number(item.window_index ?? 0),
+    })),
+    control: control
+      ? {
+          academicAnswerCallsUsed: Number(
+            control.academic_answer_calls_used ?? 0,
+          ),
+          academicAnswerLimit: Number(control.academic_answer_limit ?? 3),
+          budgetLimitMicrousd: Number(control.budget_limit_microusd ?? 0),
+          status: String(control.status ?? 'disabled'),
+          usedMicrousd: Number(control.used_microusd ?? 0),
+        }
+      : null,
+  }
 }
 
 export function toAdminSummaryResults(

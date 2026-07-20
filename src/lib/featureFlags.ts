@@ -34,3 +34,7 @@ export const isPhase68SecurityEnabled =
 export const isPhase71ClassroomExtensionsEnabled =
   isPhase1SyncProtocolEnabled &&
   import.meta.env.VITE_PHASE7_1_CLASSROOM_EXTENSIONS === 'true'
+
+export const isPhase72AcademicAnswersEnabled =
+  isPhase6SummariesEnabled &&
+  import.meta.env.VITE_PHASE7_2_ACADEMIC_ANSWERS === 'true'

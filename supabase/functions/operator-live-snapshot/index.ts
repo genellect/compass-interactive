@@ -206,7 +206,11 @@ Deno.serve(async (request) => {
           history_limit: historyLimit,
           target_lecture_session_id: body.lectureSessionId,
         })
-      : await supabase.rpc('admin_get_lecture_operator_snapshot_v1', {
+      : await supabase.rpc(
+          Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') === 'true'
+            ? 'admin_get_lecture_operator_snapshot_v2'
+            : 'admin_get_lecture_operator_snapshot_v1',
+          {
           comment_cursor_created_at: body.commentCursorCreatedAt ?? null,
           comment_cursor_id: body.commentCursorId ?? null,
           comment_limit: 5,
@@ -219,8 +223,9 @@ Deno.serve(async (request) => {
           known_pdf_version: boundedVersion(body.knownPdfVersion),
           known_polls_version: boundedVersion(body.knownPollsVersion),
           known_summaries_version: boundedVersion(body.knownSummariesVersion),
-          target_lecture_session_id: body.lectureSessionId,
-        })
+            target_lecture_session_id: body.lectureSessionId,
+          },
+        )
 
   if (error) {
     return jsonResponse(

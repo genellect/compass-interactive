@@ -25,6 +25,7 @@ import {
   isPhase5MaterialAnalysisEnabled,
   isPhase6SummariesEnabled,
   isPhase68SecurityEnabled,
+  isPhase72AcademicAnswersEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
@@ -1199,6 +1200,7 @@ export function AdminPage() {
         activeLecture={activeAdminLecture}
         activeLectureSessionId={activeLectureSessionId}
         adminToken={adminToken}
+        academicEnabled={isPhase72AcademicAnswersEnabled}
         displayState={displayState}
         documents={adminPdfDocuments}
         fallbackHardStopAt={lecture.expiresAt}

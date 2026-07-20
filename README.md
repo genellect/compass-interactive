@@ -13,11 +13,12 @@ secrets.
 
 ## Current status
 
-- Application version: `0.10.0` development preview.
+- Application version: `0.11.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 7.1 are implemented in the repository. Phase 7.1 is
-  locally automated-verified; its real-phone QR and human classroom review are
-  still HOLD. It has not been pushed, deployed or reflected to hosted services.
+- Phase 0 through Phase 7.2 are implemented in the repository. Phase 7.2 is
+  locally automated-verified; teacher literature review, the Phase 7.1
+  real-phone QR check and the combined human classroom review remain HOLD. It
+  has not been pushed, deployed or reflected to hosted services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -37,6 +38,9 @@ secrets.
   ownership-safe on-demand `自分` comment history and local lecture QR on the
   selected Admin lecture and open classroom Display without extra paid calls,
   periodic requests or stored QR images.
+- Phase 7.2 adds teacher-requested, verified-primary-literature reference
+  drafts. PubMed metadata and exact DOI corroboration are checked before one
+  bounded Luna request; unsupported or unreviewed output is never published.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -79,6 +83,8 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
   published;
 - five-minute summary/comment-pulse generation with immutable revisions and
   teacher publish, hide, pin and correction controls;
+- up to three evidence-grounded academic reference drafts per lecture, each
+  requiring API PIN authorization and explicit teacher publication;
 - approximate active-participant and visible-comment metrics folded into the
   existing snapshot path;
 - scoped classroom Display sessions and a light fullscreen view.
@@ -173,6 +179,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE6_6_UX_INTEGRATION`
 - `VITE_PHASE6_8_SECURITY`
 - `VITE_PHASE7_1_CLASSROOM_EXTENSIONS`
+- `VITE_PHASE7_2_ACADEMIC_ANSWERS`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -191,6 +198,9 @@ npm run test:phase6-7-docs
 npm run test:phase6-8-static
 npm run test:phase7-1-edge
 npm run test:phase7-1-static
+npm run test:phase7-2-edge
+npm run test:phase7-2-static
+npm run test:phase7-2-quality
 npm run build
 git diff --check
 ```
@@ -280,6 +290,9 @@ flags before attempting a destructive rollback.
 - Phase 6.9 local evidence: [`docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`](docs/PHASE6_9_LOCAL_GATE_2026-07-19.md)
 - Phase 7.1 classroom UX design: [`docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md`](docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md)
 - Phase 7.1 local evidence: [`docs/PHASE7_1_LOCAL_GATE_2026-07-19.md`](docs/PHASE7_1_LOCAL_GATE_2026-07-19.md)
+- Phase 7.2 evidence-grounded answer design: [`docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md`](docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md)
+- Phase 7.2 local evidence: [`docs/PHASE7_2_LOCAL_GATE_2026-07-20.md`](docs/PHASE7_2_LOCAL_GATE_2026-07-20.md)
+- Phase 7.2 safe-stop handoff: [`docs/PHASE7_2_HANDOFF_2026-07-20.md`](docs/PHASE7_2_HANDOFF_2026-07-20.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { SyncedPdfViewer } from '../components/DisplayView'
 import { LiveBoard } from '../components/LiveBoard'
 import {
+  AcademicAnswerPanel,
   FiveMinuteRecapPanel,
   MaterialSummaryPanel,
 } from '../components/LearningSupport'
@@ -188,6 +189,11 @@ export function LectureArchivePage() {
       {archiveSession.materialSummary ? (
         <MaterialSummaryPanel summary={archiveSession.materialSummary.body} />
       ) : null}
+
+      <AcademicAnswerPanel
+        answers={archiveSession.academicAnswers}
+        viewMode="archive"
+      />
 
       <section className="archive-expiry-note">
         <p>

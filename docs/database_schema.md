@@ -74,6 +74,11 @@ download byte ranges through the Cloudflare Worker, not through Supabase.
 | `ai_realtime_token_audit`                      | Realtime secret issuance audit                                  |
 | `ai_realtime_provider_calls`                   | Provider-call identity, deadline and idempotent hangup state    |
 | `lecture_public_captions`                      | Bounded completed caption windows for snapshot delivery         |
+| `academic_answer_requests`                     | Idempotent evidence/admission/provider-dispatch state            |
+| `lecture_academic_answers`                     | Immutable answer identity, model and prompt audit                |
+| `academic_answer_sources`                      | Verified bounded citation metadata; no abstract/body text        |
+| `academic_answer_revisions`                    | Immutable AI/teacher answer bodies                               |
+| `academic_answer_publications`                 | Hidden/public teacher-reviewed projection                        |
 
 `lecture_ai_control.summary_language` stores the future-window preference.
 Each `lecture_summary_windows` row snapshots `requested_language` and later
@@ -98,6 +103,9 @@ ledger path.
 | `lecture_material_summary_publications`            | Published material-summary projection                   |
 
 Raw PDF text, raw transcript and audio do not belong in these tables.
+Retrieved literature abstracts and article bodies also do not belong in these
+tables. Phase 7.2 v6/v2/v4/v3 snapshot/archive functions project at most three
+published answers and preserve older RPC versions for expand-first rollout.
 
 ## 7. RLS and grants
 
@@ -133,7 +141,7 @@ documented query.
 
 ## 9. Migration and generated types
 
-Current migrations are ordered from the remote baseline through Phase 7.1.
+Current migrations are ordered from the remote baseline through Phase 7.2.
 The accepted workflow is:
 
 1. create an additive migration with the pinned Supabase CLI;

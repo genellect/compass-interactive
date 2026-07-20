@@ -349,21 +349,24 @@ Deno.serve(async (request) => {
       }
 
       const { data: operation, error: operationError } = await supabase
-        .from('lecture_ai_operation_ledger')
+        .from('ai_usage_ledger')
         .select('feature')
         .eq('id', body.operationId)
         .maybeSingle()
       if (operationError) throw new Error(operationError.message)
+      // Phase 5 operations must be finalized by their dedicated endpoints.
+      // Later Batch features inherit the same exact-settlement boundary.
       if (
         operation?.feature === 'summaries' ||
         operation?.feature === 'material_analysis' ||
-        operation?.feature === 'poll_suggestions'
+        operation?.feature === 'poll_suggestions' ||
+        operation?.feature === 'academic_answers'
       ) {
         return jsonResponse(
           {
             ok: false,
             message:
-              'Phase 5 operations must be finalized by their dedicated endpoints; summaries use their dedicated endpoint too.',
+              'Batch AI operations must be finalized by their dedicated endpoints.',
           },
           409,
         )

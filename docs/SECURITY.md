@@ -1,7 +1,7 @@
 # COMPASS Interactive Security Contract
 
 Last reviewed: 2026-07-19
-Status: locally implemented controls through Phase 7.1; new capabilities remain
+Status: locally implemented controls through Phase 7.2; new capabilities remain
 default-OFF and pending hosted/human production evidence
 
 ## 1. Security objectives
@@ -106,6 +106,15 @@ language resolution is recorded before the existing single provider attempt.
 The `mine` history RPC accepts no participant ID, derives ownership from
 `auth.uid()` and returns no participant identifier. QR content is restricted to
 the same-origin six-digit join URL and contains no capability token.
+
+Phase 7.2 keeps literature hosts fixed to NCBI and exact DOI Crossref records,
+bounds time/body/source counts and rejects redirects or metadata disagreement.
+The model receives untrusted question/evidence as serialized data, has no tool,
+cannot create identifiers and returns a strict claim-to-source schema. At least
+one verified primary source is required; reviews/editorials are context-only
+and retracted records are excluded. Drafts remain service-role-only until a
+teacher publishes them. Provider dispatch, cancellation, exact settlement,
+late discard and stale-operation reaping are separate audited transitions.
 
 ## 7. Browser-safe and server-only configuration
 

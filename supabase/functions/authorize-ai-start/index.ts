@@ -100,6 +100,15 @@ Deno.serve(async (request) => {
       503,
     )
   }
+  if (
+    actions.includes('academic_answers') &&
+    Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') !== 'true'
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Academic reference answers are disabled.' },
+      503,
+    )
+  }
   if (!body.adminToken || !body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'Admin session and lecture are required.' },

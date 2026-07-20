@@ -88,12 +88,17 @@ OpenAI receives only the content required by an explicitly enabled feature:
 - bounded PDF text for material analysis;
 - bounded transcript/comment windows for summaries;
 - live microphone media for explicitly started Realtime transcription;
-- later, verified literature metadata and bounded evidence for an approved
-  academic-reference workflow.
+- verified literature metadata and at most 6,000 transient evidence characters
+  for a teacher-requested academic-reference workflow.
 
 Before sending, the application applies feature-specific limits, lecture state,
 budget and concurrency admission. Image OCR is outside the design. Low-value or
 unsupported output is not forced into the student UI.
+
+Phase 7.2 does not store retrieved abstracts, article bodies or literature PDFs.
+It stores bounded PMID/DOI/title/year/author/study metadata, verification facts,
+claim-source mappings, usage audit and immutable revisions. Only a
+teacher-confirmed projection enters the student snapshot and closed archive.
 
 The exact provider retention and processing terms must be rechecked at each
 production gate; this repository document is not a substitute for the current

@@ -1,4 +1,5 @@
 import type { LiveComment } from './comment'
+import type { PublicAcademicAnswer } from '../repositories/supabaseLiveStateRepository'
 
 export type ArchivedPollOption = {
   id: string
@@ -55,6 +56,7 @@ export type ArchivedMaterialSummary = {
 }
 
 export type LectureArchiveSession = {
+  academicAnswers: PublicAcademicAnswer[]
   archiveAccessToken: string
   archiveAccessTokenExpiresAt: string
   archiveExpiresAt: string

@@ -413,6 +413,9 @@ verify_jwt = true
 [functions.generate-lecture-summary]
 verify_jwt = true
 
+[functions.generate-academic-answer]
+verify_jwt = true
+
 [functions.manage-lecture-summaries]
 verify_jwt = true
 

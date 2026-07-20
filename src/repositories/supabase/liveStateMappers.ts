@@ -6,6 +6,7 @@ import type { DisplayState } from '../supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../supabasePollRepository'
 import type {
   LiveSnapshot,
+  PublicAcademicAnswer,
   PublicCaption,
   PublicLectureSummary,
   PublicMaterialSummary,
@@ -98,6 +99,7 @@ export type RawLegacySnapshot = {
 
 export type RawPublicSnapshotV2 = {
   changed: {
+    academic_answers?: RawPublicAcademicAnswer[]
     caption?: {
       language: PublicCaption['language']
       last_item_id: string
@@ -169,6 +171,63 @@ type RawPublicMaterialSummary = {
   review_state: PublicMaterialSummary['reviewState']
 }
 
+type RawPublicAcademicAnswer = {
+  body: {
+    answer_points: Array<{ source_ids: string[]; text: string }>
+    limitations: string[]
+  }
+  id: string
+  published_at: string
+  question: string
+  review_state: PublicAcademicAnswer['reviewState']
+  revision_id: string
+  sources: Array<{
+    authors: string[]
+    doi: string | null
+    journal: string
+    pmid: string
+    publication_types: string[]
+    publication_year: number
+    source_id: string
+    source_role: 'context' | 'primary'
+    study_type: string
+    title: string
+  }>
+}
+
+export function mapAcademicAnswers(
+  raw: RawPublicAcademicAnswer[] | undefined | null,
+) {
+  return (
+    raw?.map<PublicAcademicAnswer>((answer) => ({
+      body: {
+        answerPoints: answer.body.answer_points.map((point) => ({
+          sourceIds: point.source_ids,
+          text: point.text,
+        })),
+        limitations: answer.body.limitations,
+      },
+      id: answer.id,
+      publishedAt: answer.published_at,
+      question: answer.question,
+      reviewState: answer.review_state,
+      revisionId: answer.revision_id,
+      sources: answer.sources.map((source) => ({
+        authors: source.authors,
+        doi: source.doi,
+        journal: source.journal,
+        pmid: source.pmid,
+        publicationTypes: source.publication_types,
+        publicationYear: Number(source.publication_year),
+        sourceId: source.source_id,
+        sourceRole: source.source_role,
+        studyType: source.study_type,
+        title: source.title,
+      })),
+    })) ?? null
+  )
+}
+
 export function mapMaterialSummary(
   raw: RawPublicMaterialSummary | null | undefined,
 ): PublicMaterialSummary | null | undefined {
@@ -220,6 +279,7 @@ export type RawTerminalStateV2 = {
 }
 
 export type RawArchiveV2 = {
+  academic_answers?: RawPublicAcademicAnswer[]
   comments: RawComment[]
   comments_has_more: boolean
   lecture: RawLecture
@@ -358,6 +418,7 @@ export function mapLegacySnapshot(raw: RawLegacySnapshot): LiveSnapshot {
         : null
 
   return {
+    academicAnswers: null,
     caption: undefined,
     comments: raw.comments
       ? {
@@ -417,6 +478,7 @@ export function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
     : undefined
 
   return {
+    academicAnswers: mapAcademicAnswers(raw.changed.academic_answers),
     caption,
     comments: raw.changed.comments
       ? {
@@ -483,6 +545,7 @@ export function mapPublicSnapshotV2(raw: RawPublicSnapshotV2): LiveSnapshot {
 
 export function mapTerminalState(raw: RawTerminalStateV2): LiveSnapshot {
   return {
+    academicAnswers: null,
     caption: null,
     comments: null,
     contractVersion: 2,

@@ -25,6 +25,9 @@ const requiredDocuments = [
   'docs/PHASE6_9_LOCAL_GATE_2026-07-19.md',
   'docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md',
   'docs/PHASE7_1_LOCAL_GATE_2026-07-19.md',
+  'docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md',
+  'docs/PHASE7_2_LOCAL_GATE_2026-07-20.md',
+  'docs/PHASE7_2_HANDOFF_2026-07-20.md',
   'docs/CI_AND_BROWSER_E2E.md',
   'docs/supabase_setup.md',
   'docs/cloudflare_pages_deploy.md',
@@ -62,7 +65,7 @@ for (const requiredText of [
 
 assert.match(
   readme,
-  /Phase 0 through Phase (?:6\.9|7\.1)/,
+  /Phase 0 through Phase (?:6\.9|7\.1|7\.2)/,
   'README must state the implemented Phase 0 baseline through the current release',
 )
 

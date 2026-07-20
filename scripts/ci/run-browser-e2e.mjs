@@ -83,6 +83,7 @@ const appEnvironment = {
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
   VITE_PHASE6_8_SECURITY: mode === 'local' ? 'true' : 'false',
   VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
+  VITE_PHASE7_2_ACADEMIC_ANSWERS: 'true',
 }
 
 const viteProcess = spawn(

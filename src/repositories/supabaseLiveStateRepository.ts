@@ -9,6 +9,7 @@ import {
   isPhase66UxIntegrationEnabled,
   isPhase6SummariesEnabled,
   isPhase71ClassroomExtensionsEnabled,
+  isPhase72AcademicAnswersEnabled,
 } from '../lib/featureFlags'
 
 import {
@@ -22,6 +23,7 @@ const {
   operatorFunction: OPERATOR_FUNCTION_TIMEOUT_MS,
 } = SUPABASE_REQUEST_TIMEOUT_MS
 import {
+  mapAcademicAnswers,
   mapComment,
   mapDisplay,
   mapLecture,
@@ -79,6 +81,32 @@ export type PublicMaterialSummary = {
   reviewState: 'admin_confirmed' | 'admin_revised'
 }
 
+export type PublicAcademicSource = {
+  authors: string[]
+  doi: string | null
+  journal: string
+  pmid: string
+  publicationTypes: string[]
+  publicationYear: number
+  sourceId: string
+  sourceRole: 'context' | 'primary'
+  studyType: string
+  title: string
+}
+
+export type PublicAcademicAnswer = {
+  body: {
+    answerPoints: Array<{ sourceIds: string[]; text: string }>
+    limitations: string[]
+  }
+  id: string
+  publishedAt: string
+  question: string
+  reviewState: 'admin_confirmed' | 'admin_revised'
+  revisionId: string
+  sources: PublicAcademicSource[]
+}
+
 export type LiveStateVersions = {
   caption: number | null
   comments: number | null
@@ -117,6 +145,7 @@ export type ParticipantLiveState = {
 }
 
 export type LiveSnapshot = {
+  academicAnswers: PublicAcademicAnswer[] | null
   caption: PublicCaption | null | undefined
   comments: {
     hasMore: boolean
@@ -152,6 +181,7 @@ export type CommentHistoryPage = {
 }
 
 export type LectureArchive = {
+  academicAnswers: PublicAcademicAnswer[]
   comments: LiveComment[]
   commentsHasMore: boolean
   lecture: JoinedLectureSession
@@ -197,7 +227,9 @@ async function getPublicSnapshotV2({
   versions,
 }: SnapshotRequest) {
   const rpcName = isPhase66UxIntegrationEnabled
-    ? 'get_lecture_public_snapshot_v5'
+    ? isPhase72AcademicAnswersEnabled
+      ? 'get_lecture_public_snapshot_v6'
+      : 'get_lecture_public_snapshot_v5'
     : isPhase6SummariesEnabled
       ? 'get_lecture_public_snapshot_v4'
       : isPhase4RealtimeCaptionsEnabled
@@ -466,9 +498,11 @@ export const supabaseLiveStateRepository = {
     assertSupabaseConfigured()
     await ensureAnonymousAuthSession()
 
-    const archiveRpc = isPhase6SummariesEnabled
-      ? 'get_lecture_archive_v3'
-      : 'get_lecture_archive_v2'
+    const archiveRpc = isPhase72AcademicAnswersEnabled
+      ? 'get_lecture_archive_v4'
+      : isPhase6SummariesEnabled
+        ? 'get_lecture_archive_v3'
+        : 'get_lecture_archive_v2'
     const { data, error } = await supabase.rpc(archiveRpc, {
       target_lecture_session_id: lectureSessionId,
     })
@@ -482,6 +516,7 @@ export const supabaseLiveStateRepository = {
 
     const raw = data as unknown as RawArchiveV2
     return {
+      academicAnswers: mapAcademicAnswers(raw.academic_answers) ?? [],
       comments: raw.comments.map(mapComment),
       commentsHasMore: raw.comments_has_more,
       lecture: mapLecture(raw.lecture),

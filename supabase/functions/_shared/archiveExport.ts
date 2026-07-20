@@ -4,6 +4,7 @@ export type ArchiveExportClaimIdentity = {
 }
 
 export type PublicLectureArchivePayload = {
+  academic_answers: unknown[]
   archive_expires_at: string
   closed_at: string
   comments: unknown[]
@@ -216,6 +217,10 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
   const title =
     typeof sanitizedValue.title === 'string' ? sanitizedValue.title.trim() : ''
   const comments = requireArray(sanitizedValue.comments, 'Archive comments')
+  const academicAnswers = requireArray(
+    sanitizedValue.academic_answers ?? [],
+    'Archive academic answers',
+  )
   const polls = requireArray(sanitizedValue.polls, 'Archive polls')
   const summaries = requireArray(sanitizedValue.summaries, 'Archive summaries')
   const materialSummary = sanitizedValue.material_summary ?? null
@@ -230,6 +235,7 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
     !Number.isSafeInteger(participantCount) ||
     Number(participantCount) < 0 ||
     comments.length > 500 ||
+    academicAnswers.length > 3 ||
     polls.length > 100 ||
     summaries.length > 12 ||
     (materialSummary !== null && !isRecord(materialSummary)) ||
@@ -255,6 +261,7 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
       : normalizeIsoTimestamp(sanitizedValue.started_at, 'Archive start time')
 
   return {
+    academic_answers: academicAnswers,
     archive_expires_at: archiveExpiresAt,
     closed_at: closedAt,
     comments,

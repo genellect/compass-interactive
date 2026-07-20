@@ -9,6 +9,275 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      academic_answer_publications: {
+        Row: {
+          active_revision_id: string
+          answer_id: string
+          created_at: string
+          lecture_session_id: string
+          published_at: string | null
+          review_state: string
+          reviewed_by_actor_id: string | null
+          updated_at: string
+          visibility: string
+        }
+        Insert: {
+          active_revision_id: string
+          answer_id: string
+          created_at?: string
+          lecture_session_id: string
+          published_at?: string | null
+          review_state?: string
+          reviewed_by_actor_id?: string | null
+          updated_at?: string
+          visibility?: string
+        }
+        Update: {
+          active_revision_id?: string
+          answer_id?: string
+          created_at?: string
+          lecture_session_id?: string
+          published_at?: string | null
+          review_state?: string
+          reviewed_by_actor_id?: string | null
+          updated_at?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_answer_publications_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: true
+            referencedRelation: "lecture_academic_answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_publications_lecture_session_id_answer_id__fkey"
+            columns: ["lecture_session_id", "answer_id", "active_revision_id"]
+            isOneToOne: false
+            referencedRelation: "academic_answer_revisions"
+            referencedColumns: ["lecture_session_id", "answer_id", "id"]
+          },
+          {
+            foreignKeyName: "academic_answer_publications_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academic_answer_requests: {
+        Row: {
+          created_at: string
+          error_code: string | null
+          id: string
+          idempotency_key: string
+          lease_until: string | null
+          lecture_session_id: string
+          operation_id: string | null
+          prompt_version: string | null
+          provider_dispatched_at: string | null
+          question: string
+          question_sha256: string
+          requested_by_actor: string
+          search_query_sha256: string
+          source_kind: string
+          source_set_sha256: string | null
+          source_summary_id: string | null
+          status: string
+          updated_at: string
+          verified_primary_count: number
+          verified_source_count: number
+        }
+        Insert: {
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key: string
+          lease_until?: string | null
+          lecture_session_id: string
+          operation_id?: string | null
+          prompt_version?: string | null
+          provider_dispatched_at?: string | null
+          question: string
+          question_sha256: string
+          requested_by_actor: string
+          search_query_sha256: string
+          source_kind: string
+          source_set_sha256?: string | null
+          source_summary_id?: string | null
+          status?: string
+          updated_at?: string
+          verified_primary_count?: number
+          verified_source_count?: number
+        }
+        Update: {
+          created_at?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key?: string
+          lease_until?: string | null
+          lecture_session_id?: string
+          operation_id?: string | null
+          prompt_version?: string | null
+          provider_dispatched_at?: string | null
+          question?: string
+          question_sha256?: string
+          requested_by_actor?: string
+          search_query_sha256?: string
+          source_kind?: string
+          source_set_sha256?: string | null
+          source_summary_id?: string | null
+          status?: string
+          updated_at?: string
+          verified_primary_count?: number
+          verified_source_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_answer_requests_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_requests_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: true
+            referencedRelation: "ai_usage_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_requests_source_summary_id_fkey"
+            columns: ["source_summary_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_ai_summaries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academic_answer_revisions: {
+        Row: {
+          answer_id: string
+          author_actor_id: string | null
+          author_type: string
+          body: Json
+          created_at: string
+          id: string
+          lecture_session_id: string
+          reason: string | null
+          revision_number: number
+        }
+        Insert: {
+          answer_id: string
+          author_actor_id?: string | null
+          author_type: string
+          body: Json
+          created_at?: string
+          id?: string
+          lecture_session_id: string
+          reason?: string | null
+          revision_number: number
+        }
+        Update: {
+          answer_id?: string
+          author_actor_id?: string | null
+          author_type?: string
+          body?: Json
+          created_at?: string
+          id?: string
+          lecture_session_id?: string
+          reason?: string | null
+          revision_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_answer_revisions_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_academic_answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_revisions_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      academic_answer_sources: {
+        Row: {
+          answer_id: string
+          authors: Json
+          doi: string | null
+          id: string
+          journal: string
+          lecture_session_id: string
+          pmid: string
+          publication_types: Json
+          publication_year: number
+          source_id: string
+          source_role: string
+          study_type: string
+          title: string
+          verification: Json
+          verified_at: string
+        }
+        Insert: {
+          answer_id: string
+          authors: Json
+          doi?: string | null
+          id?: string
+          journal: string
+          lecture_session_id: string
+          pmid: string
+          publication_types: Json
+          publication_year: number
+          source_id: string
+          source_role: string
+          study_type: string
+          title: string
+          verification: Json
+          verified_at?: string
+        }
+        Update: {
+          answer_id?: string
+          authors?: Json
+          doi?: string | null
+          id?: string
+          journal?: string
+          lecture_session_id?: string
+          pmid?: string
+          publication_types?: Json
+          publication_year?: number
+          source_id?: string
+          source_role?: string
+          study_type?: string
+          title?: string
+          verification?: Json
+          verified_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_answer_sources_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_academic_answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_sources_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admin_pin_rate_limits: {
         Row: {
           attempt_count: number
@@ -443,6 +712,7 @@ export type Database = {
       }
       ai_usage_ledger: {
         Row: {
+          accounting_settled_at: string | null
           actual_audio_seconds: number | null
           actual_input_tokens: number | null
           actual_microusd: number | null
@@ -457,6 +727,7 @@ export type Database = {
           model_id: string | null
           pricing_rate_microusd: number | null
           pricing_unit: string | null
+          provider_dispatched_at: string | null
           provider_request_id: string | null
           requested_at: string
           requested_by_actor: string
@@ -465,9 +736,11 @@ export type Database = {
           reserved_microusd: number
           reserved_output_tokens: number
           result_accepted: boolean
+          settlement_status: string | null
           status: string
         }
         Insert: {
+          accounting_settled_at?: string | null
           actual_audio_seconds?: number | null
           actual_input_tokens?: number | null
           actual_microusd?: number | null
@@ -482,6 +755,7 @@ export type Database = {
           model_id?: string | null
           pricing_rate_microusd?: number | null
           pricing_unit?: string | null
+          provider_dispatched_at?: string | null
           provider_request_id?: string | null
           requested_at?: string
           requested_by_actor: string
@@ -490,9 +764,11 @@ export type Database = {
           reserved_microusd?: number
           reserved_output_tokens?: number
           result_accepted?: boolean
+          settlement_status?: string | null
           status?: string
         }
         Update: {
+          accounting_settled_at?: string | null
           actual_audio_seconds?: number | null
           actual_input_tokens?: number | null
           actual_microusd?: number | null
@@ -507,6 +783,7 @@ export type Database = {
           model_id?: string | null
           pricing_rate_microusd?: number | null
           pricing_unit?: string | null
+          provider_dispatched_at?: string | null
           provider_request_id?: string | null
           requested_at?: string
           requested_by_actor?: string
@@ -515,6 +792,7 @@ export type Database = {
           reserved_microusd?: number
           reserved_output_tokens?: number
           result_accepted?: boolean
+          settlement_status?: string | null
           status?: string
         }
         Relationships: [
@@ -748,6 +1026,86 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      lecture_academic_answers: {
+        Row: {
+          created_at: string
+          id: string
+          lecture_session_id: string
+          model_id: string
+          operation_id: string
+          prompt_version: string
+          quality_result: Json
+          question: string
+          request_id: string
+          source_kind: string
+          source_set_sha256: string
+          source_summary_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lecture_session_id: string
+          model_id: string
+          operation_id: string
+          prompt_version: string
+          quality_result?: Json
+          question: string
+          request_id: string
+          source_kind: string
+          source_set_sha256: string
+          source_summary_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lecture_session_id?: string
+          model_id?: string
+          operation_id?: string
+          prompt_version?: string
+          quality_result?: Json
+          question?: string
+          request_id?: string
+          source_kind?: string
+          source_set_sha256?: string
+          source_summary_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_academic_answers_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_academic_answers_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: true
+            referencedRelation: "ai_usage_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_academic_answers_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: true
+            referencedRelation: "academic_answer_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_academic_answers_source_summary_id_fkey"
+            columns: ["source_summary_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_ai_summaries"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lecture_admin_codes: {
         Row: {
@@ -2297,6 +2655,29 @@ export type Database = {
         }
         Returns: string
       }
+      admin_cancel_academic_answer_request: {
+        Args: {
+          target_actor_id: string
+          target_lecture_session_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      admin_complete_academic_answer_operation: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          provider_request_id: string
+          target_actor_id: string
+          target_body: Json
+          target_operation_id: string
+          target_quality_result: Json
+          target_request_id: string
+          target_sources: Json
+        }
+        Returns: Json
+      }
       admin_complete_material_ai_operation: {
         Args: {
           actual_input_tokens: number
@@ -2390,6 +2771,19 @@ export type Database = {
         }
         Returns: string
       }
+      admin_fail_academic_answer_operation: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          provider_request_id: string
+          target_actor_id: string
+          target_error_code: string
+          target_operation_id: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       admin_fail_material_ai_operation: {
         Args: {
           actual_input_tokens: number
@@ -2478,6 +2872,24 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_get_lecture_operator_snapshot_v2: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          include_hidden?: boolean
+          known_caption_version?: number
+          known_comments_version?: number
+          known_lecture_version?: number
+          known_likes_version?: number
+          known_metrics_version?: number
+          known_pdf_version?: number
+          known_polls_version?: number
+          known_summaries_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
       admin_get_material_ai_operation_state: {
         Args: {
           target_actor_id: string
@@ -2509,8 +2921,21 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_list_academic_answer_results: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
       admin_list_material_ai_results: {
         Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
+      admin_manage_academic_answer_publication: {
+        Args: {
+          target_action: string
+          target_actor_id: string
+          target_answer_id: string
+          target_lecture_session_id: string
+        }
         Returns: Json
       }
       admin_manage_summary_publication: {
@@ -2526,12 +2951,41 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_mark_academic_answer_insufficient: {
+        Args: {
+          target_actor_id: string
+          target_reason: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
+      admin_mark_academic_provider_dispatched: {
+        Args: {
+          target_actor_id: string
+          target_operation_id: string
+          target_request_id: string
+        }
+        Returns: boolean
+      }
       admin_moderate_lecture_comment: {
         Args: {
           target_action: string
           target_actor_id: string
           target_comment_id: string
           target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      admin_prepare_academic_answer_request: {
+        Args: {
+          target_actor_id: string
+          target_idempotency_key: string
+          target_lecture_session_id: string
+          target_question: string
+          target_question_sha256: string
+          target_search_query_sha256: string
+          target_source_kind: string
+          target_source_summary_id: string
         }
         Returns: Json
       }
@@ -2546,6 +3000,10 @@ export type Database = {
           target_text: string
         }
         Returns: Json
+      }
+      admin_reap_stale_academic_answer_operations: {
+        Args: { job_limit?: number }
+        Returns: number
       }
       admin_reap_stale_realtime_caption_operations: {
         Args: { batch_limit?: number; target_lecture_session_id: string }
@@ -2684,6 +3142,25 @@ export type Database = {
           target_source_coverage: Json
           target_source_hashes: Json
           target_window_index: number
+        }
+        Returns: Json
+      }
+      admin_start_academic_answer_operation: {
+        Args: {
+          estimated_input_tokens: number
+          estimated_microusd: number
+          estimated_output_tokens: number
+          target_actor_id: string
+          target_grant_id: string
+          target_input_price_microusd_per_million: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_output_price_microusd_per_million: number
+          target_prompt_version: string
+          target_request_id: string
+          target_source_set_sha256: string
+          target_verified_primary_count: number
+          target_verified_source_count: number
         }
         Returns: Json
       }
@@ -2906,6 +3383,10 @@ export type Database = {
         Args: { target_lecture_session_id: string }
         Returns: Json
       }
+      get_lecture_archive_v4: {
+        Args: { target_lecture_session_id: string }
+        Returns: Json
+      }
       get_lecture_comment_history_v2: {
         Args: {
           before_comment_id: string
@@ -2992,6 +3473,23 @@ export type Database = {
         Returns: Json
       }
       get_lecture_public_snapshot_v5: {
+        Args: {
+          comment_cursor_created_at?: string
+          comment_cursor_id?: string
+          comment_limit?: number
+          known_caption_version?: number
+          known_comments_version?: number
+          known_lecture_version?: number
+          known_likes_version?: number
+          known_metrics_version?: number
+          known_pdf_version?: number
+          known_polls_version?: number
+          known_summaries_version?: number
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      get_lecture_public_snapshot_v6: {
         Args: {
           comment_cursor_created_at?: string
           comment_cursor_id?: string

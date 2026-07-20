@@ -270,6 +270,11 @@ Phase 7.2 and production enablement are not authorized by this status.
 
 ## 8. Phase 7.2 - evidence-grounded academic reference answers
 
+Status: locally implemented on 2026-07-20. Automated database, security,
+quality, cost/load and browser gates are recorded in the Phase 7.2 local gate;
+teacher literature review and hosted evidence remain HOLD. Phase 7 production
+enablement is not authorized by this status.
+
 ### Tasks
 
 - Accept only an academic-question candidate or explicit teacher selection.

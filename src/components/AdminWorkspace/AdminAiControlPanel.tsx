@@ -1,3 +1,5 @@
+import { lazy, Suspense } from 'react'
+
 import { AppIcon } from '../AppIcon'
 import {
   LectureSummaryControl,
@@ -10,10 +12,17 @@ import type {
 } from '../../repositories/supabaseAdminRepository'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 
+const AcademicAnswerControl = lazy(() =>
+  import('../AdminAiControl/AcademicAnswerControl').then((module) => ({
+    default: module.AcademicAnswerControl,
+  })),
+)
+
 type Props = {
   activeLecture: AdminLecture | undefined
   activeLectureSessionId: string | null
   adminToken: string
+  academicEnabled: boolean
   documents: AdminPdfDocument[]
   displayState: DisplayState | null
   fallbackHardStopAt: string | null | undefined
@@ -30,6 +39,7 @@ export function AdminAiControlPanel({
   activeLecture,
   activeLectureSessionId,
   adminToken,
+  academicEnabled,
   documents,
   displayState,
   fallbackHardStopAt,
@@ -41,7 +51,8 @@ export function AdminAiControlPanel({
   realtimeEnabled,
   summariesEnabled,
 }: Props) {
-  const anyEnabled = realtimeEnabled || materialEnabled || summariesEnabled
+  const anyEnabled =
+    realtimeEnabled || materialEnabled || summariesEnabled || academicEnabled
   const status = activeLecture?.status ?? lectureStatus
   return (
     <section className="panel ai-readiness-panel">
@@ -93,6 +104,15 @@ export function AdminAiControlPanel({
           5分ハイライトは現在停止しています。利用時は開始にAPI利用PINが必要です。
         </p>
       )}
+      {academicEnabled && adminToken && activeLectureSessionId ? (
+        <Suspense fallback={<p className="note">参考回答を準備しています…</p>}>
+          <AcademicAnswerControl
+            adminToken={adminToken}
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={status}
+          />
+        </Suspense>
+      ) : null}
       {materialEnabled && adminToken && activeLectureSessionId ? (
         <MaterialAnalysisControl
           adminToken={adminToken}
@@ -146,6 +166,18 @@ export function AdminAiControlPanel({
           </div>
           <span
             className={`readiness-dot ${materialEnabled ? 'is-active' : ''}`}
+          />
+        </article>
+        <article>
+          <span className="support-icon violet">
+            <AppIcon name="book" size={18} />
+          </span>
+          <div>
+            <strong>文献に基づく参考回答</strong>
+            <small>{academicEnabled ? '教員確認後に公開' : '停止中'}</small>
+          </div>
+          <span
+            className={`readiness-dot ${academicEnabled ? 'is-active' : ''}`}
           />
         </article>
       </div>

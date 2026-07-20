@@ -1,7 +1,7 @@
 {
   "name": "compass-interactive",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -51,6 +51,10 @@
     "test:phase7-1-edge": "node --experimental-strip-types scripts/test-phase7-1-edge.ts",
     "test:phase7-1-static": "node scripts/test-phase7-1-static.mjs",
     "test:phase7-1-load": "node scripts/test-phase7-1-load.mjs",
+    "test:phase7-2-edge": "node --experimental-strip-types scripts/test-phase7-2-edge.ts",
+    "test:phase7-2-static": "node scripts/test-phase7-2-static.mjs",
+    "test:phase7-2-load": "node scripts/test-phase7-2-load.mjs",
+    "test:phase7-2-quality": "node scripts/test-phase7-2-quality.mjs",
     "test:production-gate:static": "node --experimental-strip-types scripts/test-production-gate-static.mjs",
     "test:production-env": "node scripts/test-production-env.mjs",
     "test:production-local-edge": "node scripts/test-production-local-edge.mjs",
