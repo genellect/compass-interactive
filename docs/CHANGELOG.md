@@ -18,11 +18,11 @@ gate evidence. Commit IDs identify the main implementation landmarks.
 - Preserved the normal and rehearsal 30-day archive policy. Only the exact
   server-derived production policy may retain its sanitized R2 snapshot and
   final immutable PDF permanently; archive/PDF tokens remain short-lived.
-- Clean reset, 1,168 pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit
-  desktop/mobile E2E passed. The full non-live suite, previous-Phase upgrade,
-  two-connection concurrency and all Human/Hosted/Production gates remain HOLD;
-  no deployment, hosted mutation, flag activation or paid call is authorized by
-  this partial local evidence.
+- Automated Local Gate passed with a clean reset, 1,169 pgTAP checks, 49 Worker
+  tests, 55 non-live groups, upgrade/two-connection concurrency probes, real
+  local Edge/Postgres integration and repeated Chromium/WebKit desktop/mobile
+  E2E. Human/Hosted/Production gates remain HOLD; no deployment, hosted
+  mutation, flag activation or paid call was authorized.
 
 ## 2026-07-21 - Phase 7.25/7.26 academic answers and browser PDF publication
 

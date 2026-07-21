@@ -15,13 +15,13 @@ secrets.
 
 - Application version: `0.11.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 7.26 are implemented in the repository. Phase 7.27 is a
-  default-OFF, thin Journal Club operational preset under local validation; it
-  does not replace the established lecture lifecycle. Its clean reset, 1,168
-  pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit desktop/mobile E2E
-  have passed, while the full non-live suite, upgrade/concurrency evidence and
-  all Human/Hosted/Production gates remain HOLD. These changes have not been
-  pushed, deployed or reflected to hosted services.
+- Phase 0 through Phase 7.27 are implemented locally. Phase 7.27 is a
+  default-OFF, thin Journal Club operational preset that does not replace the
+  established lecture lifecycle. Its clean reset, 1,169 pgTAP checks, 49 Worker
+  tests, 55-group non-live regression, upgrade/concurrency probes and dedicated
+  Chromium/WebKit desktop/mobile E2E have passed. Human, Hosted and Production
+  gates remain HOLD; these changes have not been pushed, deployed or reflected
+  to hosted services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant

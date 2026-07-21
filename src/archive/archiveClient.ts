@@ -28,10 +28,7 @@ type RawArchiveResponse = {
       }>
     }>
     archive_expires_at: string
-    archive_policy?: {
-      mode: 'permanent'
-      policy_id: 'phase7-27-journal-club-2026-07-23-v1'
-    }
+    archive_policy?: Record<string, unknown>
     closed_at: string
     comments: Array<{
       body: string
@@ -127,6 +124,19 @@ function getArchiveClientId() {
   return created
 }
 
+function isPhase727PermanentArchivePolicy(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const policy = value as Record<string, unknown>
+  const keys = Object.keys(policy).sort()
+  return (
+    keys.length === 2 &&
+    keys[0] === 'mode' &&
+    keys[1] === 'policy_id' &&
+    policy.mode === 'permanent' &&
+    policy.policy_id === 'phase7-27-journal-club-2026-07-23-v1'
+  )
+}
+
 function mapArchive(
   body: RawArchiveResponse,
   lectureCode: string,
@@ -177,12 +187,11 @@ function mapArchive(
     archiveAccessToken: body.archiveAccessToken,
     archiveAccessTokenExpiresAt: body.archiveAccessTokenExpiresAt,
     archiveExpiresAt: archive.archive_expires_at,
-    archiveRetentionMode:
-      archive.archive_policy?.mode === 'permanent' &&
-      archive.archive_policy.policy_id ===
-        'phase7-27-journal-club-2026-07-23-v1'
-        ? 'permanent'
-        : 'standard_30d',
+    archiveRetentionMode: isPhase727PermanentArchivePolicy(
+      archive.archive_policy,
+    )
+      ? 'permanent'
+      : 'standard_30d',
     closedAt: archive.closed_at,
     comments: archive.comments.map((comment) => ({
       body: comment.body,

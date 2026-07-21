@@ -363,11 +363,11 @@ OFF; Human, Hosted and Production gates remain HOLD.
 
 ## 11. Phase 7.27 - Journal Club operational integration
 
-Status: default-OFF local implementation in progress on 2026-07-21. Clean reset,
-1,168 pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit desktop/mobile
-E2E are PASS. Full non-live regression, previous-Phase upgrade, two-connection
-concurrency and all Human/Hosted/Production evidence remain HOLD; this is not a
-complete Local Gate PASS.
+Status: automated Local Gate PASS on 2026-07-22. Clean reset, 1,169 pgTAP
+checks, 49 Worker tests, 55 non-live groups, upgrade/two-connection concurrency,
+real local Edge/Postgres integration and repeated Chromium/WebKit
+desktop/mobile E2E are PASS. Human/Hosted/Production evidence remains HOLD;
+no hosted service, flag, push or deployment changed.
 
 ### Tasks
 

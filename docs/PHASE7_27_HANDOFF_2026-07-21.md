@@ -1,5 +1,9 @@
 # Phase 7.27 Journal Club integration handoff — 2026-07-21
 
+> Historical checkpoint: the blockers below were resolved and the automated
+> Local Gate passed on 2026-07-22. Use
+> `docs/PHASE7_27_LOCAL_GATE_2026-07-22.md` as the current evidence record.
+
 ## Stop state
 
 - Worktree: `work/phase7-27-journal-club`

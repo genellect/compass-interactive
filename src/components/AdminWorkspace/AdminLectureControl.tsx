@@ -3,7 +3,8 @@ import type { AdminLecture } from '../../repositories/supabaseAdminRepository'
 import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
 import { LectureJoinQr } from '../LectureJoinQr'
 
-function getStatusLabel(status: string) {
+function getStatusLabel(status: string | null) {
+  if (!status) return '未選択'
   if (status === 'open') return '受付中'
   if (status === 'closed') return '締切'
   return '準備中'
@@ -40,7 +41,7 @@ type AdminLectureControlProps = {
   onTitleChange: (value: string) => void
   onToggleHistory: () => void
   participantCount: number
-  selectedLectureStatus: string
+  selectedLectureStatus: string | null
   showHistory: boolean
   visibleCommentCount: number
   visibleLectures: AdminLecture[]

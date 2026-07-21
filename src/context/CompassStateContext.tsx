@@ -364,6 +364,49 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     [clearArchiveResume],
   )
 
+  const clearLectureSessionState = useCallback(
+    (clearOperatorAccess: boolean) => {
+      lifecycleRequestEpochRef.current += 1
+      clearJoinedLectureSession()
+      clearArchiveResume()
+      setJoinedLectureSession(null)
+      setCurrentParticipantId(null)
+      setParticipants([])
+      setParticipantCount(0)
+      setVisibleCommentCount(0)
+      setHiddenCommentCount(0)
+      if (clearOperatorAccess) {
+        setOperatorLiveAccessState(null)
+      }
+      setComments([])
+      setPolls([])
+      setPollResults([])
+      setPollResponses([])
+      setDisplayState(null)
+      setCaption(null)
+      setSummaries([])
+      setAcademicAnswers([])
+      setMaterialSummary(null)
+      setCommentsError(null)
+      setCommentLikesError(null)
+      setPollsError(null)
+      setPollResultsError(null)
+      setDisplayStateError(null)
+      setSessionSyncPauseReason(null)
+      setIsSubmittingComment(false)
+      setHasOlderComments(false)
+      setIsLoadingOlderComments(false)
+      setLastSuccessfulSyncAt(null)
+      liveStateVersionsRef.current = createEmptyLiveStateVersions()
+      liveSnapshotInFlightRef.current = null
+      commentCursorRef.current = null
+      likedCommentIdsRef.current = new Set()
+      serverClockSampleRef.current = null
+      archiveLoadedLectureIdRef.current = null
+    },
+    [clearArchiveResume],
+  )
+
   const refreshLiveSnapshot = useCallback(
     async ({
       forceAll = false,
@@ -577,6 +620,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             error instanceof Error
               ? error.message
               : 'live snapshotの取得に失敗しました。'
+          if (message === 'Lecture was not found.') {
+            clearLectureSessionState(false)
+            return null
+          }
           setCommentsError(message)
           setPollsError(message)
           setPollResultsError(message)
@@ -602,6 +649,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     [
       activeLectureSessionId,
       applyParticipantLiveState,
+      clearLectureSessionState,
       hasActiveLectureSessionId,
       hydrateDemo,
       normalizedPathname,
@@ -922,42 +970,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   }, [applyDemoSnapshot, runtimeMode])
 
   const leaveLecture = useCallback(() => {
-    lifecycleRequestEpochRef.current += 1
-    clearJoinedLectureSession()
-    clearArchiveResume()
-    setJoinedLectureSession(null)
-    setCurrentParticipantId(null)
-    setParticipants([])
-    setParticipantCount(0)
-    setVisibleCommentCount(0)
-    setHiddenCommentCount(0)
-    setOperatorLiveAccessState(null)
-    setComments([])
-    setPolls([])
-    setPollResults([])
-    setPollResponses([])
-    setDisplayState(null)
-    setCaption(null)
-    setSummaries([])
-    setAcademicAnswers([])
-    setMaterialSummary(null)
-    setCommentsError(null)
-    setCommentLikesError(null)
-    setPollsError(null)
-    setPollResultsError(null)
-    setDisplayStateError(null)
-    setSessionSyncPauseReason(null)
-    setIsSubmittingComment(false)
-    setHasOlderComments(false)
-    setIsLoadingOlderComments(false)
-    setLastSuccessfulSyncAt(null)
-    liveStateVersionsRef.current = createEmptyLiveStateVersions()
-    liveSnapshotInFlightRef.current = null
-    commentCursorRef.current = null
-    likedCommentIdsRef.current = new Set()
-    serverClockSampleRef.current = null
-    archiveLoadedLectureIdRef.current = null
-  }, [clearArchiveResume])
+    clearLectureSessionState(true)
+  }, [clearLectureSessionState])
 
   const getServerNow = useCallback(() => {
     const sample = serverClockSampleRef.current

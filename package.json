@@ -80,6 +80,7 @@
     "test:e2e:phase7-26:flag-off": "node scripts/ci/run-browser-e2e.mjs demo-pdf-off e2e/demo/browser-pdf-publication-flag-off.spec.ts --project=desktop-chromium --project=desktop-webkit",
     "test:e2e:phase7-27": "node scripts/ci/run-browser-e2e.mjs demo-jc e2e/demo/journal-club-preset-admin.spec.ts",
     "test:e2e:phase7-27:flag-off": "node scripts/ci/run-browser-e2e.mjs demo-jc-off e2e/demo/journal-club-preset-admin.spec.ts",
+    "test:e2e:phase7-27:local": "node scripts/ci/run-browser-e2e.mjs local-jc e2e/local/journal-club-integration.spec.ts --project=local-supabase-chromium",
     "test:e2e:local": "node scripts/ci/run-browser-e2e.mjs local",
     "test:e2e:local:triple": "node scripts/ci/run-browser-e2e.mjs local --repeat-each=3",
     "test:e2e:local:direct": "playwright test --config playwright.local.config.ts",

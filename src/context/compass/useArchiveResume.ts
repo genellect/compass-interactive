@@ -79,6 +79,9 @@ export function useArchiveResume(normalizedPathname: string) {
       })
     return () => {
       active = false
+      if (attemptedCodeRef.current === lectureCode) {
+        attemptedCodeRef.current = null
+      }
     }
   }, [archiveResumeNonce, archiveSession, normalizedPathname])
 

@@ -1199,7 +1199,7 @@ export function AdminPage() {
           )
         }}
         participantCount={participantCount}
-        selectedLectureStatus={lecture.status}
+        selectedLectureStatus={activeAdminLecture?.status ?? null}
         showHistory={showLectureHistory}
         visibleCommentCount={visibleCommentCount}
         visibleLectures={visibleLectures}

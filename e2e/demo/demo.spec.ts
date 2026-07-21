@@ -107,7 +107,10 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
   )
 
   await commentInput.fill('E2E匿名コメント')
-  await composer.getByRole('button', { name: 'みんなに共有' }).click()
+  const shareButton = composer.getByRole('button', { name: 'みんなに共有' })
+  await shareButton.focus()
+  await expect(shareButton).toBeFocused()
+  await page.keyboard.press('Enter')
   const anonymousCard = page
     .locator('.comment-card')
     .filter({ hasText: 'E2E匿名コメント' })
@@ -123,16 +126,21 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
 
   await nicknameInput.fill('英語E2E')
   await commentInput.fill('E2Eニックネームコメント')
-  await composer.getByRole('button', { name: 'みんなに共有' }).click()
+  await shareButton.focus()
+  await expect(shareButton).toBeFocused()
+  await page.keyboard.press('Enter')
   const nicknameCard = page
     .locator('.comment-card')
     .filter({ hasText: 'E2Eニックネームコメント' })
   await expect(nicknameCard).toContainText('英語E2E')
 
-  await page
-    .locator('.choice-row')
-    .filter({ hasText: '世界中の仲間と一緒に挑戦できる' })
-    .click()
+  const pollChoice = page.getByRole('radio', {
+    name: '世界中の仲間と一緒に挑戦できる',
+  })
+  await pollChoice.focus()
+  await expect(pollChoice).toBeFocused()
+  await page.keyboard.press('Space')
+  await expect(pollChoice).toBeChecked()
   const pollSubmitButton = page.getByRole('button', {
     name: 'この回答を送る',
   })
@@ -151,7 +159,9 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
     name: 'みんなに共有',
   })
   await expect(finalShareButton).toBeInViewport()
-  await finalShareButton.click()
+  await finalShareButton.focus()
+  await expect(finalShareButton).toBeFocused()
+  await page.keyboard.press('Enter')
   const historyLink = page.getByRole('link', { name: 'コメント履歴を見る' })
   await historyLink.scrollIntoViewIfNeeded()
   await historyLink.focus()

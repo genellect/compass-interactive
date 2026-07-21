@@ -412,6 +412,19 @@ SELECT ok(
 
 SELECT throws_ok(
   $$
+    SELECT public.admin_set_lecture_status(
+      (SELECT production_id FROM phase727_fixture),
+      'start',
+      null
+    )
+  $$,
+  '55000',
+  'production Journal Club PDF is not active',
+  'production cannot start before the exact canonical PDF is active'
+);
+
+SELECT throws_ok(
+  $$
     SELECT public.admin_register_pdf_document(
       production_id,
       'wrong-journal-club-document',

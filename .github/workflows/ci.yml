@@ -164,6 +164,8 @@ jobs:
           PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED=true
           PHASE7_2_ACADEMIC_ANSWERS_ENABLED=true
           PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED=true
+          PHASE726_BROWSER_PDF_PUBLICATION_ENABLED=true
+          PHASE7_27_JOURNAL_CLUB_ENABLED=true
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
           npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
@@ -177,6 +179,12 @@ jobs:
 
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
+
+      - name: Run Journal Club browser-to-Edge-to-database integration
+        run: npm run test:e2e:phase7-27:local
+
+      - name: Restore a clean database before general lifecycle E2E
+        run: npx supabase db reset --local --no-seed
 
       - name: Run teacher-student browser lifecycle three times
         run: npm run test:e2e:local:triple

@@ -289,14 +289,14 @@ security definer
 set search_path = ''
 as $$
 declare
-  target_event_key text;
+  target_run public.phase727_journal_club_runs%rowtype;
 begin
   if new.status <> 'open' or old.status = 'open' then
     return new;
   end if;
 
-  select run.event_key
-  into target_event_key
+  select run.*
+  into target_run
   from public.phase727_journal_club_runs as run
   where run.lecture_session_id = new.id;
 
@@ -304,9 +304,26 @@ begin
     return new;
   end if;
 
+  if target_run.run_kind = 'production'
+     and not exists (
+       select 1
+       from public.lecture_pdf_documents as document
+       where document.lecture_session_id = new.id
+         and document.document_id = target_run.expected_document_id
+         and document.document_version = target_run.expected_pdf_sha256
+         and document.pdf_sha256 = target_run.expected_pdf_sha256
+         and document.byte_size = target_run.expected_pdf_byte_size
+         and document.page_count = target_run.expected_pdf_page_count
+         and document.visible
+         and document.retired_at is null
+     ) then
+    raise exception 'production Journal Club PDF is not active'
+      using errcode = '55000';
+  end if;
+
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended(
-      'phase727:open:' || target_event_key,
+      'phase727:open:' || target_run.event_key,
       0
     )
   );
@@ -316,7 +333,7 @@ begin
     from public.phase727_journal_club_runs as run
     join public.lecture_sessions as lecture
       on lecture.id = run.lecture_session_id
-    where run.event_key = target_event_key
+    where run.event_key = target_run.event_key
       and run.lecture_session_id <> new.id
       and lecture.status = 'open'
   ) then

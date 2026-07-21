@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 supabase/.temp/
+/tmp/
 
 # Environment files and local secrets
 .env

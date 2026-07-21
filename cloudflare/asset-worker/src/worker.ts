@@ -498,8 +498,7 @@ function parsePublicArchivePayload(
 function isPermanentArchivePayload(payload: PublicLectureArchivePayload) {
   return (
     payload.archive_policy?.mode === 'permanent' &&
-    payload.archive_policy.policy_id ===
-      PHASE727_PERMANENT_ARCHIVE_POLICY_ID
+    payload.archive_policy.policy_id === PHASE727_PERMANENT_ARCHIVE_POLICY_ID
   )
 }
 
@@ -554,6 +553,35 @@ async function sha256Hex(value: string) {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, canonicalJsonValue(nested)]),
+  )
+}
+
+function canonicalJsonStringify(value: unknown) {
+  return JSON.stringify(canonicalJsonValue(value))
+}
+
+async function archivePayloadHashMatches(
+  payload: PublicLectureArchivePayload,
+  expectedHash: string,
+) {
+  const legacyJson = JSON.stringify(payload)
+  const canonicalJson = canonicalJsonStringify(payload)
+  const [legacyHash, canonicalHash] = await Promise.all([
+    sha256Hex(legacyJson),
+    legacyJson === canonicalJson
+      ? Promise.resolve('')
+      : sha256Hex(canonicalJson),
+  ])
+  return expectedHash === legacyHash || expectedHash === canonicalHash
 }
 
 async function validateTurnstileToken(
@@ -1015,8 +1043,7 @@ async function loadLectureArchive(
   if (!object) return null
   const archive = parseStoredArchive(await objectBytes(object))
   if (
-    (await sha256Hex(JSON.stringify(archive.payload))) !==
-    archive.payload_sha256
+    !(await archivePayloadHashMatches(archive.payload, archive.payload_sha256))
   ) {
     throw new Error('Stored lecture archive integrity check failed.')
   }
@@ -1126,10 +1153,21 @@ async function storeLectureArchive(
         await objectBytes(existingObject),
       )
       if (
-        (await sha256Hex(JSON.stringify(existingArchive.payload))) !==
-        existingArchive.payload_sha256
+        !(await archivePayloadHashMatches(
+          existingArchive.payload,
+          existingArchive.payload_sha256,
+        ))
       ) {
         throw new Error('Stored lecture archive integrity check failed.')
+      }
+      if (
+        isPermanentArchivePayload(existingArchive.payload) &&
+        !isPermanentArchivePayload(archive.payload)
+      ) {
+        throw Object.assign(
+          new Error('Permanent lecture archive cannot be downgraded.'),
+          { status: 409 },
+        )
       }
       if (existingArchive.source_version >= archive.source_version) {
         await storeLectureArchivePublicIndex(env, lookupHash, existingArchive)
@@ -1216,8 +1254,7 @@ async function handleArchiveIngest(
       status: 400,
     })
   }
-  const calculatedHash = await sha256Hex(JSON.stringify(payload))
-  if (calculatedHash !== payloadSha256) {
+  if (!(await archivePayloadHashMatches(payload, payloadSha256))) {
     throw Object.assign(new Error('Archive payload hash does not match.'), {
       status: 400,
     })
@@ -1413,10 +1450,7 @@ async function handleArchiveDocumentAccess(
   } catch {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 410 })
   }
-  if (
-    !loaded ||
-    isArchiveExpired(loaded.archive.payload, now)
-  ) {
+  if (!loaded || isArchiveExpired(loaded.archive.payload, now)) {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 410 })
   }
   if (claims.rev !== loaded.archive.payload_sha256) {
@@ -1963,8 +1997,10 @@ export async function cleanupExpiredLectureArchives(
       try {
         const archive = parseStoredArchive(await objectBytes(object))
         if (
-          (await sha256Hex(JSON.stringify(archive.payload))) !==
-          archive.payload_sha256
+          !(await archivePayloadHashMatches(
+            archive.payload,
+            archive.payload_sha256,
+          ))
         ) {
           throw new Error('Stored lecture archive integrity check failed.')
         }

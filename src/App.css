@@ -3989,7 +3989,7 @@ input:disabled {
   --border-strong: #a8cfdf;
   --text: #142033;
   --text-soft: #4f6279;
-  --muted: #71839a;
+  --muted: #5b6e84;
   --accent: #1677a8;
   --accent-strong: #075d85;
   --blue: #2f7df4;
@@ -4144,7 +4144,7 @@ input:disabled {
 .theme-light .support-state {
   background: #f0f4f8;
   border-color: #dce5ed;
-  color: #61748a;
+  color: #5b6e84;
 }
 
 .theme-light .support-state.preview {
@@ -4740,7 +4740,7 @@ input:disabled {
 .theme-light .stat-card span,
 .theme-light .lecture-admin-row small,
 .theme-light .poll-admin-row small {
-  color: #718398;
+  color: #5b6e84;
 }
 
 .theme-light .table-row {
@@ -5636,6 +5636,10 @@ input:disabled {
   font-weight: 900;
   letter-spacing: 0.1em;
   padding: 6px 10px;
+}
+
+.theme-light .archive-badge {
+  color: #704fc9;
 }
 
 .archive-polls {

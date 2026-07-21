@@ -1,3 +1,4 @@
+import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 
 const rehearsalLectureId = '72700000-0000-4000-8000-000000000001'
@@ -141,6 +142,59 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   })
 }
 
+async function expectNoSeriousAccessibilityViolations(page: Page) {
+  const result = await new AxeBuilder({ page }).analyze()
+  expect(
+    result.violations
+      .filter((violation) =>
+        ['critical', 'serious'].includes(violation.impact ?? ''),
+      )
+      .map((violation) => ({
+        id: violation.id,
+        nodes: violation.nodes.map((node) => ({
+          failureSummary: node.failureSummary,
+          target: node.target,
+        })),
+      })),
+  ).toEqual([])
+}
+
+function archiveResolveResponse(
+  archivePolicy: Record<string, unknown> | undefined,
+) {
+  return {
+    archive: {
+      academic_answers: [],
+      archive_expires_at: '2026-08-22T00:00:00.000Z',
+      ...(archivePolicy ? { archive_policy: archivePolicy } : {}),
+      closed_at: '2026-07-23T12:30:00.000Z',
+      comments: [
+        {
+          body: '本番講義のコメント',
+          created_at: '2026-07-23T12:00:00.000Z',
+          id: '72700000-0000-4000-8000-000000000501',
+          is_pinned: false,
+          like_count: 3,
+          nickname: null,
+        },
+      ],
+      comments_has_more: false,
+      material_summary: null,
+      participant_count_approximate: 30,
+      pdf: null,
+      polls: [],
+      schema_version: 1,
+      started_at: '2026-07-23T11:00:00.000Z',
+      summaries: [],
+      title: '7.23 Journal Club',
+    },
+    archiveAccessToken: 'archive-access-token',
+    archiveAccessTokenExpiresAt: '2099-07-23T12:45:00.000Z',
+    lookupHash: 'a'.repeat(64),
+    ok: true,
+  }
+}
+
 async function installAdminState(page: Page) {
   await page.addInitScript(() => {
     window.sessionStorage.setItem(
@@ -158,7 +212,10 @@ async function installAdminState(page: Page) {
   })
 }
 
-async function installNetworkMocks(page: Page) {
+async function installNetworkMocks(
+  page: Page,
+  { missingOperatorSnapshot = false } = {},
+) {
   const state: MockState = {
     aiFunctionCalls: [],
     lectures: [],
@@ -231,6 +288,14 @@ async function installNetworkMocks(page: Page) {
       return
     }
     if (functionName === 'operator-live-snapshot') {
+      if (missingOperatorSnapshot) {
+        await fulfillJson(
+          route,
+          { message: 'Lecture was not found.', ok: false },
+          404,
+        )
+        return
+      }
       await fulfillJson(route, {
         ok: true,
         result: {
@@ -280,8 +345,28 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect(preset).toBeVisible()
     await expect(preset).toContainText('7/23 Journal Club')
     await expect(preset).toContainText('作成後も講義と投票は開始されません。')
+    await expectNoSeriousAccessibilityViolations(page)
 
-    await preset.getByRole('button', { name: 'リハーサルを準備' }).click()
+    const rehearsalButton = preset.getByRole('button', {
+      name: 'リハーサルを準備',
+    })
+    const productionButton = preset.getByRole('button', {
+      name: '7/23 本番を準備',
+    })
+    await rehearsalButton.focus()
+    await expect(rehearsalButton).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(productionButton).toBeFocused()
+
+    page.once('dialog', async (dialog) => dialog.dismiss())
+    await productionButton.click()
+    expect(
+      state.lectureRequests.filter(
+        (request) => request.action === 'createJournalClubRun',
+      ),
+    ).toHaveLength(0)
+
+    await rehearsalButton.click()
     await expect(preset.getByRole('status')).toContainText(
       'リハーサルを準備しました。',
     )
@@ -364,6 +449,154 @@ test.describe('Phase 7.27 flag ON', () => {
       )
       .toBe(true)
   })
+
+  test('clears a missing saved lecture without revoking the Admin session', async ({
+    page,
+  }) => {
+    const pageErrors: Error[] = []
+    page.on('pageerror', (error) => pageErrors.push(error))
+    await page.addInitScript(() => {
+      window.sessionStorage.setItem(
+        'compass-interactive-admin-authenticated',
+        'true',
+      )
+      window.sessionStorage.setItem(
+        'compass-interactive-admin-token',
+        'admin-session-playwright',
+      )
+      window.localStorage.setItem(
+        'compass-interactive-lecture-session-id',
+        '72700000-0000-4000-8000-000000000404',
+      )
+      window.localStorage.setItem(
+        'compass-interactive-lecture-runtime-mode',
+        'live',
+      )
+      window.localStorage.setItem(
+        'compass-interactive-lecture-title',
+        'Deleted local lecture',
+      )
+      window.localStorage.setItem(
+        'compass-interactive-lecture-status',
+        'open',
+      )
+    })
+    await installNetworkMocks(page, { missingOperatorSnapshot: true })
+    const missingSnapshotResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/operator-live-snapshot') &&
+        response.status() === 404,
+    )
+
+    await page.goto('/admin')
+    await missingSnapshotResponse
+    await expect(page.getByText('まだ講義がありません。')).toBeVisible()
+    await expect(
+      page.locator('.stat-card').filter({ hasText: '講義状態' }),
+    ).toContainText('未選択')
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          adminAuthenticated: window.sessionStorage.getItem(
+            'compass-interactive-admin-authenticated',
+          ),
+          adminToken: window.sessionStorage.getItem(
+            'compass-interactive-admin-token',
+          ),
+          lectureSessionId: window.localStorage.getItem(
+            'compass-interactive-lecture-session-id',
+          ),
+        })),
+      )
+      .toEqual({
+        adminAuthenticated: 'true',
+        adminToken: 'admin-session-playwright',
+        lectureSessionId: null,
+      })
+    await expect(
+      page.getByRole('button', { name: 'リハーサルを準備' }),
+    ).toBeEnabled()
+    expect(pageErrors).toEqual([])
+  })
+
+  for (const [name, policy, expectedMode] of [
+    [
+      'exact permanent policy is shown as continuously available',
+      {
+        mode: 'permanent',
+        policy_id: 'phase7-27-journal-club-2026-07-23-v1',
+      },
+      'permanent',
+    ],
+    [
+      'extra policy keys cannot opt an archive into permanent display',
+      {
+        mode: 'permanent',
+        policy_id: 'phase7-27-journal-club-2026-07-23-v1',
+        retention_days: 0,
+      },
+      'standard',
+    ],
+  ] as const) {
+    test(name, async ({ page }) => {
+      const archiveRequests: string[] = []
+      page.on('request', (request) => {
+        if (
+          request.url().includes('/v1/archives/') ||
+          request.url().includes('challenges.cloudflare.com')
+        ) {
+          archiveRequests.push(`${request.method()} ${request.url()}`)
+        }
+      })
+      await page.addInitScript(() => {
+        window.sessionStorage.setItem(
+          'compass-interactive-lecture-archive-resume-code-v1',
+          '723001',
+        )
+      })
+      await installNetworkMocks(page)
+      await page.route(
+        'https://pdf.example/v1/archives/resolve',
+        async (route) => {
+          if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+              headers: {
+                'Access-Control-Allow-Headers': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Origin': '*',
+              },
+              status: 204,
+            })
+            return
+          }
+          await route.fulfill({
+            body: JSON.stringify(archiveResolveResponse(policy)),
+            contentType: 'application/json',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            status: 200,
+          })
+        },
+      )
+
+      await page.goto('/lecture/archive')
+      await expect
+        .poll(() => archiveRequests, {
+          message: 'Archive resume must call the configured Worker.',
+        })
+        .toContain('POST https://pdf.example/v1/archives/resolve')
+      await expect(
+        page.getByRole('heading', { name: '7.23 Journal Club' }),
+      ).toBeVisible()
+      const retentionNote = page.locator('.archive-expiry-note')
+      if (expectedMode === 'permanent') {
+        await expect(retentionNote).toContainText('継続公開')
+      } else {
+        await expect(retentionNote).not.toContainText('継続公開')
+        await expect(retentionNote).toContainText('まで閲覧できます')
+      }
+      await expectNoSeriousAccessibilityViolations(page)
+    })
+  }
 })
 
 test.describe('Phase 7.27 flag OFF', () => {

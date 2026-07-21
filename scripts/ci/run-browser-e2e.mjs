@@ -5,13 +5,17 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
-const playwrightArguments = process.argv.slice(3)
+const playwrightArguments = [
+  ...(mode === 'local' ? ['e2e/local/live-lecture.spec.ts'] : []),
+  ...process.argv.slice(3),
+]
 const demoMode =
   mode === 'demo' ||
   mode === 'demo-pdf' ||
   mode === 'demo-pdf-off' ||
   mode === 'demo-jc' ||
   mode === 'demo-jc-off'
+const localMode = mode === 'local' || mode === 'local-jc'
 const configuredPort = process.env.PLAYWRIGHT_APP_PORT
   ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
   : null
@@ -23,7 +27,8 @@ if (
 ) {
   throw new Error('PLAYWRIGHT_APP_PORT must be an integer from 1024 to 65535.')
 }
-const port = configuredPort ?? (demoMode ? 43_000 + (process.pid % 1_000) : 4_173)
+const port =
+  configuredPort ?? (demoMode ? 43_000 + (process.pid % 1_000) : 4_173)
 const baseURL = `http://127.0.0.1:${port}`
 
 if (
@@ -34,10 +39,11 @@ if (
     'demo-jc',
     'demo-jc-off',
     'local',
+    'local-jc',
   ].includes(mode)
 ) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local|local-jc>',
   )
 }
 
@@ -76,8 +82,12 @@ function readLocalSupabaseEnvironment() {
   const supabaseUrl = values.get('API_URL') ?? ''
   const publishableKey =
     values.get('PUBLISHABLE_KEY') ?? values.get('ANON_KEY') ?? ''
-  if (!supabaseUrl || !publishableKey) {
-    throw new Error('Local Supabase URL or publishable key was not found.')
+  const serviceRoleKey =
+    values.get('SERVICE_ROLE_KEY') ?? values.get('SECRET_KEY') ?? ''
+  if (!supabaseUrl || !publishableKey || !serviceRoleKey) {
+    throw new Error(
+      'Local Supabase URL, publishable key or service-role key was not found.',
+    )
   }
   const parsedUrl = new URL(supabaseUrl)
   if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
@@ -90,6 +100,8 @@ function readLocalSupabaseEnvironment() {
   }
 
   return {
+    TEST_SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
+    TEST_SUPABASE_URL: supabaseUrl,
     VITE_SUPABASE_PUBLISHABLE_KEY: publishableKey,
     VITE_SUPABASE_URL: supabaseUrl,
   }
@@ -97,7 +109,7 @@ function readLocalSupabaseEnvironment() {
 
 const appEnvironment = {
   ...process.env,
-  ...(mode === 'local'
+  ...(localMode
     ? readLocalSupabaseEnvironment()
     : {
         VITE_SUPABASE_URL: 'https://example.supabase.co',
@@ -105,31 +117,43 @@ const appEnvironment = {
       }),
   VITE_PHASE1_SYNC_PROTOCOL: 'true',
   VITE_PHASE2_LECTURE_LIFECYCLE: 'true',
-  VITE_PHASE3_PRIVATE_PDF:
-    ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
-      ? 'true'
-      : 'false',
+  VITE_PHASE3_PRIVATE_PDF: [
+    'demo-pdf',
+    'demo-pdf-off',
+    'demo-jc',
+    'demo-jc-off',
+    'local-jc',
+  ].includes(mode)
+    ? 'true'
+    : 'false',
   VITE_PHASE4_REALTIME_CAPTIONS: 'false',
   VITE_PHASE5_MATERIAL_ANALYSIS: 'false',
-  VITE_PHASE6_SUMMARIES: mode === 'local' ? 'true' : 'false',
+  VITE_PHASE6_SUMMARIES: localMode ? 'true' : 'false',
   VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
   VITE_PHASE6_8_SECURITY:
-    mode === 'local' || mode === 'demo-jc' || mode === 'demo-jc-off'
+    localMode || mode === 'demo-jc' || mode === 'demo-jc-off'
       ? 'true'
       : 'false',
   VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
   VITE_PHASE7_2_ACADEMIC_ANSWERS: 'true',
   VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS: 'true',
   VITE_PHASE7_26_BROWSER_PDF_PUBLISHING:
-    mode === 'demo-pdf' || mode === 'demo-jc' || mode === 'demo-jc-off'
+    mode === 'demo-pdf' ||
+    mode === 'demo-jc' ||
+    mode === 'demo-jc-off' ||
+    mode === 'local-jc'
       ? 'true'
       : 'false',
-  VITE_PHASE7_27_JOURNAL_CLUB: mode === 'demo-jc' ? 'true' : 'false',
+  VITE_PHASE7_27_JOURNAL_CLUB:
+    mode === 'demo-jc' || mode === 'local-jc' ? 'true' : 'false',
   VITE_PDF_WORKER_BASE_URL:
-    ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
-      ? 'https://pdf.example'
-      : '',
+    mode === 'local-jc'
+      ? 'http://127.0.0.1:8787'
+      : ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
+        ? 'https://pdf.example'
+        : '',
+  VITE_TURNSTILE_SITE_KEY: '',
   PLAYWRIGHT_BASE_URL: baseURL,
   VITE_CACHE_DIR: fileURLToPath(
     new URL(`../../test-results/vite-cache-${mode}`, import.meta.url),
@@ -188,9 +212,7 @@ viteProcess.stdout.on('data', (chunk) => {
   viteOutputTail = `${viteOutputTail}${output}`.slice(-2_048)
   const plainOutput = viteOutputTail.replace(ansiEscapePattern, '')
   if (
-    new RegExp(`Local:\\s+http://127\\.0\\.0\\.1:${port}/`).test(
-      plainOutput,
-    )
+    new RegExp(`Local:\\s+http://127\\.0\\.0\\.1:${port}/`).test(plainOutput)
   ) {
     viteReady = true
   }
@@ -235,8 +257,9 @@ async function stopVite() {
 let exitCode = 1
 try {
   await waitForServer()
-  const config =
-    mode === 'local' ? 'playwright.local.config.ts' : 'playwright.config.ts'
+  const config = localMode
+    ? 'playwright.local.config.ts'
+    : 'playwright.config.ts'
   const playwrightProcess = spawn(
     process.execPath,
     [

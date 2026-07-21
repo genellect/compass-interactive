@@ -9,6 +9,7 @@ import {
 } from '../../../publisher/src/manifest/manifest.ts'
 import type { PdfManifest } from '../../../publisher/src/manifest/types.ts'
 import {
+  runArchiveExportBatch,
   sanitizeArchiveExportClaim,
   sha256CanonicalJson,
 } from '../../../supabase/functions/_shared/archiveExport.ts'
@@ -1089,6 +1090,145 @@ test('archive ingest accepts the canonical payload emitted by the Supabase expor
   })
 })
 
+test('phase 7.27 archive claim flows through sanitizer, ingest, same-code resolve and PDF ticket', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    async () =>
+      Response.json({
+        action: 'archive-lookup',
+        hostname: 'compass.example',
+        success: true,
+      }),
+  )
+  const lectureCode = '727466'
+  const lectureSessionId = '10000000-0000-4000-8000-000000000727'
+  const payload = archivePayload(value, {
+    archive_policy: phase727PermanentArchivePolicy(),
+    lecture_public_id: value.lecture,
+    resume_token_version: 1,
+    summaries: archiveSummaries(18),
+    title: '7.23 Journal Club',
+  })
+  const finalized: Array<{
+    error: string | null
+    lectureSessionId: string
+    payloadSha256: string | null
+    sourceVersion: number
+    succeeded: boolean
+  }> = []
+  let workerError = ''
+
+  const exportResult = await runArchiveExportBatch({
+    claim: async () => [
+      {
+        archive_expires_at: payload.archive_expires_at,
+        attempt_count: 1,
+        lecture_code: lectureCode,
+        lecture_session_id: lectureSessionId,
+        payload,
+        source_version: 7,
+      },
+    ],
+    fetchImpl: async (input, init) => {
+      const response = await worker.fetch(new Request(input, init), value.env)
+      if (!response.ok) workerError = await response.clone().text()
+      return response
+    },
+    finish: async (input) => {
+      finalized.push(input)
+      return true
+    },
+    ingestSecret: value.env.ARCHIVE_INGEST_SECRET!,
+    workerIngestUrl: 'https://pdf.example/internal/v1/archives',
+  })
+
+  assert.equal(workerError, '')
+  assert.deepEqual(exportResult, {
+    claimed: 1,
+    failed: 0,
+    finalizeFailed: 0,
+    items: [
+      {
+        errorCode: null,
+        finalized: true,
+        lectureSessionId,
+        sourceVersion: 7,
+        status: 'exported',
+      },
+    ],
+    succeeded: 1,
+  })
+  assert.equal(finalized.length, 1)
+  assert.equal(finalized[0]?.succeeded, true)
+  assert.match(finalized[0]?.payloadSha256 ?? '', /^[0-9a-f]{64}$/)
+
+  const resolved = await worker.fetch(
+    new Request('https://pdf.example/v1/archives/resolve', {
+      body: JSON.stringify({
+        lectureCode,
+        turnstileToken: 'turnstile-token',
+      }),
+      headers: {
+        'CF-Connecting-IP': '192.0.2.127',
+        'Content-Type': 'application/json',
+        Origin: 'https://compass.example',
+        'X-Compass-Client-Id': '72746600-0000-4000-8000-000000000127',
+      },
+      method: 'POST',
+    }),
+    value.env,
+  )
+  assert.equal(resolved.status, 200)
+  const archiveSession = (await resolved.json()) as {
+    archive: {
+      archive_policy: Record<string, unknown>
+      comments: unknown[]
+      pdf: { document_id: string; document_version: string }
+      summaries: unknown[]
+      title: string
+    }
+    archiveAccessToken: string
+    archiveAccessTokenExpiresAt: string
+    lookupHash: string
+  }
+  assert.equal(archiveSession.archive.title, '7.23 Journal Club')
+  assert.equal(archiveSession.archive.comments.length, 1)
+  assert.equal(archiveSession.archive.summaries.length, 18)
+  assert.deepEqual(
+    archiveSession.archive.archive_policy,
+    phase727PermanentArchivePolicy(),
+  )
+  assert.ok(
+    Date.parse(archiveSession.archiveAccessTokenExpiresAt) <=
+      (value.now + 15 * 60) * 1000,
+  )
+
+  const pdfAccess = await worker.fetch(
+    new Request(
+      `https://pdf.example/v1/archives/${archiveSession.lookupHash}/documents/${archiveSession.archive.pdf.document_id}/${archiveSession.archive.pdf.document_version}/access?mode=inline`,
+      {
+        headers: {
+          Authorization: `Bearer ${archiveSession.archiveAccessToken}`,
+          Origin: 'https://compass.example',
+        },
+      },
+    ),
+    value.env,
+  )
+  assert.equal(pdfAccess.status, 200)
+  const pdfTicket = (await pdfAccess.json()) as {
+    expiresAt: string
+    url: string
+  }
+  assert.ok(Date.parse(pdfTicket.expiresAt) <= (value.now + 5 * 60) * 1000)
+  assert.match(
+    pdfTicket.url,
+    /\/v1\/lectures\/lecture_[a-z0-9]+\/documents\/doc-main\/[a-f0-9]{64}\?ticket=/,
+  )
+})
+
 test('phase 7.27 permanent archive policy is exact and alone permits eighteen summaries', async () => {
   const value = await fixture()
   enableArchiveEnvironment(value)
@@ -1195,6 +1335,62 @@ test('phase 7.27 permanent archive policy is exact and alone permits eighteen su
       })
     ).status,
     200,
+  )
+})
+
+test('phase 7.27 permanent archive cannot be downgraded by a newer standard payload', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const worker = createAssetWorker(() => new Date(value.now * 1000))
+  const code = '727409'
+  const permanentPayload = archivePayload(value, {
+    archive_policy: phase727PermanentArchivePolicy(),
+    lecture_public_id: value.lecture,
+    resume_token_version: 1,
+    summaries: archiveSummaries(18),
+  })
+
+  assert.equal(
+    (
+      await ingestArchive({
+        code,
+        payload: permanentPayload,
+        sourceVersion: 1,
+        value,
+        worker,
+      })
+    ).status,
+    200,
+  )
+
+  const downgrade = await ingestArchive({
+    code,
+    payload: archivePayload(value, {
+      lecture_public_id: value.lecture,
+      resume_token_version: 1,
+      summaries: archiveSummaries(12),
+      title: 'Accidental standard downgrade',
+    }),
+    sourceVersion: 2,
+    value,
+    worker,
+  })
+  assert.equal(downgrade.status, 409)
+
+  const lookupHash = await createArchiveLookupHash(
+    code,
+    value.env.ARCHIVE_CODE_LOOKUP_SECRET!,
+  )
+  const stored = value.r2.objects.get(`archives/by-code/${lookupHash}.json`)
+  assert.ok(stored)
+  const storedArchive = JSON.parse(new TextDecoder().decode(stored.bytes)) as {
+    payload: { archive_policy: Record<string, unknown> }
+    source_version: number
+  }
+  assert.equal(storedArchive.source_version, 1)
+  assert.deepEqual(
+    storedArchive.payload.archive_policy,
+    phase727PermanentArchivePolicy(),
   )
 })
 
