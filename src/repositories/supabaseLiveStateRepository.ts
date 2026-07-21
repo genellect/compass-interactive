@@ -85,10 +85,11 @@ export type PublicAcademicSource = {
   authors: string[]
   doi: string | null
   journal: string
-  pmid: string
+  pmid: string | null
   publicationTypes: string[]
   publicationYear: number
   sourceId: string
+  sourceProvider: 'crossref_openalex' | 'pubmed'
   sourceRole: 'context' | 'primary'
   studyType: string
   title: string
@@ -102,7 +103,7 @@ export type PublicAcademicAnswer = {
   id: string
   publishedAt: string
   question: string
-  reviewState: 'admin_confirmed' | 'admin_revised'
+  reviewState: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
   revisionId: string
   sources: PublicAcademicSource[]
 }

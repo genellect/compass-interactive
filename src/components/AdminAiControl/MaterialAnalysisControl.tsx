@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { issuePdfAccessSession } from '../../pdf/pdfDelivery'
-import { publisherClient } from '../../pdf/publisherClient'
+import { isPhase726BrowserPdfPublishingEnabled } from '../../lib/featureFlags'
+import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import {
   type AdminMaterialResults,
   type AdminMaterialSummaryBody,
@@ -143,7 +143,11 @@ export function MaterialAnalysisControl({
   }, [adminToken, lectureSessionId])
 
   async function runAnalysis(action: 'material_analysis' | 'poll_suggestions') {
-    if (!selectedDocument || !publisherSessionToken || !billingPin.trim()) {
+    if (
+      !selectedDocument ||
+      (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
+      !billingPin.trim()
+    ) {
       setMessage('PDFの公開状態とAPI利用PINを確認してください。')
       return
     }
@@ -168,15 +172,10 @@ export function MaterialAnalysisControl({
         : '指定ページを検証し、追加候補を作成しています…',
     )
     try {
-      const access = await issuePdfAccessSession({
+      const extraction = await getAdminPdfExtraction({
         adminToken,
+        document: selectedDocument,
         lectureSessionId,
-      })
-      const extraction = await publisherClient.getExtraction({
-        accessToken: access.accessToken,
-        documentId: selectedDocument.documentId,
-        documentVersion: selectedDocument.documentVersion,
-        lecturePublicId: access.lecturePublicId,
         publisherSessionToken,
       })
       const authorization = await supabaseAdminRepository.authorizeAiStart({
@@ -404,7 +403,8 @@ export function MaterialAnalysisControl({
           disabled={
             disabled ||
             !selectedDocument ||
-            !publisherSessionToken ||
+            (!publisherSessionToken &&
+              !isPhase726BrowserPdfPublishingEnabled) ||
             !billingPin.trim() ||
             Boolean(results.analysis)
           }

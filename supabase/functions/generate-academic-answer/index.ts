@@ -18,6 +18,7 @@ import {
   PHASE72_OUTPUT_PRICE_MICROUSD_PER_MILLION,
   PHASE72_PROMPT_VERSION,
   retrieveVerifiedAcademicSources,
+  type AcademicSourcePolicy,
   type OpenAiAcademicResponse,
   type VerifiedAcademicSource,
 } from '../_shared/academicAnswers.ts'
@@ -28,9 +29,18 @@ import {
   UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
+import { parseSummaryRunToken } from '../_shared/lectureSummaries.ts'
 
 type RequestBody = {
-  action?: 'approve' | 'cancel' | 'generate' | 'hide' | 'reject' | 'status'
+  action?:
+    | 'approve'
+    | 'cancel'
+    | 'generate'
+    | 'generateAuto'
+    | 'hide'
+    | 'reject'
+    | 'revise'
+    | 'status'
   adminToken?: string
   answerId?: string
   billingGrant?: string
@@ -38,9 +48,16 @@ type RequestBody = {
   lectureSessionId?: string
   question?: string
   requestId?: string
+  reason?: string | null
+  revisionBody?: {
+    answerPoints?: Array<{ sourceIds?: string[]; text?: string }>
+    limitations?: string[]
+  } | null
+  runToken?: string
   searchQuery?: string
   sourceKind?: 'summary_candidate' | 'teacher_selected'
   sourceSummaryId?: string | null
+  sourcePolicy?: AcademicSourcePolicy
 }
 
 type PreparedRequest = {
@@ -50,6 +67,8 @@ type PreparedRequest = {
 }
 
 type PrepareResult = {
+  accepted?: boolean
+  claim_acquired?: boolean
   idempotent_replay?: boolean
   request?: PreparedRequest
   results?: unknown
@@ -57,6 +76,7 @@ type PrepareResult = {
 
 type StartResult = {
   accepted?: boolean
+  operation?: { id?: string }
   operations?: Array<{ operation?: { id?: string } }>
   reason?: string
 }
@@ -89,6 +109,47 @@ function boundedText(value: unknown, minimum: number, maximum: number) {
     : null
 }
 
+function sourcePolicy(value: unknown): AcademicSourcePolicy | null {
+  return ['auto', 'biomedical_pubmed', 'multidisciplinary_doi'].includes(
+    String(value ?? ''),
+  )
+    ? (value as AcademicSourcePolicy)
+    : null
+}
+
+function revisionBody(value: RequestBody['revisionBody']) {
+  if (!value || !Array.isArray(value.answerPoints)) return null
+  if (value.answerPoints.length < 1 || value.answerPoints.length > 5) return null
+  const answerPoints = value.answerPoints.map((point) => {
+    const text = boundedText(point?.text, 1, 500)
+    const sourceIds = Array.isArray(point?.sourceIds)
+      ? [...new Set(point.sourceIds)]
+      : []
+    if (
+      !text ||
+      sourceIds.length < 1 ||
+      sourceIds.length > 3 ||
+      sourceIds.some(
+        (id) =>
+          !/^(?:pmid:[0-9]{1,9}|doi:10\.[0-9]{4,9}\/\S+)$/i.test(id) ||
+          id.length > 259,
+      )
+    ) {
+      return null
+    }
+    return { source_ids: sourceIds, text }
+  })
+  if (answerPoints.some((point) => !point)) return null
+  const limitations = Array.isArray(value.limitations)
+    ? value.limitations.map((item) => boundedText(item, 1, 300))
+    : []
+  if (limitations.length > 3 || limitations.some((item) => !item)) return null
+  return {
+    answer_points: answerPoints,
+    limitations,
+  }
+}
+
 function toStoredSource(source: VerifiedAcademicSource) {
   return {
     authors: source.authors,
@@ -98,6 +159,7 @@ function toStoredSource(source: VerifiedAcademicSource) {
     publication_types: source.publicationTypes,
     publication_year: source.year,
     source_id: source.sourceId,
+    source_provider: source.sourceProvider,
     source_role: source.sourceRole,
     study_type: source.studyType,
     title: source.title,
@@ -182,6 +244,15 @@ Deno.serve(async (request) => {
       400,
     )
   }
+  if (
+    body.action === 'generateAuto' &&
+    Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true'
+  ) {
+    return jsonResponse(
+      { message: 'Automatic academic reference answers are disabled.', ok: false },
+      503,
+    )
+  }
 
   let actorId: string
   try {
@@ -256,23 +327,64 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true, results: data })
     }
 
+    if (body.action === 'revise') {
+      const revisedBody = revisionBody(body.revisionBody)
+      const reason = body.reason?.normalize('NFKC').trim() || null
+      if (!body.answerId || !revisedBody || (reason?.length ?? 0) > 300) {
+        return jsonResponse(
+          { message: 'A valid answer revision is required.', ok: false },
+          400,
+        )
+      }
+      const { data, error } = await supabase.rpc(
+        'admin_revise_academic_answer_publication',
+        {
+          target_actor_id: actorId,
+          target_answer_id: body.answerId,
+          target_body: revisedBody,
+          target_lecture_session_id: body.lectureSessionId,
+          target_reason: reason,
+        },
+      )
+      if (error) throw error
+      return jsonResponse({ ok: true, results: data })
+    }
+
+    const automatic = body.action === 'generateAuto'
     const question = boundedText(body.question, 10, 500)
     const searchQuery = boundedText(body.searchQuery, 3, 240)
+    const selectedPolicy = sourcePolicy(body.sourcePolicy ?? 'auto')
+    const sourceKind = automatic ? 'summary_candidate' : body.sourceKind
     if (
-      body.action !== 'generate' ||
+      !['generate', 'generateAuto'].includes(body.action) ||
       !question ||
       !searchQuery ||
-      !body.billingGrant ||
+      !selectedPolicy ||
       !body.idempotencyKey ||
       !/^[a-zA-Z0-9:_-]{8,160}$/.test(body.idempotencyKey) ||
-      !['summary_candidate', 'teacher_selected'].includes(body.sourceKind ?? '') ||
-      (body.sourceKind === 'summary_candidate' && !body.sourceSummaryId) ||
-      (body.sourceKind === 'teacher_selected' && body.sourceSummaryId)
+      !['summary_candidate', 'teacher_selected'].includes(sourceKind ?? '') ||
+      (sourceKind === 'summary_candidate' && !body.sourceSummaryId) ||
+      (sourceKind === 'teacher_selected' && body.sourceSummaryId) ||
+      (!automatic && !body.billingGrant) ||
+      (automatic && !body.runToken)
     ) {
       return jsonResponse(
         { message: 'Academic reference answer request is incomplete.', ok: false },
         400,
       )
+    }
+
+    let runCredentials: { nonce: string; runId: string } | null = null
+    if (automatic) {
+      try {
+        runCredentials = parseSummaryRunToken(body.runToken ?? '')
+      } catch {
+        throw new AcademicAnswerError(
+          'invalid_run_token',
+          'The summary automation authorization is invalid.',
+          401,
+        )
+      }
     }
 
     const openAiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
@@ -289,18 +401,36 @@ Deno.serve(async (request) => {
       )
     }
 
+    const prepareRpc = automatic
+      ? 'admin_prepare_auto_academic_answer_request'
+      : 'admin_prepare_academic_answer_request_v2'
+    const prepareArguments = automatic
+      ? {
+          target_actor_id: actorId,
+          target_idempotency_key: body.idempotencyKey,
+          target_lecture_session_id: body.lectureSessionId,
+          target_question: question,
+          target_question_sha256: await sha256Hex(question),
+          target_run_id: runCredentials?.runId,
+          target_run_token_hash: await sha256Hex(runCredentials?.nonce ?? ''),
+          target_search_query_sha256: await sha256Hex(searchQuery),
+          target_source_policy: selectedPolicy,
+          target_source_summary_id: body.sourceSummaryId,
+        }
+      : {
+          target_actor_id: actorId,
+          target_idempotency_key: body.idempotencyKey,
+          target_lecture_session_id: body.lectureSessionId,
+          target_question: question,
+          target_question_sha256: await sha256Hex(question),
+          target_search_query_sha256: await sha256Hex(searchQuery),
+          target_source_kind: sourceKind,
+          target_source_policy: selectedPolicy,
+          target_source_summary_id: body.sourceSummaryId ?? null,
+        }
     const { data: prepareData, error: prepareError } = await supabase.rpc(
-      'admin_prepare_academic_answer_request',
-      {
-        target_actor_id: actorId,
-        target_idempotency_key: body.idempotencyKey,
-        target_lecture_session_id: body.lectureSessionId,
-        target_question: question,
-        target_question_sha256: await sha256Hex(question),
-        target_search_query_sha256: await sha256Hex(searchQuery),
-        target_source_kind: body.sourceKind,
-        target_source_summary_id: body.sourceSummaryId ?? null,
-      },
+      prepareRpc,
+      prepareArguments,
     )
     if (prepareError) throw prepareError
     const prepared = prepareData as PrepareResult
@@ -312,7 +442,30 @@ Deno.serve(async (request) => {
         409,
       )
     }
-    if (prepared.idempotent_replay) {
+    if (automatic && prepared.accepted === false) {
+      throw new AcademicAnswerError(
+        String((prepareData as { reason?: string }).reason ?? 'auto_not_admitted'),
+        'This summary candidate was not admitted for automatic publication.',
+        409,
+      )
+    }
+    if (automatic && prepared.claim_acquired === false) {
+      if (['awaiting_review', 'published', 'hidden'].includes(requestState.status ?? '')) {
+        return jsonResponse({ idempotentReplay: true, ok: true, results: prepared.results })
+      }
+      if (['evidence_checking', 'running'].includes(requestState.status ?? '')) {
+        return jsonResponse(
+          { idempotentReplay: true, inProgress: true, ok: true, results: prepared.results },
+          202,
+        )
+      }
+      throw new AcademicAnswerError(
+        'operation_not_retryable',
+        'This automatic reference answer is no longer retryable.',
+        409,
+      )
+    }
+    if (!automatic && prepared.idempotent_replay) {
       if (['awaiting_review', 'published', 'hidden'].includes(requestState.status ?? '')) {
         return jsonResponse({ idempotentReplay: true, ok: true, results: prepared.results })
       }
@@ -332,14 +485,17 @@ Deno.serve(async (request) => {
       retrieval = await retrieveVerifiedAcademicSources({
         contactEmail,
         searchQuery,
+        sourcePolicy: selectedPolicy,
       })
     } catch (error) {
-      await supabase.rpc('admin_mark_academic_answer_insufficient', {
-        target_actor_id: actorId,
-        target_reason:
-          error instanceof AcademicAnswerError ? error.code : 'metadata_failed',
-        target_request_id: requestState.id,
-      })
+      if (!automatic) {
+        await supabase.rpc('admin_mark_academic_answer_insufficient', {
+          target_actor_id: actorId,
+          target_reason:
+            error instanceof AcademicAnswerError ? error.code : 'metadata_failed',
+          target_request_id: requestState.id,
+        })
+      }
       throw error
     }
     const sources = retrieval.sources
@@ -363,6 +519,7 @@ Deno.serve(async (request) => {
           authors: source.authors,
           doi: source.doi,
           pmid: source.pmid,
+          provider: source.sourceProvider,
           role: source.sourceRole,
           title: source.title,
           year: source.year,
@@ -372,37 +529,53 @@ Deno.serve(async (request) => {
     const reservation = estimateAcademicAnswerReservation(
       sources.reduce((sum, source) => sum + source.abstract.length, 0),
     )
-    const { grantId, nonce } = parseBillingGrantToken(body.billingGrant)
+    const commonStartArguments = {
+      estimated_input_tokens: reservation.estimatedInputTokens,
+      estimated_microusd: reservation.estimatedMicrousd,
+      estimated_output_tokens: reservation.estimatedOutputTokens,
+      target_actor_id: actorId,
+      target_input_price_microusd_per_million:
+        PHASE72_INPUT_PRICE_MICROUSD_PER_MILLION,
+      target_model_id: PHASE72_MODEL,
+      target_output_price_microusd_per_million:
+        PHASE72_OUTPUT_PRICE_MICROUSD_PER_MILLION,
+      target_prompt_version: PHASE72_PROMPT_VERSION,
+      target_request_id: requestState.id,
+      target_resolved_source_route: retrieval.route,
+      target_source_set_sha256: sourceSetHash,
+      target_verified_primary_count: sources.filter(
+        (source) => source.sourceRole === 'primary',
+      ).length,
+      target_verified_source_count: sources.length,
+    }
+    const manualGrant = automatic
+      ? null
+      : parseBillingGrantToken(body.billingGrant ?? '')
     const { data: startData, error: startError } = await supabase.rpc(
-      'admin_start_academic_answer_operation',
-      {
-        estimated_input_tokens: reservation.estimatedInputTokens,
-        estimated_microusd: reservation.estimatedMicrousd,
-        estimated_output_tokens: reservation.estimatedOutputTokens,
-        target_actor_id: actorId,
-        target_grant_id: grantId,
-        target_input_price_microusd_per_million:
-          PHASE72_INPUT_PRICE_MICROUSD_PER_MILLION,
-        target_model_id: PHASE72_MODEL,
-        target_nonce_hash: await sha256Hex(nonce),
-        target_output_price_microusd_per_million:
-          PHASE72_OUTPUT_PRICE_MICROUSD_PER_MILLION,
-        target_prompt_version: PHASE72_PROMPT_VERSION,
-        target_request_id: requestState.id,
-        target_source_set_sha256: sourceSetHash,
-        target_verified_primary_count: sources.filter(
-          (source) => source.sourceRole === 'primary',
-        ).length,
-        target_verified_source_count: sources.length,
-      },
+      automatic
+        ? 'admin_start_auto_academic_answer_operation'
+        : 'admin_start_academic_answer_operation_v2',
+      automatic
+        ? {
+            ...commonStartArguments,
+            target_run_id: runCredentials?.runId,
+            target_run_token_hash: await sha256Hex(runCredentials?.nonce ?? ''),
+          }
+        : {
+            ...commonStartArguments,
+            target_grant_id: manualGrant?.grantId,
+            target_nonce_hash: await sha256Hex(manualGrant?.nonce ?? ''),
+          },
     )
     if (startError) throw startError
     const started = startData as StartResult
-    const operationId = started.operations?.[0]?.operation?.id
+    const operationId = automatic
+      ? started.operation?.id
+      : started.operations?.[0]?.operation?.id
     if (!started.accepted || !operationId) {
       throw new AcademicAnswerError(
         started.reason ?? 'operation_rejected',
-        'The billed reference-answer operation was rejected by its limits.',
+        'The reference-answer operation was rejected by its limits.',
         409,
       )
     }
@@ -411,7 +584,9 @@ Deno.serve(async (request) => {
     let actualOutputTokens = 0
     let providerRequestId: string | null = crypto.randomUUID()
     let providerDispatched = false
+    let accountingSettled = false
     async function finishFailure(code: string) {
+      if (accountingSettled) return
       const definitelyUncharged =
         /^provider_http_(?:400|401|403|404|409|422|429)$/.test(code)
       const conservative =
@@ -438,6 +613,7 @@ Deno.serve(async (request) => {
         target_operation_id: operationId,
         target_request_id: requestState.id,
       })
+      accountingSettled = true
     }
 
     try {
@@ -455,7 +631,7 @@ Deno.serve(async (request) => {
       }
       providerDispatched = true
       const safetyIdentifier = `compass_${(
-        await sha256Hex(`phase72:${body.lectureSessionId}:${actorId}`)
+        await sha256Hex(`phase725:${body.lectureSessionId}:${actorId}`)
       ).slice(0, 48)}`
       const response = await fetch('https://api.openai.com/v1/responses', {
         body: JSON.stringify(
@@ -498,12 +674,17 @@ Deno.serve(async (request) => {
           target_actor_id: actorId,
           target_body: gated.body,
           target_operation_id: operationId,
-          target_quality_result: gated.qualityResult,
+          target_quality_result: {
+            ...gated.qualityResult,
+            resolved_source_route: retrieval.route,
+            source_set_sha256: sourceSetHash,
+          },
           target_request_id: requestState.id,
           target_sources: sources.map(toStoredSource),
         },
       )
       if (completionError) throw completionError
+      accountingSettled = true
       const completion = completionData as {
         accepted?: boolean
         result_saved?: boolean

@@ -11,16 +11,17 @@ type RawArchiveResponse = {
       id: string
       published_at: string
       question: string
-      review_state: 'admin_confirmed' | 'admin_revised'
+      review_state: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
       revision_id: string
       sources: Array<{
         authors: string[]
         doi: string | null
         journal: string
-        pmid: string
+        pmid: string | null
         publication_types: string[]
         publication_year: number
         source_id: string
+        source_provider?: 'crossref_openalex' | 'pubmed'
         source_role: 'context' | 'primary'
         study_type: string
         title: string
@@ -156,10 +157,14 @@ function mapArchive(
         authors: source.authors,
         doi: source.doi,
         journal: source.journal,
-        pmid: source.pmid,
+        pmid: source.pmid ?? null,
         publicationTypes: source.publication_types,
         publicationYear: Number(source.publication_year),
         sourceId: source.source_id,
+        sourceProvider:
+          source.source_provider === 'crossref_openalex'
+            ? 'crossref_openalex'
+            : 'pubmed',
         sourceRole: source.source_role,
         studyType: source.study_type,
         title: source.title,

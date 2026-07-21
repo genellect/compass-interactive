@@ -102,7 +102,7 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
 | `/lecture`          | Student lecture experience            | Authenticated five-second snapshot while joined              |
 | `/lecture/comments` | On-demand comment history             | Cursor RPC only while the page is opened                     |
 | `/lecture/archive`  | Read-only closed lecture              | Short-lived Cloudflare archive/PDF access                    |
-| `/admin`            | Teacher controls                      | Admin Edge Functions and local Publisher                     |
+| `/admin`            | Teacher controls                      | Admin Edge Functions; browser PDF publication when enabled   |
 | `/display`          | Classroom fullscreen display          | Scoped Display credential, not an Admin session              |
 
 The production build creates static entrypoints for every route so Cloudflare
@@ -114,11 +114,16 @@ Pages does not depend on a catch-all redirect.
   state. The browser is never an authorization authority.
 - **Supabase Auth/Postgres/Edge Functions:** participant ownership, RLS,
   lifecycle, versioned snapshots, audit, AI admission and small metadata.
-- **Local Publisher:** PDF validation, text extraction for teacher-controlled AI
-  input and private R2 publication. Publisher credentials remain local.
-- **Cloudflare Worker/R2:** private PDF byte delivery and sanitized read-only
-  archives. PDF bytes and archive download traffic do not pass through
-  Supabase.
+- **Browser PDF publisher (Phase 7.26, default OFF):** bounded Web Worker
+  validation and direct streaming to the Cloudflare asset Worker. Supabase
+  stores authorization/lifecycle metadata only, never PDF bytes or extracted
+  text.
+- **Local Publisher:** compatibility and recovery path for PDF publication and
+  teacher-controlled AI extraction. Publisher credentials remain local.
+- **Cloudflare Worker/R2:** byte-level ticket/origin/size/magic/SHA/replay
+  enforcement, immutable private PDF storage, scoped delivery and sanitized
+  read-only archives. PDF bytes and archive download traffic do not pass
+  through Supabase.
 - **OpenAI:** only explicitly authorized, bounded text/audio needed by the
   selected feature. The API key remains in Supabase Edge secrets.
 - **Email provider:** one content-bounded daily operations digest when activity
@@ -180,6 +185,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE6_8_SECURITY`
 - `VITE_PHASE7_1_CLASSROOM_EXTENSIONS`
 - `VITE_PHASE7_2_ACADEMIC_ANSWERS`
+- `VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -201,6 +207,9 @@ npm run test:phase7-1-static
 npm run test:phase7-2-edge
 npm run test:phase7-2-static
 npm run test:phase7-2-quality
+npm run test:phase7-25-edge
+npm run test:phase7-25-static
+npm run test:phase7-25-load
 npm run build
 git diff --check
 ```

@@ -1,5 +1,9 @@
 export type R2ObjectLike = {
   body?: ReadableStream
+  checksums?: {
+    sha256?: ArrayBuffer
+  }
+  customMetadata?: Record<string, string>
   etag: string
   httpEtag: string
   key: string
@@ -28,10 +32,12 @@ export interface R2BucketLike {
   }): Promise<R2ListResultLike>
   put(
     key: string,
-    value: Uint8Array | string,
+    value: ReadableStream | Uint8Array | string,
     options?: {
+      customMetadata?: Record<string, string>
       httpMetadata?: Record<string, string>
       onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string }
+      sha256?: ArrayBuffer | string
     },
   ): Promise<R2ObjectLike | null>
 }

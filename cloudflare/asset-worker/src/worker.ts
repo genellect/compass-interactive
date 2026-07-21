@@ -15,6 +15,10 @@ import {
   verifyLectureToken,
 } from './crypto.ts'
 import type { R2BucketLike, R2ObjectLike } from './r2Types.ts'
+import {
+  cleanupExpiredPdfPublications,
+  handlePdfPublicationRequest,
+} from './pdfPublication.ts'
 
 type DurableObjectStorageLike = {
   get<T>(key: string): Promise<T | undefined>
@@ -52,8 +56,12 @@ export type AssetWorkerEnvironment = {
   PDF_ACCESS_PUBLIC_JWK: string
   PDF_ASSET_TICKET_SECRET: string
   PDF_BUCKET: R2BucketLike
+  PDF_PUBLICATION_COORDINATOR_SECRET?: string
+  PDF_PUBLICATION_COORDINATOR_URL?: string
+  PDF_PUBLICATION_PUBLIC_JWK?: string
   PDF_RETENTION_FEED_URL?: string
   PDF_RETENTION_SYNC_SECRET?: string
+  PHASE726_BROWSER_PDF_UPLOAD_ENABLED?: string
   TURNSTILE_EXPECTED_HOSTNAME?: string
   TURNSTILE_SECRET_KEY?: string
 }
@@ -1457,7 +1465,7 @@ async function handleFetch(
       headers: {
         'Access-Control-Allow-Headers':
           'Authorization, Content-Type, Range, X-Compass-Client-Id',
-        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS, POST',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS, POST, PUT',
         'Access-Control-Allow-Origin': origin ?? 'null',
         'Access-Control-Max-Age': '600',
         Vary: 'Origin',
@@ -1467,6 +1475,14 @@ async function handleFetch(
   }
   const nowSeconds = Math.floor(now.getTime() / 1000)
   const url = new URL(request.url)
+  const publicationResponse = await handlePdfPublicationRequest({
+    env,
+    fetcher,
+    now,
+    origin,
+    request,
+  })
+  if (publicationResponse) return publicationResponse
   if (request.method === 'POST' && url.pathname === '/internal/v1/archives') {
     const result = await handleArchiveIngest(request, env, now)
     return jsonResponse({ ok: true, ...result }, 200, null)
@@ -1875,6 +1891,11 @@ export function createAssetWorker(
       }
       try {
         await cleanupExpiredDocuments(env, now())
+      } catch (error) {
+        firstError ??= error
+      }
+      try {
+        await cleanupExpiredPdfPublications(env, now(), 25, fetcher)
       } catch (error) {
         firstError ??= error
       }

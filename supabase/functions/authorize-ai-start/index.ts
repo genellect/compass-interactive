@@ -109,6 +109,17 @@ Deno.serve(async (request) => {
       503,
     )
   }
+  if (
+    actions.includes('summaries') &&
+    actions.includes('academic_answers') &&
+    (actions.length !== 2 ||
+      Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true')
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Automatic academic reference answers are disabled.' },
+      503,
+    )
+  }
   if (!body.adminToken || !body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'Admin session and lecture are required.' },

@@ -13,6 +13,7 @@ import type {
 export type RawAcademicResults = {
   active_requests?: Array<Record<string, unknown>>
   answers?: Array<Record<string, unknown>>
+  automation?: null | Record<string, unknown>
   candidates?: Array<Record<string, unknown>>
   control?: null | Record<string, unknown>
 }
@@ -211,10 +212,14 @@ export function toAdminAcademicResults(
           authors: toStringArray(source.authors),
           doi: source.doi == null ? null : String(source.doi),
           journal: String(source.journal ?? ''),
-          pmid: String(source.pmid ?? ''),
+          pmid: source.pmid == null ? null : String(source.pmid),
           publicationTypes: toStringArray(source.publication_types),
           publicationYear: Number(source.publication_year ?? 0),
           sourceId: String(source.source_id ?? ''),
+          sourceProvider:
+            source.source_provider === 'crossref_openalex'
+              ? 'crossref_openalex'
+              : 'pubmed',
           sourceRole:
             source.source_role === 'context' ? 'context' : 'primary',
           studyType: String(source.study_type ?? ''),
@@ -228,12 +233,39 @@ export function toAdminAcademicResults(
       }
     }),
     candidates: (raw?.candidates ?? []).map((item) => ({
+      autoRequestId:
+        item.auto_request_id == null ? null : String(item.auto_request_id),
+      autoRequestStatus:
+        item.auto_request_status == null
+          ? null
+          : String(item.auto_request_status),
       educationalValue: String(item.educational_value ?? ''),
+      needsAutoDispatch: Boolean(item.needs_auto_dispatch),
       qualityScore: Number(item.quality_score ?? 0),
       question: String(item.question ?? ''),
+      retryAfterMs: Math.max(0, Number(item.retry_after_ms ?? 0)),
+      runId: String(item.run_id ?? ''),
       summaryId: String(item.summary_id ?? ''),
       windowIndex: Number(item.window_index ?? 0),
     })),
+    automation: raw?.automation
+      ? {
+          enabled: Boolean(raw.automation.enabled),
+          expiresAt: String(raw.automation.expires_at ?? ''),
+          runId: String(raw.automation.run_id ?? ''),
+          sourcePolicy: [
+            'auto',
+            'biomedical_pubmed',
+            'multidisciplinary_doi',
+          ].includes(String(raw.automation.source_policy ?? ''))
+            ? (String(raw.automation.source_policy) as
+                | 'auto'
+                | 'biomedical_pubmed'
+                | 'multidisciplinary_doi')
+            : 'auto',
+          status: String(raw.automation.status ?? 'stopped'),
+        }
+      : null,
     control: control
       ? {
           academicAnswerCallsUsed: Number(
@@ -275,6 +307,19 @@ export function toAdminSummaryResults(
       : null,
     run: run
       ? {
+          academicSourcePolicy: [
+            'auto',
+            'biomedical_pubmed',
+            'multidisciplinary_doi',
+          ].includes(String(run.academic_source_policy ?? ''))
+            ? (String(run.academic_source_policy) as
+                | 'auto'
+                | 'biomedical_pubmed'
+                | 'multidisciplinary_doi')
+            : 'auto',
+          autoAcademicAnswersEnabled: Boolean(
+            run.auto_academic_answers_enabled,
+          ),
           expiresAt: String(run.expires_at ?? ''),
           id: String(run.id ?? ''),
           lastWindowIndex: Number(run.last_window_index ?? 0),

@@ -5085,6 +5085,26 @@ input:disabled {
   min-height: 84px;
 }
 
+.summary-academic-answer-control,
+.academic-answer-revision-form {
+  background: color-mix(in srgb, var(--surface) 88%, var(--violet) 12%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+}
+
+.summary-academic-answer-control .checkbox-field {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.academic-answer-revision-form textarea {
+  min-height: 76px;
+}
+
 .admin-academic-answer-list {
   display: grid;
   gap: 13px;
@@ -5448,15 +5468,9 @@ input:disabled {
   gap: 16px;
 }
 
-.academic-answer-intro,
 .academic-answer-card h3,
 .academic-answer-card p {
   margin: 0;
-}
-
-.academic-answer-intro {
-  color: var(--text-soft);
-  line-height: 1.65;
 }
 
 .academic-answer-list {
@@ -5478,15 +5492,34 @@ input:disabled {
   line-height: 1.55;
 }
 
+.academic-answer-card-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.academic-answer-card-heading h3 {
+  min-width: 0;
+}
+
+.academic-answer-card-heading .support-state {
+  flex: 0 0 auto;
+}
+
+.academic-answer-card-heading .support-state.is-preview {
+  background: #fff3cd;
+  color: #5b3400;
+}
+
 .academic-answer-points,
-.academic-answer-limitations ul,
 .academic-answer-sources ol {
   margin: 0;
   padding-left: 22px;
 }
 
 .academic-answer-points li,
-.academic-answer-limitations li,
 .academic-answer-sources li {
   line-height: 1.65;
   margin-top: 8px;
@@ -5502,12 +5535,6 @@ input:disabled {
 .academic-answer-sources a {
   color: var(--accent-strong);
   font-weight: 800;
-}
-
-.academic-answer-limitations {
-  background: color-mix(in srgb, var(--surface) 82%, var(--warning) 18%);
-  border-radius: 12px;
-  padding: 13px 15px;
 }
 
 .academic-answer-sources summary {
@@ -5531,11 +5558,6 @@ input:disabled {
   font-weight: 800;
   margin-top: 5px;
   padding: 3px 8px;
-}
-
-.academic-answer-disclaimer {
-  font-size: .76rem;
-  margin: 0;
 }
 
 .lecture-area-exit {

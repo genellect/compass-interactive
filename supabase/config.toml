@@ -425,6 +425,14 @@ verify_jwt = true
 [functions.manage-pdf-documents]
 verify_jwt = true
 
+[functions.manage-pdf-publications]
+verify_jwt = true
+
+# Machine-to-machine PDF upload callbacks. Browser requests are rejected and
+# a distinct 32-byte Worker/Edge shared secret is mandatory.
+[functions.coordinate-pdf-upload-worker]
+verify_jwt = false
+
 [functions.issue-display-session]
 verify_jwt = true
 

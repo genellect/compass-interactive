@@ -34,17 +34,32 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
       name: '翻訳AIが使える今、英語を学ぶ価値として最も大きいものは？',
     }),
   ).toBeVisible()
-  await expect(page.getByText(/21[6-9]|22[0-4]/).first()).toBeVisible()
+  await expect(page.getByText(/\d+人参加（デモ）/).first()).toBeVisible()
   await expect(
-    page.getByRole('heading', { name: '文献から考える参考回答' }),
+    page.getByRole('heading', { name: 'AIによる参考回答' }),
   ).toBeVisible()
-  await expect(page.getByText('教員確認済み')).toBeVisible()
-  await page.getByText('根拠文献を見る（1件）').click()
+  await expect(page.getByText('教員未確認')).toBeVisible()
+  await expect(
+    page.getByRole('heading', {
+      name: '英語能力とAIリテラシーは相関しますか？',
+    }),
+  ).toBeVisible()
+  await expect(page.getByText('文献から考える参考回答')).toHaveCount(0)
+  await expect(page.getByText('読み取るときの注意')).toHaveCount(0)
+  await expect(
+    page.getByText(
+      '一次文献を手がかりに、講義で生まれた問いを短く整理しています。',
+    ),
+  ).toHaveCount(0)
+  await page.getByText('参照文献（2件）').click()
   await expect(
     page.getByRole('link', {
-      name: 'A Randomized Trial of Intensive versus Standard Blood-Pressure Control',
+      name: 'Impact of proficiency on Chinese EFL learners’ interaction with AI-generated feedback for translation revision',
     }),
-  ).toHaveAttribute('href', 'https://pubmed.ncbi.nlm.nih.gov/26551272/')
+  ).toHaveAttribute(
+    'href',
+    'https://doi.org/10.1080/09588221.2026.2631658',
+  )
 
   if (testInfo.project.name.startsWith('mobile-')) {
     const topPositions = await page.evaluate(() => {
@@ -80,6 +95,11 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
   await expect(
     page.getByRole('heading', { name: 'AI時代の英語と学び' }),
   ).toBeVisible()
+  await expect(
+    page
+      .locator('.comment-card')
+      .filter({ hasText: '英語能力とAIリテラシーは相関しますか？' }),
+  ).toBeVisible({ timeout: 15_000 })
 
   const composer = page.locator('#lecture-question')
   const commentInput = composer.getByPlaceholder(
@@ -101,13 +121,13 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
   )
   await expect(nicknameInput).toHaveValue('1234567890')
 
-  await nicknameInput.fill('薬理E2E')
+  await nicknameInput.fill('英語E2E')
   await commentInput.fill('E2Eニックネームコメント')
   await composer.getByRole('button', { name: 'みんなに共有' }).click()
   const nicknameCard = page
     .locator('.comment-card')
     .filter({ hasText: 'E2Eニックネームコメント' })
-  await expect(nicknameCard).toContainText('薬理E2E')
+  await expect(nicknameCard).toContainText('英語E2E')
 
   await page
     .locator('.choice-row')

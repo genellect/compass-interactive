@@ -40,7 +40,7 @@ for (const catalog of [edgeCatalog, frontendCatalog]) {
 assert.match(frontendCatalog, /url: '\/lecture-assets\/m4-sample-v1\.pdf'/)
 assert.match(
   frontendCatalog,
-  /url: '\/lecture-assets\/why-learn-english-v1\.pdf'/,
+  /url: '\/lecture-assets\/why-learn-english-v1\.pdf\?v=phase7-25-public'/,
 )
 
 assert.equal(existsSync(pdfPath), true, 'static PDF asset must exist')

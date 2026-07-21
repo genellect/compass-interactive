@@ -22,10 +22,19 @@ import {
   syncRetentionMetadata,
   type AssetWorkerEnvironment,
 } from '../src/worker.ts'
+import { cleanupExpiredPdfPublications } from '../src/pdfPublication.ts'
 import type { R2BucketLike, R2ObjectLike } from '../src/r2Types.ts'
 
 class FakeR2 implements R2BucketLike {
-  objects = new Map<string, { bytes: Uint8Array; etag: string }>()
+  objects = new Map<
+    string,
+    {
+      bytes: Uint8Array
+      customMetadata?: Record<string, string>
+      etag: string
+      sha256: ArrayBuffer
+    }
+  >()
   failNextConditional = false
   failNextDeleteKey: string | null = null
   getCalls: string[] = []
@@ -41,7 +50,12 @@ class FakeR2 implements R2BucketLike {
 
   #object(
     key: string,
-    stored: { bytes: Uint8Array; etag: string },
+    stored: {
+      bytes: Uint8Array
+      customMetadata?: Record<string, string>
+      etag: string
+      sha256: ArrayBuffer
+    },
     range?: { length?: number; offset?: number },
   ) {
     const offset = range?.offset ?? 0
@@ -54,6 +68,8 @@ class FakeR2 implements R2BucketLike {
           bytes.byteOffset + bytes.byteLength,
         ),
       body: new Blob([bytes]).stream(),
+      checksums: { sha256: stored.sha256 },
+      customMetadata: stored.customMetadata,
       etag: stored.etag,
       httpEtag: `"${stored.etag}"`,
       key,
@@ -97,8 +113,12 @@ class FakeR2 implements R2BucketLike {
 
   async put(
     key: string,
-    value: Uint8Array | string,
-    options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } },
+    value: ReadableStream | Uint8Array | string,
+    options?: {
+      customMetadata?: Record<string, string>
+      onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string }
+      sha256?: ArrayBuffer | string
+    },
   ) {
     const existing = this.objects.get(key)
     if (this.failNextConditional && options?.onlyIf?.etagMatches) {
@@ -115,10 +135,30 @@ class FakeR2 implements R2BucketLike {
       return null
     }
     const bytes =
-      typeof value === 'string' ? new TextEncoder().encode(value) : value
+      typeof value === 'string'
+        ? new TextEncoder().encode(value)
+        : value instanceof Uint8Array
+          ? value
+          : new Uint8Array(await new Response(value).arrayBuffer())
     const etag = createHash('sha256').update(bytes).digest('hex')
-    this.objects.set(key, { bytes, etag })
-    return this.#object(key, { bytes, etag })
+    const sha256 = Uint8Array.from(Buffer.from(etag, 'hex')).buffer
+    const expectedSha =
+      typeof options?.sha256 === 'string'
+        ? options.sha256
+        : options?.sha256
+          ? Buffer.from(options.sha256).toString('hex')
+          : null
+    if (expectedSha && expectedSha !== etag) {
+      throw new Error('R2 checksum mismatch')
+    }
+    const stored = {
+      bytes,
+      customMetadata: options?.customMetadata,
+      etag,
+      sha256,
+    }
+    this.objects.set(key, stored)
+    return this.#object(key, stored)
   }
 }
 
@@ -190,6 +230,24 @@ async function createLectureToken(input: {
   const signature = await crypto.subtle.sign(
     { hash: 'SHA-256', name: 'ECDSA' },
     input.key,
+    new TextEncoder().encode(`${header}.${payload}`),
+  )
+  return `${header}.${payload}.${b64url(new Uint8Array(signature))}`
+}
+
+async function createPublicationToken(
+  key: CryptoKey,
+  claims: Record<string, unknown>,
+) {
+  const header = b64url(
+    new TextEncoder().encode(JSON.stringify({ alg: 'ES256', typ: 'JWT' })),
+  )
+  const payload = b64url(
+    new TextEncoder().encode(JSON.stringify(claims)),
+  )
+  const signature = await crypto.subtle.sign(
+    { hash: 'SHA-256', name: 'ECDSA' },
+    key,
     new TextEncoder().encode(`${header}.${payload}`),
   )
   return `${header}.${payload}.${b64url(new Uint8Array(signature))}`
@@ -1164,4 +1222,736 @@ test('archive cleanup honors the seven-day recovery window and resumes across pa
   )
   assert.equal(repeated.deleted, 0)
   assert.ok(repeated.invalid >= 1)
+})
+
+test('browser PDF publication verifies origin, nonce, bytes, magic and native sha before upload', async () => {
+  const value = await fixture()
+  const coordinatorActions: string[] = []
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(
+      new Headers(init?.headers).get('X-Compass-Pdf-Publication-Secret'),
+      value.env.PDF_PUBLICATION_COORDINATOR_SECRET,
+    )
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    coordinatorActions.push(body.action)
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch
+  const worker = createAssetWorker(() => new Date(value.now * 1000), fetcher)
+  const publicationId = '70000000-0000-4000-8000-000000000726'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nphase-7.26')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const ticketJti = '71000000-0000-4000-8000-000000000726'
+  const claims = {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: 'browser-material',
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: ticketJti,
+    lec: value.lecture,
+    nbf: value.now - 1,
+    nonce: 'A'.repeat(43),
+    origin: 'https://compass.example',
+    pub: publicationId,
+    purpose: 'upload',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+  }
+  const ticket = await createPublicationToken(value.keys.privateKey, claims)
+  const upload = () =>
+    worker.fetch(
+      new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+        body: pdf,
+        headers: {
+          Authorization: `Bearer ${ticket}`,
+          'Content-Length': String(pdf.byteLength),
+          'Content-Type': 'application/pdf',
+          Origin: 'https://compass.example',
+        },
+        method: 'PUT',
+      }),
+      value.env,
+    )
+  const response = await upload()
+  assert.equal(response.status, 201)
+  assert.deepEqual(coordinatorActions, ['claimNonce', 'recordUploaded'])
+  assert.equal(
+    value.r2.objects.has(
+      `pdf/${value.lecture}/browser-material/${sha}/${publicationId}.pdf`,
+    ),
+    true,
+  )
+
+  const idempotent = await upload()
+  assert.equal(idempotent.status, 200)
+  assert.deepEqual(coordinatorActions, [
+    'claimNonce',
+    'recordUploaded',
+    'recordUploaded',
+  ])
+
+  const replayTicket = await createPublicationToken(value.keys.privateKey, {
+    ...claims,
+    jti: '72000000-0000-4000-8000-000000000726',
+  })
+  const replay = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${replayTicket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(replay.status, 409)
+
+  const hostile = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${ticket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://evil.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(hostile.status, 403)
+})
+
+test('browser PDF publication permits only one concurrent first-use effect', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  let nonceClaimed = false
+  let successfulNonceClaims = 0
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    if (body.action === 'claimNonce') {
+      if (nonceClaimed) {
+        return Response.json({ message: 'nonce already claimed', ok: false }, {
+          status: 409,
+        })
+      }
+      nonceClaimed = true
+      successfulNonceClaims += 1
+    }
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch
+  const worker = createAssetWorker(() => new Date(value.now * 1000), fetcher)
+  const publicationId = '72500000-0000-4000-8000-000000000726'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nconcurrent')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const ticket = await createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: 'concurrent-material',
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: '72600000-0000-4000-8000-000000000726',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    nonce: 'N'.repeat(43),
+    origin: 'https://compass.example',
+    pub: publicationId,
+    purpose: 'upload',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+  })
+  const upload = () =>
+    worker.fetch(
+      new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+        body: pdf,
+        headers: {
+          Authorization: `Bearer ${ticket}`,
+          'Content-Type': 'application/pdf',
+          Origin: 'https://compass.example',
+        },
+        method: 'PUT',
+      }),
+      value.env,
+    )
+
+  const responses = await Promise.all([upload(), upload()])
+  const statuses = responses.map((response) => response.status).sort()
+  assert.equal(statuses.includes(201), true)
+  assert.equal(statuses[0] === 200 || statuses[1] === 409, true)
+  assert.equal(successfulNonceClaims, 1)
+  assert.equal(
+    value.r2.objects.has(
+      `pdf/${value.lecture}/concurrent-material/${sha}/${publicationId}.pdf`,
+    ),
+    true,
+  )
+})
+
+test('browser PDF publication rejects actual-size, sha and immutable-key conflicts without orphaning a new object', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const pdf = new TextEncoder().encode('%PDF-1.7\nintegrity')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const baseClaims = {
+    aud: 'compass-pdf-publication-worker',
+    doc: 'integrity-material',
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    purpose: 'upload',
+    sid: '79000000-0000-4000-8000-000000000726',
+  }
+  const upload = async (input: {
+    bytes: number
+    jti: string
+    nonce: string
+    publicationId: string
+    sha: string
+  }) => {
+    const ticket = await createPublicationToken(value.keys.privateKey, {
+      ...baseClaims,
+      bytes: input.bytes,
+      jti: input.jti,
+      nonce: input.nonce,
+      pub: input.publicationId,
+      sha: input.sha,
+    })
+    return worker.fetch(
+      new Request(
+        `https://pdf.example/v2/pdf-publications/${input.publicationId}`,
+        {
+          body: pdf,
+          headers: {
+            Authorization: `Bearer ${ticket}`,
+            'Content-Type': 'application/pdf',
+            Origin: 'https://compass.example',
+          },
+          method: 'PUT',
+        },
+      ),
+      value.env,
+    )
+  }
+
+  const shortPublicationId = '72700000-0000-4000-8000-000000000726'
+  const short = await upload({
+    bytes: pdf.byteLength + 1,
+    jti: '72800000-0000-4000-8000-000000000726',
+    nonce: 'S'.repeat(43),
+    publicationId: shortPublicationId,
+    sha,
+  })
+  assert.equal(short.status, 400)
+  assert.equal(
+    value.r2.objects.has(
+      `pdf/${value.lecture}/integrity-material/${sha}/${shortPublicationId}.pdf`,
+    ),
+    false,
+  )
+
+  const hashPublicationId = '72900000-0000-4000-8000-000000000726'
+  const wrongSha = '0'.repeat(64)
+  const hashMismatch = await upload({
+    bytes: pdf.byteLength,
+    jti: '72a00000-0000-4000-8000-000000000726',
+    nonce: 'H'.repeat(43),
+    publicationId: hashPublicationId,
+    sha: wrongSha,
+  })
+  assert.equal(hashMismatch.status, 400)
+  assert.equal(
+    value.r2.objects.has(
+      `pdf/${value.lecture}/integrity-material/${wrongSha}/${hashPublicationId}.pdf`,
+    ),
+    false,
+  )
+
+  const collisionPublicationId = '72b00000-0000-4000-8000-000000000726'
+  const collisionKey =
+    `pdf/${value.lecture}/integrity-material/${sha}/${collisionPublicationId}.pdf`
+  const existingBytes = new TextEncoder().encode('%PDF-1.7\nexisting')
+  await value.r2.put(collisionKey, existingBytes)
+  const collision = await upload({
+    bytes: pdf.byteLength,
+    jti: '72c00000-0000-4000-8000-000000000726',
+    nonce: 'I'.repeat(43),
+    publicationId: collisionPublicationId,
+    sha,
+  })
+  assert.equal(collision.status, 409)
+  assert.deepEqual(value.r2.objects.get(collisionKey)?.bytes, existingBytes)
+})
+
+test('browser PDF publication rejects malformed bytes and keeps uncommitted objects inaccessible', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  const fetcher = (async () => Response.json({ ok: true })) as typeof fetch
+  const worker = createAssetWorker(() => new Date(value.now * 1000), fetcher)
+  const publicationId = '73000000-0000-4000-8000-000000000726'
+  const invalid = new TextEncoder().encode('NOT-A-PDF')
+  const sha = createHash('sha256').update(invalid).digest('hex')
+  const token = await createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: invalid.byteLength,
+    doc: 'invalid-material',
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: '74000000-0000-4000-8000-000000000726',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    nonce: 'B'.repeat(43),
+    origin: 'https://compass.example',
+    pub: publicationId,
+    purpose: 'upload',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+  })
+  const response = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: invalid,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(response.status, 400)
+  assert.equal(
+    value.r2.objects.has(
+      `pdf/${value.lecture}/invalid-material/${sha}/${publicationId}.pdf`,
+    ),
+    false,
+  )
+
+  const missingAccess = await worker.fetch(
+    new Request(
+      `https://pdf.example/v1/lectures/${value.lecture}/documents/invalid-material/${sha}/access`,
+      {
+        headers: {
+          Authorization: `Bearer ${value.token}`,
+          Origin: 'https://compass.example',
+        },
+      },
+    ),
+    value.env,
+  )
+  assert.equal(missingAccess.status, 410)
+})
+
+test('hidden commit and activation fence keep publication inaccessible until DB can publish it', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const publicationId = '75000000-0000-4000-8000-000000000726'
+  const pdf = new TextEncoder().encode('%PDF-1.7\ncommitted')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const baseClaims = {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: 'browser-material',
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    pub: publicationId,
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+  }
+  const uploadToken = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    jti: '76000000-0000-4000-8000-000000000726',
+    nonce: 'C'.repeat(43),
+    purpose: 'upload',
+  })
+  const uploaded = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${uploadToken}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(uploaded.status, 201)
+
+  const commitToken = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    download: true,
+    jti: '77000000-0000-4000-8000-000000000726',
+    name: 'Browser material',
+    pages: 1,
+    previous_av: 1,
+    purpose: 'commit',
+    text_chars: 9,
+    text_sha: 'd'.repeat(64),
+  })
+  const committed = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/commit`,
+      {
+        headers: { Authorization: `Bearer ${commitToken}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  assert.equal(committed.status, 200)
+  const stillOld = await worker.fetch(
+    new Request(`https://pdf.example/v1/lectures/${value.lecture}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${value.token}`,
+        Origin: 'https://compass.example',
+      },
+    }),
+    value.env,
+  )
+  assert.equal(stillOld.status, 200)
+  const oldPublicManifest = (await stillOld.json()) as {
+    documents: Array<{ document_id: string }>
+  }
+  assert.equal(
+    oldPublicManifest.documents.some(
+      (document) => document.document_id === 'browser-material',
+    ),
+    false,
+  )
+  const stagedObject = await value.r2.get(
+    `manifests/${value.lecture}/manifest.json`,
+  )
+  assert.ok(stagedObject)
+  const stagedManifest = decodeManifest(
+    new Uint8Array(await stagedObject.arrayBuffer!()),
+  )
+  assert.equal(stagedManifest.access_version, 1)
+  assert.equal(
+    stagedManifest.documents.some(
+      (document) =>
+        document.document_id === 'browser-material' && !document.visible,
+    ),
+    true,
+  )
+
+  const activateToken = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    jti: '77500000-0000-4000-8000-000000000726',
+    previous_av: 1,
+    purpose: 'activate',
+    target_av: 2,
+  })
+  const activated = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/activate`,
+      {
+        headers: { Authorization: `Bearer ${activateToken}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  assert.equal(activated.status, 200)
+  const fenced = await worker.fetch(
+    new Request(`https://pdf.example/v1/lectures/${value.lecture}/manifest`, {
+      headers: {
+        Authorization: `Bearer ${value.token}`,
+        Origin: 'https://compass.example',
+      },
+    }),
+    value.env,
+  )
+  assert.equal(fenced.status, 401)
+
+  const rollbackToken = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    jti: '78000000-0000-4000-8000-000000000726',
+    previous_av: 1,
+    purpose: 'rollback',
+    target_av: 2,
+  })
+  const rolledBack = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
+      {
+        headers: { Authorization: `Bearer ${rollbackToken}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  assert.equal(rolledBack.status, 200)
+  const restoredObject = await value.r2.get(
+    `manifests/${value.lecture}/manifest.json`,
+  )
+  assert.ok(restoredObject)
+  const restored = decodeManifest(
+    new Uint8Array(await restoredObject.arrayBuffer!()),
+  )
+  assert.equal(restored.access_version, 1)
+  assert.equal(
+    restored.documents.some(
+      (document) => document.document_id === 'browser-material',
+    ),
+    false,
+  )
+})
+
+test('publication status recovers an object written before the uploaded ledger CAS', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+  const actions: string[] = []
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { action: string }
+      actions.push(body.action)
+      return Response.json({ ok: true, status: body.action })
+    }) as typeof fetch,
+  )
+  const publicationId = '78500000-0000-4000-8000-000000000726'
+  const attemptId = '78600000-0000-4000-8000-000000000726'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nrecover')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey =
+    `pdf/${value.lecture}/recover-material/${sha}/${publicationId}.pdf`
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  await value.r2.put(
+    `publication-ledger/${publicationId}.json`,
+    `${JSON.stringify({
+      bytes: pdf.byteLength,
+      createdAt: new Date(value.now * 1000).toISOString(),
+      documentId: 'recover-material',
+      generation: 1,
+      lecturePublicId: value.lecture,
+      objectKey,
+      pdfSha256: sha,
+      publicationId,
+      status: 'receiving',
+      ticketJti: attemptId,
+      updatedAt: new Date(value.now * 1000).toISOString(),
+    })}\n`,
+  )
+  const statusTicket = await createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: 'recover-material',
+    exp: value.now + 60,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: '78700000-0000-4000-8000-000000000726',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    pub: publicationId,
+    purpose: 'status',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+  })
+  const response = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/status`,
+      { headers: { Authorization: `Bearer ${statusTicket}` } },
+    ),
+    value.env,
+  )
+  assert.equal(response.status, 200)
+  assert.equal((await response.json() as { status: string }).status, 'uploaded')
+  assert.deepEqual(actions, ['recordUploaded'])
+  const ledger = await value.r2.get(`publication-ledger/${publicationId}.json`)
+  assert.ok(ledger)
+  assert.equal(
+    JSON.parse(new TextDecoder().decode(new Uint8Array(await ledger.arrayBuffer!())))
+      .status,
+    'uploaded',
+  )
+})
+
+test('DB-leased publication cleanup remains active when uploads are disabled and removes only hidden references', async () => {
+  const value = await fixture()
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL:
+      'https://functions.example/coordinate-pdf-upload-worker',
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'false',
+  })
+  const publicationId = '78800000-0000-4000-8000-000000000726'
+  const cleanupClaimId = '78900000-0000-4000-8000-000000000726'
+  const sha = 'e'.repeat(64)
+  const objectKey =
+    `pdf/${value.lecture}/cleanup-material/${sha}/${publicationId}.pdf`
+  const pdf = new TextEncoder().encode('%PDF-cleanup')
+  await value.r2.put(objectKey, pdf)
+  await value.r2.put(
+    `publication-ledger/${publicationId}.json`,
+    `${JSON.stringify({
+      bytes: pdf.byteLength,
+      createdAt: new Date(value.now * 1000).toISOString(),
+      documentId: 'cleanup-material',
+      generation: 1,
+      lecturePublicId: value.lecture,
+      objectKey,
+      pdfSha256: sha,
+      publicationId,
+      status: 'uploaded',
+      ticketJti: '78a00000-0000-4000-8000-000000000726',
+      updatedAt: new Date(value.now * 1000).toISOString(),
+    })}\n`,
+  )
+  await value.r2.put(
+    `manifests/${value.lecture}/manifest.json`,
+    encodeManifest({
+      ...value.manifest,
+      documents: [
+        ...value.manifest.documents,
+        {
+          archive_expires_at: null,
+          byte_size: pdf.byteLength,
+          delete_after: null,
+          display_name: 'Cleanup material',
+          document_id: 'cleanup-material',
+          document_version: sha,
+          download_enabled: true,
+          object_key: objectKey,
+          page_count: 1,
+          pdf_sha256: sha,
+          text_char_count: 1,
+          text_sha256: 'f'.repeat(64),
+          visible: false,
+        },
+      ],
+      manifest_version: value.manifest.manifest_version + 1,
+    }),
+  )
+  const completions: Array<Record<string, unknown>> = []
+  let claimAvailable = true
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    if (body.action === 'claimCleanup') {
+      const data = claimAvailable
+        ? [{
+            cleanup_claim_id: cleanupClaimId,
+            document_id: 'cleanup-material',
+            expected_pdf_sha256: sha,
+            lecture_public_id: value.lecture,
+            object_key: objectKey,
+            publication_id: publicationId,
+            state: 'expired',
+          }]
+        : []
+      claimAvailable = false
+      return Response.json({ data, ok: true })
+    }
+    completions.push(body)
+    return Response.json({ ok: true })
+  }) as typeof fetch
+
+  const result = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    fetcher,
+  )
+  assert.deepEqual(result, {
+    deletedLedgers: 1,
+    deletedObjects: 1,
+    failures: 0,
+    scanned: 1,
+    skipped: false,
+  })
+  assert.equal(value.r2.objects.has(objectKey), false)
+  assert.equal(
+    value.r2.objects.has(`publication-ledger/${publicationId}.json`),
+    false,
+  )
+  const manifestObject = await value.r2.get(
+    `manifests/${value.lecture}/manifest.json`,
+  )
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(
+    manifest.documents.some((document) => document.object_key === objectKey),
+    false,
+  )
+  assert.equal(completions.length, 1)
+  assert.equal(completions[0]?.succeeded, true)
+
+  const repeated = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    fetcher,
+  )
+  assert.equal(repeated.scanned, 0)
 })

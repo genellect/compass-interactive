@@ -95,6 +95,29 @@ assert.equal(restored.comments[0]?.body, '端末内テストコメント')
 assert.equal(restored.comments[0]?.nickname, 'デモ参加者')
 assert.equal(restored.pollResponses.length, 1)
 
+const ambientBodies = [
+  '英語能力とAIリテラシーは相関しますか？',
+  'すごい',
+  'この説明わかりやすいです！',
+  'TOEIC申し込んでみようと思います！',
+]
+
+for (const [index, body] of ambientBodies.entries()) {
+  const snapshot = demoRepository.addNextAmbientComment(storage)
+  assert.equal(snapshot.comments.length, 5 + index)
+  assert.equal(snapshot.comments[0]?.body, body)
+}
+
+const afterAllAmbientComments = demoRepository.addNextAmbientComment(storage)
+assert.equal(afterAllAmbientComments.comments.length, 8)
+for (const body of ambientBodies) {
+  assert.equal(
+    afterAllAmbientComments.comments.filter((comment) => comment.body === body)
+      .length,
+    1,
+  )
+}
+
 const reset = demoRepository.reset(storage)
 assert.equal(reset.comments.length, 3)
 assert.equal(reset.pollResponses.length, 0)

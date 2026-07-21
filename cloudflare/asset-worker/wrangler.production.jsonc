@@ -8,6 +8,7 @@
     "ALLOWED_ORIGINS": "https://compass-interactive.pages.dev",
     "PDF_ACCESS_AUDIENCE": "compass-pdf-worker",
     "PDF_ACCESS_ISSUER": "compass-supabase",
+    "PHASE726_BROWSER_PDF_UPLOAD_ENABLED": "false",
     "TURNSTILE_EXPECTED_HOSTNAME": "compass-interactive.pages.dev",
   },
   "triggers": {
@@ -59,6 +60,9 @@
       "LECTURE_RESUME_TOKEN_SECRET",
       "PDF_ACCESS_PUBLIC_JWK",
       "PDF_ASSET_TICKET_SECRET",
+      "PDF_PUBLICATION_COORDINATOR_SECRET",
+      "PDF_PUBLICATION_COORDINATOR_URL",
+      "PDF_PUBLICATION_PUBLIC_JWK",
       "PDF_RETENTION_SYNC_SECRET",
       "PDF_RETENTION_FEED_URL",
       "TURNSTILE_SECRET_KEY",

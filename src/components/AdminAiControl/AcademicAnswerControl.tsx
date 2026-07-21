@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { buildDoiUrl } from '../../lib/academicSourceLinks'
 import {
   type AdminAcademicAnswer,
   type AdminAcademicResults,
@@ -10,13 +11,22 @@ type AcademicAnswerControlProps = {
   adminToken: string
   lectureSessionId: string
   lectureStatus: string
+  refreshVersion?: number
 }
 
 const emptyResults: AdminAcademicResults = {
   activeRequests: [],
   answers: [],
+  automation: null,
   candidates: [],
   control: null,
+}
+
+function academicSourceHref(answer: AdminAcademicAnswer, sourceId: string) {
+  const source = answer.sources.find((item) => item.sourceId === sourceId)
+  if (source?.pmid) return `https://pubmed.ncbi.nlm.nih.gov/${source.pmid}/`
+  if (source?.doi) return buildDoiUrl(source.doi)
+  return null
 }
 
 function referenceLabel(answer: AdminAcademicAnswer, sourceId: string) {
@@ -28,6 +38,7 @@ export function AcademicAnswerControl({
   adminToken,
   lectureSessionId,
   lectureStatus,
+  refreshVersion = 0,
 }: AcademicAnswerControlProps) {
   const [results, setResults] = useState<AdminAcademicResults>(emptyResults)
   const [sourceMode, setSourceMode] = useState<
@@ -36,10 +47,15 @@ export function AcademicAnswerControl({
   const [selectedSummaryId, setSelectedSummaryId] = useState('')
   const [question, setQuestion] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sourcePolicy, setSourcePolicy] = useState<
+    'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
+  >('auto')
   const [billingPin, setBillingPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [message, setMessage] = useState('')
+  const [editingAnswerId, setEditingAnswerId] = useState('')
+  const [revisionPoints, setRevisionPoints] = useState<string[]>([])
 
   const selectedCandidate = useMemo(
     () =>
@@ -83,7 +99,7 @@ export function AcademicAnswerControl({
     return () => {
       cancelled = true
     }
-  }, [adminToken, lectureSessionId])
+  }, [adminToken, lectureSessionId, refreshVersion])
 
   useEffect(() => {
     if (!busy) return
@@ -147,6 +163,7 @@ export function AcademicAnswerControl({
         sourceKind: sourceMode,
         sourceSummaryId:
           sourceMode === 'summary_candidate' ? selectedSummaryId : null,
+        sourcePolicy,
       })
       setResults(nextResults)
       setMessage(
@@ -158,6 +175,51 @@ export function AcademicAnswerControl({
         error instanceof Error
           ? `参考回答を作成できませんでした: ${error.message}`
           : '参考回答を作成できませんでした。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function beginRevision(answer: AdminAcademicAnswer) {
+    setEditingAnswerId(answer.id)
+    setRevisionPoints(answer.body.answerPoints.map((point) => point.text))
+  }
+
+  async function reviseAnswer(answer: AdminAcademicAnswer) {
+    const normalized = revisionPoints.map((point) => point.trim())
+    if (
+      normalized.length !== answer.body.answerPoints.length ||
+      normalized.some((point) => point.length < 1 || point.length > 500)
+    ) {
+      setMessage('修正文は各項目1〜500文字で入力してください。')
+      return
+    }
+    setBusy(true)
+    try {
+      const nextResults = await supabaseAdminRepository.manageAcademicAnswers({
+        action: 'revise',
+        adminToken,
+        answerId: answer.id,
+        lectureSessionId,
+        reason: 'teacher_correction',
+        revisionBody: {
+          answerPoints: answer.body.answerPoints.map((point, index) => ({
+            sourceIds: point.sourceIds,
+            text: normalized[index],
+          })),
+          limitations: answer.body.limitations,
+        },
+      })
+      setResults(nextResults)
+      setEditingAnswerId('')
+      setRevisionPoints([])
+      setMessage('修正版を学生画面に公開しました。')
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `参考回答を修正できませんでした: ${error.message}`
+          : '参考回答を修正できませんでした。',
       )
     } finally {
       setBusy(false)
@@ -225,8 +287,8 @@ export function AcademicAnswerControl({
     <section className="academic-answer-control">
       <div className="academic-answer-heading">
         <div>
-          <strong>一次文献に基づく参考回答</strong>
-          <small>最大3回／講義・教員確認後のみ学生へ公開</small>
+          <strong>AIによる参考回答</strong>
+          <small>最大3回／講義・自動回答は「教員未確認」で公開</small>
         </div>
         <span>{callsUsed} / {callLimit} 回</span>
       </div>
@@ -286,14 +348,28 @@ export function AcademicAnswerControl({
         )}
 
         <label className="field academic-answer-question-field">
-          <span>PubMed検索語</span>
+          <span>文献検索語</span>
           <input
             disabled={disabled}
             maxLength={240}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="疾患名、介入、主要アウトカムなど"
+            placeholder="問いに関係する概念、対象、主要な結果など"
             value={searchQuery}
           />
+        </label>
+        <label className="field">
+          <span>参照する分野</span>
+          <select
+            disabled={disabled}
+            onChange={(event) =>
+              setSourcePolicy(event.target.value as typeof sourcePolicy)
+            }
+            value={sourcePolicy}
+          >
+            <option value="auto">自動</option>
+            <option value="biomedical_pubmed">医学・生命科学（PubMed）</option>
+            <option value="multidisciplinary_doi">その他の分野（DOI論文）</option>
+          </select>
         </label>
         <label className="field">
           <span>API PIN</span>
@@ -347,7 +423,11 @@ export function AcademicAnswerControl({
                 <strong>{answer.question}</strong>
                 <small>
                   {answer.publication?.visibility === 'public'
-                    ? '学生に公開中'
+                    ? answer.publication.reviewState === 'ai_unreviewed'
+                      ? '学生に公開中・教員未確認'
+                      : answer.publication.reviewState === 'admin_revised'
+                        ? '学生に公開中・教員修正済み'
+                        : '学生に公開中・教員確認済み'
                     : answer.status === 'rejected'
                       ? '非採用'
                       : '非公開の下書き'}
@@ -367,6 +447,26 @@ export function AcademicAnswerControl({
                 </li>
               ))}
             </ol>
+            {editingAnswerId === answer.id ? (
+              <div className="academic-answer-revision-form">
+                {revisionPoints.map((point, index) => (
+                  <label className="field" key={`${answer.id}-revision-${index}`}>
+                    <span>回答 {index + 1}</span>
+                    <textarea
+                      maxLength={500}
+                      onChange={(event) =>
+                        setRevisionPoints((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index ? event.target.value : item,
+                          ),
+                        )
+                      }
+                      value={point}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
             {answer.body.limitations.length > 0 ? (
               <p className="note">
                 限界: {answer.body.limitations.join('／')}
@@ -377,30 +477,70 @@ export function AcademicAnswerControl({
               <ol className="academic-reference-list">
                 {answer.sources.map((source) => (
                   <li key={source.sourceId}>
-                    <a
-                      href={`https://pubmed.ncbi.nlm.nih.gov/${source.pmid}/`}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {source.title}
-                    </a>
+                    {academicSourceHref(answer, source.sourceId) ? (
+                      <a
+                        href={academicSourceHref(answer, source.sourceId) ?? undefined}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {source.title}
+                      </a>
+                    ) : (
+                      <span>{source.title}</span>
+                    )}
                     <small>
                       {source.authors.slice(0, 3).join(', ')} · {source.journal}{' '}
-                      ({source.publicationYear}) · PMID {source.pmid}
+                      ({source.publicationYear})
+                      {source.pmid ? ` · PMID ${source.pmid}` : ''}
+                      {source.doi ? ` · DOI ${source.doi}` : ''}
                     </small>
                   </li>
                 ))}
               </ol>
             </details>
             <div className="proposal-card-actions">
+              {editingAnswerId === answer.id ? (
+                <>
+                  <button
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={() => void reviseAnswer(answer)}
+                    type="button"
+                  >
+                    修正版を公開
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditingAnswerId('')
+                      setRevisionPoints([])
+                    }}
+                    type="button"
+                  >
+                    キャンセル
+                  </button>
+                </>
+              ) : (
               <button
                 className="primary-button"
                 disabled={disabled || answer.status === 'rejected'}
                 onClick={() => void reviewAnswer('approve', answer.id)}
                 type="button"
               >
-                確認して学生に公開
+                承認する
               </button>
+              )}
+              {editingAnswerId !== answer.id && answer.status !== 'rejected' ? (
+                <button
+                  className="secondary-button"
+                  disabled={disabled}
+                  onClick={() => beginRevision(answer)}
+                  type="button"
+                >
+                  修正する
+                </button>
+              ) : null}
               {answer.publication?.visibility === 'public' ? (
                 <button
                   className="secondary-button"

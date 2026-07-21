@@ -3,7 +3,7 @@ import type { LiveComment, PollResponse } from '../types/index.ts'
 import { normalizeCommentNickname } from '../lib/commentNickname.ts'
 
 export const DEMO_STORAGE_KEY = 'compass-interactive:demo:v1'
-export const DEMO_SCHEMA_VERSION = 2 as const
+export const DEMO_SCHEMA_VERSION = 3 as const
 
 export type DemoLectureState = {
   schemaVersion: typeof DEMO_SCHEMA_VERSION

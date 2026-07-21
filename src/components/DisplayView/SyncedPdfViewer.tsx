@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import { useFullscreen } from '../../hooks/useFullscreen'
 import { isPhase3PrivatePdfEnabled } from '../../lib/featureFlags'
 import { getLecturePdfAsset } from '../../pdf/lectureAssets'
@@ -12,10 +13,7 @@ import { archiveClient } from '../../archive/archiveClient'
 import type { LectureArchiveSession } from '../../types/archive'
 import { AppIcon } from '../AppIcon'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.mjs',
-  import.meta.url,
-).toString()
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const DEFAULT_PAGE_ASPECT_RATIO = 16 / 9
 const MAX_RENDER_SCALE = 5

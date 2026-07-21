@@ -223,5 +223,5 @@ export async function resolveRuntimePdf(input: {
     return ticket.url
   }
 
-  return { document, getAccessUrl }
+  return { document, getAccessUrl, lecturePublicId: session.lecturePublicId }
 }

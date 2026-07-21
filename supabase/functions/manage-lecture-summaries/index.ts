@@ -29,6 +29,11 @@ type RequestBody = {
     | 'unpin'
     | 'revisePublish'
   adminToken?: string
+  academicSourcePolicy?:
+    | 'auto'
+    | 'biomedical_pubmed'
+    | 'multidisciplinary_doi'
+  autoAcademicAnswers?: boolean
   billingGrant?: string
   lectureSessionId?: string
   pinnedOrder?: number | null
@@ -137,12 +142,35 @@ Deno.serve(async (request) => {
           400,
         )
       }
+      const sourcePolicy = body.academicSourcePolicy ?? 'auto'
+      if (
+        !['auto', 'biomedical_pubmed', 'multidisciplinary_doi'].includes(
+          sourcePolicy,
+        )
+      ) {
+        return jsonResponse(
+          { message: 'Academic source policy is invalid.', ok: false },
+          400,
+        )
+      }
+      if (
+        body.autoAcademicAnswers === true &&
+        Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true'
+      ) {
+        return jsonResponse(
+          { message: 'Automatic academic reference answers are disabled.', ok: false },
+          503,
+        )
+      }
       const billing = parseBillingGrantToken(body.billingGrant)
       const nonce = createSummaryRunNonce()
       const { data, error } = await supabase.rpc(
-        'admin_start_lecture_summary_run',
+        'admin_start_lecture_summary_run_v2',
         {
           target_actor_id: actorId,
+          target_academic_source_policy: sourcePolicy,
+          target_auto_academic_answers_enabled:
+            body.autoAcademicAnswers === true,
           target_grant_id: billing.grantId,
           target_grant_nonce_hash: await sha256Hex(billing.nonce),
           target_lecture_session_id: body.lectureSessionId,

@@ -66,6 +66,7 @@ function source(overrides: Partial<VerifiedAcademicSource> = {}) {
       author: true,
       crossref: true,
       doi: true,
+      originalResearch: true,
       passed: true as const,
       pubmed: true as const,
       title: true,

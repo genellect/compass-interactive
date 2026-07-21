@@ -59,9 +59,18 @@ assert.match(migration, /private\.build_public_lecture_archive_v3/)
 assert.match(migration, /academic_answers.*private\.phase72_public_answers_json/s)
 assert.doesNotMatch(migration, /grant (?:select|insert|update|delete).*academic_answer.*authenticated/i)
 
+assert.match(studentPanel, /AIによる参考回答/)
+assert.match(studentPanel, /教員未確認/)
 assert.match(studentPanel, /教員確認済み/)
 assert.match(studentPanel, /pubmed\.ncbi\.nlm\.nih\.gov/)
-assert.match(studentPanel, /個別の診断・治療を示すものではありません/)
+assert.match(studentPanel, /https:\/\/doi\.org\//)
+assert.doesNotMatch(studentPanel, /文献から考える参考回答/)
+assert.doesNotMatch(
+  studentPanel,
+  /一次文献を手がかりに、講義で生まれた問いを短く整理しています。/,
+)
+assert.doesNotMatch(studentPanel, /読み取るときの注意/)
+assert.doesNotMatch(studentPanel, /個別の診断・治療を示すものではありません/)
 assert.match(adminPanel, /API PIN/)
 assert.match(adminPanel, /停止する/)
 assert.match(adminPanel, /最大3回／講義/)

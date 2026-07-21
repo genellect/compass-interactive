@@ -146,6 +146,9 @@ jobs:
           PHASE5_MATERIAL_ANALYSIS_ENABLED=false
           PHASE6_SUMMARIES_ENABLED=true
           PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED=true
+          PHASE7_2_ACADEMIC_ANSWERS_ENABLED=true
+          PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED=true
+          LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
           npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/compass-edge.pid"

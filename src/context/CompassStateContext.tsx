@@ -900,6 +900,14 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     return demoRepository.subscribe(hydrateDemo)
   }, [hydrateDemo, runtimeMode])
 
+  useEffect(() => {
+    if (runtimeMode !== 'demo' || !hasActiveLectureSessionId) return
+    const interval = window.setInterval(() => {
+      applyDemoSnapshot(demoRepository.addNextAmbientComment())
+    }, 10_000)
+    return () => window.clearInterval(interval)
+  }, [applyDemoSnapshot, hasActiveLectureSessionId, runtimeMode])
+
   const visibleComments =
     mockCompassRepository.comment.listVisibleComments(comments)
   const openPolls = mockCompassRepository.poll.listOpenPolls(polls)

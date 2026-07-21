@@ -218,7 +218,7 @@ export function LecturePage() {
                   ? displayedParticipantCount
                   : `約${displayedParticipantCount}`}
               </strong>
-              人参加
+              人参加{runtimeMode === 'demo' ? '（デモ）' : ''}
             </span>
             <span>
               <AppIcon name="poll" size={18} />

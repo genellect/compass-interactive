@@ -35,6 +35,13 @@ assert.match(
   }).join('\n'),
   /VITE_PDF_WORKER_BASE_URL/,
 )
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_26_BROWSER_PDF_PUBLISHING: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE3_PRIVATE_PDF=true/,
+)
 assert.deepEqual(
   validateProductionEnvironment({
     ...safeEnvironment,

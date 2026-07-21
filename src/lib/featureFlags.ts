@@ -38,3 +38,11 @@ export const isPhase71ClassroomExtensionsEnabled =
 export const isPhase72AcademicAnswersEnabled =
   isPhase6SummariesEnabled &&
   import.meta.env.VITE_PHASE7_2_ACADEMIC_ANSWERS === 'true'
+
+export const isPhase725AutoAcademicAnswersEnabled =
+  isPhase72AcademicAnswersEnabled &&
+  import.meta.env.VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS === 'true'
+
+export const isPhase726BrowserPdfPublishingEnabled =
+  isPhase3PrivatePdfEnabled &&
+  import.meta.env.VITE_PHASE7_26_BROWSER_PDF_PUBLISHING === 'true'

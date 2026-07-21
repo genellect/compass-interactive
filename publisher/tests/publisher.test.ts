@@ -213,6 +213,41 @@ test('manifest CAS failure preserves the previously committed manifest', async (
   })
 })
 
+test('recovery Publisher cannot downgrade a browser-publication access fence', async () => {
+  await withStores(async ({ objectStore, textStore }) => {
+    const bytes = await readFile(samplePath)
+    await publishPdf(publicationInput(bytes), { objectStore, textStore })
+    const manifestKey = getManifestKey('lecture_1234567890abcdef')
+    const stored = await objectStore.get(manifestKey)
+    assert.ok(stored)
+    const manifest = decodeManifest(stored.bytes)
+    await objectStore.put(
+      manifestKey,
+      new TextEncoder().encode(
+        `${JSON.stringify({ ...manifest, access_version: 2 })}\n`,
+      ),
+      { contentType: 'application/json', ifMatch: stored.etag },
+    )
+    await assert.rejects(
+      publishPdf(publicationInput(bytes, 'doc-downgrade'), {
+        objectStore,
+        textStore,
+      }),
+      (error: unknown) =>
+        error instanceof ManifestConflictError &&
+        /access version/i.test(error.message),
+    )
+    const current = decodeManifest((await objectStore.get(manifestKey))!.bytes)
+    assert.equal(current.access_version, 2)
+    assert.equal(
+      current.documents.some(
+        (document) => document.document_id === 'doc-downgrade',
+      ),
+      false,
+    )
+  })
+})
+
 test('pairing code is one-time and sessions are bound to their Origin', () => {
   let now = 1_000
   const sessions = new PublisherSessionManager(() => now, '12345678')

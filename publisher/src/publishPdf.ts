@@ -136,6 +136,14 @@ export async function publishPdf(
     if (currentManifest.lecture_public_id !== input.lecturePublicId) {
       throw new ManifestConflictError('Manifest lecture scope does not match.')
     }
+    if (
+      currentObject &&
+      currentManifest.access_version !== input.accessVersion
+    ) {
+      throw new ManifestConflictError(
+        'Manifest access version changed during publication.',
+      )
+    }
 
     const existing = currentManifest.documents.find(
       (document) =>
@@ -291,6 +299,7 @@ export async function publishPdf(
     const committedManifest = decodeManifest(committed.bytes)
     if (
       committedManifest.manifest_version !== nextManifest.manifest_version ||
+      committedManifest.access_version !== input.accessVersion ||
       !committedManifest.documents.some(
         (document) =>
           document.document_id === nextDocument.document_id &&

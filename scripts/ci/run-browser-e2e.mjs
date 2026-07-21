@@ -5,10 +5,14 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
 const playwrightArguments = process.argv.slice(3)
-const baseURL = 'http://127.0.0.1:4173'
+const demoMode = mode === 'demo' || mode === 'demo-pdf'
+const port = demoMode ? 43_000 + (process.pid % 1_000) : 4_173
+const baseURL = `http://127.0.0.1:${port}`
 
-if (!['demo', 'local'].includes(mode)) {
-  throw new Error('Usage: node scripts/ci/run-browser-e2e.mjs <demo|local>')
+if (!['demo', 'demo-pdf', 'local'].includes(mode)) {
+  throw new Error(
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|local>',
+  )
 }
 
 function parseEnvOutput(output) {
@@ -75,7 +79,7 @@ const appEnvironment = {
       }),
   VITE_PHASE1_SYNC_PROTOCOL: 'true',
   VITE_PHASE2_LECTURE_LIFECYCLE: 'true',
-  VITE_PHASE3_PRIVATE_PDF: 'false',
+  VITE_PHASE3_PRIVATE_PDF: mode === 'demo-pdf' ? 'true' : 'false',
   VITE_PHASE4_REALTIME_CAPTIONS: 'false',
   VITE_PHASE5_MATERIAL_ANALYSIS: 'false',
   VITE_PHASE6_SUMMARIES: mode === 'local' ? 'true' : 'false',
@@ -84,6 +88,14 @@ const appEnvironment = {
   VITE_PHASE6_8_SECURITY: mode === 'local' ? 'true' : 'false',
   VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
   VITE_PHASE7_2_ACADEMIC_ANSWERS: 'true',
+  VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS: 'true',
+  VITE_PHASE7_26_BROWSER_PDF_PUBLISHING:
+    mode === 'demo-pdf' ? 'true' : 'false',
+  VITE_PDF_WORKER_BASE_URL: 'https://pdf.example',
+  PLAYWRIGHT_BASE_URL: baseURL,
+  VITE_CACHE_DIR: fileURLToPath(
+    new URL(`../../test-results/vite-cache-${mode}`, import.meta.url),
+  ),
 }
 
 const viteProcess = spawn(
@@ -93,8 +105,10 @@ const viteProcess = spawn(
     '--host',
     '127.0.0.1',
     '--port',
-    '4173',
+    String(port),
     '--strictPort',
+    '--configLoader',
+    'runner',
   ],
   {
     cwd: root,

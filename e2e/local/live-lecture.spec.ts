@@ -112,6 +112,15 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     ).toBeVisible()
     await expect(summaryLanguage).toHaveValue('en')
 
+    const autoAcademicAnswers = admin.page.getByLabel(
+      '学術的な質問に参考回答を自動生成',
+    )
+    await expect(autoAcademicAnswers).not.toBeChecked()
+    await expect(admin.page.getByLabel('参照する分野')).toHaveCount(0)
+    await autoAcademicAnswers.check()
+    await expect(admin.page.getByLabel('参照する分野')).toHaveValue('auto')
+    await autoAcademicAnswers.uncheck()
+
     const displayPopup = admin.page.waitForEvent('popup')
     await admin.page.getByRole('button', { name: '共有画面を開く' }).click()
     displayPage = await displayPopup

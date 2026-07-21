@@ -41,6 +41,32 @@ export type LectureResumeClaims = {
   ver: number
 }
 
+export type PdfPublicationClaims = {
+  aud: 'compass-pdf-publication-worker'
+  bytes: number
+  doc: string
+  download?: boolean
+  exp: number
+  gen: number
+  iat: number
+  iss: 'compass-supabase'
+  jti: string
+  lec: string
+  name?: string
+  nbf: number
+  nonce?: string
+  origin: string
+  pages?: number
+  previous_av?: number
+  pub: string
+  purpose: 'activate' | 'commit' | 'rollback' | 'status' | 'upload'
+  sha: string
+  sid: string
+  target_av?: number
+  text_chars?: number
+  text_sha?: string
+}
+
 function bytesToBase64Url(bytes: Uint8Array) {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
@@ -121,6 +147,113 @@ export async function verifyLectureToken(input: {
     throw new Error('Token claims are invalid or expired.')
   }
   return payload as LectureAccessClaims
+}
+
+export async function verifyPdfPublicationToken(input: {
+  nowSeconds: number
+  publicJwk: JsonWebKey
+  token: string
+}) {
+  const parts = input.token.split('.')
+  if (parts.length !== 3) throw new Error('Publication token is malformed.')
+  const [encodedHeader, encodedPayload, encodedSignature] = parts
+  const header = decodeJson(encodedHeader!)
+  const payload = decodeJson(encodedPayload!)
+  if (header.alg !== 'ES256' || header.typ !== 'JWT') {
+    throw new Error('Publication token algorithm is invalid.')
+  }
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    input.publicJwk,
+    { hash: 'SHA-256', name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  )
+  const valid = await crypto.subtle.verify(
+    { hash: 'SHA-256', name: 'ECDSA' },
+    key,
+    base64UrlToBytes(encodedSignature!),
+    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`),
+  )
+  if (!valid) throw new Error('Publication token signature is invalid.')
+  if (
+    payload.iss !== 'compass-supabase' ||
+    payload.aud !== 'compass-pdf-publication-worker' ||
+    !['activate', 'commit', 'rollback', 'status', 'upload'].includes(
+      String(payload.purpose),
+    ) ||
+    typeof payload.pub !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      payload.pub,
+    ) ||
+    typeof payload.sid !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      payload.sid,
+    ) ||
+    typeof payload.lec !== 'string' ||
+    !LECTURE_PUBLIC_ID_PATTERN.test(payload.lec) ||
+    typeof payload.doc !== 'string' ||
+    !/^[a-z0-9][a-z0-9-]{0,63}$/.test(payload.doc) ||
+    typeof payload.sha !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(payload.sha) ||
+    !Number.isSafeInteger(payload.bytes) ||
+    Number(payload.bytes) < 1 ||
+    Number(payload.bytes) > 15 * 1024 * 1024 ||
+    !Number.isSafeInteger(payload.gen) ||
+    Number(payload.gen) < 1 ||
+    typeof payload.origin !== 'string' ||
+    !/^https?:\/\/[^/]+$/.test(payload.origin) ||
+    !Number.isInteger(payload.exp) ||
+    Number(payload.exp) <= input.nowSeconds ||
+    Number(payload.exp) > input.nowSeconds + 10 * 60 + 30 ||
+    !Number.isInteger(payload.nbf) ||
+    Number(payload.nbf) > input.nowSeconds + 30 ||
+    !Number.isInteger(payload.iat) ||
+    Number(payload.iat) > input.nowSeconds + 30 ||
+    typeof payload.jti !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      payload.jti,
+    )
+  ) {
+    throw new Error('Publication token claims are invalid or expired.')
+  }
+  if (
+    payload.purpose === 'upload' &&
+    (typeof payload.nonce !== 'string' ||
+      !/^[A-Za-z0-9_-]{32,128}$/.test(payload.nonce))
+  ) {
+    throw new Error('Publication upload nonce is invalid.')
+  }
+  if (
+    payload.purpose === 'commit' &&
+    (typeof payload.name !== 'string' ||
+      payload.name.trim().length < 1 ||
+      payload.name.length > 160 ||
+      !Number.isInteger(payload.pages) ||
+      Number(payload.pages) < 1 ||
+      Number(payload.pages) > 75 ||
+      !Number.isInteger(payload.text_chars) ||
+      Number(payload.text_chars) < 1 ||
+      Number(payload.text_chars) > 20_000 ||
+      typeof payload.text_sha !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(payload.text_sha) ||
+      typeof payload.download !== 'boolean' ||
+      !Number.isInteger(payload.previous_av) ||
+      Number(payload.previous_av) < 1 ||
+      payload.target_av !== undefined)
+  ) {
+    throw new Error('Publication commit claims are invalid.')
+  }
+  if (
+    (payload.purpose === 'activate' || payload.purpose === 'rollback') &&
+    (!Number.isInteger(payload.previous_av) ||
+      Number(payload.previous_av) < 1 ||
+      !Number.isInteger(payload.target_av) ||
+      Number(payload.target_av) !== Number(payload.previous_av) + 1)
+  ) {
+    throw new Error('Publication rollback claims are invalid.')
+  }
+  return payload as PdfPublicationClaims
 }
 
 async function importTicketKey(secret: string, usage: 'sign' | 'verify') {

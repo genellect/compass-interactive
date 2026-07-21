@@ -8,6 +8,7 @@ type AdminPdfControlProps = {
   activeLectureSessionId: string | null
   adminToken: string
   availableAssets: readonly PdfAsset[]
+  browserPublishingEnabled: boolean
   displayPageInput: string
   displayState: DisplayState | null
   displayStateError: string | null
@@ -23,6 +24,7 @@ type AdminPdfControlProps = {
   onPairingCodeChange: (value: string) => void
   onPrevious: () => void
   onPublish: () => void
+  onPublishWithLocalPublisher: () => void
   onSelectDocument: (documentId: string) => void
   onSetDocument: () => void
   pdfDisplayName: string
@@ -43,6 +45,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     activeLectureSessionId,
     adminToken,
     availableAssets,
+    browserPublishingEnabled,
     displayPageInput,
     displayState,
     displayStateError,
@@ -58,6 +61,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     onPairingCodeChange,
     onPrevious,
     onPublish,
+    onPublishWithLocalPublisher,
     onSelectDocument,
     onSetDocument,
     pdfDisplayName,
@@ -97,16 +101,18 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               <h3>講義資料を公開する</h3>
             </div>
             <span className="metric">
-              {publisherStatus === 'paired'
-                ? '公開できます'
-                : publisherStatus === 'connected'
-                  ? '初回確認が必要'
-                  : publisherStatus === 'checking'
-                    ? '準備を確認中'
-                    : '公開アプリを確認'}
+              {browserPublishingEnabled
+                ? 'ブラウザから公開できます'
+                : publisherStatus === 'paired'
+                  ? '公開できます'
+                  : publisherStatus === 'connected'
+                    ? '初回確認が必要'
+                    : publisherStatus === 'checking'
+                      ? '準備を確認中'
+                      : '公開アプリを確認'}
             </span>
           </div>
-          {publisherStatus !== 'paired' ? (
+          {!browserPublishingEnabled && publisherStatus !== 'paired' ? (
             <details className="admin-publisher-setup">
               <summary>初回接続の設定</summary>
               <div className="display-control-form">
@@ -172,7 +178,8 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
                 !pdfFile ||
                 pdfPublishing ||
                 closed ||
-                (!publisherSessionToken &&
+                (!browserPublishingEnabled &&
+                  !publisherSessionToken &&
                   publisherPairingCode.trim().length !== 8)
               }
               onClick={onPublish}
@@ -191,6 +198,52 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           <p className="note">
             大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。
           </p>
+          {browserPublishingEnabled ? (
+            <details className="admin-publisher-setup">
+              <summary>復旧・互換オプション</summary>
+              <p className="note">
+                通常は使用しません。ブラウザから公開できない場合のみ、Local
+                Publisherを起動して利用してください。
+              </p>
+              <div className="display-control-form">
+                <label className="field compact-field">
+                  <span>Local Publisherの8桁コード</span>
+                  <input
+                    autoComplete="off"
+                    disabled={pdfPublishing}
+                    inputMode="numeric"
+                    maxLength={8}
+                    onChange={(event) =>
+                      onPairingCodeChange(event.target.value.replace(/\D/g, ''))
+                    }
+                    value={publisherPairingCode}
+                  />
+                </label>
+                <button
+                  className="secondary-button"
+                  disabled={publisherStatus === 'checking' || pdfPublishing}
+                  onClick={onCheckPublisher}
+                  type="button"
+                >
+                  Local Publisherを確認
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={
+                    !pdfFile ||
+                    pdfPublishing ||
+                    closed ||
+                    (!publisherSessionToken &&
+                      publisherPairingCode.trim().length !== 8)
+                  }
+                  onClick={onPublishWithLocalPublisher}
+                  type="button"
+                >
+                  Local Publisherで公開する
+                </button>
+              </div>
+            </details>
+          ) : null}
         </div>
       ) : null}
       {!activeLectureSessionId ? (

@@ -7,6 +7,10 @@ import {
   SUPABASE_REQUEST_TIMEOUT_MS,
 } from './supabase/requestPolicy'
 import { invokeEdgeFunction } from './supabase/transport'
+import type {
+  AdminAcademicResults,
+  ManageAcademicAnswersRequest,
+} from './supabase/adminAcademicTypes'
 import {
   toAdminDisplayState,
   toAdminAcademicResults,
@@ -17,6 +21,14 @@ import {
   type RawMaterialResults,
   type RawSummaryResults,
 } from './supabase/adminMappers'
+
+export type {
+  AdminAcademicAnswer,
+  AdminAcademicCandidate,
+  AdminAcademicResults,
+  AdminAcademicSource,
+  ManageAcademicAnswersRequest,
+} from './supabase/adminAcademicTypes'
 
 const {
   adminFunction: ADMIN_FUNCTION_TIMEOUT_MS,
@@ -359,6 +371,11 @@ export type AdminSummaryResults = {
     usedMicrousd: number
   } | null
   run: {
+    academicSourcePolicy:
+      | 'auto'
+      | 'biomedical_pubmed'
+      | 'multidisciplinary_doi'
+    autoAcademicAnswersEnabled: boolean
     expiresAt: string
     id: string
     lastWindowIndex: number
@@ -381,93 +398,11 @@ export type AdminSummaryResults = {
 
 export type SummaryLanguagePreference = 'auto' | 'ja' | 'en'
 
-export type AdminAcademicCandidate = {
-  educationalValue: string
-  qualityScore: number
-  question: string
-  summaryId: string
-  windowIndex: number
-}
-
-export type AdminAcademicSource = {
-  authors: string[]
-  doi: string | null
-  journal: string
-  pmid: string
-  publicationTypes: string[]
-  publicationYear: number
-  sourceId: string
-  sourceRole: 'context' | 'primary'
-  studyType: string
-  title: string
-}
-
-export type AdminAcademicAnswer = {
-  body: {
-    answerPoints: Array<{ sourceIds: string[]; text: string }>
-    limitations: string[]
-  }
-  createdAt: string
-  id: string
-  publication: null | {
-    reviewState: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
-    visibility: 'hidden' | 'public'
-  }
-  question: string
-  sources: AdminAcademicSource[]
-  status: 'awaiting_review' | 'hidden' | 'published' | 'rejected'
-}
-
-export type AdminAcademicResults = {
-  activeRequests: Array<{
-    id: string
-    operationId: string | null
-    question: string
-    status: 'evidence_checking' | 'running'
-    updatedAt: string
-  }>
-  answers: AdminAcademicAnswer[]
-  candidates: AdminAcademicCandidate[]
-  control: null | {
-    academicAnswerCallsUsed: number
-    academicAnswerLimit: number
-    budgetLimitMicrousd: number
-    status: string
-    usedMicrousd: number
-  }
-}
-
 type AcademicFunctionResponse = {
   message?: string
   ok?: boolean
   results?: RawAcademicResults
 }
-
-export type ManageAcademicAnswersRequest =
-  | { action: 'status'; adminToken: string; lectureSessionId: string }
-  | {
-      action: 'cancel'
-      adminToken: string
-      lectureSessionId: string
-      requestId: string
-    }
-  | {
-      action: 'approve' | 'hide' | 'reject'
-      adminToken: string
-      answerId: string
-      lectureSessionId: string
-    }
-  | {
-      action: 'generate'
-      adminToken: string
-      billingGrant: string
-      idempotencyKey: string
-      lectureSessionId: string
-      question: string
-      searchQuery: string
-      sourceKind: 'summary_candidate' | 'teacher_selected'
-      sourceSummaryId: string | null
-    }
 
 type SummaryFunctionResponse = {
   actualInputTokens?: number
@@ -819,7 +754,7 @@ export const supabaseAdminRepository = {
       {
         body: request,
         timeout:
-          request.action === 'generate'
+          request.action === 'generate' || request.action === 'generateAuto'
             ? AI_FUNCTION_TIMEOUT_MS
             : ADMIN_FUNCTION_TIMEOUT_MS,
       },
@@ -1027,7 +962,12 @@ export const supabaseAdminRepository = {
         }
       | {
           action: 'start'
+          academicSourcePolicy:
+            | 'auto'
+            | 'biomedical_pubmed'
+            | 'multidisciplinary_doi'
           adminToken: string
+          autoAcademicAnswers: boolean
           billingGrant: string
           lectureSessionId: string
         }

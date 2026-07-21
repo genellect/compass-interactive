@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback, useState } from 'react'
 
 import { AppIcon } from '../AppIcon'
 import {
@@ -51,6 +51,10 @@ export function AdminAiControlPanel({
   realtimeEnabled,
   summariesEnabled,
 }: Props) {
+  const [academicRefreshVersion, setAcademicRefreshVersion] = useState(0)
+  const handleAcademicAnswerChanged = useCallback(() => {
+    setAcademicRefreshVersion((version) => version + 1)
+  }, [])
   const anyEnabled =
     realtimeEnabled || materialEnabled || summariesEnabled || academicEnabled
   const status = activeLecture?.status ?? lectureStatus
@@ -96,6 +100,7 @@ export function AdminAiControlPanel({
           hardStopAt={activeLecture?.hardStopAt ?? null}
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
+          onAcademicAnswerChanged={handleAcademicAnswerChanged}
           publisherSessionToken={publisherSessionToken}
           startedAt={activeLecture?.startsAt ?? null}
         />
@@ -110,6 +115,7 @@ export function AdminAiControlPanel({
             adminToken={adminToken}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}
+            refreshVersion={academicRefreshVersion}
           />
         </Suspense>
       ) : null}
@@ -173,8 +179,8 @@ export function AdminAiControlPanel({
             <AppIcon name="book" size={18} />
           </span>
           <div>
-            <strong>文献に基づく参考回答</strong>
-            <small>{academicEnabled ? '教員確認後に公開' : '停止中'}</small>
+            <strong>AIによる参考回答</strong>
+            <small>{academicEnabled ? '教員確認と修正に対応' : '停止中'}</small>
           </div>
           <span
             className={`readiness-dot ${academicEnabled ? 'is-active' : ''}`}

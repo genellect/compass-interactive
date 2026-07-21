@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { listCompletedCaptionSegments } from '../../caption/captionTranscriptStore'
-import { issuePdfAccessSession } from '../../pdf/pdfDelivery'
-import { publisherClient } from '../../pdf/publisherClient'
+import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
-import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
+import {
+  isPhase71ClassroomExtensionsEnabled,
+  isPhase725AutoAcademicAnswersEnabled,
+  isPhase726BrowserPdfPublishingEnabled,
+} from '../../lib/featureFlags'
 import {
   type AdminLectureSummary,
   type AdminPdfDocument,
@@ -27,6 +30,7 @@ type LectureSummaryControlProps = {
   hardStopAt: string | null
   lectureSessionId: string
   lectureStatus: LectureStatus
+  onAcademicAnswerChanged?: () => void
   publisherSessionToken: string
   startedAt: string | null
 }
@@ -37,6 +41,9 @@ const emptyResults: AdminSummaryResults = {
   summaries: [],
   windows: [],
 }
+
+const MAX_AUTO_ACADEMIC_DISPATCH_ATTEMPTS = 3
+const AUTO_ACADEMIC_RETRY_DELAYS_MS = [10_000, 20_000] as const
 
 function currentRevision(summary: AdminLectureSummary) {
   const activeId = summary.publication?.activeRevisionId
@@ -62,6 +69,7 @@ export function LectureSummaryControl({
   hardStopAt,
   lectureSessionId,
   lectureStatus,
+  onAcademicAnswerChanged,
   publisherSessionToken,
   startedAt,
 }: LectureSummaryControlProps) {
@@ -75,8 +83,14 @@ export function LectureSummaryControl({
   const [draftPulse, setDraftPulse] = useState('')
   const [summaryLanguage, setSummaryLanguage] =
     useState<SummaryLanguagePreference>('auto')
+  const [autoAcademicAnswers, setAutoAcademicAnswers] = useState(false)
+  const [academicSourcePolicy, setAcademicSourcePolicy] = useState<
+    'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
+  >('auto')
   const schedulerBusyRef = useRef(false)
   const runTokenRef = useRef<string | null>(null)
+  const academicDispatchBusyRef = useRef(false)
+  const academicRetryTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     runTokenRef.current = runToken
@@ -106,6 +120,12 @@ export function LectureSummaryControl({
       .then(async (response) => {
         if (cancelled) return
         setResults(response.results)
+        setAutoAcademicAnswers(
+          response.results.run?.autoAcademicAnswersEnabled ?? false,
+        )
+        setAcademicSourcePolicy(
+          response.results.run?.academicSourcePolicy ?? 'auto',
+        )
         setSummaryLanguage(response.results.control?.summaryLanguage ?? 'auto')
         if (
           response.results.run?.status === 'running' &&
@@ -118,6 +138,12 @@ export function LectureSummaryControl({
           })
           if (!cancelled) {
             if (resumed.runToken) setResults(resumed.results)
+            setAutoAcademicAnswers(
+              resumed.results.run?.autoAcademicAnswersEnabled ?? false,
+            )
+            setAcademicSourcePolicy(
+              resumed.results.run?.academicSourcePolicy ?? 'auto',
+            )
             setRunToken(resumed.runToken)
             setMessage(
               resumed.runToken
@@ -132,15 +158,124 @@ export function LectureSummaryControl({
       })
     return () => {
       cancelled = true
+      if (academicRetryTimerRef.current !== null) {
+        window.clearTimeout(academicRetryTimerRef.current)
+      }
     }
   }, [adminToken, lectureSessionId, lectureStatus])
 
+  const dispatchAutomaticAcademicAnswers = useCallback(
+    async (token: string, attempt = 0) => {
+      if (
+        !isPhase725AutoAcademicAnswersEnabled ||
+        runTokenRef.current !== token ||
+        lectureStatus !== 'open' ||
+        academicDispatchBusyRef.current
+      ) {
+        return
+      }
+      academicDispatchBusyRef.current = true
+      try {
+        for (
+          let dispatched = 0;
+          dispatched < MAX_AUTO_ACADEMIC_DISPATCH_ATTEMPTS;
+          dispatched += 1
+        ) {
+          if (runTokenRef.current !== token || lectureStatus !== 'open') return
+          const academic = await supabaseAdminRepository.manageAcademicAnswers({
+            action: 'status',
+            adminToken,
+            lectureSessionId,
+          })
+          const automation = academic.automation
+          const candidate = academic.candidates.find(
+            (item) =>
+              item.needsAutoDispatch &&
+              item.runId === automation?.runId &&
+              item.qualityScore >= 0.85,
+          )
+          const pendingLease = academic.candidates.find(
+            (item) =>
+              item.autoRequestStatus === 'evidence_checking' &&
+              item.runId === automation?.runId &&
+              item.retryAfterMs > 0 &&
+              item.qualityScore >= 0.85,
+          )
+          if (
+            !candidate ||
+            !automation?.enabled ||
+            automation.status !== 'running'
+          ) {
+            if (
+              pendingLease &&
+              automation?.enabled &&
+              automation.status === 'running' &&
+              attempt < MAX_AUTO_ACADEMIC_DISPATCH_ATTEMPTS
+            ) {
+              academicRetryTimerRef.current = window.setTimeout(
+                () => void dispatchAutomaticAcademicAnswers(token, attempt),
+                Math.min(Math.max(pendingLease.retryAfterMs + 500, 1_000), 60_000),
+              )
+            }
+            return
+          }
+          await supabaseAdminRepository.manageAcademicAnswers({
+            action: 'generateAuto',
+            adminToken,
+            idempotencyKey: `phase7-25:auto:${lectureSessionId}:${candidate.summaryId}`,
+            lectureSessionId,
+            question: candidate.question,
+            runToken: token,
+            searchQuery: candidate.question,
+            sourcePolicy: automation.sourcePolicy,
+            sourceSummaryId: candidate.summaryId,
+          })
+          onAcademicAnswerChanged?.()
+        }
+      } catch (error) {
+        const retryDelay = AUTO_ACADEMIC_RETRY_DELAYS_MS[attempt]
+        if (retryDelay !== undefined && runTokenRef.current === token) {
+          academicRetryTimerRef.current = window.setTimeout(
+            () => void dispatchAutomaticAcademicAnswers(token, attempt + 1),
+            retryDelay,
+          )
+          return
+        }
+        setMessage(
+          error instanceof Error
+            ? `要約は保存しましたが、参考回答を作成できませんでした: ${error.message}`
+            : '要約は保存しましたが、参考回答を作成できませんでした。',
+        )
+      } finally {
+        academicDispatchBusyRef.current = false
+      }
+    },
+    [adminToken, lectureSessionId, lectureStatus, onAcademicAnswerChanged],
+  )
+
+  useEffect(() => {
+    if (
+      runToken &&
+      results.run?.status === 'running' &&
+      results.run.autoAcademicAnswersEnabled
+    ) {
+      void dispatchAutomaticAcademicAnswers(runToken)
+    }
+  }, [
+    dispatchAutomaticAcademicAnswers,
+    results.run?.autoAcademicAnswersEnabled,
+    results.run?.status,
+    runToken,
+  ])
+
   const getPdfContext = useCallback(async () => {
+    if (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) {
+      return null
+    }
     const documentId = displayState?.pdfDocumentId
     const documentVersion = displayState?.pdfDocumentVersion
     const currentPage = displayState?.currentPdfPage
     if (
-      !publisherSessionToken ||
       !documentId ||
       !documentVersion ||
       !currentPage ||
@@ -152,12 +287,16 @@ export function LectureSummaryControl({
     ) {
       return null
     }
-    const access = await issuePdfAccessSession({ adminToken, lectureSessionId })
-    const extraction = await publisherClient.getExtraction({
-      accessToken: access.accessToken,
-      documentId,
-      documentVersion,
-      lecturePublicId: access.lecturePublicId,
+    const document = documents.find(
+      (candidate) =>
+        candidate.documentId === documentId &&
+        candidate.documentVersion === documentVersion,
+    )
+    if (!document) return null
+    const extraction = await getAdminPdfExtraction({
+      adminToken,
+      document,
+      lectureSessionId,
       publisherSessionToken,
     })
     return {
@@ -228,6 +367,9 @@ export function LectureSummaryControl({
         windowIndex: summaryWindow.index,
       })
       setResults(generated.results)
+      if (generated.results.run?.autoAcademicAnswersEnabled) {
+        void dispatchAutomaticAcademicAnswers(token)
+      }
       const label = formatSummaryWindowLabel(
         summaryWindow.startAt,
         summaryWindow.endAt,
@@ -250,6 +392,7 @@ export function LectureSummaryControl({
     }
   }, [
     adminToken,
+    dispatchAutomaticAcademicAnswers,
     getPdfContext,
     getServerNow,
     hardStopAt,
@@ -276,20 +419,30 @@ export function LectureSummaryControl({
     setMessage('API利用PINと講義状態を確認しています…')
     try {
       const authorization = await supabaseAdminRepository.authorizeAiStart({
-        actions: ['summaries'],
+        actions:
+          isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers
+            ? ['summaries', 'academic_answers']
+            : ['summaries'],
         adminToken,
         billingPin,
         lectureSessionId,
       })
       const started = await supabaseAdminRepository.manageLectureSummaries({
         action: 'start',
+        academicSourcePolicy,
         adminToken,
+        autoAcademicAnswers:
+          isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers,
         billingGrant: authorization.billingGrant,
         lectureSessionId,
       })
       setResults(started.results)
       setRunToken(started.runToken)
-      setMessage('5分要約を開始しました。各windowはサーバー時刻で判定します。')
+      setMessage(
+        autoAcademicAnswers
+          ? '5分要約と参考回答の自動生成を開始しました。各windowはサーバー時刻で判定します。'
+          : '5分要約を開始しました。各windowはサーバー時刻で判定します。',
+      )
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : '要約を開始できませんでした。',
@@ -343,6 +496,10 @@ export function LectureSummaryControl({
       })
       setResults(stopped.results)
       setRunToken(null)
+      if (academicRetryTimerRef.current !== null) {
+        window.clearTimeout(academicRetryTimerRef.current)
+        academicRetryTimerRef.current = null
+      }
       setMessage('5分要約を停止しました。停止にAPI利用PINは不要です。')
     } catch (error) {
       setMessage(
@@ -481,6 +638,40 @@ export function LectureSummaryControl({
           </label>
           <p className="note" id="summary-language-help">
             自動判定は直近の教員字幕を優先し、情報が少ない場合のみ講義資料を参照します。変更は次の5分枠から反映され、API呼び出し回数は増えません。
+          </p>
+        </div>
+      ) : null}
+      {isPhase725AutoAcademicAnswersEnabled ? (
+        <div className="summary-academic-answer-control">
+          <label className="field checkbox-field">
+            <input
+              checked={autoAcademicAnswers}
+              disabled={busy || runActive || lectureStatus !== 'open'}
+              onChange={(event) => setAutoAcademicAnswers(event.target.checked)}
+              type="checkbox"
+            />
+            <span>学術的な質問に参考回答を自動生成</span>
+          </label>
+          {autoAcademicAnswers ? (
+            <label className="field compact-field">
+              <span>参照する分野</span>
+              <select
+                disabled={busy || runActive || lectureStatus !== 'open'}
+                onChange={(event) =>
+                  setAcademicSourcePolicy(
+                    event.target.value as typeof academicSourcePolicy,
+                  )
+                }
+                value={academicSourcePolicy}
+              >
+                <option value="auto">自動</option>
+                <option value="biomedical_pubmed">医学・生命科学（PubMed）</option>
+                <option value="multidisciplinary_doi">その他の分野（DOI論文）</option>
+              </select>
+            </label>
+          ) : null}
+          <p className="note">
+            教育価値の高い質問と確認できる一次文献がある場合だけ生成し、「教員未確認」で学生へ表示します。
           </p>
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import {
   DEMO_LECTURE_ID,
+  demoAmbientComments,
   demoDisplayState,
   demoLecture,
   demoPolls,
@@ -111,6 +112,26 @@ export const demoRepository = {
       storage,
     )
 
+    return toSnapshot(state)
+  },
+
+  addNextAmbientComment(storage?: DemoStorage) {
+    const current = loadDemoState(storage)
+    const existingIds = new Set(current.comments.map((comment) => comment.id))
+    const nextComment = demoAmbientComments.find(
+      (comment) => !existingIds.has(comment.id),
+    )
+    if (!nextComment) return toSnapshot(current)
+    const state = updateDemoState(
+      (stateBeforeInsert) => ({
+        ...stateBeforeInsert,
+        comments: [
+          { ...nextComment, createdAt: new Date().toISOString() },
+          ...stateBeforeInsert.comments,
+        ],
+      }),
+      storage,
+    )
     return toSnapshot(state)
   },
 
