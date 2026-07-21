@@ -9,6 +9,67 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      academic_answer_publication_events: {
+        Row: {
+          actor_id: string | null
+          answer_id: string
+          created_at: string
+          event_type: string
+          id: string
+          lecture_session_id: string
+          next_visibility: string
+          previous_visibility: string | null
+          reason: string | null
+          revision_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          answer_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          lecture_session_id: string
+          next_visibility: string
+          previous_visibility?: string | null
+          reason?: string | null
+          revision_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          answer_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          lecture_session_id?: string
+          next_visibility?: string
+          previous_visibility?: string | null
+          reason?: string | null
+          revision_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_answer_publication_e_lecture_session_id_answer_id_fkey"
+            columns: ["lecture_session_id", "answer_id", "revision_id"]
+            isOneToOne: false
+            referencedRelation: "academic_answer_revisions"
+            referencedColumns: ["lecture_session_id", "answer_id", "id"]
+          },
+          {
+            foreignKeyName: "academic_answer_publication_events_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_academic_answers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "academic_answer_publication_events_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       academic_answer_publications: {
         Row: {
           active_revision_id: string
@@ -69,8 +130,10 @@ export type Database = {
       }
       academic_answer_requests: {
         Row: {
+          automation_run_id: string | null
           created_at: string
           error_code: string | null
+          evidence_attempt_count: number
           id: string
           idempotency_key: string
           lease_until: string | null
@@ -78,9 +141,13 @@ export type Database = {
           operation_id: string | null
           prompt_version: string | null
           provider_dispatched_at: string | null
+          publication_mode: string
           question: string
           question_sha256: string
           requested_by_actor: string
+          requested_source_policy: string
+          resolved_source_route: string | null
+          retrieval_version: string
           search_query_sha256: string
           source_kind: string
           source_set_sha256: string | null
@@ -91,8 +158,10 @@ export type Database = {
           verified_source_count: number
         }
         Insert: {
+          automation_run_id?: string | null
           created_at?: string
           error_code?: string | null
+          evidence_attempt_count?: number
           id?: string
           idempotency_key: string
           lease_until?: string | null
@@ -100,9 +169,13 @@ export type Database = {
           operation_id?: string | null
           prompt_version?: string | null
           provider_dispatched_at?: string | null
+          publication_mode?: string
           question: string
           question_sha256: string
           requested_by_actor: string
+          requested_source_policy?: string
+          resolved_source_route?: string | null
+          retrieval_version?: string
           search_query_sha256: string
           source_kind: string
           source_set_sha256?: string | null
@@ -113,8 +186,10 @@ export type Database = {
           verified_source_count?: number
         }
         Update: {
+          automation_run_id?: string | null
           created_at?: string
           error_code?: string | null
+          evidence_attempt_count?: number
           id?: string
           idempotency_key?: string
           lease_until?: string | null
@@ -122,9 +197,13 @@ export type Database = {
           operation_id?: string | null
           prompt_version?: string | null
           provider_dispatched_at?: string | null
+          publication_mode?: string
           question?: string
           question_sha256?: string
           requested_by_actor?: string
+          requested_source_policy?: string
+          resolved_source_route?: string | null
+          retrieval_version?: string
           search_query_sha256?: string
           source_kind?: string
           source_set_sha256?: string | null
@@ -135,6 +214,20 @@ export type Database = {
           verified_source_count?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "academic_answer_requests_automation_lecture_fk"
+            columns: ["lecture_session_id", "automation_run_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_summary_runs"
+            referencedColumns: ["lecture_session_id", "id"]
+          },
+          {
+            foreignKeyName: "academic_answer_requests_automation_run_id_fkey"
+            columns: ["automation_run_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_summary_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "academic_answer_requests_lecture_session_id_fkey"
             columns: ["lecture_session_id"]
@@ -217,10 +310,11 @@ export type Database = {
           id: string
           journal: string
           lecture_session_id: string
-          pmid: string
+          pmid: string | null
           publication_types: Json
           publication_year: number
           source_id: string
+          source_provider: string
           source_role: string
           study_type: string
           title: string
@@ -234,10 +328,11 @@ export type Database = {
           id?: string
           journal: string
           lecture_session_id: string
-          pmid: string
+          pmid?: string | null
           publication_types: Json
           publication_year: number
           source_id: string
+          source_provider?: string
           source_role: string
           study_type: string
           title: string
@@ -251,10 +346,11 @@ export type Database = {
           id?: string
           journal?: string
           lecture_session_id?: string
-          pmid?: string
+          pmid?: string | null
           publication_types?: Json
           publication_year?: number
           source_id?: string
+          source_provider?: string
           source_role?: string
           study_type?: string
           title?: string
@@ -1839,6 +1935,7 @@ export type Database = {
       lecture_pdf_documents: {
         Row: {
           archive_expires_at: string | null
+          browser_publication_id: string | null
           byte_size: number
           created_at: string
           delete_after: string | null
@@ -1847,6 +1944,7 @@ export type Database = {
           document_version: string
           download_enabled: boolean
           lecture_session_id: string
+          local_manifest_etag: string | null
           manifest_version: number
           page_count: number
           pdf_sha256: string
@@ -1859,6 +1957,7 @@ export type Database = {
         }
         Insert: {
           archive_expires_at?: string | null
+          browser_publication_id?: string | null
           byte_size: number
           created_at?: string
           delete_after?: string | null
@@ -1867,6 +1966,7 @@ export type Database = {
           document_version: string
           download_enabled?: boolean
           lecture_session_id: string
+          local_manifest_etag?: string | null
           manifest_version: number
           page_count: number
           pdf_sha256: string
@@ -1879,6 +1979,7 @@ export type Database = {
         }
         Update: {
           archive_expires_at?: string | null
+          browser_publication_id?: string | null
           byte_size?: number
           created_at?: string
           delete_after?: string | null
@@ -1887,6 +1988,7 @@ export type Database = {
           document_version?: string
           download_enabled?: boolean
           lecture_session_id?: string
+          local_manifest_etag?: string | null
           manifest_version?: number
           page_count?: number
           pdf_sha256?: string
@@ -1899,10 +2001,273 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "lecture_pdf_documents_browser_publication_id_fkey"
+            columns: ["browser_publication_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_pdf_publications"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "lecture_pdf_documents_lecture_session_id_fkey"
             columns: ["lecture_session_id"]
             isOneToOne: false
             referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lecture_pdf_publication_events: {
+        Row: {
+          actor_id: string
+          actor_type: string
+          details: Json
+          event_type: string
+          id: string
+          lecture_session_id: string
+          publication_id: string
+          recorded_at: string
+          state_from: string | null
+          state_to: string
+        }
+        Insert: {
+          actor_id: string
+          actor_type: string
+          details?: Json
+          event_type: string
+          id?: string
+          lecture_session_id: string
+          publication_id: string
+          recorded_at?: string
+          state_from?: string | null
+          state_to: string
+        }
+        Update: {
+          actor_id?: string
+          actor_type?: string
+          details?: Json
+          event_type?: string
+          id?: string
+          lecture_session_id?: string
+          publication_id?: string
+          recorded_at?: string
+          state_from?: string | null
+          state_to?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_pdf_publication_events_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_pdf_publication_events_publication_id_fkey"
+            columns: ["publication_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_pdf_publications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lecture_pdf_publications: {
+        Row: {
+          aborted_at: string | null
+          activated_manifest_etag: string | null
+          activated_manifest_version: number | null
+          activation_lease_expires_at: string | null
+          activation_operation_id: string | null
+          activation_target_access_version: number | null
+          active_at: string | null
+          actual_byte_size: number | null
+          actual_pdf_sha256: string | null
+          allowed_origin: string
+          cleanup_after: string | null
+          cleanup_attempt_count: number
+          cleanup_claim_id: string | null
+          cleanup_completed_at: string | null
+          cleanup_exhausted_at: string | null
+          cleanup_lease_expires_at: string | null
+          cleanup_worker_generation: number | null
+          client_request_id: string
+          commit_lease_expires_at: string | null
+          commit_operation_id: string | null
+          committed_at: string | null
+          committed_manifest_access_version: number | null
+          committed_manifest_etag: string | null
+          committed_manifest_version: number | null
+          created_at: string
+          declared_page_count: number
+          declared_text_char_count: number
+          declared_text_sha256: string
+          display_name: string
+          document_id: string
+          download_enabled: boolean
+          expected_byte_size: number
+          expected_pdf_sha256: string
+          expired_at: string | null
+          id: string
+          last_error_code: string | null
+          lecture_session_id: string
+          nonce_hash: string
+          nonce_used_at: string | null
+          operation_expires_at: string
+          pdf_magic_verified: boolean | null
+          r2_etag: string | null
+          r2_object_version: string | null
+          request_fingerprint: string
+          requested_by_admin_session_id: string
+          requested_by_auth_user_id: string
+          retired_at: string | null
+          state: string
+          state_version: number
+          ticket_admin_session_id: string
+          ticket_expires_at: string
+          ticket_generation: number
+          ticket_jti_hash: string
+          updated_at: string
+          upload_lease_expires_at: string | null
+          uploaded_at: string | null
+          worker_attempt_id: string | null
+        }
+        Insert: {
+          aborted_at?: string | null
+          activated_manifest_etag?: string | null
+          activated_manifest_version?: number | null
+          activation_lease_expires_at?: string | null
+          activation_operation_id?: string | null
+          activation_target_access_version?: number | null
+          active_at?: string | null
+          actual_byte_size?: number | null
+          actual_pdf_sha256?: string | null
+          allowed_origin: string
+          cleanup_after?: string | null
+          cleanup_attempt_count?: number
+          cleanup_claim_id?: string | null
+          cleanup_completed_at?: string | null
+          cleanup_exhausted_at?: string | null
+          cleanup_lease_expires_at?: string | null
+          cleanup_worker_generation?: number | null
+          client_request_id: string
+          commit_lease_expires_at?: string | null
+          commit_operation_id?: string | null
+          committed_at?: string | null
+          committed_manifest_access_version?: number | null
+          committed_manifest_etag?: string | null
+          committed_manifest_version?: number | null
+          created_at?: string
+          declared_page_count: number
+          declared_text_char_count: number
+          declared_text_sha256: string
+          display_name: string
+          document_id: string
+          download_enabled?: boolean
+          expected_byte_size: number
+          expected_pdf_sha256: string
+          expired_at?: string | null
+          id?: string
+          last_error_code?: string | null
+          lecture_session_id: string
+          nonce_hash: string
+          nonce_used_at?: string | null
+          operation_expires_at: string
+          pdf_magic_verified?: boolean | null
+          r2_etag?: string | null
+          r2_object_version?: string | null
+          request_fingerprint: string
+          requested_by_admin_session_id: string
+          requested_by_auth_user_id: string
+          retired_at?: string | null
+          state?: string
+          state_version?: number
+          ticket_admin_session_id: string
+          ticket_expires_at: string
+          ticket_generation?: number
+          ticket_jti_hash: string
+          updated_at?: string
+          upload_lease_expires_at?: string | null
+          uploaded_at?: string | null
+          worker_attempt_id?: string | null
+        }
+        Update: {
+          aborted_at?: string | null
+          activated_manifest_etag?: string | null
+          activated_manifest_version?: number | null
+          activation_lease_expires_at?: string | null
+          activation_operation_id?: string | null
+          activation_target_access_version?: number | null
+          active_at?: string | null
+          actual_byte_size?: number | null
+          actual_pdf_sha256?: string | null
+          allowed_origin?: string
+          cleanup_after?: string | null
+          cleanup_attempt_count?: number
+          cleanup_claim_id?: string | null
+          cleanup_completed_at?: string | null
+          cleanup_exhausted_at?: string | null
+          cleanup_lease_expires_at?: string | null
+          cleanup_worker_generation?: number | null
+          client_request_id?: string
+          commit_lease_expires_at?: string | null
+          commit_operation_id?: string | null
+          committed_at?: string | null
+          committed_manifest_access_version?: number | null
+          committed_manifest_etag?: string | null
+          committed_manifest_version?: number | null
+          created_at?: string
+          declared_page_count?: number
+          declared_text_char_count?: number
+          declared_text_sha256?: string
+          display_name?: string
+          document_id?: string
+          download_enabled?: boolean
+          expected_byte_size?: number
+          expected_pdf_sha256?: string
+          expired_at?: string | null
+          id?: string
+          last_error_code?: string | null
+          lecture_session_id?: string
+          nonce_hash?: string
+          nonce_used_at?: string | null
+          operation_expires_at?: string
+          pdf_magic_verified?: boolean | null
+          r2_etag?: string | null
+          r2_object_version?: string | null
+          request_fingerprint?: string
+          requested_by_admin_session_id?: string
+          requested_by_auth_user_id?: string
+          retired_at?: string | null
+          state?: string
+          state_version?: number
+          ticket_admin_session_id?: string
+          ticket_expires_at?: string
+          ticket_generation?: number
+          ticket_jti_hash?: string
+          updated_at?: string
+          upload_lease_expires_at?: string | null
+          uploaded_at?: string | null
+          worker_attempt_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_pdf_publications_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_pdf_publications_requested_by_admin_session_id_fkey"
+            columns: ["requested_by_admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_pdf_publications_ticket_admin_session_id_fkey"
+            columns: ["ticket_admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -2091,12 +2456,16 @@ export type Database = {
       }
       lecture_summary_runs: {
         Row: {
+          academic_authorization_grant_id: string | null
+          academic_source_policy: string
           actor_id: string
+          auto_academic_answers_enabled: boolean
           created_at: string
           expires_at: string
           id: string
           last_window_index: number
           lecture_session_id: string
+          previous_academic_answers_enabled: boolean
           started_at: string
           status: string
           stop_reason: string | null
@@ -2105,12 +2474,16 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          academic_authorization_grant_id?: string | null
+          academic_source_policy?: string
           actor_id: string
+          auto_academic_answers_enabled?: boolean
           created_at?: string
           expires_at: string
           id?: string
           last_window_index?: number
           lecture_session_id: string
+          previous_academic_answers_enabled?: boolean
           started_at?: string
           status?: string
           stop_reason?: string | null
@@ -2119,12 +2492,16 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          academic_authorization_grant_id?: string | null
+          academic_source_policy?: string
           actor_id?: string
+          auto_academic_answers_enabled?: boolean
           created_at?: string
           expires_at?: string
           id?: string
           last_window_index?: number
           lecture_session_id?: string
+          previous_academic_answers_enabled?: boolean
           started_at?: string
           status?: string
           stop_reason?: string | null
@@ -2133,6 +2510,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lecture_summary_runs_academic_authorization_grant_id_fkey"
+            columns: ["academic_authorization_grant_id"]
+            isOneToOne: false
+            referencedRelation: "ai_billing_grants"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lecture_summary_runs_lecture_session_id_fkey"
             columns: ["lecture_session_id"]
@@ -2635,6 +3019,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_abort_pdf_publication_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_publication_id: string
+          target_reason_code: string
+        }
+        Returns: Json
+      }
       admin_activate_realtime_provider_call: {
         Args: {
           target_actor_id: string
@@ -2687,6 +3080,30 @@ export type Database = {
           target_actor_id: string
           target_operation_id: string
           target_result: Json
+        }
+        Returns: Json
+      }
+      admin_complete_pdf_publication_activation_v1: {
+        Args: {
+          target_activation_operation_id: string
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_manifest_access_version: number
+          target_manifest_etag: string
+          target_manifest_version: number
+          target_publication_id: string
+        }
+        Returns: Json
+      }
+      admin_complete_pdf_publication_commit_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_commit_operation_id: string
+          target_manifest_access_version: number
+          target_manifest_etag: string
+          target_manifest_version: number
+          target_publication_id: string
         }
         Returns: Json
       }
@@ -2754,6 +3171,26 @@ export type Database = {
         }
         Returns: string
       }
+      admin_create_pdf_publication_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_allowed_origin: string
+          target_client_request_id: string
+          target_declared_page_count: number
+          target_declared_text_char_count: number
+          target_declared_text_sha256: string
+          target_display_name: string
+          target_document_id: string
+          target_download_enabled: boolean
+          target_expected_byte_size: number
+          target_expected_pdf_sha256: string
+          target_lecture_session_id: string
+          target_nonce_hash: string
+          target_ticket_jti_hash: string
+        }
+        Returns: Json
+      }
       admin_create_poll: {
         Args: {
           option_labels: string[]
@@ -2815,6 +3252,14 @@ export type Database = {
           target_error_code: string
           target_operation_id: string
           target_run_id: string
+        }
+        Returns: Json
+      }
+      admin_find_inflight_pdf_publication_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
         }
         Returns: Json
       }
@@ -2903,6 +3348,14 @@ export type Database = {
         Args: { target_lecture_session_id: string }
         Returns: Json
       }
+      admin_get_pdf_publication_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_publication_id: string
+        }
+        Returns: Json
+      }
       admin_get_phase6_summary_results: {
         Args: { target_lecture_session_id: string }
         Returns: Json
@@ -2989,6 +3442,53 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_prepare_academic_answer_request_v2: {
+        Args: {
+          target_actor_id: string
+          target_idempotency_key: string
+          target_lecture_session_id: string
+          target_question: string
+          target_question_sha256: string
+          target_search_query_sha256: string
+          target_source_kind: string
+          target_source_policy: string
+          target_source_summary_id: string
+        }
+        Returns: Json
+      }
+      admin_prepare_auto_academic_answer_request: {
+        Args: {
+          target_actor_id: string
+          target_idempotency_key: string
+          target_lecture_session_id: string
+          target_question: string
+          target_question_sha256: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_search_query_sha256: string
+          target_source_policy: string
+          target_source_summary_id: string
+        }
+        Returns: Json
+      }
+      admin_prepare_pdf_publication_activation_v1: {
+        Args: {
+          target_activation_operation_id: string
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_publication_id: string
+        }
+        Returns: Json
+      }
+      admin_prepare_pdf_publication_commit_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_commit_operation_id: string
+          target_publication_id: string
+        }
+        Returns: Json
+      }
       admin_publish_lecture_caption: {
         Args: {
           target_actor_id: string
@@ -3031,14 +3531,18 @@ export type Database = {
         }
         Returns: Json
       }
-      admin_register_pdf_document: {
+      admin_register_local_pdf_document_v2: {
         Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
           target_byte_size: number
           target_display_name: string
           target_document_id: string
           target_document_version: string
-          target_download_enabled?: boolean
+          target_download_enabled: boolean
+          target_expected_access_version: number
           target_lecture_session_id: string
+          target_manifest_etag: string
           target_manifest_version: number
           target_page_count: number
           target_pdf_sha256: string
@@ -3047,6 +3551,7 @@ export type Database = {
         }
         Returns: {
           archive_expires_at: string | null
+          browser_publication_id: string | null
           byte_size: number
           created_at: string
           delete_after: string | null
@@ -3055,6 +3560,7 @@ export type Database = {
           document_version: string
           download_enabled: boolean
           lecture_session_id: string
+          local_manifest_etag: string | null
           manifest_version: number
           page_count: number
           pdf_sha256: string
@@ -3071,6 +3577,59 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      admin_register_pdf_document: {
+        Args: {
+          target_byte_size: number
+          target_display_name: string
+          target_document_id: string
+          target_document_version: string
+          target_download_enabled?: boolean
+          target_lecture_session_id: string
+          target_manifest_version: number
+          target_page_count: number
+          target_pdf_sha256: string
+          target_text_char_count: number
+          target_text_sha256: string
+        }
+        Returns: {
+          archive_expires_at: string | null
+          browser_publication_id: string | null
+          byte_size: number
+          created_at: string
+          delete_after: string | null
+          display_name: string
+          document_id: string
+          document_version: string
+          download_enabled: boolean
+          lecture_session_id: string
+          local_manifest_etag: string | null
+          manifest_version: number
+          page_count: number
+          pdf_sha256: string
+          published_at: string
+          retired_at: string | null
+          text_char_count: number
+          text_sha256: string
+          updated_at: string
+          visible: boolean
+        }
+        SetofOptions: {
+          from: "*"
+          to: "lecture_pdf_documents"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      admin_reissue_pdf_publication_ticket_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_nonce_hash: string
+          target_publication_id: string
+          target_ticket_jti_hash: string
+        }
+        Returns: Json
       }
       admin_reject_poll_proposal: {
         Args: {
@@ -3089,6 +3648,16 @@ export type Database = {
           target_actor_id: string
           target_lecture_session_id: string
           target_run_token_hash: string
+        }
+        Returns: Json
+      }
+      admin_revise_academic_answer_publication: {
+        Args: {
+          target_actor_id: string
+          target_answer_id: string
+          target_body: Json
+          target_lecture_session_id: string
+          target_reason?: string
         }
         Returns: Json
       }
@@ -3164,6 +3733,46 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_start_academic_answer_operation_v2: {
+        Args: {
+          estimated_input_tokens: number
+          estimated_microusd: number
+          estimated_output_tokens: number
+          target_actor_id: string
+          target_grant_id: string
+          target_input_price_microusd_per_million: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_output_price_microusd_per_million: number
+          target_prompt_version: string
+          target_request_id: string
+          target_resolved_source_route: string
+          target_source_set_sha256: string
+          target_verified_primary_count: number
+          target_verified_source_count: number
+        }
+        Returns: Json
+      }
+      admin_start_auto_academic_answer_operation: {
+        Args: {
+          estimated_input_tokens: number
+          estimated_microusd: number
+          estimated_output_tokens: number
+          target_actor_id: string
+          target_input_price_microusd_per_million: number
+          target_model_id: string
+          target_output_price_microusd_per_million: number
+          target_prompt_version: string
+          target_request_id: string
+          target_resolved_source_route: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_source_set_sha256: string
+          target_verified_primary_count: number
+          target_verified_source_count: number
+        }
+        Returns: Json
+      }
       admin_start_lecture_ai_operation: {
         Args: {
           estimated_audio_seconds?: number
@@ -3180,6 +3789,18 @@ export type Database = {
       admin_start_lecture_summary_run: {
         Args: {
           target_actor_id: string
+          target_grant_id: string
+          target_grant_nonce_hash: string
+          target_lecture_session_id: string
+          target_run_token_hash: string
+        }
+        Returns: Json
+      }
+      admin_start_lecture_summary_run_v2: {
+        Args: {
+          target_academic_source_policy: string
+          target_actor_id: string
+          target_auto_academic_answers_enabled: boolean
           target_grant_id: string
           target_grant_nonce_hash: string
           target_lecture_session_id: string
@@ -3316,6 +3937,10 @@ export type Database = {
           recipient: string
         }[]
       }
+      claim_due_pdf_publication_cleanup_v1: {
+        Args: { job_limit?: number; target_worker_id?: string }
+        Returns: Json[]
+      }
       claim_lecture_archive_exports: {
         Args: { job_limit?: number }
         Returns: {
@@ -3339,6 +3964,16 @@ export type Database = {
           operation_id: string
           provider_call_id: string
         }[]
+      }
+      complete_pdf_publication_cleanup_v1: {
+        Args: {
+          target_cleanup_claim_id: string
+          target_error_code: string
+          target_publication_id: string
+          target_succeeded: boolean
+          target_worker_id?: string
+        }
+        Returns: Json
       }
       consume_admin_pin_rate_limit: {
         Args: {
@@ -3596,6 +4231,35 @@ export type Database = {
           target_pin_version_hash: string
           target_session_id: string
           target_token_hash: string
+        }
+        Returns: Json
+      }
+      worker_claim_pdf_publication_nonce_v1: {
+        Args: {
+          target_allowed_origin: string
+          target_document_id: string
+          target_expected_byte_size: number
+          target_expected_pdf_sha256: string
+          target_lecture_public_id: string
+          target_nonce_hash: string
+          target_publication_id: string
+          target_ticket_admin_session_id: string
+          target_ticket_generation: number
+          target_ticket_jti_hash: string
+          target_worker_attempt_id: string
+        }
+        Returns: Json
+      }
+      worker_record_pdf_publication_uploaded_v1: {
+        Args: {
+          target_actual_byte_size: number
+          target_actual_pdf_sha256: string
+          target_object_etag: string
+          target_object_key: string
+          target_pdf_magic_verified: boolean
+          target_publication_id: string
+          target_r2_object_version: string
+          target_worker_attempt_id: string
         }
         Returns: Json
       }

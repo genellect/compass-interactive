@@ -53,7 +53,10 @@ Deno.serve(async (request) => {
     return json({ message: 'Method not allowed.', ok: false }, 405)
   }
   if (request.headers.has('Origin')) {
-    return json({ message: 'Browser requests are not accepted.', ok: false }, 403)
+    return json(
+      { message: 'Browser requests are not accepted.', ok: false },
+      403,
+    )
   }
   const configuredSecret = Deno.env.get('PDF_PUBLICATION_COORDINATOR_SECRET')
   const suppliedSecret =
@@ -185,6 +188,10 @@ Deno.serve(async (request) => {
       return json({ message: 'Nonce claim was rejected.', ok: false }, 409)
     }
     return json({ data, ok: true, status: 'claimed' }, 200)
+  }
+
+  if (body.action !== 'recordUploaded') {
+    return json({ message: 'Coordinator action is invalid.', ok: false }, 400)
   }
 
   if (

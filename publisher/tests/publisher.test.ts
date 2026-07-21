@@ -24,6 +24,10 @@ import {
 } from '../src/server/publisherServer.ts'
 import { FileObjectStore } from '../src/storage/fileObjectStore.ts'
 import { LocalTextStore } from '../src/storage/localTextStore.ts'
+import {
+  PublisherRequestError,
+  validatePublisherPublication,
+} from '../../src/pdf/publisherClient.ts'
 
 const root = new URL('../../', import.meta.url)
 const samplePath = new URL('public/lecture-assets/m4-sample-v1.pdf', root)
@@ -138,7 +142,9 @@ test('publishes hash-addressed bytes, local text and a verified manifest', async
       objectStore,
       textStore,
     })
+    assert.equal(first.accessVersion, 1)
     assert.equal(first.duplicate, false)
+    assert.match(first.manifestEtag, /^[0-9a-f]{64}$/)
     assert.equal(first.manifestVersion, 1)
     assert.match(first.document.object_key, /[0-9a-f]{64}\.pdf$/)
     const object = await objectStore.get(first.document.object_key)
@@ -174,9 +180,35 @@ test('publishes hash-addressed bytes, local text and a verified manifest', async
       objectStore,
       textStore,
     })
+    assert.equal(duplicate.accessVersion, 1)
     assert.equal(duplicate.duplicate, true)
+    assert.equal(duplicate.manifestEtag, first.manifestEtag)
     assert.equal(duplicate.manifestVersion, 1)
   })
+})
+
+test('Publisher client validates the manifest fence receipt', () => {
+  const receipt = {
+    accessVersion: 3,
+    document: {},
+    duplicate: false,
+    manifestEtag: 'a'.repeat(64),
+    manifestVersion: 7,
+  }
+  assert.equal(validatePublisherPublication(receipt), receipt)
+  for (const invalid of [
+    { ...receipt, accessVersion: 0 },
+    { ...receipt, accessVersion: 1.5 },
+    { ...receipt, manifestEtag: '' },
+    { ...receipt, manifestEtag: 'a'.repeat(513) },
+    { ...receipt, manifestEtag: 'etag\nsmuggled' },
+  ]) {
+    assert.throws(
+      () => validatePublisherPublication(invalid),
+      (error: unknown) =>
+        error instanceof PublisherRequestError && error.status === 502,
+    )
+  }
 })
 
 test('manifest CAS failure preserves the previously committed manifest', async () => {

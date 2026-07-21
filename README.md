@@ -15,10 +15,11 @@ secrets.
 
 - Application version: `0.11.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 7.2 are implemented in the repository. Phase 7.2 is
-  locally automated-verified; teacher literature review, the Phase 7.1
-  real-phone QR check and the combined human classroom review remain HOLD. It
-  has not been pushed, deployed or reflected to hosted services.
+- Phase 0 through Phase 7.26 are implemented in the repository. Phase 7.25 and
+  Phase 7.26 have passed their automated Local Gates; teacher literature review,
+  the Phase 7.1 real-phone QR check, the combined human classroom review and all
+  Hosted/Production evidence remain HOLD. These changes have not been pushed,
+  deployed or reflected to hosted services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -41,6 +42,15 @@ secrets.
 - Phase 7.2 adds teacher-requested, verified-primary-literature reference
   drafts. PubMed metadata and exact DOI corroboration are checked before one
   bounded Luna request; unsupported or unreviewed output is never published.
+- Phase 7.25 adds multidisciplinary Crossref/OpenAlex corroboration and bounded
+  five-minute automatic academic-answer candidates. Low-value questions or
+  candidates without a verified primary source are suppressed; visible drafts
+  are labelled as not yet teacher-confirmed and remain hide/approve/edit capable.
+- Phase 7.26 adds the default-OFF browser-complete private PDF publication saga.
+  Ticket, Origin, bytes, magic, SHA-256, binding, expiry, nonce, immutable upload,
+  hidden commit, activation and terminal cleanup are independently enforced by
+  Edge, Postgres and the Cloudflare Worker. Local Publisher is recovery-only and
+  must not retain an active R2 write credential while browser mode is enabled.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -48,8 +58,9 @@ they must not be read as the current implementation status unless the roadmap
 or a newer gate report points to them.
 
 The next combined hosted release is the **Phase 7 Production Gate**. It remains
-blocked until Phase 6.7, 6.8, 6.9, 7.1 and 7.2 have each passed their own local,
-security, UX/UI, browser, load/cost, rollback and required human gates.
+blocked until Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 have each passed
+their local, security, UX/UI, browser, load/cost, rollback and required human or
+hosted gates.
 
 ## Implemented product surface
 
@@ -75,7 +86,8 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
   server-time hard stop;
 - Poll creation, publication and closure;
 - comment moderation and pinning through authorized server operations;
-- local Publisher to private R2 PDF publication, download and synchronized page
+- default-OFF browser-to-Worker private R2 PDF publication plus a mutually
+  exclusive Local Publisher recovery path, download and synchronized page
   control without storing PDF bytes in Supabase;
 - explicit Realtime transcription start/stop with bounded duration and no audio
   retention by COMPASS;
@@ -83,8 +95,9 @@ security, UX/UI, browser, load/cost, rollback and required human gates.
   published;
 - five-minute summary/comment-pulse generation with immutable revisions and
   teacher publish, hide, pin and correction controls;
-- up to three evidence-grounded academic reference drafts per lecture, each
-  requiring API PIN authorization and explicit teacher publication;
+- up to three evidence-grounded academic reference answers per lecture, bounded
+  by API-PIN admission and primary-source verification, with teacher
+  approve/hide/edit controls and an explicit unconfirmed label before review;
 - approximate active-participant and visible-comment metrics folded into the
   existing snapshot path;
 - scoped classroom Display sessions and a light fullscreen view.
@@ -118,8 +131,10 @@ Pages does not depend on a catch-all redirect.
   validation and direct streaming to the Cloudflare asset Worker. Supabase
   stores authorization/lifecycle metadata only, never PDF bytes or extracted
   text.
-- **Local Publisher:** compatibility and recovery path for PDF publication and
-  teacher-controlled AI extraction. Publisher credentials remain local.
+- **Local Publisher:** offline compatibility and recovery mode for PDF
+  publication and teacher-controlled AI extraction. Publisher credentials
+  remain local and its R2 writer is disabled while browser publication is ON;
+  the two publication modes never write concurrently.
 - **Cloudflare Worker/R2:** byte-level ticket/origin/size/magic/SHA/replay
   enforcement, immutable private PDF storage, scoped delivery and sanitized
   read-only archives. PDF bytes and archive download traffic do not pass
@@ -186,6 +201,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE7_1_CLASSROOM_EXTENSIONS`
 - `VITE_PHASE7_2_ACADEMIC_ANSWERS`
 - `VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS`
+- `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -210,6 +226,10 @@ npm run test:phase7-2-quality
 npm run test:phase7-25-edge
 npm run test:phase7-25-static
 npm run test:phase7-25-load
+npm run test:phase7-26-browser-pdf
+npm run test:phase7-26-edge
+npm run test:phase7-26-static
+npm run test:phase7-26-load
 npm run build
 git diff --check
 ```
@@ -279,6 +299,7 @@ Use the current runbook index:
 - [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - [`docs/cloudflare_pages_deploy.md`](docs/cloudflare_pages_deploy.md)
 - [`docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)
+- [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 
 Always deploy expand-first: database and server capability, frontend with flags
 OFF, ownership and hosted smoke tests, then a controlled flag canary. Disable
@@ -302,6 +323,10 @@ flags before attempting a destructive rollback.
 - Phase 7.2 evidence-grounded answer design: [`docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md`](docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md)
 - Phase 7.2 local evidence: [`docs/PHASE7_2_LOCAL_GATE_2026-07-20.md`](docs/PHASE7_2_LOCAL_GATE_2026-07-20.md)
 - Phase 7.2 safe-stop handoff: [`docs/PHASE7_2_HANDOFF_2026-07-20.md`](docs/PHASE7_2_HANDOFF_2026-07-20.md)
+- Phase 7.26 requirements and threat model: [`docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md`](docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md)
+- Phase 7.26 browser PDF design: [`docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`](docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md)
+- Phase 7.26 local evidence: [`docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`](docs/PHASE7_26_LOCAL_GATE_2026-07-21.md)
+- Phase 7 production decision: [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
 - Original detailed Phase 0-6 design decisions: [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)

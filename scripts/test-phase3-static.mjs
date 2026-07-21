@@ -12,11 +12,13 @@ const migration = read(
   '20260714104032_phase3_private_pdf_delivery.sql',
 )
 const publisher = read('publisher', 'src', 'server', 'publisherServer.ts')
+const publisherCore = read('publisher', 'src', 'publishPdf.ts')
 const validator = read('publisher', 'src', 'pdf', 'validatePdf.ts')
 const worker = read('cloudflare', 'asset-worker', 'src', 'worker.ts')
 const wrangler = read('cloudflare', 'asset-worker', 'wrangler.jsonc')
 const delivery = read('src', 'pdf', 'pdfDelivery.ts')
 const publisherClient = read('src', 'pdf', 'publisherClient.ts')
+const adminPage = read('src', 'pages', 'AdminPage.tsx')
 const retentionFeed = read(
   'supabase',
   'functions',
@@ -60,6 +62,16 @@ assert.match(
   /decodeURIComponent\(getHeader\(request, 'x-file-name'\)/,
 )
 assert.match(publisherClient, /encodeURIComponent\(input\.file\.name\)/)
+assert.match(
+  publisherCore,
+  /manifestEtag: verifyManifestEtag\(committed\.etag\)/,
+)
+assert.match(publisher, /accessVersion: result\.accessVersion/)
+assert.match(publisher, /manifestEtag: result\.manifestEtag/)
+assert.match(publisherClient, /validatePublisherPublication/)
+assert.match(publisherClient, /candidate\.manifestEtag\.length > 512/)
+assert.match(adminPage, /expectedAccessVersion: published\.accessVersion/)
+assert.match(adminPage, /manifestEtag: published\.manifestEtag/)
 assert.doesNotMatch(publisherClient, /AWS_|R2_|SECRET_ACCESS_KEY|service_role/i)
 assert.match(validator, /getTextContent/)
 assert.doesNotMatch(validator, /\.render\(|createCanvas|OffscreenCanvas/)

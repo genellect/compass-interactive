@@ -16,6 +16,8 @@ type PdfDocumentIdentity = {
 }
 
 const extractionCache = new Map<string, PublisherExtraction>()
+const MAX_PDF_DOWNLOAD_BYTES = 15 * 1024 * 1024
+const PDF_DOWNLOAD_TIMEOUT_MS = 30 * 1000
 
 function cacheKey(
   lectureSessionId: string,
@@ -92,6 +94,39 @@ export function hasBrowserPdfExtraction(input: {
   )
 }
 
+export function clearAdminPdfExtractionCache() {
+  extractionCache.clear()
+}
+
+async function readBoundedPdfBody(response: Response) {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error('Published PDF response body is unavailable.')
+  }
+  const chunks: Uint8Array[] = []
+  let byteLength = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    byteLength += value.byteLength
+    if (byteLength > MAX_PDF_DOWNLOAD_BYTES) {
+      await reader.cancel()
+      throw new Error('Published PDF exceeds the browser extraction limit.')
+    }
+    chunks.push(value)
+  }
+  if (byteLength < 5) {
+    throw new Error('Published PDF size is invalid.')
+  }
+  const bytes = new Uint8Array(byteLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
 async function downloadAndExtract(input: {
   adminToken: string
   document: PdfDocumentIdentity
@@ -110,6 +145,7 @@ async function downloadAndExtract(input: {
     credentials: 'omit',
     redirect: 'error',
     referrerPolicy: 'no-referrer',
+    signal: AbortSignal.timeout(PDF_DOWNLOAD_TIMEOUT_MS),
   })
   if (!response.ok) {
     throw new Error(`Published PDF could not be read (${response.status}).`)
@@ -117,14 +153,12 @@ async function downloadAndExtract(input: {
   const contentLength = response.headers.get('Content-Length')
   if (
     contentLength &&
-    (!/^\d+$/.test(contentLength) || Number(contentLength) > 15 * 1024 * 1024)
+    (!/^\d+$/.test(contentLength) ||
+      Number(contentLength) > MAX_PDF_DOWNLOAD_BYTES)
   ) {
     throw new Error('Published PDF exceeds the browser extraction limit.')
   }
-  const bytes = await response.arrayBuffer()
-  if (bytes.byteLength < 5 || bytes.byteLength > 15 * 1024 * 1024) {
-    throw new Error('Published PDF size is invalid.')
-  }
+  const bytes = await readBoundedPdfBody(response)
   const preflight = await preflightBrowserPdf(
     new File([bytes], `${input.document.documentId}.pdf`, {
       type: 'application/pdf',
@@ -160,7 +194,13 @@ export async function getAdminPdfExtraction(input: {
     input.document.documentVersion,
   )
   const cached = extractionCache.get(key)
-  if (cached) return cached
+  if (cached) {
+    await issuePdfAccessSession({
+      adminToken: input.adminToken,
+      lectureSessionId: input.lectureSessionId,
+    })
+    return cached
+  }
 
   if (isPhase726BrowserPdfPublishingEnabled) {
     try {

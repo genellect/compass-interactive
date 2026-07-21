@@ -1,9 +1,13 @@
 # Phase 7.26 browser-complete private PDF publication
 
 Date: 2026-07-21
-Status: implementation in progress
-Flags: `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING=false` and
-`PHASE7_26_BROWSER_PDF_PUBLICATION_ENABLED=false`
+Status: automated local implementation and regression complete; Human, Hosted
+and Production gates HOLD
+Flags (all default OFF):
+
+- frontend: `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING=false`;
+- Supabase Edge orchestration: `PHASE726_BROWSER_PDF_PUBLICATION_ENABLED=false`;
+- Cloudflare upload/commit routes: `PHASE726_BROWSER_PDF_UPLOAD_ENABLED=false`.
 
 ## Responsibility split
 
@@ -69,16 +73,29 @@ result. A mismatched replay fails.
   private ledger lease and fenced attempt ID govern retry/recovery afterward.
 - After object write: a marker written before upload makes a crash discoverable.
   Recovery either returns the stored upload receipt or cleans the orphan.
-- During manifest CAS: the Worker reloads and retries a bounded number of
-  times. Commit creates only a hidden entry at the current access version;
-  activation requires the DB-reserved future access version.
+- During manifest CAS: a conflicting ETag fails closed and the caller retries
+  from authoritative DB/ledger state. Commit creates only a hidden entry at
+  the current access version; activation requires the DB-reserved future access
+  version.
 - After Worker commit but before DB commit: finalize is replayable. The Worker
   returns the same commit receipt and DB advances once.
-- Before active: lecture state is checked again. If activation cannot be
-  recorded in DB, the Worker rollback removes the new entry and restores the
-  previous access version/document instead of leaving it student-readable.
-- Scheduled cleanup: expired markers are scanned in bounded pages. The object
-  is deleted only after proving no committed manifest references its exact key.
+- Before active: lecture state is checked again. An exact `active`/`retired`
+  receipt is accepted. An authoritative `committed` result remains retryable
+  and is never rolled back from an ambiguous finalizer. Only a DB-terminal
+  `aborted`/`expired` publication may restore the previous manifest through the
+  captured generation and exact manifest/ledger fences.
+- Scheduled cleanup: expired markers are scanned in bounded pages. Cleanup
+  first CAS-fences the job as `cleanup_pending` (including an absent-ledger
+  sentinel). Ten minutes is only retry backoff; safety does not assume any
+  issued request has ended. Every upload/commit/activate must re-read the exact
+  ledger ETag immediately before each manifest CAS, so an indefinitely delayed
+  request fails after the terminal fence. A later pass rechecks the full
+  binding, CAS-removes only the exact non-visible/terminal manifest reference,
+  and replaces mutable PDF bytes plus the operational ledger with permanent
+  immutable sentinels. It does not physically delete those sentinel keys. Every
+  due document, including a manifest-CAS conflict, consumes one cleanup budget
+  unit, so work stays `O(limit)`. New v2 cleanup intent/audit keys injectively
+  include the full object key; legacy v1 intents remain readable for recovery.
 
 ## Database design
 
@@ -108,16 +125,43 @@ the Admin tab and transfers the PDF buffer rather than cloning it. An in-memory
 cache can serve the existing Phase 5/6 AI context. After a reload, the Admin
 client obtains a normal short-lived private download URL, re-validates the PDF
 in a new Web Worker and compares all hashes before providing excerpts. Local
-Publisher extraction remains the recovery fallback.
+Publisher extraction is available only after an ordered switch back to the
+mutually exclusive Local recovery mode.
 
 ## Rollback
 
-1. Disable both Phase 7.26 flags. Do not drop the additive schema.
-2. The UI immediately returns to the existing Local Publisher path.
-3. Disable only the new Worker upload/commit routes; existing manifest/read,
-   archive and retention routes remain compatible.
-4. Expire pending/uploaded jobs and run bounded orphan cleanup.
-5. Keep active content-addressed documents and manifests; they remain readable
+1. Disable the frontend flag first to prevent new browser publication. Do not
+   start Local Publisher or restore its credential yet.
+2. Keep Edge and Worker browser routes available while every in-flight browser
+   job reaches `active`, `aborted`, `expired` or `retired`, then run all due
+   cleanup to a terminal result.
+3. Disable the Edge orchestration flag. This restores the Local registration
+   API, but no Local writer is started yet.
+4. Disable the Worker upload flag; existing manifest/read, archive and retention
+   routes remain compatible.
+5. Only after the browser inflight/cleanup audit is empty, reissue or re-enable
+   the isolated Local R2 write credential and start Local Publisher.
+6. Keep active content-addressed documents and manifests; they remain readable
    by the existing Phase 3 delivery path.
 
+For browser activation, deploy every layer OFF, stop Local Publisher and revoke
+or isolate its R2 write credential, then enable the Worker route, Edge
+orchestration, and frontend flag in that order. While the Edge flag is ON it
+rejects every Local `register` request with `409`, receipt or no receipt, and
+the frontend renders no Local pairing/publication control. Never enable both
+R2 writers; simultaneous fallback is unsupported and requires a future shared
+DB reservation saga.
+
 No rollback step copies PDF bytes into Supabase or exposes R2 credentials.
+
+## Gate status
+
+- Automated Local Gate: PASS in the dated local evidence record.
+- Human local visual confirmation: HOLD until the operator records approval.
+- Hosted/Production: HOLD until the real Edge -> Worker -> private R2 -> DB
+  canary, 15 MiB resource measurement, two-Admin race, Local credential
+  revocation, route protection, cleanup monitoring and ordered flag rollout are
+  evidenced.
+
+See `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md` and
+`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md` for the current decision record.

@@ -388,7 +388,7 @@ UPDATE phase72_fixture SET result = public.admin_complete_academic_answer_operat
     'journal', 'New England Journal of Medicine',
     'publication_types', jsonb_build_array('Randomized Controlled Trial'),
     'study_type', 'randomized_controlled_trial', 'source_role', 'primary',
-    'verification', jsonb_build_object('passed', true)
+    'verification', jsonb_build_object('passed', true, 'pubmed', true)
   )),
   '{"answer_points":[{"text":"Late result","source_ids":["pmid:26551272"]}],"limitations":[]}'::jsonb,
   '{"identifier_validity":1}'::jsonb, 7000, 1800, 700, 'response-late'
@@ -416,13 +416,31 @@ SELECT throws_ok(
   'P0001', null,
   'closed lecture rejects a new academic request'
 );
-SELECT throws_ok(
+SELECT lives_ok(
   $$SELECT public.admin_manage_academic_answer_publication(
     (SELECT lecture_id FROM phase72_fixture),
     (SELECT answer_id FROM phase72_fixture), 'admin-session:phase72', 'hide'
   )$$,
-  'P0001', null,
-  'closed lecture rejects publication mutations'
+  'closed lecture review window accepts a teacher hide action'
+);
+
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '47200000-0000-4000-8000-000000000001', true);
+UPDATE phase72_fixture SET result = public.get_lecture_archive_v4(lecture_id);
+SELECT is(
+  jsonb_array_length((SELECT result -> 'academic_answers' FROM phase72_fixture)),
+  0,
+  'hidden academic answer immediately leaves the 30-day archive'
+);
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+  $$SELECT public.admin_manage_academic_answer_publication(
+    (SELECT lecture_id FROM phase72_fixture),
+    (SELECT answer_id FROM phase72_fixture), 'admin-session:phase72', 'approve'
+  )$$,
+  'closed lecture review window accepts a teacher republish action'
 );
 
 SET LOCAL ROLE authenticated;

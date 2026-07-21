@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import {
+  getAdminTokenClaims,
+  getAdminTokenSecret,
+  trackedAdminSessionsEnabled,
+} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
@@ -27,7 +31,9 @@ type RequestBody = {
   documentId?: string
   documentVersion?: string
   downloadEnabled?: boolean
+  expectedAccessVersion?: number
   lectureSessionId?: string
+  manifestEtag?: string
   manifestVersion?: number
   pageCount?: number
   pdfSha256?: string
@@ -50,6 +56,13 @@ function mapDocument(document: PdfDocument) {
     textSha256: document.text_sha256,
     visible: document.visible,
   }
+}
+
+function containsControlCharacters(value: string) {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint <= 31 || codePoint === 127
+  })
 }
 
 Deno.serve(async (request) => {
@@ -91,7 +104,12 @@ Deno.serve(async (request) => {
       500,
     )
   }
-  if (!(await verifyAdminToken(body.adminToken, adminSecret, request))) {
+  const adminClaims = await getAdminTokenClaims(
+    body.adminToken,
+    adminSecret,
+    request,
+  )
+  if (!adminClaims) {
     return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
   }
 
@@ -108,6 +126,18 @@ Deno.serve(async (request) => {
   })
 
   if (body.action === 'register') {
+    if (
+      Deno.env.get('PHASE726_BROWSER_PDF_PUBLICATION_ENABLED') === 'true'
+    ) {
+      return jsonResponse(
+        {
+          message:
+            'Local Publisher registration is unavailable while browser PDF publication is enabled.',
+          ok: false,
+        },
+        409,
+      )
+    }
     const required = [
       body.byteSize,
       body.displayName,
@@ -125,7 +155,23 @@ Deno.serve(async (request) => {
         400,
       )
     }
-    const { error } = await supabase.rpc('admin_register_pdf_document', {
+    const hasLocalPublicationReceipt =
+      body.expectedAccessVersion !== undefined || body.manifestEtag !== undefined
+    if (
+      hasLocalPublicationReceipt &&
+      (!Number.isSafeInteger(body.expectedAccessVersion) ||
+        Number(body.expectedAccessVersion) < 1 ||
+        typeof body.manifestEtag !== 'string' ||
+        body.manifestEtag.length < 1 ||
+        body.manifestEtag.length > 512 ||
+        containsControlCharacters(body.manifestEtag))
+    ) {
+      return jsonResponse(
+        { message: 'PDF publication receipt is invalid.', ok: false },
+        400,
+      )
+    }
+    const registration = {
       target_byte_size: body.byteSize,
       target_display_name: body.displayName,
       target_document_id: body.documentId,
@@ -137,8 +183,48 @@ Deno.serve(async (request) => {
       target_pdf_sha256: body.pdfSha256,
       target_text_char_count: body.textCharCount,
       target_text_sha256: body.textSha256,
-    })
-    if (error) return jsonResponse({ message: error.message, ok: false }, 409)
+    }
+    let registrationError: { message: string } | null = null
+    if (hasLocalPublicationReceipt) {
+      if (!trackedAdminSessionsEnabled() || !adminClaims.sid) {
+        return jsonResponse(
+          { message: 'Tracked Admin sessions are required.', ok: false },
+          503,
+        )
+      }
+      const authorization = request.headers.get('Authorization') ?? ''
+      const userJwt = authorization.startsWith('Bearer ')
+        ? authorization.slice(7).trim()
+        : ''
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser(userJwt)
+      if (userError || !userData.user) {
+        return jsonResponse(
+          { message: 'Authentication required.', ok: false },
+          401,
+        )
+      }
+      const result = await supabase.rpc('admin_register_local_pdf_document_v2', {
+        ...registration,
+        target_admin_auth_user_id: userData.user.id,
+        target_admin_session_id: adminClaims.sid,
+        target_expected_access_version: body.expectedAccessVersion,
+        target_manifest_etag: body.manifestEtag,
+      })
+      registrationError = result.error
+    } else {
+      const result = await supabase.rpc(
+        'admin_register_pdf_document',
+        registration,
+      )
+      registrationError = result.error
+    }
+    if (registrationError) {
+      return jsonResponse(
+        { message: registrationError.message, ok: false },
+        409,
+      )
+    }
   }
 
   const { data, error } = await supabase

@@ -339,6 +339,7 @@ export function createPublisherServer(dependencies: {
           response,
           200,
           {
+            accessVersion: result.accessVersion,
             document: {
               byteSize: result.document.byte_size,
               displayName: result.document.display_name,
@@ -351,6 +352,7 @@ export function createPublisherServer(dependencies: {
               textSha256: result.document.text_sha256,
             },
             duplicate: result.duplicate,
+            manifestEtag: result.manifestEtag,
             manifestVersion: result.manifestVersion,
             ok: true,
           },

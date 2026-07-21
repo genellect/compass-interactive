@@ -411,6 +411,11 @@ SELECT is(
   'Phase 6.6 operational tables are not added to Realtime'
 );
 
+-- Archive claim RPCs intentionally select the oldest eligible outbox row.
+-- Remove rows left by earlier local E2E runs inside this rollback-only test
+-- transaction so the claim assertions exercise only the fixtures below.
+DELETE FROM public.lecture_archive_exports;
+
 CREATE TEMP TABLE p66_fixture (
   lecture_id uuid,
   legacy_lecture_id uuid,

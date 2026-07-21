@@ -744,6 +744,53 @@ begin
 end;
 $$;
 
+create function public.admin_find_inflight_pdf_publication_v1(
+  target_lecture_session_id uuid,
+  target_admin_session_id uuid,
+  target_admin_auth_user_id uuid
+)
+returns jsonb
+language plpgsql
+volatile
+security invoker
+set search_path = ''
+as $$
+declare
+  publication_id uuid;
+begin
+  perform private.assert_tracked_pdf_admin_actor_v1(
+    target_admin_session_id,
+    target_admin_auth_user_id
+  );
+
+  if target_lecture_session_id is null then
+    raise exception 'lecture is required for PDF publication discovery'
+      using errcode = '22023';
+  end if;
+
+  perform private.close_lecture_if_expired(
+    target_lecture_session_id,
+    'deadline_guard',
+    'pdf-publication-discovery'
+  );
+
+  select publication.id
+  into publication_id
+  from public.lecture_pdf_publications as publication
+  where publication.lecture_session_id = target_lecture_session_id
+    and publication.requested_by_auth_user_id = target_admin_auth_user_id
+    and publication.state in ('pending', 'uploaded', 'committed')
+  order by publication.updated_at desc, publication.id desc
+  limit 1;
+
+  if not found then
+    return null;
+  end if;
+
+  return private.build_pdf_publication_result_v1(publication_id);
+end;
+$$;
+
 create function private.record_pdf_publication_event_v1(
   target_publication_id uuid,
   target_lecture_session_id uuid,
@@ -1387,6 +1434,7 @@ set search_path = ''
 as $$
   select jsonb_build_object(
     'publication_id', publication.id,
+    'client_request_id', publication.client_request_id,
     'lecture_session_id', publication.lecture_session_id,
     'lecture_public_id',
       'lecture_' || replace(lecture.pdf_public_id::text, '-', ''),
@@ -2406,6 +2454,9 @@ revoke all on function public.admin_reissue_pdf_publication_ticket_v1(
 ) from public, anon, authenticated, service_role;
 revoke all on function public.admin_get_pdf_publication_v1(uuid, uuid, uuid)
   from public, anon, authenticated, service_role;
+revoke all on function public.admin_find_inflight_pdf_publication_v1(
+  uuid, uuid, uuid
+) from public, anon, authenticated, service_role;
 revoke all on function public.worker_claim_pdf_publication_nonce_v1(
   uuid, integer, text, text, text, text, text, bigint, text, uuid, uuid
 ) from public, anon, authenticated, service_role;
@@ -2442,6 +2493,9 @@ grant execute on function public.admin_reissue_pdf_publication_ticket_v1(
 ) to service_role;
 grant execute on function public.admin_get_pdf_publication_v1(uuid, uuid, uuid)
   to service_role;
+grant execute on function public.admin_find_inflight_pdf_publication_v1(
+  uuid, uuid, uuid
+) to service_role;
 grant execute on function public.worker_claim_pdf_publication_nonce_v1(
   uuid, integer, text, text, text, text, text, bigint, text, uuid, uuid
 ) to service_role;

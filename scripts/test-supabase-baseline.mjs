@@ -38,6 +38,14 @@ const phase71ClassroomExtensionsMigrationName =
   '20260719114320_phase7_1_classroom_ux_extensions.sql'
 const phase72AcademicAnswersMigrationName =
   '20260720065403_phase7_2_verified_academic_answers.sql'
+const phase725AutoAcademicAnswersMigrationName =
+  '20260720205404_phase7_25_multidisciplinary_auto_academic_answers.sql'
+const phase726BrowserPdfPublicationMigrationName =
+  '20260721075029_phase7_26_browser_pdf_publication.sql'
+const phase726TerminalCleanupMigrationName =
+  '20260721190000_phase7_26_terminal_activation_cleanup.sql'
+const phase726LocalPublisherFenceMigrationName =
+  '20260721200000_phase7_26_local_publisher_manifest_fence.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -68,6 +76,10 @@ assert.deepEqual(
     phase68SecuritySessionsMigrationName,
     phase71ClassroomExtensionsMigrationName,
     phase72AcademicAnswersMigrationName,
+    phase725AutoAcademicAnswersMigrationName,
+    phase726BrowserPdfPublicationMigrationName,
+    phase726TerminalCleanupMigrationName,
+    phase726LocalPublisherFenceMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

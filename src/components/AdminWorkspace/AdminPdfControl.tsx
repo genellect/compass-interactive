@@ -14,6 +14,8 @@ type AdminPdfControlProps = {
   displayStateError: string | null
   displayStateLoading: boolean
   lectureStatus: string
+  hasInterruptedPublication: boolean
+  onAbortInterruptedPublication: () => void
   onCheckPublisher: () => void
   onDisplayNameChange: (value: string) => void
   onDownloadEnabledChange: (enabled: boolean) => void
@@ -51,6 +53,8 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     displayStateError,
     displayStateLoading,
     lectureStatus,
+    hasInterruptedPublication,
+    onAbortInterruptedPublication,
     onCheckPublisher,
     onDisplayNameChange,
     onDownloadEnabledChange,
@@ -61,7 +65,6 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     onPairingCodeChange,
     onPrevious,
     onPublish,
-    onPublishWithLocalPublisher,
     onSelectDocument,
     onSetDocument,
     pdfDisplayName,
@@ -195,55 +198,19 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           >
             {publisherMessage || 'PDFを選択して公開してください。'}
           </p>
+          {browserPublishingEnabled && hasInterruptedPublication ? (
+            <button
+              className="secondary-button"
+              disabled={pdfPublishing}
+              onClick={onAbortInterruptedPublication}
+              type="button"
+            >
+              中断した公開を破棄してやり直す
+            </button>
+          ) : null}
           <p className="note">
             大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。
           </p>
-          {browserPublishingEnabled ? (
-            <details className="admin-publisher-setup">
-              <summary>復旧・互換オプション</summary>
-              <p className="note">
-                通常は使用しません。ブラウザから公開できない場合のみ、Local
-                Publisherを起動して利用してください。
-              </p>
-              <div className="display-control-form">
-                <label className="field compact-field">
-                  <span>Local Publisherの8桁コード</span>
-                  <input
-                    autoComplete="off"
-                    disabled={pdfPublishing}
-                    inputMode="numeric"
-                    maxLength={8}
-                    onChange={(event) =>
-                      onPairingCodeChange(event.target.value.replace(/\D/g, ''))
-                    }
-                    value={publisherPairingCode}
-                  />
-                </label>
-                <button
-                  className="secondary-button"
-                  disabled={publisherStatus === 'checking' || pdfPublishing}
-                  onClick={onCheckPublisher}
-                  type="button"
-                >
-                  Local Publisherを確認
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={
-                    !pdfFile ||
-                    pdfPublishing ||
-                    closed ||
-                    (!publisherSessionToken &&
-                      publisherPairingCode.trim().length !== 8)
-                  }
-                  onClick={onPublishWithLocalPublisher}
-                  type="button"
-                >
-                  Local Publisherで公開する
-                </button>
-              </div>
-            </details>
-          ) : null}
         </div>
       ) : null}
       {!activeLectureSessionId ? (

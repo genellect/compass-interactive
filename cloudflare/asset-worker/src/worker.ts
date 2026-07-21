@@ -647,7 +647,24 @@ type CleanupIntent = {
 }
 
 function cleanupIntentKey(intent: CleanupIntent) {
-  return `cleanup-pending/${intent.lecture_public_id}/${intent.document_version}.json`
+  // document_version is a content hash and can legitimately be shared by
+  // different document IDs or publication-scoped object keys. Encoding the
+  // complete object key makes the v2 intent identity injective while the
+  // recovery scan keeps reading legacy v1 keys under cleanup-pending/.
+  return (
+    `cleanup-pending/v2/${intent.lecture_public_id}/` +
+    `${encodeURIComponent(intent.object_key)}.json`
+  )
+}
+
+function isBrowserPublicationObjectKey(intent: CleanupIntent) {
+  const prefix =
+    `pdf/${intent.lecture_public_id}/${intent.document_id}/` +
+    `${intent.document_version}/`
+  if (!intent.object_key.startsWith(prefix)) return false
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.pdf$/i.test(
+    intent.object_key.slice(prefix.length),
+  )
 }
 
 function parseCleanupIntent(value: Uint8Array): CleanupIntent {
@@ -658,7 +675,8 @@ function parseCleanupIntent(value: Uint8Array): CleanupIntent {
     !/^lecture_[a-z0-9]{16,64}$/.test(intent.lecture_public_id) ||
     !/^[a-z0-9][a-z0-9-]{0,63}$/.test(intent.document_id) ||
     !/^[0-9a-f]{64}$/.test(intent.document_version) ||
-    intent.object_key !== expectedObjectKey ||
+    (intent.object_key !== expectedObjectKey &&
+      !isBrowserPublicationObjectKey(intent)) ||
     !Number.isFinite(Date.parse(intent.requested_at))
   ) {
     throw new Error('Cleanup intent is invalid.')
@@ -671,7 +689,9 @@ async function writeDeletionAudit(
   intent: CleanupIntent,
   now: Date,
 ) {
-  const auditKey = `audit/${intent.lecture_public_id}/${intent.document_version}.json`
+  const auditKey =
+    `audit/v2/${intent.lecture_public_id}/` +
+    `${encodeURIComponent(intent.object_key)}.json`
   const existed = Boolean(await env.PDF_BUCKET.head(auditKey))
   await env.PDF_BUCKET.put(
     auditKey,
@@ -696,8 +716,9 @@ async function recoverPendingCleanups(
     prefix: 'cleanup-pending/',
   })
   let deleted = 0
+  let processed = 0
   for (const summary of listed.objects) {
-    if (deleted >= limit) break
+    if (processed >= limit) break
     const object = await env.PDF_BUCKET.get(summary.key)
     if (!object) continue
     const intent = parseCleanupIntent(await objectBytes(object))
@@ -709,13 +730,17 @@ async function recoverPendingCleanups(
     )
     if (stillReferenced) {
       await env.PDF_BUCKET.delete(summary.key)
+      processed += 1
       continue
     }
-    await env.PDF_BUCKET.delete(intent.object_key)
-    if (await writeDeletionAudit(env, intent, now)) deleted += 1
+    if (!isBrowserPublicationObjectKey(intent)) {
+      await env.PDF_BUCKET.delete(intent.object_key)
+      if (await writeDeletionAudit(env, intent, now)) deleted += 1
+    }
     await env.PDF_BUCKET.delete(summary.key)
+    processed += 1
   }
-  return { deleted, scanned: listed.objects.length }
+  return { deleted, processed, scanned: listed.objects.length }
 }
 
 type RetentionFeedItem = {
@@ -1718,6 +1743,7 @@ export async function cleanupExpiredDocuments(
   const deletionLimit = Math.max(1, Math.min(limit, 500))
   const recovered = await recoverPendingCleanups(env, now, deletionLimit)
   let deleted = recovered.deleted
+  let processed = recovered.processed
   let conflicts = 0
   let scanned = 0
   let cursor: string | undefined
@@ -1730,7 +1756,7 @@ export async function cleanupExpiredDocuments(
     })
     scanned += listed.objects.length
     for (const summary of listed.objects) {
-      if (deleted + conflicts >= deletionLimit) break
+      if (processed + conflicts >= deletionLimit) break
       const object = await env.PDF_BUCKET.get(summary.key)
       if (!object) continue
       const manifest = decodeManifest(await objectBytes(object))
@@ -1740,7 +1766,7 @@ export async function cleanupExpiredDocuments(
             document.delete_after !== null &&
             Date.parse(document.delete_after) <= now.getTime(),
         )
-        .slice(0, deletionLimit - deleted - conflicts)
+        .slice(0, deletionLimit - processed - conflicts)
       if (due.length === 0) continue
       const intents = due.map((document): CleanupIntent => ({
         document_id: document.document_id,
@@ -1777,16 +1803,23 @@ export async function cleanupExpiredDocuments(
         },
       )
       if (!committed) {
-        conflicts += 1
+        // Every due document already consumed one intent PUT and one cleanup
+        // attempt, even though the manifest CAS lost. Charge the budget per
+        // document so one large conflicting manifest cannot make this pass
+        // retry O(limit^2) intents across later manifests.
+        conflicts += intents.length
         for (const intent of intents) {
           await env.PDF_BUCKET.delete(cleanupIntentKey(intent))
         }
         continue
       }
       for (const intent of intents) {
-        await env.PDF_BUCKET.delete(intent.object_key)
-        if (await writeDeletionAudit(env, intent, now)) deleted += 1
+        if (!isBrowserPublicationObjectKey(intent)) {
+          await env.PDF_BUCKET.delete(intent.object_key)
+          if (await writeDeletionAudit(env, intent, now)) deleted += 1
+        }
         await env.PDF_BUCKET.delete(cleanupIntentKey(intent))
+        processed += 1
       }
     }
     truncated = listed.truncated
@@ -1795,12 +1828,13 @@ export async function cleanupExpiredDocuments(
     truncated &&
     cursor &&
     scanned < 5000 &&
-    deleted + conflicts < deletionLimit
+    processed + conflicts < deletionLimit
   )
   return {
     conflicts,
     deleted,
     pendingScanned: recovered.scanned,
+    processed,
     scanned,
   }
 }

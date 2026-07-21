@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   decodeManifest,
   encodeManifest,
+  parseManifest,
 } from '../../../publisher/src/manifest/manifest.ts'
 import type { PdfManifest } from '../../../publisher/src/manifest/types.ts'
 import {
@@ -25,6 +27,9 @@ import {
 import { cleanupExpiredPdfPublications } from '../src/pdfPublication.ts'
 import type { R2BucketLike, R2ObjectLike } from '../src/r2Types.ts'
 
+const TEST_COORDINATOR_URL =
+  'https://test-project.supabase.co/functions/v1/coordinate-pdf-upload-worker'
+
 class FakeR2 implements R2BucketLike {
   objects = new Map<
     string,
@@ -36,9 +41,33 @@ class FakeR2 implements R2BucketLike {
     }
   >()
   failNextConditional = false
+  failNextConditionalKey: string | null = null
   failNextDeleteKey: string | null = null
   getCalls: string[] = []
   listPageSize: number | null = null
+  pauseNextPutKey: string | null = null
+  pausedPutGate: Promise<void> | null = null
+  pausedPutMarkStarted: (() => void) | null = null
+  pausedPutRelease: (() => void) | null = null
+  pausedPutStarted: Promise<void> | null = null
+
+  pauseNextPut(key: string) {
+    let markStarted!: () => void
+    let release!: () => void
+    this.pauseNextPutKey = key
+    this.pausedPutStarted = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    this.pausedPutGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    this.pausedPutMarkStarted = markStarted
+    this.pausedPutRelease = release
+    return {
+      release,
+      started: this.pausedPutStarted,
+    }
+  }
 
   async delete(key: string) {
     if (this.failNextDeleteKey === key) {
@@ -120,9 +149,23 @@ class FakeR2 implements R2BucketLike {
       sha256?: ArrayBuffer | string
     },
   ) {
+    if (this.pauseNextPutKey === key && this.pausedPutGate) {
+      this.pauseNextPutKey = null
+      const gate = this.pausedPutGate
+      this.pausedPutStarted = null
+      this.pausedPutMarkStarted?.()
+      this.pausedPutMarkStarted = null
+      await gate
+      this.pausedPutGate = null
+      this.pausedPutRelease = null
+    }
     const existing = this.objects.get(key)
-    if (this.failNextConditional && options?.onlyIf?.etagMatches) {
+    if (
+      (this.failNextConditional || this.failNextConditionalKey === key) &&
+      options?.onlyIf?.etagMatches
+    ) {
       this.failNextConditional = false
+      this.failNextConditionalKey = null
       return null
     }
     if (
@@ -242,9 +285,7 @@ async function createPublicationToken(
   const header = b64url(
     new TextEncoder().encode(JSON.stringify({ alg: 'ES256', typ: 'JWT' })),
   )
-  const payload = b64url(
-    new TextEncoder().encode(JSON.stringify(claims)),
-  )
+  const payload = b64url(new TextEncoder().encode(JSON.stringify(claims)))
   const signature = await crypto.subtle.sign(
     { hash: 'SHA-256', name: 'ECDSA' },
     key,
@@ -324,6 +365,128 @@ async function fixture() {
     now,
   })
   return { env, keys, lecture, manifest, now, objectKey, r2, token, version }
+}
+
+type WorkerFixture = Awaited<ReturnType<typeof fixture>>
+
+function enablePdfPublicationEnvironment(
+  value: WorkerFixture,
+  coordinatorUrl = TEST_COORDINATOR_URL,
+) {
+  Object.assign(value.env, {
+    PDF_PUBLICATION_COORDINATOR_SECRET:
+      'publication-coordinator-secret-at-least-32-bytes',
+    PDF_PUBLICATION_COORDINATOR_URL: coordinatorUrl,
+    PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
+    PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
+  })
+}
+
+async function seedPublicationLedger(
+  value: WorkerFixture,
+  input: {
+    bytes: number
+    documentId: string
+    generation: number
+    manifestEtag?: string
+    manifestVersion?: number
+    objectKey: string
+    pdfSha256: string
+    previousAccessVersion?: number
+    previousDocumentVersions?: string[]
+    publicationId: string
+    status:
+      | 'active'
+      | 'activating'
+      | 'committed'
+      | 'receiving'
+      | 'rolled_back'
+      | 'uploaded'
+    targetAccessVersion?: number
+    ticketJti: string
+  },
+) {
+  await value.r2.put(
+    `publication-ledger/${input.publicationId}.json`,
+    `${JSON.stringify({
+      bytes: input.bytes,
+      createdAt: new Date(value.now * 1000).toISOString(),
+      documentId: input.documentId,
+      generation: input.generation,
+      lecturePublicId: value.lecture,
+      manifestEtag: input.manifestEtag,
+      manifestVersion: input.manifestVersion,
+      objectKey: input.objectKey,
+      pdfSha256: input.pdfSha256,
+      previousAccessVersion: input.previousAccessVersion,
+      previousDocumentVersions: input.previousDocumentVersions,
+      publicationId: input.publicationId,
+      status: input.status,
+      targetAccessVersion: input.targetAccessVersion,
+      ticketJti: input.ticketJti,
+      updatedAt: new Date(value.now * 1000).toISOString(),
+    })}\n`,
+  )
+}
+
+async function createUploadTicket(
+  value: WorkerFixture,
+  input: {
+    bytes: number
+    documentId: string
+    generation: number
+    jti: string
+    nonce: string
+    pdfSha256: string
+    publicationId: string
+  },
+) {
+  return createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: input.bytes,
+    doc: input.documentId,
+    exp: value.now + 300,
+    gen: input.generation,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: input.jti,
+    lec: value.lecture,
+    nbf: value.now - 1,
+    nonce: input.nonce,
+    origin: 'https://compass.example',
+    pub: input.publicationId,
+    purpose: 'upload',
+    sha: input.pdfSha256,
+    sid: '79000000-0000-4000-8000-000000000726',
+  })
+}
+
+async function readPublicationLedger(
+  value: WorkerFixture,
+  publicationId: string,
+) {
+  const object = await value.r2.get(`publication-ledger/${publicationId}.json`)
+  assert.ok(object)
+  return JSON.parse(
+    new TextDecoder().decode(new Uint8Array(await object.arrayBuffer!())),
+  ) as Record<string, unknown>
+}
+
+function singleCleanupFetcher(
+  job: Record<string, unknown>,
+  completions: Array<Record<string, unknown>>,
+) {
+  let available = true
+  return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    if (body.action === 'claimCleanup') {
+      const data = available ? [job] : []
+      available = false
+      return Response.json({ data, ok: true })
+    }
+    completions.push(body)
+    return Response.json({ ok: true })
+  }) as typeof fetch
 }
 
 function archivePayload(
@@ -584,6 +747,112 @@ test('37-day cleanup is conflict-safe and idempotent', async () => {
   assert.equal(
     [...value.r2.objects.keys()].some((key) => key.startsWith('audit/')),
     true,
+  )
+})
+
+test('retention cleanup charges a manifest conflict for every attempted due document', async () => {
+  const value = await fixture()
+  const dueTime = new Date((value.now - 1) * 1000).toISOString()
+  const archiveTime = new Date(
+    (value.now - 7 * 86400 - 1) * 1000,
+  ).toISOString()
+  value.manifest.documents = Array.from({ length: 4 }, (_, index) => {
+    const documentId = `doc-${index + 1}`
+    const documentVersion = String(index + 1).repeat(64)
+    return {
+      ...value.manifest.documents[0]!,
+      archive_expires_at: archiveTime,
+      delete_after: dueTime,
+      document_id: documentId,
+      document_version: documentVersion,
+      object_key: `pdf/${value.lecture}/${documentId}/${documentVersion}.pdf`,
+      pdf_sha256: documentVersion,
+    }
+  })
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  await value.r2.put(manifestKey, encodeManifest(value.manifest))
+  value.r2.failNextConditional = true
+
+  const result = await cleanupExpiredDocuments(
+    value.env,
+    new Date(value.now * 1000),
+    3,
+  )
+
+  assert.equal(result.conflicts, 3)
+  assert.equal(result.processed, 0)
+  assert.equal(
+    [...value.r2.objects.keys()].some((key) =>
+      key.startsWith('cleanup-pending/'),
+    ),
+    false,
+  )
+  const unchanged = await value.r2.get(manifestKey)
+  assert.ok(unchanged)
+  assert.equal(
+    decodeManifest(new Uint8Array(await unchanged.arrayBuffer!())).documents
+      .length,
+    4,
+  )
+})
+
+test('retention cleanup recovers distinct intents for equal hashes at different object keys', async () => {
+  const value = await fixture()
+  const dueTime = new Date((value.now - 1) * 1000).toISOString()
+  const archiveTime = new Date(
+    (value.now - 7 * 86400 - 1) * 1000,
+  ).toISOString()
+  const documentVersion = '9'.repeat(64)
+  const documents = ['same-hash-a', 'same-hash-b'].map((documentId) => ({
+    ...value.manifest.documents[0]!,
+    archive_expires_at: archiveTime,
+    delete_after: dueTime,
+    document_id: documentId,
+    document_version: documentVersion,
+    object_key: `pdf/${value.lecture}/${documentId}/${documentVersion}.pdf`,
+    pdf_sha256: documentVersion,
+  }))
+  value.manifest.documents = documents
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  await value.r2.put(manifestKey, encodeManifest(value.manifest))
+  for (const document of documents) {
+    await value.r2.put(document.object_key, '%PDF-1.7\nlegacy')
+  }
+  value.r2.failNextDeleteKey = documents[0]!.object_key
+
+  await assert.rejects(
+    cleanupExpiredDocuments(value.env, new Date(value.now * 1000), 2),
+    /simulated delete interruption/,
+  )
+  assert.equal(
+    [...value.r2.objects.keys()].filter((key) =>
+      key.startsWith('cleanup-pending/v2/'),
+    ).length,
+    2,
+  )
+  const committed = await value.r2.get(manifestKey)
+  assert.ok(committed)
+  assert.equal(
+    decodeManifest(new Uint8Array(await committed.arrayBuffer!())).documents
+      .length,
+    0,
+  )
+
+  const recovered = await cleanupExpiredDocuments(
+    value.env,
+    new Date((value.now + 1) * 1000),
+    2,
+  )
+  assert.equal(recovered.processed, 2)
+  assert.equal(recovered.deleted, 2)
+  for (const document of documents) {
+    assert.equal(await value.r2.head(document.object_key), null)
+  }
+  assert.equal(
+    [...value.r2.objects.keys()].some((key) =>
+      key.startsWith('cleanup-pending/'),
+    ),
+    false,
   )
 })
 
@@ -1230,8 +1499,7 @@ test('browser PDF publication verifies origin, nonce, bytes, magic and native sh
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
@@ -1338,8 +1606,7 @@ test('browser PDF publication permits only one concurrent first-use effect', asy
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
@@ -1349,9 +1616,12 @@ test('browser PDF publication permits only one concurrent first-use effect', asy
     const body = JSON.parse(String(init?.body)) as { action: string }
     if (body.action === 'claimNonce') {
       if (nonceClaimed) {
-        return Response.json({ message: 'nonce already claimed', ok: false }, {
-          status: 409,
-        })
+        return Response.json(
+          { message: 'nonce already claimed', ok: false },
+          {
+            status: 409,
+          },
+        )
       }
       nonceClaimed = true
       successfulNonceClaims += 1
@@ -1412,8 +1682,7 @@ test('browser PDF publication rejects actual-size, sha and immutable-key conflic
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
@@ -1502,8 +1771,7 @@ test('browser PDF publication rejects actual-size, sha and immutable-key conflic
   )
 
   const collisionPublicationId = '72b00000-0000-4000-8000-000000000726'
-  const collisionKey =
-    `pdf/${value.lecture}/integrity-material/${sha}/${collisionPublicationId}.pdf`
+  const collisionKey = `pdf/${value.lecture}/integrity-material/${sha}/${collisionPublicationId}.pdf`
   const existingBytes = new TextEncoder().encode('%PDF-1.7\nexisting')
   await value.r2.put(collisionKey, existingBytes)
   const collision = await upload({
@@ -1522,8 +1790,7 @@ test('browser PDF publication rejects malformed bytes and keeps uncommitted obje
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
@@ -1590,8 +1857,7 @@ test('hidden commit and activation fence keep publication inaccessible until DB 
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
@@ -1730,6 +1996,78 @@ test('hidden commit and activation fence keep publication inaccessible until DB 
     purpose: 'rollback',
     target_av: 2,
   })
+  const activeManifestObject = await value.r2.get(
+    `manifests/${value.lecture}/manifest.json`,
+  )
+  assert.ok(activeManifestObject)
+  const activeManifestBytes = new Uint8Array(
+    await activeManifestObject.arrayBuffer!(),
+  )
+  const activeManifest = decodeManifest(activeManifestBytes)
+  await value.r2.put(
+    `manifests/${value.lecture}/manifest.json`,
+    encodeManifest({
+      ...activeManifest,
+      documents: [
+        ...activeManifest.documents,
+        {
+          archive_expires_at: null,
+          byte_size: 11,
+          delete_after: null,
+          display_name: 'Unexpected same-document writer',
+          document_id: 'browser-material',
+          document_version: '1'.repeat(64),
+          download_enabled: false,
+          object_key: `pdf/${value.lecture}/browser-material/${'1'.repeat(64)}.pdf`,
+          page_count: 1,
+          pdf_sha256: '1'.repeat(64),
+          text_char_count: 1,
+          text_sha256: '2'.repeat(64),
+          visible: true,
+        },
+      ],
+      manifest_version: activeManifest.manifest_version + 1,
+      updated_at: new Date((value.now + 1) * 1000).toISOString(),
+    }),
+  )
+  const crossPathConflict = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
+      {
+        headers: { Authorization: `Bearer ${rollbackToken}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  assert.equal(crossPathConflict.status, 409)
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'active',
+    'an unexpected visible same-document writer fences rollback',
+  )
+  await value.r2.put(
+    `manifests/${value.lecture}/manifest.json`,
+    activeManifestBytes,
+  )
+  value.r2.failNextConditionalKey =
+    `publication-ledger/${publicationId}.json`
+  const interruptedRollback = await worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
+      {
+        headers: { Authorization: `Bearer ${rollbackToken}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  assert.equal(interruptedRollback.status, 409)
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'active',
+    'a lost ledger CAS must not be reported as a completed rollback',
+  )
   const rolledBack = await worker.fetch(
     new Request(
       `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
@@ -1741,6 +2079,10 @@ test('hidden commit and activation fence keep publication inaccessible until DB 
     value.env,
   )
   assert.equal(rolledBack.status, 200)
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'rolled_back',
+  )
   const restoredObject = await value.r2.get(
     `manifests/${value.lecture}/manifest.json`,
   )
@@ -1762,26 +2104,24 @@ test('publication status recovers an object written before the uploaded ledger C
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PDF_PUBLICATION_PUBLIC_JWK: value.env.PDF_ACCESS_PUBLIC_JWK,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'true',
   })
   const actions: string[] = []
-  const worker = createAssetWorker(
-    () => new Date(value.now * 1000),
-    (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as { action: string }
-      actions.push(body.action)
-      return Response.json({ ok: true, status: body.action })
-    }) as typeof fetch,
-  )
+  const worker = createAssetWorker(() => new Date(value.now * 1000), (async (
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    actions.push(body.action)
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch)
   const publicationId = '78500000-0000-4000-8000-000000000726'
   const attemptId = '78600000-0000-4000-8000-000000000726'
   const pdf = new TextEncoder().encode('%PDF-1.7\nrecover')
   const sha = createHash('sha256').update(pdf).digest('hex')
-  const objectKey =
-    `pdf/${value.lecture}/recover-material/${sha}/${publicationId}.pdf`
+  const objectKey = `pdf/${value.lecture}/recover-material/${sha}/${publicationId}.pdf`
   await value.r2.put(objectKey, pdf, { sha256: sha })
   await value.r2.put(
     `publication-ledger/${publicationId}.json`,
@@ -1824,31 +2164,33 @@ test('publication status recovers an object written before the uploaded ledger C
     value.env,
   )
   assert.equal(response.status, 200)
-  assert.equal((await response.json() as { status: string }).status, 'uploaded')
+  assert.equal(
+    ((await response.json()) as { status: string }).status,
+    'uploaded',
+  )
   assert.deepEqual(actions, ['recordUploaded'])
   const ledger = await value.r2.get(`publication-ledger/${publicationId}.json`)
   assert.ok(ledger)
   assert.equal(
-    JSON.parse(new TextDecoder().decode(new Uint8Array(await ledger.arrayBuffer!())))
-      .status,
+    JSON.parse(
+      new TextDecoder().decode(new Uint8Array(await ledger.arrayBuffer!())),
+    ).status,
     'uploaded',
   )
 })
 
-test('DB-leased publication cleanup remains active when uploads are disabled and removes only hidden references', async () => {
+test('committed hidden publication without activation binding uses normal terminal cleanup', async () => {
   const value = await fixture()
   Object.assign(value.env, {
     PDF_PUBLICATION_COORDINATOR_SECRET:
       'publication-coordinator-secret-at-least-32-bytes',
-    PDF_PUBLICATION_COORDINATOR_URL:
-      'https://functions.example/coordinate-pdf-upload-worker',
+    PDF_PUBLICATION_COORDINATOR_URL: TEST_COORDINATOR_URL,
     PHASE726_BROWSER_PDF_UPLOAD_ENABLED: 'false',
   })
   const publicationId = '78800000-0000-4000-8000-000000000726'
   const cleanupClaimId = '78900000-0000-4000-8000-000000000726'
   const sha = 'e'.repeat(64)
-  const objectKey =
-    `pdf/${value.lecture}/cleanup-material/${sha}/${publicationId}.pdf`
+  const objectKey = `pdf/${value.lecture}/cleanup-material/${sha}/${publicationId}.pdf`
   const pdf = new TextEncoder().encode('%PDF-cleanup')
   await value.r2.put(objectKey, pdf)
   await value.r2.put(
@@ -1862,7 +2204,9 @@ test('DB-leased publication cleanup remains active when uploads are disabled and
       objectKey,
       pdfSha256: sha,
       publicationId,
-      status: 'uploaded',
+      previousAccessVersion: 1,
+      previousDocumentVersions: [],
+      status: 'committed',
       ticketJti: '78a00000-0000-4000-8000-000000000726',
       updatedAt: new Date(value.now * 1000).toISOString(),
     })}\n`,
@@ -1893,31 +2237,52 @@ test('DB-leased publication cleanup remains active when uploads are disabled and
     }),
   )
   const completions: Array<Record<string, unknown>> = []
-  let claimAvailable = true
+  let remainingClaims = 2
   const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     if (body.action === 'claimCleanup') {
-      const data = claimAvailable
-        ? [{
-            cleanup_claim_id: cleanupClaimId,
-            document_id: 'cleanup-material',
-            expected_pdf_sha256: sha,
-            lecture_public_id: value.lecture,
-            object_key: objectKey,
-            publication_id: publicationId,
-            state: 'expired',
-          }]
+      const data = remainingClaims > 0
+        ? [
+            {
+              activation_operation_id: null,
+              activation_target_access_version: null,
+              cleanup_binding_version: 1,
+              cleanup_claim_id: cleanupClaimId,
+              cleanup_worker_generation: 1,
+              committed_manifest_access_version: 1,
+              committed_manifest_etag: 'hidden-etag-2',
+              committed_manifest_version: 2,
+              document_id: 'cleanup-material',
+              expected_byte_size: pdf.byteLength,
+              expected_pdf_sha256: sha,
+              lecture_public_id: value.lecture,
+              object_key: objectKey,
+              pdf_access_version: 1,
+              publication_id: publicationId,
+              state: 'expired',
+            },
+          ]
         : []
-      claimAvailable = false
+      remainingClaims -= 1
       return Response.json({ data, ok: true })
     }
     completions.push(body)
     return Response.json({ ok: true })
   }) as typeof fetch
 
-  const result = await cleanupExpiredPdfPublications(
+  const quiescing = await cleanupExpiredPdfPublications(
     value.env,
     new Date(value.now * 1000),
+    25,
+    fetcher,
+  )
+  assert.equal(quiescing.failures, 1)
+  assert.equal(completions.at(-1)?.errorCode, 'cleanup_quiescence_pending')
+  assert.ok(value.r2.objects.has(objectKey))
+
+  const result = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date((value.now + 601) * 1000),
     25,
     fetcher,
   )
@@ -1928,10 +2293,19 @@ test('DB-leased publication cleanup remains active when uploads are disabled and
     scanned: 1,
     skipped: false,
   })
-  assert.equal(value.r2.objects.has(objectKey), false)
+  assert.equal(value.r2.objects.has(objectKey), true)
   assert.equal(
     value.r2.objects.has(`publication-ledger/${publicationId}.json`),
-    false,
+    true,
+  )
+  assert.equal(
+    (await value.r2.head(objectKey))?.customMetadata
+      ?.compassCleanupTombstone,
+    'v1',
+  )
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'cleanup_complete',
   )
   const manifestObject = await value.r2.get(
     `manifests/${value.lecture}/manifest.json`,
@@ -1944,8 +2318,9 @@ test('DB-leased publication cleanup remains active when uploads are disabled and
     manifest.documents.some((document) => document.object_key === objectKey),
     false,
   )
-  assert.equal(completions.length, 1)
-  assert.equal(completions[0]?.succeeded, true)
+  assert.equal(completions.length, 2)
+  assert.equal(completions[0]?.succeeded, false)
+  assert.equal(completions[1]?.succeeded, true)
 
   const repeated = await cleanupExpiredPdfPublications(
     value.env,
@@ -1954,4 +2329,1954 @@ test('DB-leased publication cleanup remains active when uploads are disabled and
     fetcher,
   )
   assert.equal(repeated.scanned, 0)
+})
+
+test('reissued PDF upload replaces a stale receiving ledger and rejects the old generation', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '78b00000-0000-4000-8000-000000000726'
+  const oldAttemptId = '78c00000-0000-4000-8000-000000000726'
+  const newAttemptId = '78d00000-0000-4000-8000-000000000726'
+  const documentId = 'stale-reissue-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nstale-reissue')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'receiving',
+    ticketJti: oldAttemptId,
+  })
+  const actions: string[] = []
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    actions.push(body.action)
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch
+  const worker = createAssetWorker(() => new Date(value.now * 1000), fetcher)
+  const newTicket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 2,
+    jti: newAttemptId,
+    nonce: 'R'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const upload = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${newTicket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(upload.status, 201)
+  assert.deepEqual(actions, ['claimNonce', 'recordUploaded'])
+  const ledger = await readPublicationLedger(value, publicationId)
+  assert.equal(ledger.generation, 2)
+  assert.equal(ledger.ticketJti, newAttemptId)
+  assert.equal(ledger.status, 'uploaded')
+  assert.ok(await value.r2.head(objectKey))
+
+  const oldTicket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    jti: oldAttemptId,
+    nonce: 'Q'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const replay = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${oldTicket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(replay.status, 409)
+  assert.deepEqual(actions, ['claimNonce', 'recordUploaded'])
+})
+
+test('reissued PDF upload adopts an exact object left by a crashed attempt without reading replacement bytes', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '78e00000-0000-4000-8000-000000000726'
+  const documentId = 'stale-object-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nstale-object')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'receiving',
+    ticketJti: '78f00000-0000-4000-8000-000000000726',
+  })
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  const actions: string[] = []
+  const worker = createAssetWorker(() => new Date(value.now * 1000), (async (
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    actions.push(body.action)
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch)
+  const ticket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 2,
+    jti: '79100000-0000-4000-8000-000000000726',
+    nonce: 'S'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const untrustedReplacement = new Uint8Array(pdf.byteLength).fill(0x58)
+  const response = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: untrustedReplacement,
+      headers: {
+        Authorization: `Bearer ${ticket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(response.status, 200)
+  assert.deepEqual(actions, ['claimNonce', 'recordUploaded'])
+  const stored = await value.r2.get(objectKey)
+  assert.ok(stored)
+  assert.deepEqual(
+    new Uint8Array(await stored.arrayBuffer!()),
+    pdf,
+    'the immutable verified object wins over retry request bytes',
+  )
+  const ledger = await readPublicationLedger(value, publicationId)
+  assert.equal(ledger.generation, 2)
+  assert.equal(ledger.status, 'uploaded')
+})
+
+test('stale receiving-ledger CAS conflict is fail-closed and the same reissue can retry', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '79200000-0000-4000-8000-000000000726'
+  const documentId = 'stale-cas-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nstale-cas')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'receiving',
+    ticketJti: '79300000-0000-4000-8000-000000000726',
+  })
+  const actions: string[] = []
+  const worker = createAssetWorker(() => new Date(value.now * 1000), (async (
+    _input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    const body = JSON.parse(String(init?.body)) as { action: string }
+    actions.push(body.action)
+    return Response.json({ ok: true, status: body.action })
+  }) as typeof fetch)
+  const ticket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 2,
+    jti: '79400000-0000-4000-8000-000000000726',
+    nonce: 'T'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const upload = () =>
+    worker.fetch(
+      new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+        body: pdf,
+        headers: {
+          Authorization: `Bearer ${ticket}`,
+          'Content-Type': 'application/pdf',
+          Origin: 'https://compass.example',
+        },
+        method: 'PUT',
+      }),
+      value.env,
+    )
+  value.r2.failNextConditional = true
+  const conflicted = await upload()
+  assert.equal(conflicted.status, 409)
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).generation,
+    1,
+  )
+  assert.equal(await value.r2.head(objectKey), null)
+
+  const retried = await upload()
+  assert.equal(retried.status, 201)
+  assert.deepEqual(actions, ['claimNonce', 'claimNonce', 'recordUploaded'])
+  const ledger = await readPublicationLedger(value, publicationId)
+  assert.equal(ledger.generation, 2)
+  assert.equal(ledger.status, 'uploaded')
+})
+
+test('stale-generation recovery never replaces a ledger with changed immutable binding', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '79c00000-0000-4000-8000-000000000726'
+  const documentId = 'bound-stale-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nbound-stale')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'receiving',
+    ticketJti: '79d00000-0000-4000-8000-000000000726',
+  })
+  let coordinatorCalls = 0
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => {
+      coordinatorCalls += 1
+      return Response.json({ ok: true })
+    }) as typeof fetch,
+  )
+  const ticket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId: 'changed-document-binding',
+    generation: 2,
+    jti: '79e00000-0000-4000-8000-000000000726',
+    nonce: 'U'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const response = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${ticket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(response.status, 409)
+  assert.equal(coordinatorCalls, 0)
+  const ledger = await readPublicationLedger(value, publicationId)
+  assert.equal(ledger.generation, 1)
+  assert.equal(ledger.documentId, documentId)
+  assert.equal(await value.r2.head(objectKey), null)
+})
+
+async function createRetiredCleanupScenario(
+  visibility: 'absent' | 'hidden' | 'visible',
+) {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '79500000-0000-4000-8000-000000000726'
+  const documentId = 'retired-browser-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nretired')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'active',
+    ticketJti: '79600000-0000-4000-8000-000000000726',
+  })
+  if (visibility !== 'absent') {
+    await value.r2.put(objectKey, pdf, { sha256: sha })
+    await value.r2.put(
+      `manifests/${value.lecture}/manifest.json`,
+      encodeManifest({
+        ...value.manifest,
+        documents: [
+          ...value.manifest.documents,
+          {
+            archive_expires_at: new Date(value.now * 1000).toISOString(),
+            byte_size: pdf.byteLength,
+            delete_after: new Date(value.now * 1000).toISOString(),
+            display_name: 'Retired browser material',
+            document_id: documentId,
+            document_version: sha,
+            download_enabled: true,
+            object_key: objectKey,
+            page_count: 1,
+            pdf_sha256: sha,
+            text_char_count: 1,
+            text_sha256: '9'.repeat(64),
+            visible: visibility === 'visible',
+          },
+        ],
+        manifest_version: value.manifest.manifest_version + 1,
+      }),
+    )
+  }
+  const completions: Array<Record<string, unknown>> = []
+  const makeFetcher = (cleanupClaimId: string) => {
+    let available = true
+    return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      if (body.action === 'claimCleanup') {
+        const data = available
+          ? [
+              {
+                activation_operation_id: null,
+                activation_target_access_version: null,
+                cleanup_binding_version: 1,
+                cleanup_claim_id: cleanupClaimId,
+                cleanup_worker_generation: 1,
+                committed_manifest_access_version: null,
+                committed_manifest_etag: null,
+                committed_manifest_version: null,
+                document_id: documentId,
+                expected_byte_size: pdf.byteLength,
+                expected_pdf_sha256: sha,
+                lecture_public_id: value.lecture,
+                object_key: objectKey,
+                pdf_access_version: 1,
+                publication_id: publicationId,
+                state: 'retired',
+              },
+            ]
+          : []
+        available = false
+        return Response.json({ data, ok: true })
+      }
+      completions.push(body)
+      return Response.json({ ok: true })
+    }) as typeof fetch
+  }
+  return {
+    completions,
+    documentId,
+    makeFetcher,
+    objectKey,
+    publicationId,
+    value,
+  }
+}
+
+test('retired DB publication cleans an active Worker ledger only after its manifest reference is hidden', async () => {
+  const scenario = await createRetiredCleanupScenario('hidden')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('79700000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_quiescence_pending',
+  )
+  const result = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('79710000-0000-4000-8000-000000000726'),
+  )
+  assert.deepEqual(result, {
+    deletedLedgers: 1,
+    deletedObjects: 1,
+    failures: 0,
+    scanned: 1,
+    skipped: false,
+  })
+  assert.equal(
+    (await scenario.value.r2.head(scenario.objectKey))?.customMetadata
+      ?.compassCleanupTombstone,
+    'v1',
+  )
+  assert.equal(
+    (
+      await readPublicationLedger(
+        scenario.value,
+        scenario.publicationId,
+      )
+    ).status,
+    'cleanup_complete',
+  )
+  const manifestObject = await scenario.value.r2.get(
+    `manifests/${scenario.value.lecture}/manifest.json`,
+  )
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.object_key === scenario.objectKey,
+    ),
+    false,
+  )
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_id === 'doc-main' && document.visible,
+    ),
+    true,
+  )
+  assert.equal(scenario.completions.at(-1)?.succeeded, true)
+})
+
+test('retired cleanup converges when document retention already removed the object and manifest reference', async () => {
+  const scenario = await createRetiredCleanupScenario('absent')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('79800000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  const result = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('79810000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(result.failures, 0)
+  assert.equal(result.deletedObjects, 0)
+  assert.equal(result.deletedLedgers, 1)
+  assert.equal(scenario.completions.at(-1)?.succeeded, true)
+})
+
+test('retired cleanup preserves an active ledger and object while its exact manifest reference is visible', async () => {
+  const scenario = await createRetiredCleanupScenario('visible')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('79900000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  const result = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('79910000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(result.failures, 1)
+  assert.equal(result.deletedObjects, 0)
+  assert.equal(result.deletedLedgers, 0)
+  assert.ok(await scenario.value.r2.head(scenario.objectKey))
+  assert.ok(
+    await scenario.value.r2.head(
+      `publication-ledger/${scenario.publicationId}.json`,
+    ),
+  )
+  assert.equal(scenario.completions.at(-1)?.succeeded, false)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_object_still_visible',
+  )
+})
+
+test('retired cleanup preserves bytes on manifest CAS conflict and a new DB lease can retry', async () => {
+  const scenario = await createRetiredCleanupScenario('hidden')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('79a00000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  scenario.value.r2.failNextConditional = true
+  const conflicted = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('79a10000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(conflicted.failures, 1)
+  assert.ok(await scenario.value.r2.head(scenario.objectKey))
+  assert.ok(
+    await scenario.value.r2.head(
+      `publication-ledger/${scenario.publicationId}.json`,
+    ),
+  )
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_manifest_conflict',
+  )
+
+  const retried = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 602) * 1000),
+    25,
+    scenario.makeFetcher('79b00000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(retried.failures, 0)
+  assert.equal(retried.deletedObjects, 1)
+  assert.equal(retried.deletedLedgers, 1)
+})
+
+async function createTerminalActivationCleanupScenario(
+  state: 'aborted' | 'expired',
+  ledgerStatus: 'active' | 'committed' = 'active',
+) {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7a000000-0000-4000-8000-000000000726'
+  const documentId = 'doc-main'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nterminal-activation')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  const retiredAt = new Date(value.now * 1000).toISOString()
+  const activeManifest: PdfManifest = {
+    ...value.manifest,
+    access_version: 2,
+    documents: [
+      ...value.manifest.documents.map((document) =>
+        document.document_id === documentId && document.visible
+          ? {
+              ...document,
+              archive_expires_at: retiredAt,
+              delete_after: retiredAt,
+              visible: false,
+            }
+          : document,
+      ),
+      {
+        archive_expires_at: null,
+        byte_size: pdf.byteLength,
+        delete_after: null,
+        display_name: 'Replacement material',
+        document_id: documentId,
+        document_version: sha,
+        download_enabled: true,
+        object_key: objectKey,
+        page_count: 1,
+        pdf_sha256: sha,
+        text_char_count: 12,
+        text_sha256: '8'.repeat(64),
+        visible: true,
+      },
+    ],
+    manifest_version: value.manifest.manifest_version + 2,
+    updated_at: retiredAt,
+  }
+  const activeManifestObject = await value.r2.put(
+    `manifests/${value.lecture}/manifest.json`,
+    encodeManifest(activeManifest),
+  )
+  assert.ok(activeManifestObject)
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 3,
+    manifestEtag:
+      ledgerStatus === 'active'
+        ? activeManifestObject.etag
+        : 'committed-etag-2',
+    manifestVersion:
+      ledgerStatus === 'active'
+        ? activeManifest.manifest_version
+        : value.manifest.manifest_version + 1,
+    objectKey,
+    pdfSha256: sha,
+    previousAccessVersion: 1,
+    previousDocumentVersions: [value.version],
+    publicationId,
+    status: ledgerStatus,
+    targetAccessVersion: ledgerStatus === 'active' ? 2 : undefined,
+    ticketJti: '7a100000-0000-4000-8000-000000000726',
+  })
+  const completions: Array<Record<string, unknown>> = []
+  const makeFetcher = (
+    cleanupClaimId: string,
+    overrides: Record<string, unknown> = {},
+  ) => {
+    let available = true
+    return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      if (body.action === 'claimCleanup') {
+        const data = available
+          ? [
+              {
+                activation_operation_id:
+                  '7a200000-0000-4000-8000-000000000726',
+                activation_target_access_version: 2,
+                activated_manifest_etag:
+                  ledgerStatus === 'active'
+                    ? activeManifestObject.etag
+                    : null,
+                activated_manifest_version:
+                  ledgerStatus === 'active'
+                    ? activeManifest.manifest_version
+                    : null,
+                cleanup_binding_version: 1,
+                cleanup_claim_id: cleanupClaimId,
+                cleanup_worker_generation: 3,
+                committed_manifest_access_version: 1,
+                committed_manifest_etag: 'committed-etag-2',
+                committed_manifest_version:
+                  value.manifest.manifest_version + 1,
+                document_id: documentId,
+                expected_byte_size: pdf.byteLength,
+                expected_pdf_sha256: sha,
+                lecture_public_id: value.lecture,
+                object_key: objectKey,
+                pdf_access_version: 1,
+                publication_id: publicationId,
+                state,
+                ...overrides,
+              },
+            ]
+          : []
+        available = false
+        return Response.json({ data, ok: true })
+      }
+      completions.push(body)
+      return Response.json({ ok: true })
+    }) as typeof fetch
+  }
+  return {
+    completions,
+    makeFetcher,
+    objectKey,
+    publicationId,
+    sha,
+    value,
+  }
+}
+
+test('aborted DB publication rolls back an uncommitted Worker activation before deleting bytes', async () => {
+  const scenario = await createTerminalActivationCleanupScenario('aborted')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a300000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_quiescence_pending',
+  )
+  const result = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('7a310000-0000-4000-8000-000000000726'),
+  )
+  assert.deepEqual(result, {
+    deletedLedgers: 1,
+    deletedObjects: 1,
+    failures: 0,
+    scanned: 1,
+    skipped: false,
+  })
+  const manifestObject = await scenario.value.r2.get(
+    `manifests/${scenario.value.lecture}/manifest.json`,
+  )
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(manifest.access_version, 1)
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_version === scenario.sha,
+    ),
+    false,
+  )
+  const restored = manifest.documents.find(
+    (document) => document.document_version === scenario.value.version,
+  )
+  assert.ok(restored)
+  assert.equal(restored.visible, true)
+  assert.equal(restored.archive_expires_at, null)
+  assert.equal(restored.delete_after, null)
+  assert.equal(scenario.completions.at(-1)?.succeeded, true)
+})
+
+test('expired activation cleanup is retryable after a manifest CAS conflict', async () => {
+  const scenario = await createTerminalActivationCleanupScenario('expired')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a400000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  scenario.value.r2.failNextConditionalKey =
+    `manifests/${scenario.value.lecture}/manifest.json`
+  const conflicted = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('7a410000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(conflicted.failures, 1)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_activation_rollback_manifest_conflict',
+  )
+  assert.ok(await scenario.value.r2.head(scenario.objectKey))
+  assert.equal(
+    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    'cleanup_pending',
+  )
+
+  const retried = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 602) * 1000),
+    25,
+    scenario.makeFetcher('7a420000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(retried.failures, 0)
+  assert.equal(retried.deletedObjects, 1)
+  assert.equal(retried.deletedLedgers, 1)
+})
+
+test('terminal activation cleanup resumes after manifest rollback and a lost ledger CAS', async () => {
+  const scenario = await createTerminalActivationCleanupScenario('aborted')
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a600000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  scenario.value.r2.failNextConditionalKey =
+    `publication-ledger/${scenario.publicationId}.json`
+  const interrupted = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('7a610000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(interrupted.failures, 1)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_activation_rollback_ledger_conflict',
+  )
+  assert.ok(await scenario.value.r2.head(scenario.objectKey))
+  assert.equal(
+    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    'cleanup_pending',
+  )
+  const restoredManifestObject = await scenario.value.r2.get(
+    `manifests/${scenario.value.lecture}/manifest.json`,
+  )
+  assert.ok(restoredManifestObject)
+  assert.equal(
+    decodeManifest(
+      new Uint8Array(await restoredManifestObject.arrayBuffer!()),
+    ).access_version,
+    1,
+  )
+
+  const retried = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 602) * 1000),
+    25,
+    scenario.makeFetcher('7a620000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(retried.failures, 0)
+  assert.equal(retried.deletedObjects, 1)
+  assert.equal(retried.deletedLedgers, 1)
+})
+
+test('terminal cleanup never rolls back or deletes another Worker generation', async () => {
+  const scenario = await createTerminalActivationCleanupScenario('expired')
+  const result = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a800000-0000-4000-8000-000000000726', {
+      cleanup_worker_generation: 4,
+    }),
+  )
+  assert.equal(result.failures, 1)
+  assert.equal(
+    scenario.completions.at(-1)?.errorCode,
+    'cleanup_ledger_binding_invalid',
+  )
+  assert.ok(await scenario.value.r2.head(scenario.objectKey))
+  assert.equal(
+    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    'active',
+  )
+  const manifestObject = await scenario.value.r2.get(
+    `manifests/${scenario.value.lecture}/manifest.json`,
+  )
+  assert.ok(manifestObject)
+  assert.equal(
+    decodeManifest(new Uint8Array(await manifestObject.arrayBuffer!()))
+      .access_version,
+    2,
+  )
+})
+
+test('cleanup repairs an activation manifest when its ledger CAS left the ledger committed', async () => {
+  const scenario = await createTerminalActivationCleanupScenario(
+    'expired',
+    'committed',
+  )
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a900000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+
+  const repaired = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('7a910000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(repaired.failures, 0)
+  assert.equal(repaired.deletedObjects, 1)
+  assert.equal(repaired.deletedLedgers, 1)
+  const manifestObject = await scenario.value.r2.get(
+    `manifests/${scenario.value.lecture}/manifest.json`,
+  )
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(manifest.access_version, 1)
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_version === scenario.sha,
+    ),
+    false,
+  )
+})
+
+test('terminal activation rollback preserves an unrelated retention manifest update', async () => {
+  const scenario = await createTerminalActivationCleanupScenario('aborted')
+  const manifestKey = `manifests/${scenario.value.lecture}/manifest.json`
+  const currentObject = await scenario.value.r2.get(manifestKey)
+  assert.ok(currentObject)
+  const current = decodeManifest(
+    new Uint8Array(await currentObject.arrayBuffer!()),
+  )
+  const retentionMarker = new Date(
+    (scenario.value.now + 123) * 1000,
+  ).toISOString()
+  const retentionUpdated = parseManifest({
+    ...current,
+    documents: current.documents.map((document) =>
+      document.document_id === 'doc-retired'
+        ? {
+            ...document,
+            archive_expires_at: retentionMarker,
+            delete_after: retentionMarker,
+          }
+        : document,
+    ),
+    manifest_version: current.manifest_version + 1,
+    updated_at: retentionMarker,
+  })
+  assert.ok(
+    await scenario.value.r2.put(
+      manifestKey,
+      encodeManifest(retentionUpdated),
+      { onlyIf: { etagMatches: currentObject.etag } },
+    ),
+  )
+
+  const quiescing = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date(scenario.value.now * 1000),
+    25,
+    scenario.makeFetcher('7a700000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(quiescing.failures, 1)
+  const cleaned = await cleanupExpiredPdfPublications(
+    scenario.value.env,
+    new Date((scenario.value.now + 601) * 1000),
+    25,
+    scenario.makeFetcher('7a800000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(cleaned.failures, 0)
+  const restoredObject = await scenario.value.r2.get(manifestKey)
+  assert.ok(restoredObject)
+  const restored = decodeManifest(
+    new Uint8Array(await restoredObject.arrayBuffer!()),
+  )
+  assert.equal(restored.access_version, 1)
+  assert.equal(
+    restored.documents.some(
+      (document) => document.document_version === scenario.sha,
+    ),
+    false,
+  )
+  assert.equal(
+    restored.documents.find(
+      (document) => document.document_id === 'doc-retired',
+    )?.delete_after,
+    retentionMarker,
+  )
+})
+
+test('cleanup tombstone fences a slow upload between receiving-ledger creation and immutable object write', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7aa00000-0000-4000-8000-000000000726'
+  const cleanupClaimId = '7ab00000-0000-4000-8000-000000000726'
+  const documentId = 'slow-upload-material'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nslow-upload')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  const uploadTicket = await createUploadTicket(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    jti: '7ac00000-0000-4000-8000-000000000726',
+    nonce: 'V'.repeat(43),
+    pdfSha256: sha,
+    publicationId,
+  })
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const paused = value.r2.pauseNextPut(objectKey)
+  const uploading = worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${uploadTicket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  await paused.started
+  const secondPaused = value.r2.pauseNextPut(objectKey)
+  const secondUploading = worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${uploadTicket}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  await secondPaused.started
+
+  const completions: Array<Record<string, unknown>> = []
+  const cleanupFetcher = (claimId: string) => {
+    let available = true
+    return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      if (body.action === 'claimCleanup') {
+        const data = available
+          ? [
+              {
+                activation_operation_id: null,
+                activation_target_access_version: null,
+                cleanup_binding_version: 1,
+                cleanup_claim_id: claimId,
+                cleanup_worker_generation: 1,
+                committed_manifest_access_version: null,
+                committed_manifest_etag: null,
+                committed_manifest_version: null,
+                document_id: documentId,
+                expected_byte_size: pdf.byteLength,
+                expected_pdf_sha256: sha,
+                lecture_public_id: value.lecture,
+                object_key: objectKey,
+                pdf_access_version: 1,
+                publication_id: publicationId,
+                state: 'aborted',
+              },
+            ]
+          : []
+        available = false
+        return Response.json({ data, ok: true })
+      }
+      completions.push(body)
+      return Response.json({ ok: true })
+    }) as typeof fetch
+  }
+  const quiescing = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    cleanupFetcher(cleanupClaimId),
+  )
+  assert.equal(quiescing.failures, 1)
+  assert.equal(completions.at(-1)?.errorCode, 'cleanup_quiescence_pending')
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'cleanup_pending',
+  )
+
+  const completed = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date((value.now + 601) * 1000),
+    25,
+    cleanupFetcher('7ad00000-0000-4000-8000-000000000726'),
+  )
+  assert.equal(completed.failures, 0)
+  assert.equal(completed.deletedObjects, 0)
+  assert.equal(completed.deletedLedgers, 1)
+  assert.equal(
+    (await value.r2.head(objectKey))?.customMetadata
+      ?.compassCleanupTombstone,
+    'v1',
+  )
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'cleanup_complete',
+  )
+
+  paused.release()
+  secondPaused.release()
+  const uploadResponses = await Promise.all([uploading, secondUploading])
+  assert.deepEqual(
+    uploadResponses.map((response) => response.status),
+    [409, 409],
+  )
+  assert.equal(
+    await (async () => {
+      const object = await value.r2.get(objectKey, {
+        range: { length: 5, offset: 0 },
+      })
+      assert.ok(object)
+      return new TextDecoder().decode(
+        new Uint8Array(await object.arrayBuffer!()),
+      )
+    })(),
+    'COMPA',
+    'the permanent tombstone still wins after DB cleanup completion',
+  )
+})
+
+test('legacy retention and recovery never delete a browser-publication object or its terminal tombstone', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7ad00000-0000-4000-8000-000000000726'
+  const cleanupClaimId = '7ac00000-0000-4000-8000-000000000726'
+  const documentId = 'legacy-retention-boundary'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nlegacy-boundary')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  const boundedSha = '3'.repeat(64)
+  const boundedObjectKey =
+    `pdf/${value.lecture}/legacy-retention-second/${boundedSha}/` +
+    '7a900000-0000-4000-8000-000000000726.pdf'
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  await value.r2.put(boundedObjectKey, pdf)
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  const dueAt = new Date((value.now - 1) * 1000).toISOString()
+  const withDueBrowserObject = parseManifest({
+    ...value.manifest,
+    documents: [
+      ...value.manifest.documents,
+      {
+        archive_expires_at: dueAt,
+        byte_size: pdf.byteLength,
+        delete_after: dueAt,
+        display_name: 'Browser retention boundary',
+        document_id: documentId,
+        document_version: sha,
+        download_enabled: false,
+        object_key: objectKey,
+        page_count: 1,
+        pdf_sha256: sha,
+        text_char_count: 12,
+        text_sha256: '4'.repeat(64),
+        visible: false,
+      },
+      {
+        archive_expires_at: dueAt,
+        byte_size: pdf.byteLength,
+        delete_after: dueAt,
+        display_name: 'Second browser retention boundary',
+        document_id: 'legacy-retention-second',
+        document_version: boundedSha,
+        download_enabled: false,
+        object_key: boundedObjectKey,
+        page_count: 1,
+        pdf_sha256: boundedSha,
+        text_char_count: 12,
+        text_sha256: '5'.repeat(64),
+        visible: false,
+      },
+    ],
+    manifest_version: value.manifest.manifest_version + 1,
+  })
+  await value.r2.put(manifestKey, encodeManifest(withDueBrowserObject))
+  value.r2.failNextDeleteKey = objectKey
+  const legacy = await cleanupExpiredDocuments(
+    value.env,
+    new Date(value.now * 1000),
+    1,
+  )
+  assert.equal(legacy.conflicts, 0)
+  assert.equal(legacy.processed, 1)
+  assert.ok(await value.r2.head(objectKey))
+  assert.equal(value.r2.failNextDeleteKey, objectKey)
+  const legacyManifestObject = await value.r2.get(manifestKey)
+  assert.ok(legacyManifestObject)
+  assert.equal(
+    decodeManifest(
+      new Uint8Array(await legacyManifestObject.arrayBuffer!()),
+    ).documents.some((document) => document.object_key === objectKey),
+    false,
+  )
+  assert.equal(
+    decodeManifest(
+      new Uint8Array(await legacyManifestObject.arrayBuffer!()),
+    ).documents.some(
+      (document) => document.object_key === boundedObjectKey,
+    ),
+    true,
+    'browser-owned retention work is bounded by the requested limit',
+  )
+
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'uploaded',
+    ticketJti: '7ab00000-0000-4000-8000-000000000726',
+  })
+  const cleanupJob = {
+    activated_manifest_etag: null,
+    activated_manifest_version: null,
+    activation_operation_id: null,
+    activation_target_access_version: null,
+    cleanup_binding_version: 1,
+    cleanup_worker_generation: 1,
+    committed_manifest_access_version: null,
+    committed_manifest_etag: null,
+    committed_manifest_version: null,
+    document_id: documentId,
+    expected_byte_size: pdf.byteLength,
+    expected_pdf_sha256: sha,
+    lecture_public_id: value.lecture,
+    object_key: objectKey,
+    pdf_access_version: 1,
+    publication_id: publicationId,
+    state: 'retired',
+  }
+  const completions: Array<Record<string, unknown>> = []
+  await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    singleCleanupFetcher(
+      { ...cleanupJob, cleanup_claim_id: cleanupClaimId },
+      completions,
+    ),
+  )
+  const phase726Cleanup = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date((value.now + 601) * 1000),
+    25,
+    singleCleanupFetcher(
+      {
+        ...cleanupJob,
+        cleanup_claim_id: '7aa00000-0000-4000-8000-000000000726',
+      },
+      completions,
+    ),
+  )
+  assert.equal(phase726Cleanup.failures, 0)
+  assert.equal(
+    (await value.r2.head(objectKey))?.customMetadata
+      ?.compassCleanupTombstone,
+    'v1',
+  )
+
+  const recoveryIntentKey =
+    `cleanup-pending/${value.lecture}/${sha}.json`
+  await value.r2.put(
+    recoveryIntentKey,
+    `${JSON.stringify({
+      document_id: documentId,
+      document_version: sha,
+      lecture_public_id: value.lecture,
+      object_key: objectKey,
+      requested_at: new Date(value.now * 1000).toISOString(),
+      schema_version: 1,
+    })}\n`,
+  )
+  const recovered = await cleanupExpiredDocuments(
+    value.env,
+    new Date((value.now + 602) * 1000),
+    50,
+  )
+  assert.ok(recovered.pendingScanned >= 1)
+  assert.equal(await value.r2.head(recoveryIntentKey), null)
+  assert.equal(
+    (await value.r2.head(objectKey))?.customMetadata
+      ?.compassCleanupTombstone,
+    'v1',
+  )
+  assert.equal(value.r2.failNextDeleteKey, objectKey)
+})
+
+test('cleanup completion permanently fences a commit paused before an initially unrelated manifest CAS', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7ae00000-0000-4000-8000-000000000726'
+  const documentId = 'delayed-commit'
+  const pdf = new TextEncoder().encode('%PDF-1.7\ndelayed-commit')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    objectKey,
+    pdfSha256: sha,
+    publicationId,
+    status: 'uploaded',
+    ticketJti: '7af00000-0000-4000-8000-000000000726',
+  })
+  const commitTicket = await createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: documentId,
+    download: true,
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: '7b000000-0000-4000-8000-000000000726',
+    lec: value.lecture,
+    name: 'Delayed commit',
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    pages: 1,
+    previous_av: 1,
+    pub: publicationId,
+    purpose: 'commit',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+    text_chars: 14,
+    text_sha: '5'.repeat(64),
+  })
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  const paused = value.r2.pauseNextPut(manifestKey)
+  const committing = worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/commit`,
+      {
+        headers: { Authorization: `Bearer ${commitTicket}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  await paused.started
+
+  const cleanupJob = {
+    activated_manifest_etag: null,
+    activated_manifest_version: null,
+    activation_operation_id: null,
+    activation_target_access_version: null,
+    cleanup_binding_version: 1,
+    cleanup_worker_generation: 1,
+    committed_manifest_access_version: null,
+    committed_manifest_etag: null,
+    committed_manifest_version: null,
+    document_id: documentId,
+    expected_byte_size: pdf.byteLength,
+    expected_pdf_sha256: sha,
+    lecture_public_id: value.lecture,
+    object_key: objectKey,
+    pdf_access_version: 1,
+    publication_id: publicationId,
+    state: 'aborted',
+  }
+  const completions: Array<Record<string, unknown>> = []
+  await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    singleCleanupFetcher(
+      {
+        ...cleanupJob,
+        cleanup_claim_id: '7b100000-0000-4000-8000-000000000726',
+      },
+      completions,
+    ),
+  )
+  const cleaned = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date((value.now + 601) * 1000),
+    25,
+    singleCleanupFetcher(
+      {
+        ...cleanupJob,
+        cleanup_claim_id: '7b200000-0000-4000-8000-000000000726',
+      },
+      completions,
+    ),
+  )
+  assert.equal(cleaned.failures, 0)
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'cleanup_complete',
+  )
+
+  paused.release()
+  assert.equal((await committing).status, 409)
+  const manifestObject = await value.r2.get(manifestKey)
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_version === sha,
+    ),
+    false,
+  )
+})
+
+test('cleanup completion wins a delayed activation and removes only its hidden staged document', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7b300000-0000-4000-8000-000000000726'
+  const documentId = 'delayed-activation'
+  const pdf = new TextEncoder().encode('%PDF-1.7\ndelayed-activation')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  await value.r2.put(objectKey, pdf, { sha256: sha })
+  const stagedManifest = parseManifest({
+    ...value.manifest,
+    documents: [
+      ...value.manifest.documents,
+      {
+        archive_expires_at: null,
+        byte_size: pdf.byteLength,
+        delete_after: null,
+        display_name: 'Delayed activation',
+        document_id: documentId,
+        document_version: sha,
+        download_enabled: true,
+        object_key: objectKey,
+        page_count: 1,
+        pdf_sha256: sha,
+        text_char_count: 18,
+        text_sha256: '6'.repeat(64),
+        visible: false,
+      },
+    ],
+    manifest_version: value.manifest.manifest_version + 1,
+  })
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  const stagedObject = await value.r2.put(
+    manifestKey,
+    encodeManifest(stagedManifest),
+  )
+  assert.ok(stagedObject)
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    manifestEtag: stagedObject.etag,
+    manifestVersion: stagedManifest.manifest_version,
+    objectKey,
+    pdfSha256: sha,
+    previousAccessVersion: 1,
+    previousDocumentVersions: [],
+    publicationId,
+    status: 'committed',
+    ticketJti: '7b400000-0000-4000-8000-000000000726',
+  })
+  const activationTicket = await createPublicationToken(
+    value.keys.privateKey,
+    {
+      aud: 'compass-pdf-publication-worker',
+      bytes: pdf.byteLength,
+      doc: documentId,
+      exp: value.now + 300,
+      gen: 1,
+      iat: value.now,
+      iss: 'compass-supabase',
+      jti: '7b500000-0000-4000-8000-000000000726',
+      lec: value.lecture,
+      nbf: value.now - 1,
+      origin: 'https://compass.example',
+      previous_av: 1,
+      pub: publicationId,
+      purpose: 'activate',
+      sha,
+      sid: '79000000-0000-4000-8000-000000000726',
+      target_av: 2,
+    },
+  )
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const paused = value.r2.pauseNextPut(manifestKey)
+  const activating = worker.fetch(
+    new Request(
+      `https://pdf.example/v2/pdf-publications/${publicationId}/activate`,
+      {
+        headers: { Authorization: `Bearer ${activationTicket}` },
+        method: 'POST',
+      },
+    ),
+    value.env,
+  )
+  await paused.started
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'activating',
+  )
+
+  const cleanupJob = {
+    activated_manifest_etag: null,
+    activated_manifest_version: null,
+    activation_operation_id: '7b600000-0000-4000-8000-000000000726',
+    activation_target_access_version: 2,
+    cleanup_binding_version: 1,
+    cleanup_worker_generation: 1,
+    committed_manifest_access_version: 1,
+    committed_manifest_etag: stagedObject.etag,
+    committed_manifest_version: stagedManifest.manifest_version,
+    document_id: documentId,
+    expected_byte_size: pdf.byteLength,
+    expected_pdf_sha256: sha,
+    lecture_public_id: value.lecture,
+    object_key: objectKey,
+    pdf_access_version: 1,
+    publication_id: publicationId,
+    state: 'aborted',
+  }
+  const completions: Array<Record<string, unknown>> = []
+  await cleanupExpiredPdfPublications(
+    value.env,
+    new Date(value.now * 1000),
+    25,
+    singleCleanupFetcher(
+      {
+        ...cleanupJob,
+        cleanup_claim_id: '7b700000-0000-4000-8000-000000000726',
+      },
+      completions,
+    ),
+  )
+  const cleaned = await cleanupExpiredPdfPublications(
+    value.env,
+    new Date((value.now + 601) * 1000),
+    25,
+    singleCleanupFetcher(
+      {
+        ...cleanupJob,
+        cleanup_claim_id: '7b800000-0000-4000-8000-000000000726',
+      },
+      completions,
+    ),
+  )
+  assert.equal(cleaned.failures, 0)
+  paused.release()
+  assert.equal((await activating).status, 409)
+  const manifestObject = await value.r2.get(manifestKey)
+  assert.ok(manifestObject)
+  const manifest = decodeManifest(
+    new Uint8Array(await manifestObject.arrayBuffer!()),
+  )
+  assert.equal(manifest.access_version, 1)
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_version === sha,
+    ),
+    false,
+  )
+  assert.equal(
+    manifest.documents.some(
+      (document) => document.document_version === value.version,
+    ),
+    true,
+  )
+})
+
+test('activation rebases onto intervening Local Publisher changes and rollback restores the true predecessor', async () => {
+  for (const sameDocument of [false, true]) {
+    const value = await fixture()
+    enablePdfPublicationEnvironment(value)
+    const marker = sameDocument ? '7c' : '7d'
+    const publicationId = `${marker}000000-0000-4000-8000-000000000726`
+    const documentId = sameDocument ? 'doc-main' : 'browser-cross-path'
+    const pdf = new TextEncoder().encode(
+      `%PDF-1.7\ncross-path-${sameDocument ? 'same' : 'different'}`,
+    )
+    const sha = createHash('sha256').update(pdf).digest('hex')
+    const objectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+    await value.r2.put(objectKey, pdf, { sha256: sha })
+    const stagedManifest = parseManifest({
+      ...value.manifest,
+      documents: [
+        ...value.manifest.documents,
+        {
+          archive_expires_at: null,
+          byte_size: pdf.byteLength,
+          delete_after: null,
+          display_name: 'Browser cross-path target',
+          document_id: documentId,
+          document_version: sha,
+          download_enabled: true,
+          object_key: objectKey,
+          page_count: 1,
+          pdf_sha256: sha,
+          text_char_count: 10,
+          text_sha256: '7'.repeat(64),
+          visible: false,
+        },
+      ],
+      manifest_version: value.manifest.manifest_version + 1,
+    })
+    const manifestKey = `manifests/${value.lecture}/manifest.json`
+    const stagedObject = await value.r2.put(
+      manifestKey,
+      encodeManifest(stagedManifest),
+    )
+    assert.ok(stagedObject)
+    await seedPublicationLedger(value, {
+      bytes: pdf.byteLength,
+      documentId,
+      generation: 1,
+      manifestEtag: stagedObject.etag,
+      manifestVersion: stagedManifest.manifest_version,
+      objectKey,
+      pdfSha256: sha,
+      previousAccessVersion: 1,
+      previousDocumentVersions: sameDocument ? [value.version] : [],
+      publicationId,
+      status: 'committed',
+      ticketJti: `${marker}100000-0000-4000-8000-000000000726`,
+    })
+
+    const localVersion = sameDocument ? '8'.repeat(64) : '9'.repeat(64)
+    const localDocumentId = sameDocument ? documentId : 'local-added'
+    const localObjectKey = `pdf/${value.lecture}/${localDocumentId}/${localVersion}.pdf`
+    const changedAt = new Date((value.now + 1) * 1000).toISOString()
+    const localManifest = parseManifest({
+      ...stagedManifest,
+      documents: [
+        ...stagedManifest.documents.map((document) =>
+          sameDocument &&
+          document.document_id === documentId &&
+          document.visible
+            ? {
+                ...document,
+                archive_expires_at: changedAt,
+                delete_after: changedAt,
+                visible: false,
+              }
+            : document,
+        ),
+        {
+          archive_expires_at: null,
+          byte_size: 24,
+          delete_after: null,
+          display_name: 'Local Publisher interleave',
+          document_id: localDocumentId,
+          document_version: localVersion,
+          download_enabled: true,
+          object_key: localObjectKey,
+          page_count: 1,
+          pdf_sha256: localVersion,
+          text_char_count: 12,
+          text_sha256: 'a'.repeat(64),
+          visible: true,
+        },
+      ],
+      manifest_version: stagedManifest.manifest_version + 1,
+      updated_at: changedAt,
+    })
+    const localObject = await value.r2.put(
+      manifestKey,
+      encodeManifest(localManifest),
+      { onlyIf: { etagMatches: stagedObject.etag } },
+    )
+    assert.ok(localObject)
+
+    const baseClaims = {
+      aud: 'compass-pdf-publication-worker',
+      bytes: pdf.byteLength,
+      doc: documentId,
+      exp: value.now + 300,
+      gen: 1,
+      iat: value.now,
+      iss: 'compass-supabase',
+      lec: value.lecture,
+      nbf: value.now - 1,
+      origin: 'https://compass.example',
+      previous_av: 1,
+      pub: publicationId,
+      sha,
+      sid: '79000000-0000-4000-8000-000000000726',
+      target_av: 2,
+    }
+    const activationTicket = await createPublicationToken(
+      value.keys.privateKey,
+      {
+        ...baseClaims,
+        jti: `${marker}200000-0000-4000-8000-000000000726`,
+        purpose: 'activate',
+      },
+    )
+    const worker = createAssetWorker(
+      () => new Date(value.now * 1000),
+      (async () => Response.json({ ok: true })) as typeof fetch,
+    )
+    const activated = await worker.fetch(
+      new Request(
+        `https://pdf.example/v2/pdf-publications/${publicationId}/activate`,
+        {
+          headers: { Authorization: `Bearer ${activationTicket}` },
+          method: 'POST',
+        },
+      ),
+      value.env,
+    )
+    assert.equal(activated.status, 200)
+    assert.deepEqual(
+      (await readPublicationLedger(value, publicationId))
+        .previousDocumentVersions,
+      sameDocument ? [localVersion] : [],
+    )
+
+    const rollbackTicket = await createPublicationToken(
+      value.keys.privateKey,
+      {
+        ...baseClaims,
+        jti: `${marker}300000-0000-4000-8000-000000000726`,
+        purpose: 'rollback',
+      },
+    )
+    const rolledBack = await worker.fetch(
+      new Request(
+        `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
+        {
+          headers: { Authorization: `Bearer ${rollbackTicket}` },
+          method: 'POST',
+        },
+      ),
+      value.env,
+    )
+    assert.equal(rolledBack.status, 200)
+    const restoredObject = await value.r2.get(manifestKey)
+    assert.ok(restoredObject)
+    const restored = decodeManifest(
+      new Uint8Array(await restoredObject.arrayBuffer!()),
+    )
+    assert.equal(restored.access_version, 1)
+    assert.equal(
+      restored.documents.some(
+        (document) => document.document_version === sha,
+      ),
+      false,
+    )
+    assert.equal(
+      restored.documents.some(
+        (document) =>
+          document.document_version === localVersion && document.visible,
+      ),
+      true,
+    )
+  }
+})
+
+test('same document and hash at a Local Publisher key blocks activation while merge rollback preserves Local visibility', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  const publicationId = '7e000000-0000-4000-8000-000000000726'
+  const documentId = 'cross-path-hash-collision'
+  const pdf = new TextEncoder().encode('%PDF-1.7\nshared-hash')
+  const sha = createHash('sha256').update(pdf).digest('hex')
+  const browserObjectKey = `pdf/${value.lecture}/${documentId}/${sha}/${publicationId}.pdf`
+  const localObjectKey = `pdf/${value.lecture}/${documentId}/${sha}.pdf`
+  await value.r2.put(browserObjectKey, pdf, { sha256: sha })
+  await value.r2.put(localObjectKey, pdf, { sha256: sha })
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  const stagedManifest = parseManifest({
+    ...value.manifest,
+    documents: [
+      ...value.manifest.documents,
+      {
+        archive_expires_at: null,
+        byte_size: pdf.byteLength,
+        delete_after: null,
+        display_name: 'Browser hash collision',
+        document_id: documentId,
+        document_version: sha,
+        download_enabled: true,
+        object_key: browserObjectKey,
+        page_count: 1,
+        pdf_sha256: sha,
+        text_char_count: 9,
+        text_sha256: 'b'.repeat(64),
+        visible: false,
+      },
+    ],
+    manifest_version: value.manifest.manifest_version + 1,
+  })
+  const stagedObject = await value.r2.put(
+    manifestKey,
+    encodeManifest(stagedManifest),
+  )
+  assert.ok(stagedObject)
+  await seedPublicationLedger(value, {
+    bytes: pdf.byteLength,
+    documentId,
+    generation: 1,
+    manifestEtag: stagedObject.etag,
+    manifestVersion: stagedManifest.manifest_version,
+    objectKey: browserObjectKey,
+    pdfSha256: sha,
+    previousAccessVersion: 1,
+    previousDocumentVersions: [],
+    publicationId,
+    status: 'committed',
+    ticketJti: '7e100000-0000-4000-8000-000000000726',
+  })
+  const localManifest = parseManifest({
+    ...stagedManifest,
+    documents: [
+      ...stagedManifest.documents,
+      {
+        archive_expires_at: null,
+        byte_size: pdf.byteLength,
+        delete_after: null,
+        display_name: 'Local hash collision',
+        document_id: documentId,
+        document_version: sha,
+        download_enabled: true,
+        object_key: localObjectKey,
+        page_count: 1,
+        pdf_sha256: sha,
+        text_char_count: 9,
+        text_sha256: 'c'.repeat(64),
+        visible: true,
+      },
+    ],
+    manifest_version: stagedManifest.manifest_version + 1,
+  })
+  assert.ok(
+    await value.r2.put(manifestKey, encodeManifest(localManifest), {
+      onlyIf: { etagMatches: stagedObject.etag },
+    }),
+  )
+  const baseClaims = {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: documentId,
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    previous_av: 1,
+    pub: publicationId,
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+    target_av: 2,
+  }
+  const worker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    (async () => Response.json({ ok: true })) as typeof fetch,
+  )
+  const activationTicket = await createPublicationToken(
+    value.keys.privateKey,
+    {
+      ...baseClaims,
+      jti: '7e200000-0000-4000-8000-000000000726',
+      purpose: 'activate',
+    },
+  )
+  assert.equal(
+    (
+      await worker.fetch(
+        new Request(
+          `https://pdf.example/v2/pdf-publications/${publicationId}/activate`,
+          {
+            headers: { Authorization: `Bearer ${activationTicket}` },
+            method: 'POST',
+          },
+        ),
+        value.env,
+      )
+    ).status,
+    409,
+  )
+  assert.equal(
+    (await readPublicationLedger(value, publicationId)).status,
+    'committed',
+  )
+  const rollbackTicket = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    jti: '7e300000-0000-4000-8000-000000000726',
+    purpose: 'rollback',
+  })
+  assert.equal(
+    (
+      await worker.fetch(
+        new Request(
+          `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
+          {
+            headers: { Authorization: `Bearer ${rollbackTicket}` },
+            method: 'POST',
+          },
+        ),
+        value.env,
+      )
+    ).status,
+    200,
+  )
+  const restoredObject = await value.r2.get(manifestKey)
+  assert.ok(restoredObject)
+  const restored = decodeManifest(
+    new Uint8Array(await restoredObject.arrayBuffer!()),
+  )
+  assert.equal(
+    restored.documents.some(
+      (document) => document.object_key === browserObjectKey,
+    ),
+    false,
+  )
+  assert.equal(
+    restored.documents.some(
+      (document) =>
+        document.object_key === localObjectKey && document.visible,
+    ),
+    true,
+  )
+})
+
+test('publication coordinator permits only exact Supabase or loopback endpoints and sets bounded fetch controls', async () => {
+  const invalidUrls = [
+    'http://test-project.supabase.co/functions/v1/coordinate-pdf-upload-worker',
+    'https://user:secret@test-project.supabase.co/functions/v1/coordinate-pdf-upload-worker',
+    'https://test-project.supabase.co/functions/v1/coordinate-pdf-upload-worker?next=evil',
+    'https://test-project.supabase.co/functions/v1/coordinate-pdf-upload-worker#fragment',
+    'https://test-project.supabase.co/functions/v1/other',
+    'https://test-project.supabase.co.evil.example/functions/v1/coordinate-pdf-upload-worker',
+    'https://test-project.supabase.co:8443/functions/v1/coordinate-pdf-upload-worker',
+  ]
+  for (const coordinatorUrl of invalidUrls) {
+    const value = await fixture()
+    enablePdfPublicationEnvironment(value, coordinatorUrl)
+    let called = false
+    await assert.rejects(
+      cleanupExpiredPdfPublications(
+        value.env,
+        new Date(value.now * 1000),
+        25,
+        (async () => {
+          called = true
+          return Response.json({ data: [], ok: true })
+        }) as typeof fetch,
+      ),
+      /coordinator URL is invalid/,
+    )
+    assert.equal(called, false)
+  }
+
+  const allowedUrls = [
+    TEST_COORDINATOR_URL,
+    'http://127.0.0.1:54321/functions/v1/coordinate-pdf-upload-worker',
+    'http://localhost:54321/functions/v1/coordinate-pdf-upload-worker',
+  ]
+  for (const coordinatorUrl of allowedUrls) {
+    const value = await fixture()
+    enablePdfPublicationEnvironment(value, coordinatorUrl)
+    const result = await cleanupExpiredPdfPublications(
+      value.env,
+      new Date(value.now * 1000),
+      25,
+      (async (input: RequestInfo | URL, init?: RequestInit) => {
+        assert.equal(String(input), new URL(coordinatorUrl).toString())
+        assert.equal(init?.redirect, 'error')
+        assert.ok(init?.signal instanceof AbortSignal)
+        assert.equal(init.signal.aborted, false)
+        return Response.json({ data: [], ok: true })
+      }) as typeof fetch,
+    )
+    assert.equal(result.scanned, 0)
+  }
+})
+
+test('publication coordinator response is capped at 64 KiB even without Content-Length', async () => {
+  const value = await fixture()
+  enablePdfPublicationEnvironment(value)
+  await assert.rejects(
+    cleanupExpiredPdfPublications(
+      value.env,
+      new Date(value.now * 1000),
+      25,
+      (async () =>
+        new Response('x'.repeat(64 * 1024 + 1), {
+          headers: { 'Content-Type': 'application/json' },
+        })) as typeof fetch,
+    ),
+    /coordinator rejected request/,
+  )
+})
+
+test('private PDF coordinator source rejects unknown actions before upload receipt handling', async () => {
+  const source = await readFile(
+    new URL(
+      '../../../supabase/functions/coordinate-pdf-upload-worker/index.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+  assert.match(source, /if \(body\.action !== 'recordUploaded'\)/)
+  assert.match(source, /Coordinator action is invalid\./)
 })

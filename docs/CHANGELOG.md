@@ -3,6 +3,29 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-21 - Phase 7.25/7.26 academic answers and browser PDF publication
+
+- Added multidisciplinary Crossref/OpenAlex corroboration and bounded automatic
+  five-minute academic-answer candidates. Unsupported or low-value candidates
+  remain absent; visible drafts are teacher-unconfirmed and retain
+  approve/hide/correct controls.
+- Added the default-OFF browser-complete PDF publication saga across Admin,
+  Supabase Edge/Postgres and the Cloudflare Worker while keeping PDF bytes out
+  of Supabase.
+- Added ticket/Origin/actual-size/PDF-magic/SHA-256/binding/expiry/nonce checks,
+  immutable R2 upload, hidden commit, future-version activation, restartable
+  discovery/finalize/abort and permanent terminal fences.
+- Fixed cleanup manifest-conflict work from potential `O(limit^2)` to
+  per-due `O(limit)` and made same-hash/different-object cleanup intents
+  collision-free while preserving legacy v1 intent recovery.
+- Made Local Publisher a mutually exclusive recovery path with a manifest/access
+  receipt fence. Browser mode hides Local controls and rejects every Local
+  registration; hosted activation still requires process stop and R2 writer
+  credential revocation/isolation.
+- Automated Local Gate regression passed; Human, Hosted and Production gates
+  remain HOLD. No push, deployment, hosted setting, feature flag or paid call
+  was changed by this local phase.
+
 ## 2026-07-20 - Phase 7.2 evidence-grounded academic answers
 
 - Added teacher-triggered, API-PIN-gated academic reference drafts using a
@@ -127,6 +150,8 @@ describe mock-only or Realtime behavior that the Phase 1-6 design replaced.
 
 - Phase 7.1: locally implemented; real-phone/human sign-off remains.
 - Phase 7.2: verified-primary-literature academic reference answers.
+- Phase 7.25/7.26: locally automated-verified; human/hosted production evidence
+  remains blocking.
 - Phase 7 Gate: next controlled production reflection.
 - Phase 8/8.1/8.2: export/deletion evidence, Terra advanced analysis and optional
   comment attention ranking.

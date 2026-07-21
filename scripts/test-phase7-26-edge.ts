@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { verifyPdfPublicationToken } from '../cloudflare/asset-worker/src/crypto.ts'
 
@@ -18,6 +19,24 @@ const {
   sha256Hex,
   signPdfPublicationTicket,
 } = await import('../supabase/functions/_shared/pdfPublicationToken.ts')
+
+test('browser publication mode rejects every Local Publisher registration', () => {
+  const source = readFileSync(
+    new URL(
+      '../supabase/functions/manage-pdf-documents/index.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+  assert.match(
+    source,
+    /body\.action === 'register'[\s\S]*?PHASE726_BROWSER_PDF_PUBLICATION_ENABLED'[\s\S]*?=== 'true'[\s\S]*?409/,
+  )
+  assert.doesNotMatch(
+    source,
+    /PHASE726_BROWSER_PDF_PUBLICATION_ENABLED'[\s\S]*?!hasLocalPublicationReceipt/,
+  )
+})
 
 test('Edge upload ticket and Worker verification share an exact signed contract', async () => {
   const keys = await crypto.subtle.generateKey(

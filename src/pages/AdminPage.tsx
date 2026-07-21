@@ -29,15 +29,9 @@ import {
   isPhase726BrowserPdfPublishingEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
+import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
 import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
-import { preflightBrowserPdf } from '../pdf/browserPdfPreflight'
-import { rememberBrowserPdfExtraction } from '../pdf/adminPdfExtraction'
-import {
-  browserPdfPublicationClient,
-  forgetBrowserPdfPublication,
-  rememberBrowserPdfPublication,
-  restoreBrowserPdfPublication,
-} from '../pdf/browserPdfPublicationClient'
+import { useBrowserPdfPublication } from '../hooks/useBrowserPdfPublication'
 import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
@@ -129,11 +123,33 @@ export function AdminPage() {
   >('disconnected')
   const [publisherMessage, setPublisherMessage] = useState('')
   const [pdfFile, setPdfFile] = useState<File | null>(null)
-  const [pdfPublicationDraftId, setPdfPublicationDraftId] = useState('')
-  const [pdfPublicationRequestId, setPdfPublicationRequestId] = useState('')
   const [pdfDisplayName, setPdfDisplayName] = useState('')
   const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
   const [pdfPublishing, setPdfPublishing] = useState(false)
+  const {
+    abortInterruptedPdfPublication,
+    pdfInterruptedPublicationId,
+    pdfPublicationDraftId,
+    pdfPublicationRequestId,
+    publishPdfDocumentInBrowser,
+    resetBrowserPdfPublication,
+    setPdfPublicationDraftId,
+    setPdfPublicationRequestId,
+  } = useBrowserPdfPublication({
+    activeLectureSessionId,
+    adminToken,
+    browserPublishingEnabled: isPhase726BrowserPdfPublishingEnabled,
+    isAuthenticated,
+    pdfDisplayName,
+    pdfDownloadEnabled,
+    pdfFile,
+    refreshAdminPdfDocuments,
+    setPdfDisplayName,
+    setPdfDocumentInput,
+    setPdfFile,
+    setPdfPublishing,
+    setPublisherMessage,
+  })
   const availablePdfAssets = isPhase3PrivatePdfEnabled
     ? [
         ...adminPdfDocuments.map((document) => ({
@@ -332,84 +348,6 @@ export function AdminPage() {
     }
   }
 
-  async function publishPdfDocumentInBrowser() {
-    if (!activeLectureSessionId || !adminToken) {
-      setPublisherMessage('先に講義を選択してください。')
-      return
-    }
-    if (!pdfFile) {
-      setPublisherMessage('公開するPDFを選択してください。')
-      return
-    }
-
-    const displayName =
-      pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
-    const documentId =
-      pdfPublicationDraftId ||
-      `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
-    if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
-    const idempotencyKey = pdfPublicationRequestId || crypto.randomUUID()
-    if (!pdfPublicationRequestId) setPdfPublicationRequestId(idempotencyKey)
-    setPdfPublishing(true)
-
-    try {
-      setPublisherMessage('PDFをブラウザ内で確認しています…')
-      const preflight = await preflightBrowserPdf(pdfFile)
-      setPublisherMessage('安全な公開先を準備しています…')
-      const publication = await browserPdfPublicationClient.initiate({
-        adminToken,
-        displayName,
-        documentId,
-        downloadEnabled: pdfDownloadEnabled,
-        fileName: pdfFile.name,
-        idempotencyKey,
-        lectureSessionId: activeLectureSessionId,
-        preflight,
-      })
-      rememberBrowserPdfPublication(publication)
-      setPublisherMessage('PDFを学生用の非公開領域へ送信しています…')
-      if (publication.uploadRequired) {
-        await browserPdfPublicationClient.upload(publication, pdfFile)
-      }
-      setPublisherMessage('講義画面への反映を確定しています…')
-      const finalized = await browserPdfPublicationClient.finalize({
-        adminToken,
-        lectureSessionId: activeLectureSessionId,
-        publicationId: publication.publicationId,
-      })
-
-      setPdfDocumentInput(finalized.documentId ?? documentId)
-      setPdfFile(null)
-      setPdfPublicationDraftId('')
-      setPdfPublicationRequestId('')
-      setPdfDisplayName('')
-      if (finalized.status === 'active') {
-        rememberBrowserPdfExtraction({
-          documentId,
-          lectureSessionId: activeLectureSessionId,
-          preflight,
-        })
-        forgetBrowserPdfPublication(activeLectureSessionId)
-      }
-      await refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
-      setPublisherMessage(
-        `学生への公開が完了しました（${preflight.pageCount}ページ・${(
-          preflight.byteSize /
-          1024 /
-          1024
-        ).toFixed(2)}MB）。現在の講義資料として表示しています。`,
-      )
-    } catch (error) {
-      setPublisherMessage(
-        error instanceof Error
-          ? `資料を公開できませんでした。現在の資料は維持されています: ${error.message}`
-          : '資料を公開できませんでした。現在の資料は維持されています。',
-      )
-    } finally {
-      setPdfPublishing(false)
-    }
-  }
-
   async function publishPdfDocumentWithLocalPublisher() {
     if (!activeLectureSessionId || !adminToken) {
       setPublisherMessage('先に講義を選択してください。')
@@ -468,7 +406,9 @@ export function AdminPage() {
         documentId: published.document.documentId,
         documentVersion: published.document.documentVersion,
         downloadEnabled: published.document.downloadEnabled,
+        expectedAccessVersion: published.accessVersion,
         lectureSessionId: activeLectureSessionId,
+        manifestEtag: published.manifestEtag,
         manifestVersion: published.manifestVersion,
         pageCount: published.document.pageCount,
         pdfSha256: published.document.pdfSha256,
@@ -638,77 +578,8 @@ export function AdminPage() {
     }
   }, [isAuthenticated, publisherSessionToken])
 
-  useEffect(() => {
-    if (
-      !isAuthenticated ||
-      !adminToken ||
-      !activeLectureSessionId ||
-      !isPhase726BrowserPdfPublishingEnabled
-    ) {
-      return
-    }
-    const stored = restoreBrowserPdfPublication(activeLectureSessionId)
-    if (!stored) return
-
-    let active = true
-    void browserPdfPublicationClient
-      .status({
-        adminToken,
-        lectureSessionId: activeLectureSessionId,
-        publicationId: stored.publicationId,
-      })
-      .then(async (status) => {
-        if (!active) return
-        if (['uploaded', 'committed'].includes(status.status)) {
-          setPublisherMessage('中断したPDF公開を再開しています…')
-          const finalized = await browserPdfPublicationClient.finalize({
-            adminToken,
-            lectureSessionId: activeLectureSessionId,
-            publicationId: stored.publicationId,
-          })
-          if (!active) return
-          setPdfDocumentInput(finalized.documentId ?? stored.documentId)
-          if (finalized.status === 'active') {
-            forgetBrowserPdfPublication(activeLectureSessionId)
-          }
-          await refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
-          if (active) {
-            setPublisherMessage('中断したPDFの公開が完了しました。')
-          }
-          return
-        }
-        if (status.status === 'active') {
-          forgetBrowserPdfPublication(activeLectureSessionId)
-          setPdfDocumentInput(status.documentId ?? stored.documentId)
-          await refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
-          if (active) setPublisherMessage('PDFは公開済みです。')
-          return
-        }
-        if (status.status === 'pending') {
-          setPdfPublicationDraftId(stored.documentId)
-          setPdfPublicationRequestId(stored.idempotencyKey)
-          setPublisherMessage(
-            '前回の送信は完了していません。同じPDFを選択すると再開できます。',
-          )
-          return
-        }
-        forgetBrowserPdfPublication(activeLectureSessionId)
-      })
-      .catch((error: unknown) => {
-        if (!active) return
-        setPublisherMessage(
-          error instanceof Error
-            ? `中断したPDF公開の状態を確認できませんでした: ${error.message}`
-            : '中断したPDF公開の状態を確認できませんでした。',
-        )
-      })
-
-    return () => {
-      active = false
-    }
-  }, [activeLectureSessionId, adminToken, isAuthenticated])
-
   function clearLocalAdminSession() {
+    clearAdminPdfExtractionCache()
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
     window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
     setIsAuthenticated(false)
@@ -722,6 +593,7 @@ export function AdminPage() {
     setAdminCurrentSessionId('')
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
+    resetBrowserPdfPublication()
   }
 
   async function handleLogout() {
@@ -1334,6 +1206,9 @@ export function AdminPage() {
         displayStateLoading={displayStateLoading}
         lectureStatus={lecture.status}
         onCheckPublisher={() => void checkPublisher()}
+        onAbortInterruptedPublication={() =>
+          void abortInterruptedPdfPublication()
+        }
         onDisplayNameChange={setPdfDisplayName}
         onDownloadEnabledChange={setPdfDownloadEnabled}
         onFileChange={(file) => {
@@ -1362,6 +1237,7 @@ export function AdminPage() {
         pdfDocumentInput={pdfDocumentInput}
         pdfDownloadEnabled={pdfDownloadEnabled}
         pdfFile={pdfFile}
+        hasInterruptedPublication={Boolean(pdfInterruptedPublicationId)}
         pdfPublishing={pdfPublishing}
         privatePdfEnabled={isPhase3PrivatePdfEnabled}
         publisherMessage={publisherMessage}

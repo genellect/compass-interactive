@@ -3,6 +3,8 @@ import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
+const appBaseUrl =
+  process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const decodeQrPixels = jsQR as unknown as (
   data: Uint8ClampedArray,
   width: number,
@@ -93,7 +95,10 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       .locator('.lecture-join-qr')
       .filter({ hasText: lectureTitle })
     await expect(adminQr.locator('img')).toBeVisible()
-    const canonicalJoinUrl = `http://127.0.0.1:4173/join?code=${lectureCode}`
+    const canonicalJoinUrl = new URL(
+      `/join?code=${lectureCode}`,
+      appBaseUrl,
+    ).toString()
     await expect(adminQr).toHaveAttribute(
       'data-lecture-join-url',
       canonicalJoinUrl,
@@ -112,13 +117,15 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     ).toBeVisible()
     await expect(summaryLanguage).toHaveValue('en')
 
-    const autoAcademicAnswers = admin.page.getByLabel(
+    const summaryControl = admin.page.locator('.lecture-summary-control')
+    const autoAcademicAnswers = summaryControl.getByLabel(
       '学術的な質問に参考回答を自動生成',
     )
+    const summarySourceDomain = summaryControl.getByLabel('参照する分野')
     await expect(autoAcademicAnswers).not.toBeChecked()
-    await expect(admin.page.getByLabel('参照する分野')).toHaveCount(0)
+    await expect(summarySourceDomain).toHaveCount(0)
     await autoAcademicAnswers.check()
-    await expect(admin.page.getByLabel('参照する分野')).toHaveValue('auto')
+    await expect(summarySourceDomain).toHaveValue('auto')
     await autoAcademicAnswers.uncheck()
 
     const displayPopup = admin.page.waitForEvent('popup')

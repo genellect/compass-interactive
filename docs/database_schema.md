@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-07-19
+Last reviewed: 2026-07-21
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -60,6 +60,13 @@ even when scheduled maintenance has not run.
 `lecture_pdf_documents` stores document identity, publication state, bounded
 metadata, retention state and R2/manifest references. It does not store PDF
 bytes or the extracted body text.
+
+`lecture_pdf_publications` is the browser-publication saga row. It stores the
+lecture/document/Admin/idempotency binding, expected hash/size, nonce/JTI
+digests, operation leases, Worker receipts, manifest/access versions, terminal
+cleanup state and audit timestamps. RLS is enabled, browser roles receive no
+table grant/policy, and service-role-only SECURITY INVOKER RPCs perform every
+transition after Edge validates the tracked Admin session.
 
 PDF page state is synchronized through the shared lecture state. Students
 download byte ranges through the Cloudflare Worker, not through Supabase.
@@ -141,7 +148,7 @@ documented query.
 
 ## 9. Migration and generated types
 
-Current migrations are ordered from the remote baseline through Phase 7.2.
+Current migrations are ordered from the remote baseline through Phase 7.26.
 The accepted workflow is:
 
 1. create an additive migration with the pinned Supabase CLI;

@@ -1,7 +1,7 @@
 # COMPASS Interactive Security Contract
 
-Last reviewed: 2026-07-19
-Status: locally implemented controls through Phase 7.2; new capabilities remain
+Last reviewed: 2026-07-21
+Status: locally implemented controls through Phase 7.26; new capabilities remain
 default-OFF and pending hosted/human production evidence
 
 ## 1. Security objectives
@@ -107,7 +107,7 @@ The `mine` history RPC accepts no participant ID, derives ownership from
 `auth.uid()` and returns no participant identifier. QR content is restricted to
 the same-origin six-digit join URL and contains no capability token.
 
-Phase 7.2 keeps literature hosts fixed to NCBI and exact DOI Crossref records,
+Phase 7.2 keeps medical literature hosts fixed to NCBI and exact DOI Crossref records,
 bounds time/body/source counts and rejects redirects or metadata disagreement.
 The model receives untrusted question/evidence as serialized data, has no tool,
 cannot create identifiers and returns a strict claim-to-source schema. At least
@@ -116,6 +116,12 @@ and retracted records are excluded. Drafts remain service-role-only until a
 teacher publishes them. Provider dispatch, cancellation, exact settlement,
 late discard and stale-operation reaping are separate audited transitions.
 
+Phase 7.25 routes non-medical questions through fixed Crossref/OpenAlex hosts,
+requires corroborated DOI and primary-study signals, and suppresses low-value or
+unsupported automatic candidates. Prompt content remains serialized untrusted
+data. An automatically visible answer is explicitly teacher-unconfirmed and can
+be approved, hidden or corrected without mutating its immutable source revision.
+
 ## 7. Browser-safe and server-only configuration
 
 ### Browser-safe
@@ -123,7 +129,7 @@ late discard and stale-operation reaping are separate audited transitions.
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `VITE_TURNSTILE_SITE_KEY`
-- `VITE_PDF_PUBLISHER_URL` when it is the approved loopback endpoint
+- `VITE_PDF_PUBLISHER_URL` only in the approved Local recovery mode
 - `VITE_PDF_WORKER_BASE_URL`
 - explicit frontend feature flags
 
@@ -145,16 +151,26 @@ secret-bearing variable names/patterns without printing secret values.
 
 ## 8. PDF, Publisher and R2
 
-- Publisher binds to loopback and uses a short-lived pairing/session flow.
-- Allowed Origin and Host are validated.
-- PDF validation enforces type, byte, page and text limits; image OCR is not
-  performed.
-- R2 credentials are bucket-scoped and live only on the teacher machine.
-- The R2 bucket is private.
-- The Worker validates Origin, short-lived access, range requests and retention.
-- PDF object addition updates a manifest rather than redeploying Pages.
+- Browser publication is default OFF. Edge validates a tracked Admin session and
+  creates a server-time DB job/nonce before signing a short-lived ticket.
+- The asset Worker independently verifies exact Origin/path, ticket binding,
+  actual byte count, PDF magic, native SHA-256, expiry, nonce and immutable key;
+  browser validation is only an early UX check.
+- Upload, hidden commit and activation are separate fenced transitions.
+  Uncommitted objects are absent from student-readable manifests.
+- Terminal cleanup uses permanent immutable ledger/object sentinels, bounded
+  `O(limit)` scans and object-key-unique v2 intents so delayed requests cannot
+  resurrect bytes or overwrite another cleanup record.
+- The R2 bucket is private. Student delivery still requires a short-lived scoped
+  ticket and validated range request.
+- PDF validation enforces type, byte, page and text limits; image OCR and Worker
+  page parsing are not performed.
 - PDF bytes, R2 credentials and extracted text do not enter Supabase or browser
-  persistence.
+  persistence. PDF addition does not redeploy Pages.
+- Local Publisher binds to loopback and remains recovery-only. Browser mode hides
+  its controls and rejects registration; hosted activation must also stop the
+  process and revoke/isolate its R2 write credential. The two writers must never
+  run concurrently.
 
 ## 9. Archive access
 
@@ -190,7 +206,7 @@ of the header regression.
 Current CI uses locked npm installation and no production credentials. It runs
 quality, non-live tests, disposable local Supabase and Chromium browser E2E.
 
-Phase 6.9 must add:
+Phase 6.9 added and CI enforces:
 
 - immutable GitHub Action SHA pins;
 - minimum workflow permissions;

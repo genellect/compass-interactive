@@ -68,7 +68,7 @@ assert.match(migration, /retry_after_ms/)
 assert.match(migration, /foreign key \(lecture_session_id, answer_id, revision_id\)/)
 assert.doesNotMatch(
   migration,
-  /grant (?:select|insert|update|delete).*academic_answer_publication_events.*authenticated/is,
+  /grant (?:select|insert|update|delete)[^;]*academic_answer_publication_events[^;]*authenticated/i,
 )
 assert.match(pgTap, /wrong run token cannot claim automatic work/)
 assert.match(pgTap, /missing verification keys fail closed/)

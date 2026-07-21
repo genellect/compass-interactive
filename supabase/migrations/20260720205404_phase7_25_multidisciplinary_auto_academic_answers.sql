@@ -24,6 +24,9 @@ alter table public.lecture_summary_runs
   add constraint lecture_summary_runs_lecture_id_unique
   unique (lecture_session_id, id);
 
+create index lecture_summary_runs_academic_authorization_grant_idx
+  on public.lecture_summary_runs (academic_authorization_grant_id);
+
 alter table public.academic_answer_requests
   add column publication_mode text not null default 'manual_review'
     check (publication_mode in ('manual_review', 'auto_unreviewed')),
@@ -60,6 +63,16 @@ alter table public.academic_answer_requests
     foreign key (lecture_session_id, automation_run_id)
     references public.lecture_summary_runs(lecture_session_id, id)
     on delete restrict;
+
+-- PostgreSQL does not create indexes on the referencing side of a foreign key.
+-- Keep every Phase 7.25 FK leading-key lookup bounded for parent updates/deletes
+-- as well as for the corresponding lecture-scoped joins.
+create index academic_answer_requests_source_summary_fk_idx
+  on public.academic_answer_requests (source_summary_id);
+create index academic_answer_requests_automation_run_fk_idx
+  on public.academic_answer_requests (automation_run_id);
+create index academic_answer_requests_automation_lecture_fk_idx
+  on public.academic_answer_requests (lecture_session_id, automation_run_id);
 
 create unique index academic_answer_requests_auto_summary_uidx
   on public.academic_answer_requests (source_summary_id)
@@ -161,10 +174,15 @@ create index academic_answer_publication_events_lecture_idx
   on public.academic_answer_publication_events (
     lecture_session_id, created_at desc, id
   );
+create index academic_answer_publication_events_revision_scope_fk_idx
+  on public.academic_answer_publication_events (
+    lecture_session_id, answer_id, revision_id
+  );
 
 alter table public.academic_answer_publication_events enable row level security;
 revoke all on public.academic_answer_publication_events
   from public, anon, authenticated, service_role;
+grant select on public.academic_answer_publication_events to service_role;
 
 -- Permit public AI-unreviewed answers while retaining the stronger reviewer
 -- requirement for teacher-confirmed or teacher-revised publications.

@@ -1,6 +1,7 @@
 const MAX_PDF_BYTES = 15 * 1024 * 1024
 
 export type PublisherPublication = {
+  accessVersion: number
   document: {
     byteSize: number
     displayName: string
@@ -13,6 +14,7 @@ export type PublisherPublication = {
     textSha256: string
   }
   duplicate: boolean
+  manifestEtag: string
   manifestVersion: number
 }
 
@@ -45,9 +47,43 @@ export class PublisherRequestError extends Error {
   }
 }
 
+const browserEnvironment = (
+  import.meta as ImportMeta & {
+    readonly env?: Record<string, string | undefined>
+  }
+).env
+
 const baseUrl = (
-  import.meta.env.VITE_PDF_PUBLISHER_URL || 'http://127.0.0.1:43123'
+  browserEnvironment?.VITE_PDF_PUBLISHER_URL || 'http://127.0.0.1:43123'
 ).replace(/\/$/, '')
+
+function containsControlCharacters(value: string) {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint < 32 || codePoint === 127
+  })
+}
+
+export function validatePublisherPublication(
+  value: unknown,
+): PublisherPublication {
+  const candidate = value as Partial<PublisherPublication> | null
+  if (
+    !candidate ||
+    !Number.isInteger(candidate.accessVersion) ||
+    Number(candidate.accessVersion) < 1 ||
+    typeof candidate.manifestEtag !== 'string' ||
+    candidate.manifestEtag.length < 1 ||
+    candidate.manifestEtag.length > 512 ||
+    containsControlCharacters(candidate.manifestEtag)
+  ) {
+    throw new PublisherRequestError(
+      'Publisher returned an invalid publication receipt.',
+      502,
+    )
+  }
+  return candidate as PublisherPublication
+}
 
 async function parseResponse<T>(response: Response) {
   const body = (await response
@@ -125,7 +161,9 @@ export const publisherClient = {
         method: 'POST',
       },
     )
-    return parseResponse<PublisherPublication>(response)
+    return validatePublisherPublication(
+      await parseResponse<PublisherPublication>(response),
+    )
   },
 
   async getExtraction(input: {

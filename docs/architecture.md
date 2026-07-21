@@ -1,7 +1,7 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-07-19
-Applies to: repository implementation through Phase 7.2
+Last reviewed: 2026-07-21
+Applies to: repository implementation through Phase 7.26
 
 ## 1. Architectural goals
 
@@ -28,8 +28,11 @@ flowchart LR
   Display["Classroom display"] -->|"scoped display session"| Edge
   Edge -->|"authorized RPC"| Supabase
 
-  Teacher -->|"loopback PDF workflow"| Publisher["Local Publisher"]
-  Publisher -->|"private objects + manifest"| R2["Private Cloudflare R2"]
+  Teacher -->|"PDF metadata + Admin session"| Edge
+  Teacher -->|"bound PDF stream"| Worker
+  Worker -->|"nonce/job coordination"| Edge
+  Teacher -.->|"recovery mode only"| Publisher["Local Publisher"]
+  Publisher -.->|"mutually exclusive private writer"| R2["Private Cloudflare R2"]
   Student -->|"short-lived archive/PDF access"| Worker["Cloudflare Worker"]
   Worker --> R2
 
@@ -107,18 +110,25 @@ deadline, audit events, AI-control state and archive state.
 
 The PDF path intentionally avoids Supabase Storage and database byte traffic.
 
-1. The teacher selects a PDF through the Admin flow.
-2. The loopback Publisher validates type, size, page and text limits.
-3. Text extraction is local and image OCR is not performed.
-4. The Publisher writes an immutable PDF object and a versioned manifest to a
-   private R2 bucket.
-5. Supabase stores only lecture/document identifiers, state and synchronized
-   page metadata.
+1. The teacher selects a PDF through the Admin flow. A dedicated browser Worker
+   validates type, actual size, page and text limits without rendering or OCR.
+2. Edge validates the tracked Admin session and lecture, then Postgres creates a
+   server-time job/nonce and Edge signs a short-lived, fully bound upload ticket.
+3. The browser streams bytes directly to the asset Worker; they never transit
+   Supabase. The Worker independently validates ticket, exact Origin/path,
+   actual bytes, `%PDF-` magic, native SHA-256, binding, expiry and nonce.
+4. The Worker writes an immutable R2 object, stages a hidden manifest entry and
+   exposes it only after DB and Worker agree on a future access version.
+5. Supabase stores only job/document identifiers, audit/lifecycle state and
+   synchronized page metadata. Uncommitted objects are never student-readable.
 6. The Worker validates short-lived access and serves byte ranges directly from
-   R2.
+   the private R2 bucket.
 
-Publisher R2 credentials, extracted text and local transcript files remain on
-the teacher machine. PDF addition does not redeploy the main Pages application.
+Local Publisher remains an offline compatibility/recovery path. It may hold the
+bucket-scoped R2 writer and local extracted text only after browser publication
+is disabled, all jobs/cleanup are terminal and the isolated credential is
+deliberately restored. Browser extraction is ephemeral in memory. PDF addition
+does not redeploy the main Pages application.
 
 ## 7. AI and captions
 
@@ -166,6 +176,11 @@ Stop is intentionally easier than start and does not require the API-use PIN.
   claim-source mapping and immutable hidden revisions are stored. Students and
   archives receive at most three teacher-approved projections through the
   existing snapshot/export paths.
+- Phase 7.25 adds automatic five-minute candidates and a multidisciplinary
+  Crossref/OpenAlex path for non-medical fields. Every visible material claim
+  still requires a verified primary source; low-value/unsupported candidates
+  are suppressed. Before review, output carries an explicit teacher-unconfirmed
+  label and remains approve/hide/correct capable.
 
 ### 7.4 Lecture join QR
 
@@ -213,8 +228,8 @@ available to the browser or database client.
 | --------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
 | Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL   | service role, OpenAI key, PINs, R2 secret, Turnstile secret |
 | Supabase Edge secrets       | OpenAI key, Admin/API-use PIN material, service role, trigger secrets | values returned to browser or committed to Git              |
-| Local Publisher environment | bucket-scoped R2 credential, Publisher signing material               | values in frontend variables or R2 objects                  |
-| Cloudflare Worker secrets   | archive ingest/verification secrets and bindings                      | plaintext lecture codes or Supabase service role            |
+| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material        | values in frontend variables or simultaneous browser mode   |
+| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings | plaintext lecture codes or Supabase service role         |
 | PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                         | PDF/audio bytes, raw local transcript, plaintext secrets    |
 
 See `docs/SECURITY.md` for the enforceable security contract and remaining
@@ -233,10 +248,11 @@ hosted/human Phase 6.8 evidence.
 
 ## 12. Current structural debt
 
-The code works, but `AdminPage`, `CompassStateContext` and the larger Supabase
-repositories hold too many responsibilities. Phase 6.9 will split them behind
-stable interfaces and characterization tests. The split must not redesign the
-UI, add requests or weaken lifecycle/RLS behavior.
+Phase 6.9 split the largest Admin, state and Supabase repository responsibilities
+behind stable interfaces and characterization tests. Remaining debt is managed
+through bundle budgets, generated DB types and characterization/E2E gates; a
+future split must not redesign the UI, add requests or weaken lifecycle/RLS
+behavior.
 
 ## 13. Authoritative sources
 

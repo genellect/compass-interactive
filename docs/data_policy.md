@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-21
 
 ## 1. Purpose
 
@@ -56,12 +56,15 @@ disclosure.
 
 ## 4. Local teacher-machine data
 
-The local Publisher may hold:
+The local Publisher recovery mode may hold:
 
 - the source PDF while it is being validated and published;
 - extracted text within the configured size/page/character limits;
 - the teacher review script or transcript text;
 - bucket-scoped R2 Publisher credentials in an ignored local environment file.
+
+It is not the primary browser publication path. Its process is stopped and its
+R2 write credential revoked or isolated while browser publication is enabled.
 
 COMPASS does not intentionally store microphone audio. Local transcript and
 extracted text are operator-controlled working data and require a documented
@@ -74,6 +77,8 @@ Private R2 may store:
 
 - immutable lecture PDF objects;
 - versioned manifests;
+- bounded private publication ledgers, cleanup intents/audits and tiny permanent
+  terminal sentinels that fence delayed requests;
 - sanitized read-only archive payloads;
 - bounded supporting metadata required to validate access and retention.
 
@@ -100,6 +105,11 @@ It stores bounded PMID/DOI/title/year/author/study metadata, verification facts,
 claim-source mappings, usage audit and immutable revisions. Only a
 teacher-confirmed projection enters the student snapshot and closed archive.
 
+Phase 7.25 may use fixed-host Crossref/OpenAlex metadata for non-medical
+questions. Retrieved metadata/evidence is transient at the provider boundary;
+the same bounded identifier, claim-source, usage and immutable-revision policy
+applies. Automatically visible answers remain explicitly teacher-unconfirmed.
+
 The exact provider retention and processing terms must be rechecked at each
 production gate; this repository document is not a substitute for the current
 provider agreement.
@@ -117,6 +127,12 @@ The browser may keep only bounded session/support state needed for re-entry and
 optimistic UX. Archive/PDF access tokens remain memory-only. Lecture codes or
 local participant hints must not be treated as authorization.
 
+During an explicit Admin PDF action, browser Web Worker output and at most
+20,000 normalized text characters may exist in memory. They are cleared on
+Admin logout/reload and are not written to localStorage, sessionStorage,
+IndexedDB, Supabase or R2. A later AI action reauthorizes the private download,
+revalidates bytes and re-extracts in a new Worker.
+
 Phase 6.8 may keep at most ten lecture-scoped high-entropy resume tokens in
 local storage for seven days. A token must never be placed in a URL, analytics
 event, console log or long-term user profile. Server-side storage contains only
@@ -132,6 +148,10 @@ metadata, never plaintext Admin or resume tokens.
 - Physical object deletion may use a short recovery buffer after access expiry.
 - Database/archive cleanup and Publisher-local cleanup are separate idempotent
   operations.
+- Browser-publication cleanup is a third idempotent responsibility. It removes
+  only an exact hidden/terminal manifest reference and mutable object/ledger,
+  then retains tiny permanent sentinels so an old accepted request cannot
+  recreate content. Sentinel growth and exhausted cleanup require monitoring.
 - Future export/deletion evidence records counts, timestamps and hashes rather
   than retaining deleted private content.
 

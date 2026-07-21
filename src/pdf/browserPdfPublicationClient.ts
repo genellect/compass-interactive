@@ -8,6 +8,7 @@ import type { BrowserPdfPreflightResult } from './browserPdfPreflight'
 
 const PUBLICATION_FUNCTION = 'manage-pdf-publications'
 const UPLOAD_TIMEOUT_MS = 3 * 60 * 1000
+const FINALIZE_TIMEOUT_MS = 60 * 1000
 const MAX_RESPONSE_BYTES = 64 * 1024
 const STORAGE_PREFIX = 'compass-interactive-browser-pdf-publication-v1:'
 const PUBLICATION_STATUSES = new Set<BrowserPdfPublicationStatus>([
@@ -32,6 +33,8 @@ export type BrowserPdfPublicationStatus =
 type PublicationResponse = {
   documentId?: string
   expiresAt?: string
+  found?: boolean
+  idempotencyKey?: string
   message?: string
   ok?: boolean
   publicationId?: string
@@ -40,7 +43,7 @@ type PublicationResponse = {
   uploadUrl?: string
 }
 
-type StoredPublication = {
+export type BrowserPdfPublicationRecovery = {
   documentId: string
   expiresAt: string
   idempotencyKey: string
@@ -107,6 +110,25 @@ function assertExpiry(value: string | undefined) {
   return value
 }
 
+function assertTimestamp(value: string | undefined) {
+  if (!value || !Number.isFinite(Date.parse(value))) {
+    throw new BrowserPdfPublicationError('PDF公開の有効期限が不正です。')
+  }
+  return value
+}
+
+function assertIdempotencyKey(value: string | undefined) {
+  if (
+    !value ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  ) {
+    throw new BrowserPdfPublicationError('PDF公開の再開情報が不正です。')
+  }
+  return value
+}
+
 function assertPublicationStatus(value: string | undefined) {
   if (!value || !PUBLICATION_STATUSES.has(value as BrowserPdfPublicationStatus)) {
     throw new BrowserPdfPublicationError('PDF公開状態が不正です。')
@@ -152,11 +174,12 @@ function assertUploadTicket(value: string | undefined) {
 
 async function invokePublicationAction(
   body: Record<string, boolean | number | string>,
+  timeout: number = SUPABASE_REQUEST_TIMEOUT_MS.adminFunction,
 ) {
   await ensureAnonymousAuthSession()
   const { data, error } = await invokeEdgeFunction<PublicationResponse>(
     PUBLICATION_FUNCTION,
-    { body, timeout: SUPABASE_REQUEST_TIMEOUT_MS.adminFunction },
+    { body, timeout },
   )
   if (error) {
     throw new BrowserPdfPublicationError(
@@ -223,6 +246,32 @@ async function parseBoundedUploadResponse(response: Response) {
 }
 
 export const browserPdfPublicationClient = {
+  async discover(input: {
+    adminToken: string
+    lectureSessionId: string
+  }): Promise<
+    | (BrowserPdfPublicationRecovery & { status: BrowserPdfPublicationStatus })
+    | null
+  > {
+    const response = await invokePublicationAction({
+      action: 'discover',
+      adminToken: input.adminToken,
+      lectureSessionId: input.lectureSessionId,
+    })
+    if (response.found === false) return null
+    if (response.found !== true || !response.documentId) {
+      throw new BrowserPdfPublicationError('PDF公開の再開情報が不正です。')
+    }
+    return {
+      documentId: response.documentId,
+      expiresAt: assertTimestamp(response.expiresAt),
+      idempotencyKey: assertIdempotencyKey(response.idempotencyKey),
+      lectureSessionId: input.lectureSessionId,
+      publicationId: assertPublicationId(response.publicationId),
+      status: assertPublicationStatus(response.status),
+    }
+  },
+
   async initiate(
     input: InitiateBrowserPdfPublicationInput,
   ): Promise<BrowserPdfPublicationHandle> {
@@ -350,12 +399,15 @@ export const browserPdfPublicationClient = {
     lectureSessionId: string
     publicationId: string
   }) {
-    const response = await invokePublicationAction({
-      action: 'finalize',
-      adminToken: input.adminToken,
-      lectureSessionId: input.lectureSessionId,
-      publicationId: assertPublicationId(input.publicationId),
-    })
+    const response = await invokePublicationAction(
+      {
+        action: 'finalize',
+        adminToken: input.adminToken,
+        lectureSessionId: input.lectureSessionId,
+        publicationId: assertPublicationId(input.publicationId),
+      },
+      FINALIZE_TIMEOUT_MS,
+    )
     const status = assertPublicationStatus(response.status)
     if (
       assertPublicationId(response.publicationId) !== input.publicationId ||
@@ -388,9 +440,9 @@ export const browserPdfPublicationClient = {
 }
 
 export function rememberBrowserPdfPublication(
-  handle: BrowserPdfPublicationHandle,
+  handle: BrowserPdfPublicationRecovery,
 ) {
-  const stored: StoredPublication = {
+  const stored: BrowserPdfPublicationRecovery = {
     documentId: handle.documentId,
     expiresAt: handle.expiresAt,
     idempotencyKey: handle.idempotencyKey,
@@ -409,17 +461,15 @@ export function restoreBrowserPdfPublication(lectureSessionId: string) {
   )
   if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as StoredPublication
+    const parsed = JSON.parse(raw) as BrowserPdfPublicationRecovery
     if (
       parsed.lectureSessionId !== lectureSessionId ||
       !parsed.documentId ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        parsed.idempotencyKey,
-      ) ||
       !Number.isFinite(Date.parse(parsed.expiresAt))
     ) {
       throw new Error('Stored publication is invalid.')
     }
+    assertIdempotencyKey(parsed.idempotencyKey)
     assertPublicationId(parsed.publicationId)
     return parsed
   } catch {

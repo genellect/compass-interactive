@@ -1,17 +1,30 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
+import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
 const playwrightArguments = process.argv.slice(3)
-const demoMode = mode === 'demo' || mode === 'demo-pdf'
-const port = demoMode ? 43_000 + (process.pid % 1_000) : 4_173
+const demoMode =
+  mode === 'demo' || mode === 'demo-pdf' || mode === 'demo-pdf-off'
+const configuredPort = process.env.PLAYWRIGHT_APP_PORT
+  ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
+  : null
+if (
+  configuredPort !== null &&
+  (!Number.isSafeInteger(configuredPort) ||
+    configuredPort < 1_024 ||
+    configuredPort > 65_535)
+) {
+  throw new Error('PLAYWRIGHT_APP_PORT must be an integer from 1024 to 65535.')
+}
+const port = configuredPort ?? (demoMode ? 43_000 + (process.pid % 1_000) : 4_173)
 const baseURL = `http://127.0.0.1:${port}`
 
-if (!['demo', 'demo-pdf', 'local'].includes(mode)) {
+if (!['demo', 'demo-pdf', 'demo-pdf-off', 'local'].includes(mode)) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|local>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|local>',
   )
 }
 
@@ -79,7 +92,8 @@ const appEnvironment = {
       }),
   VITE_PHASE1_SYNC_PROTOCOL: 'true',
   VITE_PHASE2_LECTURE_LIFECYCLE: 'true',
-  VITE_PHASE3_PRIVATE_PDF: mode === 'demo-pdf' ? 'true' : 'false',
+  VITE_PHASE3_PRIVATE_PDF:
+    mode === 'demo-pdf' || mode === 'demo-pdf-off' ? 'true' : 'false',
   VITE_PHASE4_REALTIME_CAPTIONS: 'false',
   VITE_PHASE5_MATERIAL_ANALYSIS: 'false',
   VITE_PHASE6_SUMMARIES: mode === 'local' ? 'true' : 'false',
@@ -91,12 +105,34 @@ const appEnvironment = {
   VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS: 'true',
   VITE_PHASE7_26_BROWSER_PDF_PUBLISHING:
     mode === 'demo-pdf' ? 'true' : 'false',
-  VITE_PDF_WORKER_BASE_URL: 'https://pdf.example',
+  VITE_PDF_WORKER_BASE_URL:
+    mode === 'demo-pdf' || mode === 'demo-pdf-off'
+      ? 'https://pdf.example'
+      : '',
   PLAYWRIGHT_BASE_URL: baseURL,
   VITE_CACHE_DIR: fileURLToPath(
     new URL(`../../test-results/vite-cache-${mode}`, import.meta.url),
   ),
 }
+
+async function assertPortAvailable() {
+  await new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.unref()
+    probe.once('error', () => {
+      reject(
+        new Error(
+          `E2E refused to reuse occupied port ${port}; set PLAYWRIGHT_APP_PORT to an unused local port.`,
+        ),
+      )
+    })
+    probe.listen({ host: '127.0.0.1', port }, () => {
+      probe.close((error) => (error ? reject(error) : resolve()))
+    })
+  })
+}
+
+await assertPortAvailable()
 
 const viteProcess = spawn(
   process.execPath,
@@ -113,12 +149,34 @@ const viteProcess = spawn(
   {
     cwd: root,
     env: appEnvironment,
-    stdio: 'inherit',
+    stdio: ['inherit', 'pipe', 'pipe'],
     windowsHide: true,
   },
 )
 
 let viteExited = false
+let viteReady = false
+let viteOutputTail = ''
+const ansiEscapePattern = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-9;]*m`,
+  'g',
+)
+viteProcess.stdout.on('data', (chunk) => {
+  const output = chunk.toString()
+  process.stdout.write(output)
+  viteOutputTail = `${viteOutputTail}${output}`.slice(-2_048)
+  const plainOutput = viteOutputTail.replace(ansiEscapePattern, '')
+  if (
+    new RegExp(`Local:\\s+http://127\\.0\\.0\\.1:${port}/`).test(
+      plainOutput,
+    )
+  ) {
+    viteReady = true
+  }
+})
+viteProcess.stderr.on('data', (chunk) => {
+  process.stderr.write(chunk)
+})
 viteProcess.once('exit', () => {
   viteExited = true
 })
@@ -129,7 +187,7 @@ async function waitForServer() {
     if (viteExited) throw new Error('Vite exited before E2E could start.')
     try {
       const response = await fetch(baseURL)
-      if (response.ok) return
+      if (viteReady && response.ok) return
     } catch {
       // Startup races are expected until Vite begins listening.
     }

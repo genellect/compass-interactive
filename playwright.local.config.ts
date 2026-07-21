@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const baseURL = 'http://127.0.0.1:4173'
+const baseURL =
+  process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const supabaseUrl = process.env.VITE_SUPABASE_URL?.trim() ?? ''
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
 

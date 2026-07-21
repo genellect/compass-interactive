@@ -30,6 +30,19 @@ function sha256(bytes: Uint8Array) {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+function verifyManifestEtag(etag: string) {
+  if (
+    etag.length < 1 ||
+    etag.length > 512 ||
+    containsControlCharacters(etag)
+  ) {
+    throw new PublicationVerificationError(
+      'Committed manifest ETag is invalid.',
+    )
+  }
+  return etag
+}
+
 export function getManifestKey(lecturePublicId: string) {
   return `manifests/${lecturePublicId}/manifest.json`
 }
@@ -152,6 +165,7 @@ export async function publishPdf(
         document.visible,
     )
     if (
+      currentObject &&
       existing &&
       existing.display_name === input.displayName.trim() &&
       existing.download_enabled === input.downloadEnabled &&
@@ -159,8 +173,10 @@ export async function publishPdf(
       currentManifest.access_version === input.accessVersion
     ) {
       return {
+        accessVersion: input.accessVersion,
         document: existing,
         duplicate: true,
+        manifestEtag: verifyManifestEtag(currentObject.etag),
         manifestVersion: currentManifest.manifest_version,
       }
     }
@@ -313,8 +329,10 @@ export async function publishPdf(
     }
 
     return {
+      accessVersion: input.accessVersion,
       document: nextDocument,
       duplicate: false,
+      manifestEtag: verifyManifestEtag(committed.etag),
       manifestVersion: committedManifest.manifest_version,
     }
   })

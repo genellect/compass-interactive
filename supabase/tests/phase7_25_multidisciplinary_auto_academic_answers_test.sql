@@ -25,9 +25,46 @@ SELECT ok(
     'authenticated', 'public.academic_answer_publication_events', 'SELECT'
   )
   AND NOT has_table_privilege(
+    'anon', 'public.academic_answer_publication_events', 'SELECT'
+  )
+  AND has_table_privilege(
     'service_role', 'public.academic_answer_publication_events', 'SELECT'
+  )
+  AND NOT has_table_privilege(
+    'service_role', 'public.academic_answer_publication_events', 'INSERT'
+  )
+  AND NOT has_table_privilege(
+    'service_role', 'public.academic_answer_publication_events', 'UPDATE'
+  )
+  AND NOT has_table_privilege(
+    'service_role', 'public.academic_answer_publication_events', 'DELETE'
   ),
-  'audit rows are exposed only through the bounded admin projection'
+  'audit rows are browser-private and service-role read-only'
+);
+SELECT has_index(
+  'public', 'lecture_summary_runs',
+  'lecture_summary_runs_academic_authorization_grant_idx',
+  'automatic-answer billing-grant FK is indexed'
+);
+SELECT has_index(
+  'public', 'academic_answer_requests',
+  'academic_answer_requests_source_summary_fk_idx',
+  'academic-answer source-summary FK has a full leading index'
+);
+SELECT has_index(
+  'public', 'academic_answer_requests',
+  'academic_answer_requests_automation_run_fk_idx',
+  'academic-answer automation-run FK is indexed'
+);
+SELECT has_index(
+  'public', 'academic_answer_requests',
+  'academic_answer_requests_automation_lecture_fk_idx',
+  'academic-answer lecture-scoped automation FK is indexed'
+);
+SELECT has_index(
+  'public', 'academic_answer_publication_events',
+  'academic_answer_publication_events_revision_scope_fk_idx',
+  'publication-event revision-scope FK is indexed'
 );
 SELECT ok(
   NOT has_function_privilege(

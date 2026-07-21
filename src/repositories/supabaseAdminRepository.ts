@@ -434,7 +434,9 @@ export type ManagePdfDocumentsRequest =
   | ({
       action: 'register'
       adminToken: string
+      expectedAccessVersion: number
       lectureSessionId: string
+      manifestEtag: string
     } & Omit<AdminPdfDocument, 'publishedAt' | 'visible'>)
 
 export type ManageAiControlRequest =

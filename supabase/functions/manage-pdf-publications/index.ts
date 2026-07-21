@@ -34,6 +34,7 @@ type PublicationRow = {
   committed_manifest_access_version: number | null
   committed_manifest_etag: string | null
   committed_manifest_version: number | null
+  client_request_id: string
   declared_page_count: number
   declared_text_char_count: number
   declared_text_sha256: string
@@ -62,7 +63,7 @@ type PublicationRow = {
 }
 
 type RequestBody = {
-  action?: 'abort' | 'finalize' | 'initiate' | 'status'
+  action?: 'abort' | 'discover' | 'finalize' | 'initiate' | 'status'
   adminToken?: string
   byteSize?: number
   displayName?: string
@@ -132,6 +133,7 @@ function mapPublication(row: PublicationRow) {
   return {
     documentId: row.document_id,
     expiresAt: row.operation_expires_at,
+    idempotencyKey: row.client_request_id,
     lectureSessionId: row.lecture_session_id,
     publicationId: row.publication_id,
     status: row.state,
@@ -146,9 +148,26 @@ async function readWorkerResponse(response: Response) {
   ) {
     throw new Error('PDF publication Worker response is too large.')
   }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > MAX_WORKER_RESPONSE_BYTES) {
-    throw new Error('PDF publication Worker response is too large.')
+  const chunks: Uint8Array[] = []
+  let byteLength = 0
+  const reader = response.body?.getReader()
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      byteLength += value.byteLength
+      if (byteLength > MAX_WORKER_RESPONSE_BYTES) {
+        await reader.cancel()
+        throw new Error('PDF publication Worker response is too large.')
+      }
+      chunks.push(value)
+    }
+  }
+  const bytes = new Uint8Array(byteLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
   }
   let payload: WorkerResponse = {}
   try {
@@ -334,8 +353,38 @@ Deno.serve(async (request) => {
   }
 
   try {
+    if (body.action === 'discover') {
+      if (!UUID_PATTERN.test(body.lectureSessionId)) {
+        return jsonResponse(
+          { message: 'Lecture ID is invalid.', ok: false },
+          400,
+        )
+      }
+      const { data, error } = await service.rpc(
+        'admin_find_inflight_pdf_publication_v1',
+        {
+          target_admin_auth_user_id: adminAuthUserId,
+          target_admin_session_id: adminSessionId,
+          target_lecture_session_id: body.lectureSessionId,
+        },
+      )
+      if (error) throw Object.assign(new Error(error.message), { status: 409 })
+      const row = data as PublicationRow | null
+      if (!row) return jsonResponse({ found: false, ok: true }, 200)
+      if (row.lecture_session_id !== body.lectureSessionId) {
+        throw Object.assign(new Error('PDF publication scope is invalid.'), {
+          status: 409,
+        })
+      }
+      return jsonResponse(
+        { found: true, ok: true, ...mapPublication(row) },
+        200,
+      )
+    }
+
     if (body.action === 'initiate') {
       if (
+        !UUID_PATTERN.test(body.lectureSessionId) ||
         !UUID_PATTERN.test(body.idempotencyKey ?? '') ||
         !DOCUMENT_PATTERN.test(body.documentId ?? '') ||
         !SHA_PATTERN.test(body.pdfSha256 ?? '') ||
@@ -352,7 +401,7 @@ Deno.serve(async (request) => {
         typeof body.displayName !== 'string' ||
         body.displayName.trim().length < 1 ||
         body.displayName.length > 160 ||
-        body.downloadEnabled === undefined
+        typeof body.downloadEnabled !== 'boolean'
       ) {
         return jsonResponse(
           { message: 'PDF publication metadata is invalid.', ok: false },
@@ -460,9 +509,10 @@ Deno.serve(async (request) => {
         /^[a-z0-9_:-]{1,80}$/.test(body.reason)
           ? body.reason
           : 'admin_cancelled'
+      let rollbackTicket: string | null = null
       if (row.state === 'committed') {
         const now = Math.floor(Date.now() / 1000)
-        const rollbackTicket = await signPdfPublicationTicket({
+        rollbackTicket = await signPdfPublicationTicket({
           ...ticketBase(row, adminSessionId),
           expiresAt: now + 60,
           issuedAt: now,
@@ -473,11 +523,6 @@ Deno.serve(async (request) => {
           targetAccessVersion:
             row.activation_target_access_version ?? row.pdf_access_version + 1,
         })
-        await callWorker(
-          `/v2/pdf-publications/${row.publication_id}/rollback`,
-          rollbackTicket,
-          'POST',
-        )
       }
       const { data, error } = await service.rpc(
         'admin_abort_pdf_publication_v1',
@@ -489,7 +534,18 @@ Deno.serve(async (request) => {
         },
       )
       if (error) throw Object.assign(new Error(error.message), { status: 409 })
-      return jsonResponse({ ok: true, ...mapPublication(data as PublicationRow) }, 200)
+      row = data as PublicationRow
+      if (
+        rollbackTicket &&
+        ['aborted', 'expired'].includes(row.state)
+      ) {
+        await callWorker(
+          `/v2/pdf-publications/${row.publication_id}/rollback`,
+          rollbackTicket,
+          'POST',
+        )
+      }
+      return jsonResponse({ ok: true, ...mapPublication(row) }, 200)
     }
 
     if (body.action !== 'finalize') {
@@ -655,9 +711,13 @@ Deno.serve(async (request) => {
             throw new Error('Active PDF publication receipt is inconsistent.')
           }
           row = authoritative
-        } else {
+        } else if (['aborted', 'expired'].includes(authoritative.state)) {
           await rollbackActivation()
           throw new Error(completed.error.message)
+        } else {
+          throw new Error(
+            'PDF activation outcome is uncertain; retry status before rollback.',
+          )
         }
       } else {
         row = completed.data as PublicationRow
@@ -676,9 +736,13 @@ Deno.serve(async (request) => {
             throw new Error('Active PDF publication receipt is inconsistent.')
           }
           row = authoritative
-        } else {
+        } else if (['aborted', 'expired'].includes(authoritative.state)) {
           await rollbackActivation()
           throw new Error('PDF activation was not committed.')
+        } else {
+          throw new Error(
+            'PDF activation outcome is uncertain; retry status before rollback.',
+          )
         }
       }
     }

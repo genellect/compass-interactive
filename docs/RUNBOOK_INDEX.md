@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-07-20
+Last reviewed: 2026-07-21
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -28,6 +28,10 @@ secret change and paid call still require an explicit task.
 | Phase 7.2 design             | `docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md` |
 | Phase 7.2 local evidence     | `docs/PHASE7_2_LOCAL_GATE_2026-07-20.md`      |
 | Phase 7.2 safe-stop handoff  | `docs/PHASE7_2_HANDOFF_2026-07-20.md`         |
+| Phase 7.26 requirements      | `docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md` |
+| Phase 7.26 browser PDF design | `docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`  |
+| Phase 7.26 local evidence    | `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`    |
+| Phase 7 production decision  | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`  |
 
 If an older Phase document conflicts with these current documents and the real
 code/migrations, treat the older document as historical evidence.
@@ -53,6 +57,12 @@ npm run test:phase7-1-static
 npm run test:phase7-2-edge
 npm run test:phase7-2-static
 npm run test:phase7-2-quality
+npm run test:phase7-25-edge
+npm run test:phase7-25-static
+npm run test:phase7-26-browser-pdf
+npm run test:phase7-26-edge
+npm run test:phase7-26-static
+npm run test:phase7-26-load
 npm run build
 git diff --check
 ```
@@ -74,12 +84,16 @@ URL is localhost/127.0.0.1 before a browser integration test.
 
 - Architecture/threat model: `docs/PHASE3_PRIVATE_PDF_DELIVERY.md` and
   `docs/PHASE3_REQUIREMENTS_AND_THREAT_MODEL.md`
-- Publisher implementation: `publisher/`
+- Browser publication: `docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md` and
+  `docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md`
+- Recovery Publisher implementation: `publisher/`
 - Worker implementation/config: `cloudflare/asset-worker/`
 - Production Phase 6.6 rollout: `docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`
 
-Real R2 credentials belong only in `.env.publisher.local` or the approved OS
-secret launcher. Never print values during connectivity checks.
+Local recovery R2 credentials belong only in `.env.publisher.local` or the
+approved OS secret launcher. Browser publication receives no permanent R2
+credential. Never print values during connectivity checks, and never enable the
+Local writer while browser mode is active.
 
 ## 5. OpenAI and paid features
 
@@ -99,6 +113,7 @@ CI. They require an explicit cost boundary and separate human gate.
   `docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`
 - Phase 6.6 production sequence: `docs/PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`
 - Phase 6.6 human checks: `docs/PHASE6_6_HUMAN_TEST_CHECKLIST.md`
+- Phase 7 production decision: `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`
 
 Standard order:
 
@@ -107,9 +122,11 @@ Standard order:
 3. Edge/Worker capability and secrets with server flags OFF;
 4. frontend with Vite flags OFF;
 5. Advisor/lint/two-user/hosted smoke;
-6. controlled flag canary;
-7. telemetry and cost review;
-8. gate record.
+6. for browser PDF, stop Local Publisher and revoke/isolate its R2 writer;
+7. real cross-service, 15 MiB and cleanup/rollback canaries;
+8. enable Worker, then Edge, then frontend for a controlled flag canary;
+9. telemetry and cost review;
+10. gate record.
 
 Do not drop schema on rollback. Disable the feature and restore the previous
 application/server version first.

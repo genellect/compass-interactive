@@ -1,0 +1,303 @@
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
+import { rememberBrowserPdfExtraction } from '../pdf/adminPdfExtraction'
+import { preflightBrowserPdf } from '../pdf/browserPdfPreflight'
+
+type UseBrowserPdfPublicationInput = {
+  activeLectureSessionId: string | null
+  adminToken: string
+  browserPublishingEnabled: boolean
+  isAuthenticated: boolean
+  pdfDisplayName: string
+  pdfDownloadEnabled: boolean
+  pdfFile: File | null
+  refreshAdminPdfDocuments: (
+    lectureSessionId?: string,
+    token?: string,
+  ) => Promise<void>
+  setPdfDisplayName: Dispatch<SetStateAction<string>>
+  setPdfDocumentInput: Dispatch<SetStateAction<string>>
+  setPdfFile: Dispatch<SetStateAction<File | null>>
+  setPdfPublishing: Dispatch<SetStateAction<boolean>>
+  setPublisherMessage: Dispatch<SetStateAction<string>>
+}
+
+export function useBrowserPdfPublication({
+  activeLectureSessionId,
+  adminToken,
+  browserPublishingEnabled,
+  isAuthenticated,
+  pdfDisplayName,
+  pdfDownloadEnabled,
+  pdfFile,
+  refreshAdminPdfDocuments,
+  setPdfDisplayName,
+  setPdfDocumentInput,
+  setPdfFile,
+  setPdfPublishing,
+  setPublisherMessage,
+}: UseBrowserPdfPublicationInput) {
+  const [pdfPublicationDraftId, setPdfPublicationDraftId] = useState('')
+  const [pdfPublicationRequestId, setPdfPublicationRequestId] = useState('')
+  const [pdfInterruptedPublicationId, setPdfInterruptedPublicationId] =
+    useState('')
+  const refreshAdminPdfDocumentsRef = useRef(refreshAdminPdfDocuments)
+  refreshAdminPdfDocumentsRef.current = refreshAdminPdfDocuments
+
+  async function publishPdfDocumentInBrowser() {
+    if (!browserPublishingEnabled) return
+    if (!activeLectureSessionId || !adminToken) {
+      setPublisherMessage('先に講義を選択してください。')
+      return
+    }
+    if (!pdfFile) {
+      setPublisherMessage('公開するPDFを選択してください。')
+      return
+    }
+
+    const displayName =
+      pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
+    const documentId =
+      pdfPublicationDraftId ||
+      `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
+    if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
+    const idempotencyKey = pdfPublicationRequestId || crypto.randomUUID()
+    if (!pdfPublicationRequestId) setPdfPublicationRequestId(idempotencyKey)
+    setPdfPublishing(true)
+
+    try {
+      setPublisherMessage('PDFをブラウザ内で確認しています…')
+      const publicationModule = await import(
+        '../pdf/browserPdfPublicationClient'
+      )
+      const {
+        browserPdfPublicationClient,
+        forgetBrowserPdfPublication,
+        rememberBrowserPdfPublication,
+      } = publicationModule
+      const preflight = await preflightBrowserPdf(pdfFile)
+      setPublisherMessage('安全な公開先を準備しています…')
+      const publication = await browserPdfPublicationClient.initiate({
+        adminToken,
+        displayName,
+        documentId,
+        downloadEnabled: pdfDownloadEnabled,
+        fileName: pdfFile.name,
+        idempotencyKey,
+        lectureSessionId: activeLectureSessionId,
+        preflight,
+      })
+      setPdfInterruptedPublicationId(publication.publicationId)
+      rememberBrowserPdfPublication(publication)
+      setPublisherMessage('PDFを学生用の非公開領域へ送信しています…')
+      if (publication.uploadRequired) {
+        await browserPdfPublicationClient.upload(publication, pdfFile)
+      }
+      setPublisherMessage('講義画面への反映を確定しています…')
+      const finalized = await browserPdfPublicationClient.finalize({
+        adminToken,
+        lectureSessionId: activeLectureSessionId,
+        publicationId: publication.publicationId,
+      })
+
+      setPdfDocumentInput(finalized.documentId ?? documentId)
+      setPdfFile(null)
+      setPdfPublicationDraftId('')
+      setPdfPublicationRequestId('')
+      setPdfDisplayName('')
+      if (finalized.status === 'active') {
+        rememberBrowserPdfExtraction({
+          documentId,
+          lectureSessionId: activeLectureSessionId,
+          preflight,
+        })
+        forgetBrowserPdfPublication(activeLectureSessionId)
+        setPdfInterruptedPublicationId('')
+      }
+      await refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
+      setPublisherMessage(
+        `学生への公開が完了しました（${preflight.pageCount}ページ・${(
+          preflight.byteSize /
+          1024 /
+          1024
+        ).toFixed(2)}MB）。現在の講義資料として表示しています。`,
+      )
+    } catch (error) {
+      setPublisherMessage(
+        error instanceof Error
+          ? `資料を公開できませんでした。現在の資料は維持されています: ${error.message}`
+          : '資料を公開できませんでした。現在の資料は維持されています。',
+      )
+    } finally {
+      setPdfPublishing(false)
+    }
+  }
+
+  async function abortInterruptedPdfPublication() {
+    if (
+      !browserPublishingEnabled ||
+      !activeLectureSessionId ||
+      !adminToken ||
+      !pdfInterruptedPublicationId
+    ) {
+      return
+    }
+    setPdfPublishing(true)
+    setPublisherMessage('中断したPDF公開を安全に破棄しています…')
+    try {
+      const {
+        browserPdfPublicationClient,
+        forgetBrowserPdfPublication,
+      } = await import('../pdf/browserPdfPublicationClient')
+      await browserPdfPublicationClient.abort({
+        adminToken,
+        lectureSessionId: activeLectureSessionId,
+        publicationId: pdfInterruptedPublicationId,
+        reason: 'admin_discarded_inflight',
+      })
+      forgetBrowserPdfPublication(activeLectureSessionId)
+      setPdfInterruptedPublicationId('')
+      setPdfPublicationDraftId('')
+      setPdfPublicationRequestId('')
+      setPublisherMessage(
+        '中断した公開を破棄しました。選択中のPDFを新しい公開として開始できます。',
+      )
+    } catch (error) {
+      setPublisherMessage(
+        error instanceof Error
+          ? `中断したPDF公開を破棄できませんでした: ${error.message}`
+          : '中断したPDF公開を破棄できませんでした。',
+      )
+    } finally {
+      setPdfPublishing(false)
+    }
+  }
+
+  useEffect(() => {
+    setPdfInterruptedPublicationId('')
+    setPdfPublicationDraftId('')
+    setPdfPublicationRequestId('')
+    if (
+      !browserPublishingEnabled ||
+      !isAuthenticated ||
+      !adminToken ||
+      !activeLectureSessionId
+    ) {
+      return
+    }
+
+    let active = true
+    void (async () => {
+      const {
+        browserPdfPublicationClient,
+        forgetBrowserPdfPublication,
+        rememberBrowserPdfPublication,
+        restoreBrowserPdfPublication,
+      } = await import('../pdf/browserPdfPublicationClient')
+      if (!active) return
+      let stored = restoreBrowserPdfPublication(activeLectureSessionId)
+      if (!stored) {
+        const discovered = await browserPdfPublicationClient.discover({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+        if (!discovered || !active) return
+        stored = discovered
+        rememberBrowserPdfPublication(discovered)
+      }
+      if (!active) return
+      setPdfInterruptedPublicationId(stored.publicationId)
+      const status = await browserPdfPublicationClient.status({
+        adminToken,
+        lectureSessionId: activeLectureSessionId,
+        publicationId: stored.publicationId,
+      })
+      if (!active) return
+      if (['uploaded', 'committed'].includes(status.status)) {
+        setPublisherMessage('中断したPDF公開を再開しています…')
+        const finalized = await browserPdfPublicationClient.finalize({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+          publicationId: stored.publicationId,
+        })
+        if (!active) return
+        setPdfDocumentInput(finalized.documentId ?? stored.documentId)
+        if (finalized.status === 'active') {
+          forgetBrowserPdfPublication(activeLectureSessionId)
+          setPdfInterruptedPublicationId('')
+        }
+        await refreshAdminPdfDocumentsRef.current(
+          activeLectureSessionId,
+          adminToken,
+        )
+        if (active) {
+          setPublisherMessage('中断したPDFの公開が完了しました。')
+        }
+        return
+      }
+      if (status.status === 'active') {
+        forgetBrowserPdfPublication(activeLectureSessionId)
+        setPdfInterruptedPublicationId('')
+        setPdfDocumentInput(status.documentId ?? stored.documentId)
+        await refreshAdminPdfDocumentsRef.current(
+          activeLectureSessionId,
+          adminToken,
+        )
+        if (active) setPublisherMessage('PDFは公開済みです。')
+        return
+      }
+      if (status.status === 'pending') {
+        setPdfPublicationDraftId(stored.documentId)
+        setPdfPublicationRequestId(stored.idempotencyKey)
+        setPublisherMessage(
+          Date.parse(stored.expiresAt) <= Date.now()
+            ? '前回のPDF公開は期限切れです。破棄してから新しい公開を開始してください。'
+            : '前回の送信は完了していません。同じPDFを選択すると再開できます。別のPDFを使う場合は先に中断した公開を破棄してください。',
+        )
+        return
+      }
+      forgetBrowserPdfPublication(activeLectureSessionId)
+      setPdfInterruptedPublicationId('')
+    })().catch((error: unknown) => {
+      if (!active) return
+      setPublisherMessage(
+        error instanceof Error
+          ? `中断したPDF公開の状態を確認できませんでした: ${error.message}`
+          : '中断したPDF公開の状態を確認できませんでした。',
+      )
+    })
+
+    return () => {
+      active = false
+    }
+  }, [
+    activeLectureSessionId,
+    adminToken,
+    browserPublishingEnabled,
+    isAuthenticated,
+    setPdfDocumentInput,
+    setPublisherMessage,
+  ])
+
+  function resetBrowserPdfPublication() {
+    setPdfInterruptedPublicationId('')
+    setPdfPublicationDraftId('')
+    setPdfPublicationRequestId('')
+  }
+
+  return {
+    abortInterruptedPdfPublication,
+    pdfInterruptedPublicationId,
+    pdfPublicationDraftId,
+    pdfPublicationRequestId,
+    publishPdfDocumentInBrowser,
+    resetBrowserPdfPublication,
+    setPdfPublicationDraftId,
+    setPdfPublicationRequestId,
+  }
+}

@@ -1,5 +1,13 @@
 # Phase 7.26 pause and resume handoff — 2026-07-21
 
+> Historical checkpoint only. The implementation counts, UI behavior and open
+> work below describe the pause boundary and are superseded by
+> `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md` and
+> `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`. In particular, browser mode now
+> hides all Local Publisher controls, uses permanent terminal sentinels and has
+> newer Worker/Publisher regression counts. Do not use this file as an
+> activation or rollback runbook.
+
 ## Pause boundary
 
 - Worktree: `work/phase7-25-implementation`

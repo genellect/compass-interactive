@@ -19,6 +19,18 @@ SELECT has_column(
   'browser_publication_id',
   'Phase 3 PDF metadata has optional browser-publication provenance'
 );
+SELECT has_column(
+  'public',
+  'lecture_pdf_publications',
+  'cleanup_worker_generation',
+  'terminal cleanup persists its pre-terminal Worker generation'
+);
+SELECT has_column(
+  'public',
+  'lecture_pdf_publications',
+  'cleanup_exhausted_at',
+  'bounded cleanup retries expose a manual-review marker'
+);
 SELECT ok(
   NOT (
     SELECT attribute.attnotnull
@@ -93,6 +105,9 @@ SELECT ok(
   ) IS NOT NULL
   AND to_regclass(
     'public.lecture_pdf_publications_cleanup_due_idx'
+  ) IS NOT NULL
+  AND to_regclass(
+    'public.lecture_pdf_publications_cleanup_retryable_due_idx'
   ) IS NOT NULL,
   'in-flight exclusion and bounded expiry scans are indexed'
 );
@@ -111,6 +126,7 @@ WITH expected_rpc(signature) AS (
     ('public.admin_create_pdf_publication_v1(uuid,text,text,bigint,integer,integer,text,text,boolean,text,uuid,text,text,uuid,uuid)'),
     ('public.admin_reissue_pdf_publication_ticket_v1(uuid,text,text,uuid,uuid)'),
     ('public.admin_get_pdf_publication_v1(uuid,uuid,uuid)'),
+    ('public.admin_find_inflight_pdf_publication_v1(uuid,uuid,uuid)'),
     ('public.worker_claim_pdf_publication_nonce_v1(uuid,integer,text,text,text,text,text,bigint,text,uuid,uuid)'),
     ('public.worker_record_pdf_publication_uploaded_v1(uuid,uuid,bigint,text,boolean,text,text,text)'),
     ('public.admin_prepare_pdf_publication_commit_v1(uuid,uuid,uuid,uuid)'),
@@ -132,6 +148,7 @@ WITH expected_rpc(signature) AS (
     ('public.admin_create_pdf_publication_v1(uuid,text,text,bigint,integer,integer,text,text,boolean,text,uuid,text,text,uuid,uuid)'),
     ('public.admin_reissue_pdf_publication_ticket_v1(uuid,text,text,uuid,uuid)'),
     ('public.admin_get_pdf_publication_v1(uuid,uuid,uuid)'),
+    ('public.admin_find_inflight_pdf_publication_v1(uuid,uuid,uuid)'),
     ('public.worker_claim_pdf_publication_nonce_v1(uuid,integer,text,text,text,text,text,bigint,text,uuid,uuid)'),
     ('public.worker_record_pdf_publication_uploaded_v1(uuid,uuid,bigint,text,boolean,text,text,text)'),
     ('public.admin_prepare_pdf_publication_commit_v1(uuid,uuid,uuid,uuid)'),
@@ -157,6 +174,7 @@ WITH expected_rpc(signature) AS (
     ('public.admin_create_pdf_publication_v1(uuid,text,text,bigint,integer,integer,text,text,boolean,text,uuid,text,text,uuid,uuid)'),
     ('public.admin_reissue_pdf_publication_ticket_v1(uuid,text,text,uuid,uuid)'),
     ('public.admin_get_pdf_publication_v1(uuid,uuid,uuid)'),
+    ('public.admin_find_inflight_pdf_publication_v1(uuid,uuid,uuid)'),
     ('public.worker_claim_pdf_publication_nonce_v1(uuid,integer,text,text,text,text,text,bigint,text,uuid,uuid)'),
     ('public.worker_record_pdf_publication_uploaded_v1(uuid,uuid,bigint,text,boolean,text,text,text)'),
     ('public.admin_prepare_pdf_publication_commit_v1(uuid,uuid,uuid,uuid)'),
@@ -192,6 +210,17 @@ CREATE TEMP TABLE phase726_fixture (
   expired_publication_id uuid,
   expired_lecture_public_id text,
   expired_cleanup_claim_id uuid,
+  crash_lecture_id uuid,
+  crash_publication_id uuid,
+  crash_lecture_public_id text,
+  crash_object_key text,
+  crash_worker_generation integer,
+  crash_cleanup_claim_id uuid,
+  poison_lecture_id uuid,
+  poison_publication_id uuid,
+  healthy_lecture_id uuid,
+  healthy_publication_id uuid,
+  healthy_cleanup_claim_id uuid,
   result jsonb
 );
 GRANT SELECT, INSERT, UPDATE ON phase726_fixture
@@ -277,6 +306,14 @@ SELECT is(
   'initiation creates only a pending publication'
 );
 SELECT is(
+  (SELECT publication.cleanup_worker_generation
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.publication_id),
+  null::integer,
+  'nonterminal publication carries no cleanup generation binding'
+);
+SELECT is(
   (SELECT count(*)::integer
    FROM public.lecture_pdf_documents AS document, phase726_fixture AS fixture
    WHERE document.lecture_session_id = fixture.lecture_id),
@@ -332,6 +369,42 @@ SELECT is(
   (SELECT result ->> 'ticket_generation' FROM phase726_fixture),
   '3',
   'explicit resume rotates an unused ticket without a second publication'
+);
+SELECT is(
+  (
+    SELECT public.admin_find_inflight_pdf_publication_v1(
+      lecture_id,
+      '72600000-0000-4000-8000-000000000001',
+      '72600000-0000-4000-8000-000000000101'
+    ) ->> 'publication_id'
+    FROM phase726_fixture
+  ),
+  (SELECT publication_id::text FROM phase726_fixture),
+  'the owning tracked Admin can rediscover an in-flight publication'
+);
+SELECT is(
+  (
+    SELECT public.admin_find_inflight_pdf_publication_v1(
+      lecture_id,
+      '72600000-0000-4000-8000-000000000001',
+      '72600000-0000-4000-8000-000000000101'
+    ) ->> 'client_request_id'
+    FROM phase726_fixture
+  ),
+  '72600000-0000-4000-8000-000000000201',
+  'discovery returns the original non-secret idempotency key'
+);
+SELECT is(
+  (
+    SELECT public.admin_find_inflight_pdf_publication_v1(
+      lecture_id,
+      '72600000-0000-4000-8000-000000000002',
+      '72600000-0000-4000-8000-000000000102'
+    )
+    FROM phase726_fixture
+  ),
+  null::jsonb,
+  'another tracked Admin actor cannot discover an in-flight publication'
 );
 SELECT throws_ok(
   $$
@@ -1008,6 +1081,24 @@ SELECT ok(
   'cleanup worker atomically claims the aborted object'
 );
 SELECT is(
+  (SELECT result ->> 'cleanup_binding_version' FROM phase726_fixture),
+  '1',
+  'cleanup claim declares the strict Worker binding contract version'
+);
+SELECT is(
+  (SELECT result ->> 'cleanup_worker_generation' FROM phase726_fixture),
+  '1',
+  'lecture close exposes the generation captured before ticket rotation'
+);
+SELECT is(
+  (SELECT publication.cleanup_worker_generation
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.deadline_publication_id),
+  1,
+  'lecture-close trigger persists the pre-terminal Worker generation'
+);
+SELECT is(
   public.complete_pdf_publication_cleanup_v1(
     (SELECT deadline_publication_id FROM phase726_fixture),
     (SELECT cleanup_claim_id FROM phase726_fixture),
@@ -1168,6 +1259,11 @@ SELECT ok(
   (SELECT expired_cleanup_claim_id IS NOT NULL FROM phase726_fixture),
   'expired operation is immediately claimable for object cleanup'
 );
+SELECT is(
+  (SELECT result ->> 'cleanup_worker_generation' FROM phase726_fixture),
+  '1',
+  'operation expiry captures the generation before its terminal fence'
+);
 SELECT ok(
   public.complete_pdf_publication_cleanup_v1(
     (SELECT expired_publication_id FROM phase726_fixture),
@@ -1177,6 +1273,292 @@ SELECT ok(
     'phase726-expiry'
   ) ->> 'cleanup_completed_at' IS NOT NULL,
   'expired cleanup completes without deleting audit state'
+);
+
+UPDATE phase726_fixture
+SET poison_lecture_id = public.admin_create_lecture(
+  'Phase 7.26 exhausted cleanup poison row',
+  repeat('a', 64),
+  '726005',
+  null,
+  null
+),
+healthy_lecture_id = public.admin_create_lecture(
+  'Phase 7.26 healthy cleanup row',
+  repeat('b', 64),
+  '726006',
+  null,
+  null
+);
+SELECT ok(
+  public.admin_set_lecture_status(
+    (SELECT poison_lecture_id FROM phase726_fixture),
+    'start',
+    null
+  )
+  AND public.admin_set_lecture_status(
+    (SELECT healthy_lecture_id FROM phase726_fixture),
+    'start',
+    null
+  ),
+  'cleanup starvation fixtures start'
+);
+UPDATE phase726_fixture
+SET result = public.admin_create_pdf_publication_v1(
+  poison_lecture_id,
+  'doc-poison',
+  repeat('c', 64),
+  1000,
+  1,
+  100,
+  repeat('d', 64),
+  'Poison cleanup material',
+  false,
+  'https://compass.example',
+  '72600000-0000-4000-8000-000000000205',
+  repeat(md5('phase726-poison-nonce'), 2),
+  repeat(md5('phase726-poison-ticket'), 2),
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+UPDATE phase726_fixture
+SET poison_publication_id = (result ->> 'publication_id')::uuid;
+UPDATE phase726_fixture
+SET result = public.admin_create_pdf_publication_v1(
+  healthy_lecture_id,
+  'doc-healthy',
+  repeat('e', 64),
+  1000,
+  1,
+  100,
+  repeat('f', 64),
+  'Healthy cleanup material',
+  false,
+  'https://compass.example',
+  '72600000-0000-4000-8000-000000000206',
+  repeat(md5('phase726-healthy-nonce'), 2),
+  repeat(md5('phase726-healthy-ticket'), 2),
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+UPDATE phase726_fixture
+SET healthy_publication_id = (result ->> 'publication_id')::uuid;
+UPDATE public.lecture_pdf_publications AS publication
+SET
+  state = 'aborted',
+  ticket_generation = publication.ticket_generation + 1,
+  aborted_at = statement_timestamp(),
+  cleanup_after = statement_timestamp() - interval '2 hours',
+  cleanup_attempt_count = 1000,
+  last_error_code = 'cleanup_attempts_exhausted'
+FROM phase726_fixture AS fixture
+WHERE publication.id = fixture.poison_publication_id;
+UPDATE public.lecture_pdf_publications AS publication
+SET
+  state = 'aborted',
+  ticket_generation = publication.ticket_generation + 1,
+  aborted_at = statement_timestamp(),
+  cleanup_after = statement_timestamp() - interval '1 hour',
+  last_error_code = 'cleanup_fixture'
+FROM phase726_fixture AS fixture
+WHERE publication.id = fixture.healthy_publication_id;
+UPDATE phase726_fixture AS fixture
+SET
+  result = claimed.payload,
+  healthy_cleanup_claim_id =
+    (claimed.payload ->> 'cleanup_claim_id')::uuid
+FROM (
+  SELECT payload
+  FROM public.claim_due_pdf_publication_cleanup_v1(
+    1,
+    'phase726-starvation'
+  ) AS cleanup(payload)
+) AS claimed
+WHERE (claimed.payload ->> 'publication_id')::uuid
+  = fixture.healthy_publication_id;
+SELECT ok(
+  (SELECT
+     healthy_cleanup_claim_id IS NOT NULL
+     AND result ->> 'cleanup_attempt_count' = '1'
+   FROM phase726_fixture),
+  'an exhausted earliest row does not starve a healthy due cleanup'
+);
+SELECT ok(
+  (SELECT
+     publication.cleanup_exhausted_at IS NOT NULL
+     AND publication.cleanup_attempt_count = 1000
+     AND publication.cleanup_claim_id IS NULL
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.poison_publication_id),
+  'the exhausted row saturates with a durable manual-review marker'
+);
+SELECT ok(
+  public.complete_pdf_publication_cleanup_v1(
+    (SELECT healthy_publication_id FROM phase726_fixture),
+    (SELECT healthy_cleanup_claim_id FROM phase726_fixture),
+    true,
+    null,
+    'phase726-starvation'
+  ) ->> 'cleanup_completed_at' IS NOT NULL,
+  'healthy cleanup can complete after skipping the poison row'
+);
+
+UPDATE phase726_fixture
+SET crash_lecture_id = public.admin_create_lecture(
+  'Phase 7.26 activation crash cleanup binding',
+  repeat('0', 64),
+  '726004',
+  null,
+  null
+);
+SELECT ok(
+  public.admin_set_lecture_status(
+    (SELECT crash_lecture_id FROM phase726_fixture),
+    'start',
+    null
+  ),
+  'activation-crash cleanup fixture starts'
+);
+UPDATE phase726_fixture
+SET result = public.admin_create_pdf_publication_v1(
+  crash_lecture_id,
+  'doc-crash',
+  repeat('9', 64),
+  4096,
+  4,
+  400,
+  repeat('8', 64),
+  'Crash recovery material',
+  true,
+  'https://compass.example',
+  '72600000-0000-4000-8000-000000000204',
+  repeat(md5('phase726-crash-nonce'), 2),
+  repeat(md5('phase726-crash-ticket'), 2),
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+UPDATE phase726_fixture
+SET
+  crash_publication_id = (result ->> 'publication_id')::uuid,
+  crash_lecture_public_id = result ->> 'lecture_public_id',
+  crash_object_key = result ->> 'object_key',
+  crash_worker_generation = (result ->> 'ticket_generation')::integer;
+UPDATE phase726_fixture
+SET result = public.worker_claim_pdf_publication_nonce_v1(
+  crash_publication_id,
+  crash_worker_generation,
+  repeat(md5('phase726-crash-nonce'), 2),
+  repeat(md5('phase726-crash-ticket'), 2),
+  crash_lecture_public_id,
+  'doc-crash',
+  repeat('9', 64),
+  4096,
+  'https://compass.example',
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000304'
+);
+UPDATE phase726_fixture
+SET result = public.worker_record_pdf_publication_uploaded_v1(
+  crash_publication_id,
+  '72600000-0000-4000-8000-000000000304',
+  4096,
+  repeat('9', 64),
+  true,
+  crash_object_key,
+  'r2-version-crash',
+  'etag-upload-crash'
+);
+UPDATE phase726_fixture
+SET result = public.admin_prepare_pdf_publication_commit_v1(
+  crash_publication_id,
+  '72600000-0000-4000-8000-000000000404',
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+UPDATE phase726_fixture
+SET result = public.admin_complete_pdf_publication_commit_v1(
+  crash_publication_id,
+  '72600000-0000-4000-8000-000000000404',
+  20,
+  1,
+  'manifest-hidden-etag-crash',
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+UPDATE phase726_fixture
+SET result = public.admin_prepare_pdf_publication_activation_v1(
+  crash_publication_id,
+  '72600000-0000-4000-8000-000000000504',
+  '72600000-0000-4000-8000-000000000001',
+  '72600000-0000-4000-8000-000000000101'
+);
+SELECT ok(
+  public.admin_set_lecture_status(
+    (SELECT crash_lecture_id FROM phase726_fixture),
+    'close',
+    null
+  ),
+  'lecture close wins the DB fence before external activation rollback'
+);
+SELECT ok(
+  (SELECT
+     publication.state = 'aborted'
+     AND publication.cleanup_worker_generation = fixture.crash_worker_generation
+     AND publication.ticket_generation = fixture.crash_worker_generation + 1
+     AND publication.committed_manifest_access_version = 1
+     AND publication.activation_target_access_version = 2
+     AND publication.activation_operation_id =
+       '72600000-0000-4000-8000-000000000504'::uuid
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.crash_publication_id),
+  'terminal intent preserves the exact activation and pre-rotation generation binding'
+);
+UPDATE phase726_fixture AS fixture
+SET
+  result = claimed.payload,
+  crash_cleanup_claim_id = (claimed.payload ->> 'cleanup_claim_id')::uuid
+FROM (
+  SELECT payload
+  FROM public.claim_due_pdf_publication_cleanup_v1(
+    10,
+    'phase726-activation-crash'
+  ) AS cleanup(payload)
+) AS claimed
+WHERE (claimed.payload ->> 'publication_id')::uuid
+  = fixture.crash_publication_id;
+SELECT ok(
+  (SELECT
+     result ->> 'cleanup_binding_version' = '1'
+     AND (result ->> 'cleanup_worker_generation')::integer
+       = crash_worker_generation
+     AND result ->> 'committed_manifest_access_version' = '1'
+     AND result ->> 'activation_target_access_version' = '2'
+     AND result ->> 'pdf_access_version' = '1'
+     AND result ->> 'activation_operation_id'
+       = '72600000-0000-4000-8000-000000000504'
+   FROM phase726_fixture),
+  'cleanup claim exports the complete strict rollback binding without advancing DB access'
+);
+
+UPDATE public.lecture_pdf_publications AS publication
+SET
+  state = 'retired',
+  retired_at = statement_timestamp(),
+  cleanup_after = statement_timestamp() + interval '7 days'
+FROM phase726_fixture AS fixture
+WHERE publication.id = fixture.publication_id;
+SELECT is(
+  (SELECT publication.cleanup_worker_generation
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.publication_id),
+  (SELECT publication.ticket_generation
+   FROM public.lecture_pdf_publications AS publication,
+     phase726_fixture AS fixture
+   WHERE publication.id = fixture.publication_id),
+  'retirement captures the active Worker generation without rotating it'
 );
 SELECT ok(
   EXISTS (

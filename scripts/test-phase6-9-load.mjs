@@ -15,7 +15,11 @@ const liveSyncPolicy = readFileSync(
 )
 
 assert.equal((context.match(/useAdaptiveLiveSync\(/g) ?? []).length, 1)
-assert.equal((context.match(/setInterval\(/g) ?? []).length, 0)
+assert.equal((context.match(/setInterval\(/g) ?? []).length, 1)
+assert.match(
+  context,
+  /runtimeMode\s*!==\s*'demo'\s*\|\|\s*!hasActiveLectureSessionId[\s\S]{0,200}setInterval\([\s\S]{0,200}10_000/,
+)
 assert.match(adaptiveSync, /foregroundIntervalMs\s*=\s*LIVE_SYNC_INTERVAL_MS/)
 assert.match(liveSyncPolicy, /LIVE_SYNC_INTERVAL_MS\s*=\s*5_000/)
 

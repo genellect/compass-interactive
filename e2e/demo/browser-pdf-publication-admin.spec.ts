@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 
+test.skip(
+  process.env.VITE_PHASE7_26_BROWSER_PDF_PUBLISHING !== 'true',
+  'Phase 7.26 browser publication requires its dedicated flag-on runner.',
+)
+
 const lectureSessionId = '71000000-0000-4000-8000-000000000726'
 const publicationId = '70000000-0000-4000-8000-000000000726'
 const idempotencyKey = '72000000-0000-4000-8000-000000000726'
@@ -10,13 +15,27 @@ const samplePdfPath = fileURLToPath(
   new URL('../../public/lecture-assets/m4-sample-v1.pdf', import.meta.url),
 )
 
-type PublicationAction = 'finalize' | 'initiate' | 'status'
+type PublicationAction =
+  | 'abort'
+  | 'discover'
+  | 'finalize'
+  | 'initiate'
+  | 'status'
 
 type MockState = {
   active: boolean
   publicationActions: PublicationAction[]
+  storedPublicationAtUpload: string | null
   uploadCount: number
   uploadedBytes: number
+}
+
+function withoutDiscovery(actions: PublicationAction[]) {
+  return actions.filter((action) => action !== 'discover')
+}
+
+function discoveryCount(actions: PublicationAction[]) {
+  return actions.filter((action) => action === 'discover').length
 }
 
 function encodeJwtPart(value: unknown) {
@@ -102,7 +121,14 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 
 async function installAdminState(page: Page, recoverPublication: boolean) {
   await page.addInitScript(
-    ({ expiresAt, idempotencyKey, lectureSessionId, publicationId, documentId, recoverPublication }) => {
+    ({
+      expiresAt,
+      idempotencyKey,
+      lectureSessionId,
+      publicationId,
+      documentId,
+      recoverPublication,
+    }) => {
       window.sessionStorage.setItem(
         'compass-interactive-admin-authenticated',
         'true',
@@ -123,10 +149,7 @@ async function installAdminState(page: Page, recoverPublication: boolean) {
         'compass-interactive-lecture-title',
         'Phase 7.26 browser publication E2E',
       )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-status',
-        'open',
-      )
+      window.localStorage.setItem('compass-interactive-lecture-status', 'open')
       if (recoverPublication) {
         window.sessionStorage.setItem(
           `compass-interactive-browser-pdf-publication-v1:${lectureSessionId}`,
@@ -153,11 +176,15 @@ async function installAdminState(page: Page, recoverPublication: boolean) {
 
 async function installNetworkMocks(
   page: Page,
-  options: { recoverPublication?: boolean } = {},
+  options: {
+    discoverPublication?: boolean
+    recoverPublication?: boolean
+  } = {},
 ) {
   const state: MockState = {
     active: false,
     publicationActions: [],
+    storedPublicationAtUpload: null,
     uploadCount: 0,
     uploadedBytes: 0,
   }
@@ -170,7 +197,16 @@ async function installNetworkMocks(
     )
     expect(request.headers()['content-type']).toBe('application/pdf')
     const bytes = request.postDataBuffer()
-    expect(bytes?.subarray(0, 5).toString()).toBe('%PDF-')
+    if (bytes) {
+      expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
+    }
+    state.storedPublicationAtUpload = await page.evaluate(
+      (lectureId) =>
+        window.sessionStorage.getItem(
+          `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+        ),
+      lectureSessionId,
+    )
     state.uploadCount += 1
     state.uploadedBytes = bytes?.byteLength ?? 0
     await fulfillJson(
@@ -214,6 +250,23 @@ async function installNetworkMocks(
     if (functionName === 'manage-pdf-publications') {
       const action = body.action as PublicationAction
       state.publicationActions.push(action)
+      if (action === 'discover') {
+        await fulfillJson(
+          route,
+          options.discoverPublication
+            ? {
+                documentId,
+                expiresAt,
+                found: true,
+                idempotencyKey,
+                ok: true,
+                publicationId,
+                status: options.recoverPublication ? 'uploaded' : 'pending',
+              }
+            : { found: false, ok: true },
+        )
+        return
+      }
       if (action === 'initiate') {
         expect(body.lectureSessionId).toBe(lectureSessionId)
         expect(body.byteSize).toBeGreaterThan(5)
@@ -250,6 +303,15 @@ async function installNetworkMocks(
         })
         return
       }
+      if (action === 'abort') {
+        await fulfillJson(route, {
+          documentId,
+          ok: true,
+          publicationId,
+          status: 'aborted',
+        })
+        return
+      }
     }
 
     if (functionName === 'operator-live-snapshot') {
@@ -282,7 +344,13 @@ async function installNetworkMocks(
   return state
 }
 
-test('Admin publishes a PDF in-browser and keeps Local Publisher as recovery only', async ({
+async function stopAdminOperatorPolling(page: Page) {
+  await page.locator('.admin-actions button').nth(1).click()
+  await expect(page.locator('#admin-live')).toHaveCount(0)
+}
+
+test('Admin publishes a PDF in-browser without exposing Local Publisher controls', async ({
+  browserName,
   page,
 }) => {
   await installAdminState(page, false)
@@ -292,16 +360,8 @@ test('Admin publishes a PDF in-browser and keeps Local Publisher as recovery onl
   const pdfPanel = page.locator('#admin-live .publisher-control-panel')
   await expect(pdfPanel).toBeVisible()
 
-  const recovery = pdfPanel.locator('details.admin-publisher-setup', {
-    hasText: 'Local Publisher',
-  })
-  await expect(recovery).toHaveCount(1)
-  await expect(recovery).not.toHaveAttribute('open', '')
-  await recovery.locator('summary').click()
-  await expect(recovery.locator('input[inputmode="numeric"]')).toHaveAttribute(
-    'maxlength',
-    '8',
-  )
+  await expect(pdfPanel.getByText('Local Publisher')).toHaveCount(0)
+  await expect(pdfPanel.locator('input[inputmode="numeric"]')).toHaveCount(0)
 
   await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
   const publishButton = pdfPanel.locator('button.primary-button')
@@ -309,10 +369,32 @@ test('Admin publishes a PDF in-browser and keeps Local Publisher as recovery onl
   await publishButton.click()
 
   await expect
-    .poll(() => state.publicationActions)
+    .poll(() => withoutDiscovery(state.publicationActions))
     .toEqual(['initiate', 'finalize'])
+  expect(discoveryCount(state.publicationActions)).toBeGreaterThanOrEqual(1)
+  expect(discoveryCount(state.publicationActions)).toBeLessThanOrEqual(2)
   expect(state.uploadCount).toBe(1)
-  expect(state.uploadedBytes).toBeGreaterThan(5)
+  if (browserName === 'chromium') {
+    expect(state.uploadedBytes).toBeGreaterThan(5)
+  }
+  expect(state.storedPublicationAtUpload).not.toBeNull()
+  const storedPublication = JSON.parse(
+    state.storedPublicationAtUpload ?? '{}',
+  ) as Record<string, unknown>
+  expect(Object.keys(storedPublication).sort()).toEqual([
+    'documentId',
+    'expiresAt',
+    'idempotencyKey',
+    'lectureSessionId',
+    'publicationId',
+  ])
+  expect(state.storedPublicationAtUpload).not.toContain(
+    'playwright.header.signature',
+  )
+  expect(state.storedPublicationAtUpload).not.toContain('pdf.example')
+  expect(state.storedPublicationAtUpload).not.toContain('%PDF-')
+  expect(state.storedPublicationAtUpload).not.toContain('pages')
+  expect(state.storedPublicationAtUpload).not.toContain('textSha256')
   await expect(
     page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
@@ -327,31 +409,64 @@ test('Admin publishes a PDF in-browser and keeps Local Publisher as recovery onl
       ),
     )
     .toBeNull()
+  await stopAdminOperatorPolling(page)
 })
 
 test('Admin resumes an uploaded publication with status then finalize and no second PUT', async ({
   page,
 }) => {
-  await installAdminState(page, true)
+  await installAdminState(page, false)
   const state = await installNetworkMocks(page, { recoverPublication: true })
 
   await page.goto('/admin')
+  await expect(
+    page.locator('#admin-live .publisher-control-panel'),
+  ).toBeVisible()
+  await expect
+    .poll(() => discoveryCount(state.publicationActions))
+    .toBeGreaterThanOrEqual(1)
+  await page.evaluate(
+    ({
+      documentId,
+      expiresAt,
+      idempotencyKey,
+      lectureSessionId,
+      publicationId,
+    }) => {
+      window.sessionStorage.setItem(
+        `compass-interactive-browser-pdf-publication-v1:${lectureSessionId}`,
+        JSON.stringify({
+          documentId,
+          expiresAt,
+          idempotencyKey,
+          lectureSessionId,
+          publicationId,
+        }),
+      )
+    },
+    {
+      documentId,
+      expiresAt,
+      idempotencyKey,
+      lectureSessionId,
+      publicationId,
+    },
+  )
+  await page.reload()
 
   await expect
     .poll(() => state.publicationActions.includes('finalize'))
     .toBe(true)
-  expect(state.publicationActions[0]).toBe('status')
+  expect(withoutDiscovery(state.publicationActions)[0]).toBe('status')
   expect(state.publicationActions).not.toContain('initiate')
   expect(
-    state.publicationActions.every(
+    withoutDiscovery(state.publicationActions).every(
       (action) => action === 'status' || action === 'finalize',
     ),
   ).toBe(true)
   expect(state.uploadCount).toBe(0)
   await expect(
-    page.locator(
-      `#admin-live select option[value="${documentId}"]`,
-    ),
+    page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
   await expect
     .poll(() =>
@@ -364,4 +479,72 @@ test('Admin resumes an uploaded publication with status then finalize and no sec
       ),
     )
     .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin rediscovers an uploaded publication without tab storage and finalizes it', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    discoverPublication: true,
+    recoverPublication: true,
+  })
+
+  await page.goto('/admin')
+  await expect
+    .poll(() => state.publicationActions.includes('finalize'))
+    .toBe(true)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'status',
+    'finalize',
+  ])
+  expect(discoveryCount(state.publicationActions)).toBeGreaterThanOrEqual(1)
+  expect(discoveryCount(state.publicationActions)).toBeLessThanOrEqual(2)
+  expect(state.uploadCount).toBe(0)
+  await expect(
+    page.locator(`#admin-live select option[value="${documentId}"]`),
+  ).toHaveCount(1)
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin explicitly aborts a discovered pending publication before replacing it', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    discoverPublication: true,
+  })
+
+  await page.goto('/admin')
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const abortButton = pdfPanel.getByRole('button', {
+    name: '中断した公開を破棄してやり直す',
+  })
+  await expect(abortButton).toBeVisible()
+  await expect
+    .poll(() => withoutDiscovery(state.publicationActions))
+    .toEqual(['status'])
+  expect(discoveryCount(state.publicationActions)).toBeGreaterThanOrEqual(1)
+  expect(discoveryCount(state.publicationActions)).toBeLessThanOrEqual(2)
+  await abortButton.click()
+  await expect
+    .poll(() => state.publicationActions.at(-1))
+    .toBe('abort')
+  await expect(abortButton).toHaveCount(0)
+  await expect(pdfPanel).toContainText(
+    '選択中のPDFを新しい公開として開始できます。',
+  )
+  await stopAdminOperatorPolling(page)
 })

@@ -15,11 +15,13 @@ preserved. Decimal phases separate risk domains without rewriting history.
 |     3 | 6.9                     | High     | Modularization and deterministic CI quality        |
 |     4 | 7.1                     | Medium   | Summary language, own comments and lecture QR      |
 |     5 | 7.2                     | Medium   | Verified-primary-literature reference answers      |
-|     6 | Phase 7 Production Gate | Medium   | Next controlled production release                 |
-|     7 | Phase 8                 | Low      | Export/deletion evidence and unified AI review     |
-|     8 | 8.1                     | Low      | Explicit Terra advanced analysis                   |
-|     9 | 8.2                     | Low      | User-selected chronological/attention ranking      |
-|    10 | Phase 9                 | Final    | Long-run, human and operations certification       |
+|     6 | 7.25                    | Medium   | Multidisciplinary automatic academic answers       |
+|     7 | 7.26                    | High     | Browser-complete private PDF publication           |
+|     8 | Phase 7 Production Gate | Medium   | Next controlled production release                 |
+|     9 | Phase 8                 | Low      | Export/deletion evidence and unified AI review     |
+|    10 | 8.1                     | Low      | Explicit Terra advanced analysis                   |
+|    11 | 8.2                     | Low      | User-selected chronological/attention ranking      |
+|    12 | Phase 9                 | Final    | Long-run, human and operations certification       |
 
 The old Phase 7 scope is split because deterministic literature verification
 must be proven before a more expensive model can be offered. The old Phase 8
@@ -299,22 +301,84 @@ enablement is not authorized by this status.
   percent reviewed claim support.
 - Teacher human review and global G0-G7 PASS.
 
-## 9. Phase 7 Production Gate
+## 9. Phase 7.25 - multidisciplinary automatic academic answers
 
-Only after Phase 6.7, 6.8, 6.9, 7.1 and 7.2 are individually PASS:
+Status: locally implemented and automated-verified on 2026-07-21. Human teacher
+literature review and Hosted/Production evidence remain HOLD.
+
+### Tasks
+
+- Route medical/biological questions to PubMed and other fields to fixed-host
+  Crossref/OpenAlex corroboration without trusting model-created identifiers.
+- Admit at most three academic-answer provider calls per lecture through the
+  existing Batch lane, API-use PIN, lecture-state and budget controls.
+- At the five-minute summary boundary, suppress low-value questions and answers
+  without a verified primary source; otherwise expose a bounded answer labelled
+  as not yet teacher-confirmed.
+- Let Admin approve, hide or create a corrected immutable revision without
+  mutating the original model output.
+- Keep literature metadata, prompt input and response size bounded and add no
+  per-student periodic request or Realtime subscription.
+
+### Acceptance
+
+- Identifier/source contradiction, retraction, review-only evidence, prompt
+  injection, close-race, budget and concurrency tests PASS.
+- Every material claim maps to a verified primary source and unsupported output
+  is absent from the student snapshot/archive.
+- Phase 6.6 UX and Phase 6.8-7.2 database/browser/load regressions PASS.
+- Teacher literature/wording review and global G0-G7 remain blocking human work.
+
+## 10. Phase 7.26 - browser-complete private PDF publication
+
+Status: automated Local Gate PASS on 2026-07-21. The feature remains default
+OFF; Human, Hosted and Production gates remain HOLD.
+
+### Tasks
+
+- Replace the primary CLI/pairing flow with one Admin browser CTA while keeping
+  Local Publisher as an ordered, mutually exclusive recovery mode.
+- Keep PDF bytes outside Supabase. Edge issues a short-lived bound ticket;
+  Postgres owns nonce/job state; the Worker independently validates Origin,
+  actual bytes, PDF magic, SHA-256, binding, expiry and immutable upload.
+- Enforce `pending -> uploaded -> committed -> active` with hidden commit,
+  future-version activation, idempotent discovery/finalize and permanent
+  terminal fences against delayed requests.
+- Bound cleanup linearly by due job, preserve legacy recovery compatibility and
+  make same-hash/different-object cleanup intent collision-free.
+- Keep Worker PDF parsing/OCR absent and prove the 15 MiB path against the real
+  Workers Free CPU/memory envelope before hosted activation.
+
+### Acceptance
+
+- Clean and Phase 7.2 upgrade migrations, all pgTAP, two-connection races,
+  Worker/Edge/Publisher tests and Chromium/WebKit flag-ON/OFF E2E PASS.
+- No PDF byte/text enters Supabase or browser persistence; uncommitted objects
+  are not student-readable and terminal cleanup is restartable.
+- Production activation is blocked until Local Publisher is stopped, its R2
+  write credential is revoked/isolated, cross-service R2 canaries, two-Admin
+  races, WAF/rate protection, cleanup monitoring and human PDF/UI review PASS.
+
+## 11. Phase 7 Production Gate
+
+Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
 
 1. record backup, owner, change window, stop and rollback thresholds;
 2. apply expand-first migration;
-3. deploy server/Worker capability with flags OFF;
+3. deploy server/Worker capability with flags OFF and verify route protection;
 4. deploy frontend with flags OFF;
 5. run Advisor, DB lint and production two-user separation;
-6. validate CSP, resume, QR, literature and timeout paths;
-7. enable one controlled lecture and run a 20-person canary;
-8. review 300-person query/request model and observed telemetry;
-9. disable flags/rollback on any G0-G7 failure;
-10. record the production gate before normal activation.
+6. validate CSP, resume, QR, literature, timeout and cross-service PDF paths;
+7. stop Local Publisher, revoke/isolate its R2 writer and drain all browser jobs;
+8. run a real 15 MiB PDF canary, two-Admin race and cleanup/Cron monitoring;
+9. enable Worker, Edge and frontend flags in that order for one controlled
+   lecture and run a 20-person canary;
+10. review 300-person query/request model and observed telemetry;
+11. disable frontend first and follow the drain-aware rollback on any G0-G7
+    failure;
+12. record human, hosted and production evidence before normal activation.
 
-## 10. Phase 8 - export, deletion evidence and unified AI review
+## 12. Phase 8 - export, deletion evidence and unified AI review
 
 - Generate teacher ZIP locally from permitted comments, published summaries,
   citations and optionally local transcript.
@@ -327,7 +391,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1 and 7.2 are individually PASS:
 - Verify interruption recovery, Windows/macOS extraction, retention boundaries
   and global G0-G7.
 
-## 11. Phase 8.1 - explicit Terra advanced analysis
+## 13. Phase 8.1 - explicit Terra advanced analysis
 
 - Keep Luna as default.
 - Offer Terra only for multi-study conflict, methodological appraisal, advanced
@@ -340,7 +404,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1 and 7.2 are individually PASS:
 - Routing false positives, state/budget/close behavior and global G0-G7 must
   PASS.
 
-## 12. Phase 8.2 - chronological or attention ranking
+## 14. Phase 8.2 - chronological or attention ranking
 
 - Default to chronological order.
 - Store the user's `時系列 / 注目` choice locally, not in Supabase.
@@ -352,7 +416,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1 and 7.2 are individually PASS:
 - Boundary, concurrency, query-plan, 20/300 load, visual stability and global
   G0-G7 must PASS.
 
-## 13. Phase 9 - final production certification
+## 15. Phase 9 - final production certification
 
 - Full 90-minute real lecture and real 20-person canary.
 - 300-person modeled and appropriate measured Pro-plan review.
@@ -368,7 +432,7 @@ Final PASS requires zero Critical/High security defect, zero ownership leak,
 zero secret exposure, zero duplicate paid operation, zero post-close write/start,
 three consecutive E2E passes and complete human/hosted evidence.
 
-## 14. Codex implementation reasoning profile
+## 16. Codex implementation reasoning profile
 
 The implementation model and the application's runtime AI model are independent.
 The recommended default for repository work is GPT-5.6 Sol with Extra High
