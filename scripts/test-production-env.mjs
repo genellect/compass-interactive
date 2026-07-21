@@ -42,6 +42,13 @@ assert.match(
   }).join('\n'),
   /requires VITE_PHASE3_PRIVATE_PDF=true/,
 )
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_27_JOURNAL_CLUB: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE6_6_UX_INTEGRATION=true/,
+)
 assert.deepEqual(
   validateProductionEnvironment({
     ...safeEnvironment,

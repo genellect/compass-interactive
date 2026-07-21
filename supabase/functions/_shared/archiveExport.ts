@@ -5,6 +5,10 @@ export type ArchiveExportClaimIdentity = {
 
 export type PublicLectureArchivePayload = {
   academic_answers: unknown[]
+  archive_policy?: {
+    mode: 'permanent'
+    policy_id: 'phase7-27-journal-club-2026-07-23-v1'
+  }
   archive_expires_at: string
   closed_at: string
   comments: unknown[]
@@ -226,6 +230,20 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
   const materialSummary = sanitizedValue.material_summary ?? null
   const participantCount = sanitizedValue.participant_count_approximate
   const pdf = sanitizedValue.pdf
+  const archivePolicy = sanitizedValue.archive_policy
+  const permanentArchive =
+    isRecord(archivePolicy) &&
+    Object.keys(archivePolicy).length === 2 &&
+    archivePolicy.mode === 'permanent' &&
+    archivePolicy.policy_id ===
+      'phase7-27-journal-club-2026-07-23-v1'
+
+  if (archivePolicy !== undefined && !permanentArchive) {
+    throw new ArchiveExportError(
+      'invalid_claim',
+      'Archive policy is invalid.',
+    )
+  }
 
   if (
     sanitizedValue.schema_version !== 1 ||
@@ -237,7 +255,7 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
     comments.length > 500 ||
     academicAnswers.length > 3 ||
     polls.length > 100 ||
-    summaries.length > 12 ||
+    summaries.length > (permanentArchive ? 18 : 12) ||
     (materialSummary !== null && !isRecord(materialSummary)) ||
     (pdf !== null && !isRecord(pdf))
   ) {
@@ -262,6 +280,15 @@ function sanitizeArchivePayload(value: unknown): PublicLectureArchivePayload {
 
   return {
     academic_answers: academicAnswers,
+    ...(permanentArchive
+      ? {
+          archive_policy: {
+            mode: 'permanent' as const,
+            policy_id:
+              'phase7-27-journal-club-2026-07-23-v1' as const,
+          },
+        }
+      : {}),
     archive_expires_at: archiveExpiresAt,
     closed_at: closedAt,
     comments,

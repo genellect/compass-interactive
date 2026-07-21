@@ -31,6 +31,7 @@ secret change and paid call still require an explicit task.
 | Phase 7.26 requirements      | `docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md` |
 | Phase 7.26 browser PDF design | `docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`  |
 | Phase 7.26 local evidence    | `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`    |
+| Phase 7.27 Journal Club design | `docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md` |
 | Phase 7 production decision  | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`  |
 
 If an older Phase document conflicts with these current documents and the real
@@ -63,11 +64,19 @@ npm run test:phase7-26-browser-pdf
 npm run test:phase7-26-edge
 npm run test:phase7-26-static
 npm run test:phase7-26-load
+npm run test:phase7-27-edge
+npm run test:phase7-27-static
+npm run test:phase7-27-load
 npm run build
 git diff --check
 ```
 
 Run `npm run test:ci:nonlive` when the complete non-live regression is required.
+Phase 7.27 also requires `npm run test:phase7-27-upgrade`,
+`npm run test:phase7-27-concurrency`, and both `test:e2e:phase7-27` modes before
+its Local Gate can be completed. As of 2026-07-21 the clean reset, 1,168 pgTAP,
+47 Worker tests and dedicated Chromium/WebKit desktop/mobile E2E are PASS; the
+full non-live, upgrade and concurrency set is still HOLD.
 
 ## 3. Local Supabase
 

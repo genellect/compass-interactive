@@ -99,3 +99,43 @@
 .admin-session-row small {
   color: var(--text-muted, #5f6b78);
 }
+
+.journal-club-preset {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.journal-club-preset-actions {
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.journal-club-preset-status {
+  margin-bottom: 0;
+}
+
+.journal-club-run-badge {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 999px;
+  color: var(--text-soft);
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-left: 8px;
+  padding: 6px 9px;
+  vertical-align: middle;
+}
+
+.journal-club-run-badge.production {
+  background: color-mix(in srgb, #f6b73c 18%, var(--panel));
+  border-color: color-mix(in srgb, #c47a00 38%, var(--border));
+  color: color-mix(in srgb, #8a5200 82%, var(--text));
+}
+
+@media (max-width: 640px) {
+  .journal-club-preset-actions > button {
+    width: 100%;
+  }
+}

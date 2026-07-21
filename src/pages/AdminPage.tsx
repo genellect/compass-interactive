@@ -3,6 +3,7 @@ import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
   AdminAuthPanel,
+  AdminJournalClubPreset,
   AdminLectureControl,
   AdminModerationPanel,
   AdminPdfControl,
@@ -27,11 +28,16 @@ import {
   isPhase68SecurityEnabled,
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
+  isPhase727JournalClubEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
 import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
 import { useBrowserPdfPublication } from '../hooks/useBrowserPdfPublication'
+import {
+  buildAdminPageView,
+  makeJoinedLecture,
+} from './admin/adminPageViewModel'
 import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
@@ -164,35 +170,22 @@ export function AdminPage() {
     availablePdfAssets.find(
       (asset) => asset.id === displayState?.pdfDocumentId,
     ) ?? getLecturePdfAsset(displayState?.pdfDocumentId)
-  const activeAdminLecture = lectures.find(
-    (item) => item.id === activeLectureSessionId,
-  )
-  const orderedLectures = [...lectures].sort(
-    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-  )
-  const visibleLectures = showLectureHistory
-    ? orderedLectures
-    : orderedLectures.slice(0, 2)
-  const orderedAdminPolls = [...adminPolls].sort((left, right) => {
-    if (left.status === 'open' && right.status !== 'open') {
-      return -1
-    }
-    if (left.status !== 'open' && right.status === 'open') {
-      return 1
-    }
-    return Date.parse(right.createdAt) - Date.parse(left.createdAt)
+  const {
+    activeAdminLecture,
+    activeJournalClubRun,
+    canShowPollHistory,
+    journalClubLectureIds,
+    orderedLectures,
+    visibleAdminPolls,
+    visibleLectures,
+  } = buildAdminPageView({
+    activeLectureSessionId,
+    adminPolls,
+    adminPollsHasMore,
+    lectures,
+    showLectureHistory,
+    showPollHistory,
   })
-  const openAdminPolls = orderedAdminPolls.filter(
-    (poll) => poll.status === 'open',
-  )
-  const recentAdminPolls = orderedAdminPolls.filter(
-    (poll) => poll.status !== 'open',
-  )
-  const visibleAdminPolls = showPollHistory
-    ? orderedAdminPolls
-    : [...openAdminPolls, ...recentAdminPolls.slice(0, 5)]
-  const canShowPollHistory =
-    showPollHistory || adminPollsHasMore || recentAdminPolls.length > 5
 
   useEffect(() => {
     if (!isAuthenticated || !adminToken) {
@@ -207,15 +200,17 @@ export function AdminPage() {
     return value ? new Date(value).toISOString() : null
   }
 
-  function makeJoinedLecture(lectureRow: AdminLecture) {
-    return {
-      id: lectureRow.id,
-      runtimeMode: 'live' as const,
-      status: lectureRow.status,
-      title: lectureRow.title,
-      ...(lectureRow.startsAt ? { startsAt: lectureRow.startsAt } : {}),
-      ...(lectureRow.endsAt ? { endsAt: lectureRow.endsAt } : {}),
-    }
+  function selectAdminLecture(lectureRow: AdminLecture) {
+    selectLectureSession(makeJoinedLecture(lectureRow))
+    if (!lectureRow.journalClub) return
+
+    resetBrowserPdfPublication()
+    setPdfPublicationDraftId(lectureRow.journalClub.expectedDocumentId)
+    setPdfDisplayName('260723 JournalClub Presentation')
+    setPdfFile(null)
+    setPublisherMessage(
+      '修正版PDFを選択し、「学生に講義資料を公開する」を押してください。',
+    )
   }
 
   async function refreshLectures(
@@ -263,10 +258,12 @@ export function AdminPage() {
     setAdminPollsError(null)
 
     try {
+      const effectiveIncludeHistory =
+        includeHistory || journalClubLectureIds.has(lectureSessionId)
       const result = await supabaseAdminRepository.managePolls({
         action: 'list',
         adminToken: token,
-        includeHistory,
+        includeHistory: effectiveIncludeHistory,
         lectureSessionId,
       })
       applyAdminPollList(result)
@@ -773,7 +770,7 @@ export function AdminPage() {
       setLectures(nextLectures)
       const createdLecture = nextLectures[0]
       if (createdLecture) {
-        selectLectureSession(makeJoinedLecture(createdLecture))
+        selectAdminLecture(createdLecture)
       }
       setNewLectureTitle('Journal Club')
       setNewLectureStartsAt('')
@@ -908,7 +905,7 @@ export function AdminPage() {
         await supabaseAdminRepository.managePolls({
           action: 'create',
           adminToken,
-          includeHistory: showPollHistory,
+          includeHistory: showPollHistory || Boolean(activeJournalClubRun),
           lectureSessionId: activeLectureSessionId,
           optionLabels,
           question: newPollQuestion.trim(),
@@ -941,7 +938,7 @@ export function AdminPage() {
         await supabaseAdminRepository.managePolls({
           action,
           adminToken,
-          includeHistory: showPollHistory,
+          includeHistory: showPollHistory || Boolean(activeJournalClubRun),
           lectureSessionId: activeLectureSessionId,
           pollId: poll.id,
         }),
@@ -1152,6 +1149,21 @@ export function AdminPage() {
         </a>
       </nav>
 
+      {isPhase727JournalClubEnabled ? (
+        <AdminJournalClubPreset
+          adminToken={adminToken}
+          isLoading={lecturesLoading}
+          lectures={lectures}
+          onLoadingChange={setLecturesLoading}
+          onPrepared={(preparedLecture, nextLectures) => {
+            setLectures(nextLectures)
+            selectAdminLecture(preparedLecture)
+            setShowLectureHistory(false)
+          }}
+          selectedRunKind={activeJournalClubRun?.runKind ?? null}
+        />
+      ) : null}
+
       <AdminLectureControl
         activeLectureSessionId={activeLectureSessionId}
         error={lecturesError}
@@ -1171,9 +1183,7 @@ export function AdminPage() {
         }
         onEndsAtChange={setNewLectureEndsAt}
         onRefresh={() => void refreshLectures()}
-        onSelect={(lectureRow) =>
-          selectLectureSession(makeJoinedLecture(lectureRow))
-        }
+        onSelect={selectAdminLecture}
         onStart={(lectureSessionId) =>
           void updateLectureStatus('start', lectureSessionId)
         }

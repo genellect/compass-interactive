@@ -1,5 +1,6 @@
 export { AdminAuthPanel, AdminSessionPanel } from './AdminAuthPanel'
 export { AdminLectureControl } from './AdminLectureControl'
+export { AdminJournalClubPreset } from './AdminJournalClubPreset'
 export { AdminPdfControl } from './AdminPdfControl'
 export { AdminAiControlPanel } from './AdminAiControlPanel'
 export { AdminPollControl } from './AdminPollControl'

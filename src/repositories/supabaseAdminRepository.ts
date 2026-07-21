@@ -129,6 +129,14 @@ export type AdminLecture = {
   endsAt: string | null
   hardStopAt: string | null
   id: string
+  journalClub?: {
+    expectedDocumentId: string
+    expectedPdfByteSize: number
+    expectedPdfPageCount: number
+    expectedPdfSha256: string
+    presetVersion: number
+    runKind: 'production' | 'rehearsal'
+  } | null
   lectureCode: string
   startsAt: string | null
   status: LectureStatus
@@ -150,6 +158,7 @@ export type AdminPoll = {
   options: AdminPollOption[]
   question: string
   status: 'draft' | 'open' | 'closed'
+  templateOrder?: number | null
   type: 'single' | 'multiple'
   updatedAt: string
 }
@@ -160,6 +169,8 @@ export type AdminPollList = {
 }
 
 type ManageLecturesResponse = {
+  createdLectureSessionId?: string
+  idempotentReplay?: boolean
   lecture?: AdminLecture
   lectures?: AdminLecture[]
   message?: string
@@ -371,10 +382,7 @@ export type AdminSummaryResults = {
     usedMicrousd: number
   } | null
   run: {
-    academicSourcePolicy:
-      | 'auto'
-      | 'biomedical_pubmed'
-      | 'multidisciplinary_doi'
+    academicSourcePolicy: 'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
     autoAcademicAnswersEnabled: boolean
     expiresAt: string
     id: string
@@ -519,6 +527,12 @@ type ManageLecturesRequest =
       action: 'duplicate'
       adminToken: string
       lectureSessionId: string
+    }
+  | {
+      action: 'createJournalClubRun'
+      adminToken: string
+      clientRequestId: string
+      runKind: 'production' | 'rehearsal'
     }
 
 type ManagePollsResponse = {
@@ -703,6 +717,36 @@ export const supabaseAdminRepository = {
     }
 
     return data.lectures
+  },
+
+  async createJournalClubRun(request: {
+    adminToken: string
+    clientRequestId: string
+    runKind: 'production' | 'rehearsal'
+  }) {
+    const { data, error } = await invokeEdgeFunction<ManageLecturesResponse>(
+      'manage-lectures',
+      {
+        body: { action: 'createJournalClubRun', ...request },
+        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+      },
+    )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Journal Clubの準備に失敗しました。',
+        ),
+      )
+    }
+    if (!data?.ok || !data.lectures || !data.createdLectureSessionId) {
+      throw new Error(data?.message ?? 'Journal Clubの準備に失敗しました。')
+    }
+    return {
+      idempotentReplay: data.idempotentReplay === true,
+      lectureSessionId: data.createdLectureSessionId,
+      lectures: data.lectures,
+    }
   },
 
   async manageAiControl(request: ManageAiControlRequest) {
@@ -965,9 +1009,7 @@ export const supabaseAdminRepository = {
       | {
           action: 'start'
           academicSourcePolicy:
-            | 'auto'
-            | 'biomedical_pubmed'
-            | 'multidisciplinary_doi'
+            'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
           adminToken: string
           autoAcademicAnswers: boolean
           billingGrant: string

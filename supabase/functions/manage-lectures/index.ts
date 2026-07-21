@@ -1,5 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import {
+  getAdminTokenClaims,
+  getAdminTokenSecret,
+} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import {
@@ -29,6 +32,12 @@ type ManageLecturesRequest =
       adminToken?: string
       lectureSessionId?: string
     }
+  | {
+      action: 'createJournalClubRun'
+      adminToken?: string
+      clientRequestId?: string
+      runKind?: 'production' | 'rehearsal'
+    }
 
 type LectureRow = {
   archive_expires_at: string | null
@@ -50,6 +59,25 @@ type LectureCodeRow = {
   lecture_session_id: string
 }
 
+type JournalClubRunRow = {
+  expected_document_id: string
+  expected_pdf_byte_size: number
+  expected_pdf_page_count: number
+  expected_pdf_sha256: string
+  lecture_session_id: string
+  preset_version: number
+  run_kind: 'production' | 'rehearsal'
+}
+
+type JournalClubRun = {
+  expectedDocumentId: string
+  expectedPdfByteSize: number
+  expectedPdfPageCount: number
+  expectedPdfSha256: string
+  presetVersion: number
+  runKind: 'production' | 'rehearsal'
+}
+
 function normalizeTimestamp(value: string | null | undefined) {
   if (!value) {
     return null
@@ -63,7 +91,11 @@ function normalizeTimestamp(value: string | null | undefined) {
   return date.toISOString()
 }
 
-function mapLecture(row: LectureRow, codeByLectureId: Map<string, string>) {
+function mapLecture(
+  row: LectureRow,
+  codeByLectureId: Map<string, string>,
+  journalClubByLectureId: Map<string, JournalClubRun>,
+) {
   return {
     archiveExpiresAt: row.archive_expires_at,
     closedAt: row.closed_at,
@@ -73,6 +105,7 @@ function mapLecture(row: LectureRow, codeByLectureId: Map<string, string>) {
     endsAt: row.ends_at,
     hardStopAt: row.hard_stop_at,
     id: row.id,
+    journalClub: journalClubByLectureId.get(row.id) ?? null,
     lectureCode: codeByLectureId.get(row.id) ?? '',
     startsAt: row.starts_at,
     status: row.status,
@@ -103,6 +136,9 @@ function generateLectureCode() {
 
   return String(random[0] % range).padStart(6, '0')
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
@@ -148,10 +184,10 @@ Deno.serve(async (request) => {
     )
   }
 
-  if (
-    !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret, request))
-  ) {
+  const adminClaims = body.adminToken
+    ? await getAdminTokenClaims(body.adminToken, tokenSecret, request)
+    : null
+  if (!adminClaims) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
 
@@ -216,6 +252,7 @@ Deno.serve(async (request) => {
     const rows = (lectureRows ?? []) as LectureRow[]
     const lectureIds = rows.map((lecture) => lecture.id)
     const codeByLectureId = new Map<string, string>()
+    const journalClubByLectureId = new Map<string, JournalClubRun>()
 
     if (lectureIds.length > 0) {
       const { data: codeRows, error: codeError } = await supabase
@@ -230,9 +267,34 @@ Deno.serve(async (request) => {
       for (const codeRow of (codeRows ?? []) as LectureCodeRow[]) {
         codeByLectureId.set(codeRow.lecture_session_id, codeRow.lecture_code)
       }
+
+      if (Deno.env.get('PHASE7_27_JOURNAL_CLUB_ENABLED') === 'true') {
+        const { data: runRows, error: runError } = await supabase
+          .from('phase727_journal_club_runs')
+          .select(
+            'lecture_session_id,run_kind,preset_version,expected_document_id,expected_pdf_sha256,expected_pdf_byte_size,expected_pdf_page_count',
+          )
+          .in('lecture_session_id', lectureIds)
+
+        if (runError) {
+          throw new Error(runError.message)
+        }
+        for (const run of (runRows ?? []) as JournalClubRunRow[]) {
+          journalClubByLectureId.set(run.lecture_session_id, {
+            expectedDocumentId: run.expected_document_id,
+            expectedPdfByteSize: Number(run.expected_pdf_byte_size),
+            expectedPdfPageCount: Number(run.expected_pdf_page_count),
+            expectedPdfSha256: run.expected_pdf_sha256,
+            presetVersion: Number(run.preset_version),
+            runKind: run.run_kind,
+          })
+        }
+      }
     }
 
-    return rows.map((lecture) => mapLecture(lecture, codeByLectureId))
+    return rows.map((lecture) =>
+      mapLecture(lecture, codeByLectureId, journalClubByLectureId),
+    )
   }
 
   try {
@@ -287,6 +349,82 @@ Deno.serve(async (request) => {
       }
 
       return jsonResponse({ lectures: await listLectures(), ok: true })
+    }
+
+    if (body.action === 'createJournalClubRun') {
+      if (Deno.env.get('PHASE7_27_JOURNAL_CLUB_ENABLED') !== 'true') {
+        return jsonResponse(
+          { ok: false, message: 'Journal Club preset is not enabled.' },
+          409,
+        )
+      }
+      if (
+        !adminClaims.sid ||
+        !body.clientRequestId ||
+        !UUID_PATTERN.test(body.clientRequestId) ||
+        !['production', 'rehearsal'].includes(body.runKind ?? '')
+      ) {
+        return jsonResponse(
+          { ok: false, message: 'Journal Club request is invalid.' },
+          400,
+        )
+      }
+
+      const bearerToken =
+        request.headers
+          .get('Authorization')
+          ?.replace(/^Bearer\s+/i, '')
+          .trim() ?? ''
+      const { data: authData, error: authError } =
+        await supabase.auth.getUser(bearerToken)
+      if (authError || !authData.user) {
+        return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+      }
+
+      let createdResult: {
+        idempotent_replay?: boolean
+        lecture_session_id?: string
+      } | null = null
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const lectureCode = generateLectureCode()
+        const { data, error } = await supabase.rpc(
+          'admin_create_phase727_journal_club_run_v1',
+          {
+            target_admin_auth_user_id: authData.user.id,
+            target_admin_session_id: adminClaims.sid,
+            target_client_request_id: body.clientRequestId,
+            target_lecture_code: lectureCode,
+            target_lecture_code_hash: await sha256Hex(lectureCode),
+            target_run_kind: body.runKind,
+          },
+        )
+
+        if (!error) {
+          createdResult = data as typeof createdResult
+          break
+        }
+        if (error.code === '23505') continue
+        if (error.code === 'P0001') {
+          return jsonResponse(
+            { ok: false, message: 'The production run is already prepared.' },
+            409,
+          )
+        }
+        if (error.code === '42501') {
+          return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+        }
+        throw new Error(error.message)
+      }
+
+      if (!createdResult?.lecture_session_id) {
+        throw new Error('Could not generate a unique lecture code.')
+      }
+      return jsonResponse({
+        createdLectureSessionId: createdResult.lecture_session_id,
+        idempotentReplay: createdResult.idempotent_replay === true,
+        lectures: await listLectures(),
+        ok: true,
+      })
     }
 
     if (body.action === 'duplicate') {

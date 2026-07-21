@@ -7,7 +7,11 @@ const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
 const playwrightArguments = process.argv.slice(3)
 const demoMode =
-  mode === 'demo' || mode === 'demo-pdf' || mode === 'demo-pdf-off'
+  mode === 'demo' ||
+  mode === 'demo-pdf' ||
+  mode === 'demo-pdf-off' ||
+  mode === 'demo-jc' ||
+  mode === 'demo-jc-off'
 const configuredPort = process.env.PLAYWRIGHT_APP_PORT
   ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
   : null
@@ -22,9 +26,18 @@ if (
 const port = configuredPort ?? (demoMode ? 43_000 + (process.pid % 1_000) : 4_173)
 const baseURL = `http://127.0.0.1:${port}`
 
-if (!['demo', 'demo-pdf', 'demo-pdf-off', 'local'].includes(mode)) {
+if (
+  ![
+    'demo',
+    'demo-pdf',
+    'demo-pdf-off',
+    'demo-jc',
+    'demo-jc-off',
+    'local',
+  ].includes(mode)
+) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|local>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local>',
   )
 }
 
@@ -93,20 +106,28 @@ const appEnvironment = {
   VITE_PHASE1_SYNC_PROTOCOL: 'true',
   VITE_PHASE2_LECTURE_LIFECYCLE: 'true',
   VITE_PHASE3_PRIVATE_PDF:
-    mode === 'demo-pdf' || mode === 'demo-pdf-off' ? 'true' : 'false',
+    ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
+      ? 'true'
+      : 'false',
   VITE_PHASE4_REALTIME_CAPTIONS: 'false',
   VITE_PHASE5_MATERIAL_ANALYSIS: 'false',
   VITE_PHASE6_SUMMARIES: mode === 'local' ? 'true' : 'false',
   VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
-  VITE_PHASE6_8_SECURITY: mode === 'local' ? 'true' : 'false',
+  VITE_PHASE6_8_SECURITY:
+    mode === 'local' || mode === 'demo-jc' || mode === 'demo-jc-off'
+      ? 'true'
+      : 'false',
   VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
   VITE_PHASE7_2_ACADEMIC_ANSWERS: 'true',
   VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS: 'true',
   VITE_PHASE7_26_BROWSER_PDF_PUBLISHING:
-    mode === 'demo-pdf' ? 'true' : 'false',
+    mode === 'demo-pdf' || mode === 'demo-jc' || mode === 'demo-jc-off'
+      ? 'true'
+      : 'false',
+  VITE_PHASE7_27_JOURNAL_CLUB: mode === 'demo-jc' ? 'true' : 'false',
   VITE_PDF_WORKER_BASE_URL:
-    mode === 'demo-pdf' || mode === 'demo-pdf-off'
+    ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
       ? 'https://pdf.example'
       : '',
   PLAYWRIGHT_BASE_URL: baseURL,

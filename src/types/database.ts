@@ -2746,6 +2746,102 @@ export type Database = {
           },
         ]
       }
+      phase727_journal_club_poll_slots: {
+        Row: {
+          created_at: string
+          display_order: number
+          lecture_session_id: string
+          poll_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_order: number
+          lecture_session_id: string
+          poll_id: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          lecture_session_id?: string
+          poll_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phase727_journal_club_poll_slot_poll_id_lecture_session_id_fkey"
+            columns: ["poll_id", "lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "polls"
+            referencedColumns: ["id", "lecture_session_id"]
+          },
+          {
+            foreignKeyName: "phase727_journal_club_poll_slots_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "phase727_journal_club_runs"
+            referencedColumns: ["lecture_session_id"]
+          },
+        ]
+      }
+      phase727_journal_club_runs: {
+        Row: {
+          client_request_id: string
+          created_at: string
+          created_by_admin_session_id: string
+          created_by_auth_user_id: string
+          event_key: string
+          expected_document_id: string
+          expected_pdf_byte_size: number
+          expected_pdf_page_count: number
+          expected_pdf_sha256: string
+          lecture_session_id: string
+          preset_version: number
+          run_kind: string
+        }
+        Insert: {
+          client_request_id: string
+          created_at?: string
+          created_by_admin_session_id: string
+          created_by_auth_user_id: string
+          event_key?: string
+          expected_document_id?: string
+          expected_pdf_byte_size?: number
+          expected_pdf_page_count?: number
+          expected_pdf_sha256?: string
+          lecture_session_id: string
+          preset_version?: number
+          run_kind: string
+        }
+        Update: {
+          client_request_id?: string
+          created_at?: string
+          created_by_admin_session_id?: string
+          created_by_auth_user_id?: string
+          event_key?: string
+          expected_document_id?: string
+          expected_pdf_byte_size?: number
+          expected_pdf_page_count?: number
+          expected_pdf_sha256?: string
+          lecture_session_id?: string
+          preset_version?: number
+          run_kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "phase727_journal_club_runs_created_by_admin_session_id_fkey"
+            columns: ["created_by_admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phase727_journal_club_runs_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: true
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       poll_option_totals: {
         Row: {
           lecture_session_id: string
@@ -3188,6 +3284,17 @@ export type Database = {
           target_lecture_session_id: string
           target_nonce_hash: string
           target_ticket_jti_hash: string
+        }
+        Returns: Json
+      }
+      admin_create_phase727_journal_club_run_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_client_request_id: string
+          target_lecture_code: string
+          target_lecture_code_hash: string
+          target_run_kind: string
         }
         Returns: Json
       }

@@ -69,6 +69,8 @@ jobs:
       - run: npm run test:e2e:demo:triple
       - run: npm run test:e2e:phase7-26
       - run: npm run test:e2e:phase7-26:flag-off
+      - run: npm run test:e2e:phase7-27
+      - run: npm run test:e2e:phase7-27:flag-off
       - name: Upload demo E2E evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -116,8 +118,14 @@ jobs:
       - name: Run real-database PDF publication concurrency regression
         run: npm run test:phase7-26-concurrency
 
+      - name: Run real-database Journal Club concurrency regression
+        run: npm run test:phase7-27-concurrency
+
       - name: Verify Phase 7.2 data upgrade through Phase 7.26
         run: npm run test:phase7-26-upgrade
+
+      - name: Verify Phase 7.26 data upgrade through Phase 7.27
+        run: npm run test:phase7-27-upgrade
 
       - name: Lint the local database
         run: npx supabase db lint --local --fail-on error

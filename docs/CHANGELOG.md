@@ -3,6 +3,27 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-21 - Phase 7.27 Journal Club operational preset
+
+- Added a default-OFF, thin `7.23 Journal Club` preparation preset over the
+  existing lecture, Poll, PDF, AI and archive contracts rather than introducing
+  a parallel lifecycle.
+- Each request creates an isolated fresh lecture UUID and six-digit code with
+  six ordered single-choice Polls in draft. Rehearsals are repeatable; exactly
+  one production run is permitted, and production/rehearsal cannot be open at
+  the same time.
+- Bound the approved 34-page PDF by exact document ID, SHA-256, byte count and
+  page count. The preset does not store PDF bytes in Supabase or Git and does
+  not automatically start a lecture, Poll, PDF publication, Realtime or AI.
+- Preserved the normal and rehearsal 30-day archive policy. Only the exact
+  server-derived production policy may retain its sanitized R2 snapshot and
+  final immutable PDF permanently; archive/PDF tokens remain short-lived.
+- Clean reset, 1,168 pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit
+  desktop/mobile E2E passed. The full non-live suite, previous-Phase upgrade,
+  two-connection concurrency and all Human/Hosted/Production gates remain HOLD;
+  no deployment, hosted mutation, flag activation or paid call is authorized by
+  this partial local evidence.
+
 ## 2026-07-21 - Phase 7.25/7.26 academic answers and browser PDF publication
 
 - Added multidisciplinary Crossref/OpenAlex corroboration and bounded automatic

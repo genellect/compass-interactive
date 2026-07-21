@@ -12,6 +12,7 @@ const featureFlags = [
   'VITE_PHASE7_2_ACADEMIC_ANSWERS',
   'VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS',
   'VITE_PHASE7_26_BROWSER_PDF_PUBLISHING',
+  'VITE_PHASE7_27_JOURNAL_CLUB',
 ]
 
 const forbiddenPublicNames = [
@@ -108,6 +109,14 @@ export function validateProductionEnvironment(environment) {
     'VITE_PHASE7_26_BROWSER_PDF_PUBLISHING',
     'VITE_PHASE3_PRIVATE_PDF',
   )
+  for (const dependency of [
+    'VITE_PHASE6_6_UX_INTEGRATION',
+    'VITE_PHASE6_8_SECURITY',
+    'VITE_PHASE7_1_CLASSROOM_EXTENSIONS',
+    'VITE_PHASE7_26_BROWSER_PDF_PUBLISHING',
+  ]) {
+    requireFlag('VITE_PHASE7_27_JOURNAL_CLUB', dependency)
+  }
 
   if (enabled('VITE_PHASE3_PRIVATE_PDF')) {
     const workerUrl = value(environment, 'VITE_PDF_WORKER_BASE_URL')

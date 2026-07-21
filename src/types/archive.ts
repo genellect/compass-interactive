@@ -60,6 +60,7 @@ export type LectureArchiveSession = {
   archiveAccessToken: string
   archiveAccessTokenExpiresAt: string
   archiveExpiresAt: string
+  archiveRetentionMode: 'permanent' | 'standard_30d'
   closedAt: string
   comments: LiveComment[]
   commentsHasMore: boolean

@@ -53,6 +53,11 @@ type PollOptionTotalRow = {
   response_count: number
 }
 
+type JournalClubPollSlotRow = {
+  display_order: number
+  poll_id: string
+}
+
 const DEFAULT_RECENT_POLL_LIMIT = 5
 const HISTORY_RECENT_POLL_LIMIT = 100
 
@@ -171,6 +176,7 @@ Deno.serve(async (request) => {
     const [
       { data: optionRows, error: optionError },
       { data: totalRows, error: totalError },
+      { data: slotRows, error: slotError },
     ] = await Promise.all([
       supabase
         .from('poll_options')
@@ -181,6 +187,12 @@ Deno.serve(async (request) => {
         .from('poll_option_totals')
         .select('option_id,response_count')
         .in('poll_id', pollIds),
+      Deno.env.get('PHASE7_27_JOURNAL_CLUB_ENABLED') === 'true'
+        ? supabase
+            .from('phase727_journal_club_poll_slots')
+            .select('poll_id,display_order')
+            .in('poll_id', pollIds)
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     if (optionError) {
@@ -188,6 +200,9 @@ Deno.serve(async (request) => {
     }
     if (totalError) {
       throw new Error(totalError.message)
+    }
+    if (slotError) {
+      throw new Error(slotError.message)
     }
 
     const countByOptionId = new Map(
@@ -197,6 +212,12 @@ Deno.serve(async (request) => {
       ]),
     )
     const optionsByPollId = new Map<string, PollOptionRow[]>()
+    const templateOrderByPollId = new Map(
+      ((slotRows ?? []) as JournalClubPollSlotRow[]).map((slot) => [
+        slot.poll_id,
+        Number(slot.display_order),
+      ]),
+    )
     for (const option of (optionRows ?? []) as PollOptionRow[]) {
       const options = optionsByPollId.get(option.poll_id) ?? []
       options.push(option)
@@ -205,21 +226,31 @@ Deno.serve(async (request) => {
 
     return {
       hasMore,
-      polls: polls.map((poll) => ({
-        createdAt: poll.created_at,
-        id: poll.id,
-        lectureSessionId: poll.lecture_session_id,
-        options: (optionsByPollId.get(poll.id) ?? []).map((option) => ({
-          id: option.id,
-          label: option.label,
-          order: option.display_order,
-          responseCount: countByOptionId.get(option.id) ?? 0,
-        })),
-        question: poll.question,
-        status: poll.status,
-        type: poll.type,
-        updatedAt: poll.updated_at,
-      })),
+      polls: polls
+        .map((poll) => ({
+          createdAt: poll.created_at,
+          id: poll.id,
+          lectureSessionId: poll.lecture_session_id,
+          options: (optionsByPollId.get(poll.id) ?? []).map((option) => ({
+            id: option.id,
+            label: option.label,
+            order: option.display_order,
+            responseCount: countByOptionId.get(option.id) ?? 0,
+          })),
+          question: poll.question,
+          status: poll.status,
+          templateOrder: templateOrderByPollId.get(poll.id) ?? null,
+          type: poll.type,
+          updatedAt: poll.updated_at,
+        }))
+        .sort((left, right) => {
+          if (left.templateOrder === null && right.templateOrder === null) {
+            return 0
+          }
+          if (left.templateOrder === null) return 1
+          if (right.templateOrder === null) return -1
+          return left.templateOrder - right.templateOrder
+        }),
     }
   }
 

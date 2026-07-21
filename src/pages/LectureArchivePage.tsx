@@ -196,13 +196,17 @@ export function LectureArchivePage() {
       />
 
       <section className="archive-expiry-note">
-        <p>
-          この記録は
-          {new Date(archiveSession.archiveExpiresAt).toLocaleDateString(
-            'ja-JP',
-          )}
-          まで閲覧できます。
-        </p>
+        {archiveSession.archiveRetentionMode === 'permanent' ? (
+          <p>この記録は7/23 Journal Clubの実施記録として継続公開されます。</p>
+        ) : (
+          <p>
+            この記録は
+            {new Date(archiveSession.archiveExpiresAt).toLocaleDateString(
+              'ja-JP',
+            )}
+            まで閲覧できます。
+          </p>
+        )}
       </section>
 
       <button

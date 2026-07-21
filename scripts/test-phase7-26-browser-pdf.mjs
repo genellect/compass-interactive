@@ -114,7 +114,7 @@ assert.match(browserRunner, /assertPortAvailable/)
 assert.match(browserRunner, /viteReady && response\.ok/)
 assert.match(
   browserRunner,
-  /VITE_PDF_WORKER_BASE_URL:[\s\S]*?mode === 'demo-pdf'[\s\S]*?mode === 'demo-pdf-off'[\s\S]*?'https:\/\/pdf\.example'[\s\S]*?: ''/,
+  /VITE_PDF_WORKER_BASE_URL:[\s\S]*?\['demo-pdf', 'demo-pdf-off',[\s\S]*?\.includes\(mode\)[\s\S]*?'https:\/\/pdf\.example'[\s\S]*?: ''/,
 )
 assert.match(localPlaywrightConfig, /process\.env\.PLAYWRIGHT_BASE_URL/)
 

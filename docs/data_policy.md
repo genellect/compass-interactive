@@ -28,6 +28,7 @@ Supabase may store:
 - teacher publication, correction, pin and moderation events;
 - approximate presence timestamps and cached aggregate metrics;
 - sanitized archive-export state and content-free operations-digest state.
+- bounded Journal Club run kind, preset version and ordered Poll-slot metadata.
 
 An optional nickname is not a verified identity. The database default remains
 `NULL`; the UI renders `匿名の参加者` when it is absent. No profile table is
@@ -157,6 +158,26 @@ metadata, never plaintext Admin or resume tokens.
 
 Exact retention values and exceptions must be represented in the lifecycle and
 archive configuration, not only in prose.
+
+### Phase 7.27 Journal Club production exception
+
+Phase 7.27 does not change the standard 30-day policy for normal lectures or
+rehearsals. Each rehearsal is a fresh lecture and its comments, Poll responses,
+AI output, resume state and PDF binding remain isolated from every other run.
+
+For the single production run of the `7.23 Journal Club` preset only, the
+sanitized R2 archive snapshot and final immutable PDF may remain available
+without the standard archive-expiry timestamp. This exception is accepted only
+when the server-generated archive payload carries exactly:
+
+- `mode: permanent`; and
+- `policy_id: phase7-27-journal-club-2026-07-23-v1`.
+
+Unknown keys, a different policy ID, rehearsal data or client-supplied markers
+do not receive the exception. Archive and PDF credentials remain short-lived
+and scoped even when the underlying production record is retained. Supabase
+does not become the PDF delivery path and no additional student polling or
+Realtime subscription is introduced.
 
 ## 10. Access and ownership
 

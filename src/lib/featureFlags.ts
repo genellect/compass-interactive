@@ -46,3 +46,10 @@ export const isPhase725AutoAcademicAnswersEnabled =
 export const isPhase726BrowserPdfPublishingEnabled =
   isPhase3PrivatePdfEnabled &&
   import.meta.env.VITE_PHASE7_26_BROWSER_PDF_PUBLISHING === 'true'
+
+export const isPhase727JournalClubEnabled =
+  isPhase66UxIntegrationEnabled &&
+  isPhase68SecurityEnabled &&
+  isPhase71ClassroomExtensionsEnabled &&
+  isPhase726BrowserPdfPublishingEnabled &&
+  import.meta.env.VITE_PHASE7_27_JOURNAL_CLUB === 'true'

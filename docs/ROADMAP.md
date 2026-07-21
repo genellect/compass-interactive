@@ -17,11 +17,12 @@ preserved. Decimal phases separate risk domains without rewriting history.
 |     5 | 7.2                     | Medium   | Verified-primary-literature reference answers      |
 |     6 | 7.25                    | Medium   | Multidisciplinary automatic academic answers       |
 |     7 | 7.26                    | High     | Browser-complete private PDF publication           |
-|     8 | Phase 7 Production Gate | Medium   | Next controlled production release                 |
-|     9 | Phase 8                 | Low      | Export/deletion evidence and unified AI review     |
-|    10 | 8.1                     | Low      | Explicit Terra advanced analysis                   |
-|    11 | 8.2                     | Low      | User-selected chronological/attention ranking      |
-|    12 | Phase 9                 | Final    | Long-run, human and operations certification       |
+|     8 | 7.27                    | High     | Thin Journal Club operational preset               |
+|     9 | Phase 7 Production Gate | Medium   | Next controlled production release                 |
+|    10 | Phase 8                 | Low      | Export/deletion evidence and unified AI review     |
+|    11 | 8.1                     | Low      | Explicit Terra advanced analysis                   |
+|    12 | 8.2                     | Low      | User-selected chronological/attention ranking      |
+|    13 | Phase 9                 | Final    | Long-run, human and operations certification       |
 
 The old Phase 7 scope is split because deterministic literature verification
 must be proven before a more expensive model can be offered. The old Phase 8
@@ -45,7 +46,8 @@ Every future phase must preserve all of the following.
 - Closed/expired lectures reject writes, Poll answers, snapshot mutation and new
   paid starts.
 - Clients stop live work when terminal state is observed.
-- Archive access is read-only and retention-expiring.
+- Archive access is read-only and retention-expiring unless an exact,
+  server-derived and separately reviewed permanent policy is documented.
 
 ### Supabase load and data boundary
 
@@ -359,9 +361,51 @@ OFF; Human, Hosted and Production gates remain HOLD.
   write credential is revoked/isolated, cross-service R2 canaries, two-Admin
   races, WAF/rate protection, cleanup monitoring and human PDF/UI review PASS.
 
-## 11. Phase 7 Production Gate
+## 11. Phase 7.27 - Journal Club operational integration
 
-Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
+Status: default-OFF local implementation in progress on 2026-07-21. Clean reset,
+1,168 pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit desktop/mobile
+E2E are PASS. Full non-live regression, previous-Phase upgrade, two-connection
+concurrency and all Human/Hosted/Production evidence remain HOLD; this is not a
+complete Local Gate PASS.
+
+### Tasks
+
+- Add a thin `7.23 Journal Club` preparation preset without creating a parallel
+  lecture lifecycle or changing the existing Admin start/close, Poll, PDF or AI
+  contracts.
+- Create each rehearsal and the single production run with a fresh lecture UUID,
+  fresh six-digit code, fresh PDF binding and six ordered single-choice Polls in
+  `draft`; never copy comments, responses, AI output or resume state between runs.
+- Bind the approved 34-page PDF to its exact document ID, SHA-256, byte count and
+  page count while keeping the bytes outside Supabase and Git.
+- Keep preparation free of side effects: no lecture/Poll start, PDF publication,
+  Realtime transcription, AI request or other paid work occurs automatically.
+- Preserve the standard 30-day archive for rehearsals and all other lectures.
+  Only a sanitized R2 archive carrying the exact production policy ID and its
+  final PDF receives the permanent-retention exception; access tokens remain
+  short-lived and scoped.
+- Keep frontend and Edge flags independently default OFF and retain Local
+  Publisher as the Phase 7.26 compatibility/recovery path.
+
+### Acceptance
+
+- Idempotent request replay, production uniqueness, repeatable rehearsal
+  isolation, single-open-run enforcement and exact PDF descriptor checks PASS.
+- The six Polls are ordered and remain draft until the teacher explicitly opens
+  and closes them; creation emits no paid provider request.
+- Normal/rehearsal archive expiry remains 30 days, malformed permanent policy is
+  rejected and exact production cleanup/access behavior is deterministic.
+- Clean/upgrade migrations, all pgTAP, DB lint/advisors, two-connection races,
+  Worker/Edge tests, full non-live regression and Chromium/WebKit desktop/mobile
+  flag-ON/OFF E2E PASS before the Local Gate may be marked complete.
+- Human Admin/student/Display/PDF review and Hosted R2, 15 MiB, WAF/rate,
+  cleanup-Cron and two-Admin evidence remain blocking before production.
+
+## 12. Phase 7 Production Gate
+
+Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26 and 7.27 are individually
+PASS:
 
 1. record backup, owner, change window, stop and rollback thresholds;
 2. apply expand-first migration;
@@ -378,7 +422,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
     failure;
 12. record human, hosted and production evidence before normal activation.
 
-## 12. Phase 8 - export, deletion evidence and unified AI review
+## 13. Phase 8 - export, deletion evidence and unified AI review
 
 - Generate teacher ZIP locally from permitted comments, published summaries,
   citations and optionally local transcript.
@@ -391,7 +435,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
 - Verify interruption recovery, Windows/macOS extraction, retention boundaries
   and global G0-G7.
 
-## 13. Phase 8.1 - explicit Terra advanced analysis
+## 14. Phase 8.1 - explicit Terra advanced analysis
 
 - Keep Luna as default.
 - Offer Terra only for multi-study conflict, methodological appraisal, advanced
@@ -404,7 +448,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
 - Routing false positives, state/budget/close behavior and global G0-G7 must
   PASS.
 
-## 14. Phase 8.2 - chronological or attention ranking
+## 15. Phase 8.2 - chronological or attention ranking
 
 - Default to chronological order.
 - Store the user's `時系列 / 注目` choice locally, not in Supabase.
@@ -416,7 +460,7 @@ Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 are individually PASS:
 - Boundary, concurrency, query-plan, 20/300 load, visual stability and global
   G0-G7 must PASS.
 
-## 15. Phase 9 - final production certification
+## 16. Phase 9 - final production certification
 
 - Full 90-minute real lecture and real 20-person canary.
 - 300-person modeled and appropriate measured Pro-plan review.
@@ -432,7 +476,7 @@ Final PASS requires zero Critical/High security defect, zero ownership leak,
 zero secret exposure, zero duplicate paid operation, zero post-close write/start,
 three consecutive E2E passes and complete human/hosted evidence.
 
-## 16. Codex implementation reasoning profile
+## 17. Codex implementation reasoning profile
 
 The implementation model and the application's runtime AI model are independent.
 The recommended default for repository work is GPT-5.6 Sol with Extra High

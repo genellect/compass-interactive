@@ -15,11 +15,13 @@ secrets.
 
 - Application version: `0.11.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 7.26 are implemented in the repository. Phase 7.25 and
-  Phase 7.26 have passed their automated Local Gates; teacher literature review,
-  the Phase 7.1 real-phone QR check, the combined human classroom review and all
-  Hosted/Production evidence remain HOLD. These changes have not been pushed,
-  deployed or reflected to hosted services.
+- Phase 0 through Phase 7.26 are implemented in the repository. Phase 7.27 is a
+  default-OFF, thin Journal Club operational preset under local validation; it
+  does not replace the established lecture lifecycle. Its clean reset, 1,168
+  pgTAP checks, 47 Worker tests and dedicated Chromium/WebKit desktop/mobile E2E
+  have passed, while the full non-live suite, upgrade/concurrency evidence and
+  all Human/Hosted/Production gates remain HOLD. These changes have not been
+  pushed, deployed or reflected to hosted services.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -51,6 +53,11 @@ secrets.
   hidden commit, activation and terminal cleanup are independently enforced by
   Edge, Postgres and the Cloudflare Worker. Local Publisher is recovery-only and
   must not retain an active R2 write credential while browser mode is enabled.
+- Phase 7.27 adds a default-OFF `7.23 Journal Club` preparation preset on top of
+  those existing contracts. Each production or rehearsal preparation creates a
+  fresh lecture UUID, six-digit code and six draft Polls without starting the
+  lecture, opening a Poll, publishing a PDF or starting paid AI work. Rehearsals
+  may be repeated; exactly one production run is allowed for the preset.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -58,7 +65,7 @@ they must not be read as the current implementation status unless the roadmap
 or a newer gate report points to them.
 
 The next combined hosted release is the **Phase 7 Production Gate**. It remains
-blocked until Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25 and 7.26 have each passed
+blocked until Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26 and 7.27 have each passed
 their local, security, UX/UI, browser, load/cost, rollback and required human or
 hosted gates.
 
@@ -139,6 +146,12 @@ Pages does not depend on a catch-all redirect.
   enforcement, immutable private PDF storage, scoped delivery and sanitized
   read-only archives. PDF bytes and archive download traffic do not pass
   through Supabase.
+- **Journal Club preset (Phase 7.27, default OFF):** Admin preparation creates
+  isolated rehearsal or production lecture records through the existing Edge
+  and Postgres boundaries. The approved PDF is bound by document ID, SHA-256,
+  byte count and page count; the preset stores no PDF bytes and triggers no AI.
+  Only the exact production archive policy receives the permanent R2 retention
+  exception; normal lectures and rehearsals retain the standard 30-day policy.
 - **OpenAI:** only explicitly authorized, bounded text/audio needed by the
   selected feature. The API key remains in Supabase Edge secrets.
 - **Email provider:** one content-bounded daily operations digest when activity
@@ -202,6 +215,7 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE7_2_ACADEMIC_ANSWERS`
 - `VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS`
 - `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING`
+- `VITE_PHASE7_27_JOURNAL_CLUB`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -230,9 +244,16 @@ npm run test:phase7-26-browser-pdf
 npm run test:phase7-26-edge
 npm run test:phase7-26-static
 npm run test:phase7-26-load
+npm run test:phase7-27-edge
+npm run test:phase7-27-static
+npm run test:phase7-27-load
 npm run build
 git diff --check
 ```
+
+Phase 7.27 completion additionally requires its upgrade and two-connection
+concurrency tests plus both flag-ON and flag-OFF Chromium/WebKit E2E modes; the
+partial results in Current status do not waive those remaining gates.
 
 Run every non-live regression group used by CI:
 
@@ -326,6 +347,7 @@ flags before attempting a destructive rollback.
 - Phase 7.26 requirements and threat model: [`docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md`](docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md)
 - Phase 7.26 browser PDF design: [`docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`](docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md)
 - Phase 7.26 local evidence: [`docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`](docs/PHASE7_26_LOCAL_GATE_2026-07-21.md)
+- Phase 7.27 Journal Club integration: [`docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`](docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md)
 - Phase 7 production decision: [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)

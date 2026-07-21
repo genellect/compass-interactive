@@ -143,7 +143,18 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
                   key={lecture.id}
                 >
                   <span>
-                    <strong>{lecture.title}</strong>
+                    <strong>
+                      {lecture.title}
+                      {lecture.journalClub ? (
+                        <span
+                          className={`journal-club-run-badge ${lecture.journalClub.runKind}`}
+                        >
+                          {lecture.journalClub.runKind === 'production'
+                            ? '本番'
+                            : 'リハーサル'}
+                        </span>
+                      ) : null}
+                    </strong>
                     <small>
                       {lecture.startsAt
                         ? `開始 ${toDatetimeLocalValue(lecture.startsAt).replace('T', ' ')}`

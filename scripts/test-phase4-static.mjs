@@ -60,7 +60,12 @@ const control = read(
   'AdminAiControl',
   'RealtimeCaptionControl.tsx',
 )
-const adminPage = read('src', 'pages', 'AdminPage.tsx')
+const adminPageViewModel = read(
+  'src',
+  'pages',
+  'admin',
+  'adminPageViewModel.ts',
+)
 const adminAiControlPanel = read(
   'src',
   'components',
@@ -116,8 +121,8 @@ assert.match(control, /createRealtimeCaptionCall/)
 assert.match(control, /sdpOffer/)
 assert.match(control, /sdpAnswer/)
 assert.match(
-  adminPage,
-  /const activeAdminLecture = lectures\.find\([\s\S]*?item\.id === activeLectureSessionId/,
+  adminPageViewModel,
+  /const activeAdminLecture = input\.lectures\.find\([\s\S]*?lecture\.id === input\.activeLectureSessionId/,
 )
 assert.match(
   adminAiControlPanel,

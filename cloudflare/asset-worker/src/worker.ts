@@ -79,6 +79,10 @@ type PublicArchivePdf = {
 
 type PublicLectureArchivePayload = {
   academic_answers?: Array<Record<string, unknown>>
+  archive_policy?: {
+    mode: 'permanent'
+    policy_id: 'phase7-27-journal-club-2026-07-23-v1'
+  }
   archive_expires_at: string
   closed_at: string
   comments: Array<Record<string, unknown>>
@@ -116,6 +120,8 @@ const MAX_ARCHIVE_INGEST_BYTES = 1_000_000
 const MAX_ARCHIVE_RESOLVE_BYTES = 8_192
 const ARCHIVE_FAILURE_LIMIT = 8
 const ARCHIVE_FAILURE_WINDOW_MS = 10 * 60 * 1000
+const PHASE727_PERMANENT_ARCHIVE_POLICY_ID =
+  'phase7-27-journal-club-2026-07-23-v1'
 const forbiddenArchiveKeyTokens = new Set(
   [
     'admin_token',
@@ -368,6 +374,19 @@ function parsePublicArchivePayload(
   }
   const payload = value as Record<string, unknown>
   const academicAnswers = payload.academic_answers ?? []
+  const archivePolicy = payload.archive_policy
+  const permanentArchive =
+    archivePolicy !== null &&
+    archivePolicy !== undefined &&
+    typeof archivePolicy === 'object' &&
+    !Array.isArray(archivePolicy) &&
+    Object.keys(archivePolicy).length === 2 &&
+    (archivePolicy as Record<string, unknown>).mode === 'permanent' &&
+    (archivePolicy as Record<string, unknown>).policy_id ===
+      PHASE727_PERMANENT_ARCHIVE_POLICY_ID
+  if (archivePolicy !== undefined && !permanentArchive) {
+    throw new Error('Archive policy is invalid.')
+  }
   if (
     payload.schema_version !== 1 ||
     typeof payload.title !== 'string' ||
@@ -381,7 +400,7 @@ function parsePublicArchivePayload(
     !Array.isArray(payload.polls) ||
     payload.polls.length > 100 ||
     !Array.isArray(payload.summaries) ||
-    payload.summaries.length > 12 ||
+    payload.summaries.length > (permanentArchive ? 18 : 12) ||
     !Array.isArray(academicAnswers) ||
     academicAnswers.length > 3 ||
     ![
@@ -474,6 +493,21 @@ function parsePublicArchivePayload(
 
   assertNoPrivateArchiveKeys(payload)
   return payload as PublicLectureArchivePayload
+}
+
+function isPermanentArchivePayload(payload: PublicLectureArchivePayload) {
+  return (
+    payload.archive_policy?.mode === 'permanent' &&
+    payload.archive_policy.policy_id ===
+      PHASE727_PERMANENT_ARCHIVE_POLICY_ID
+  )
+}
+
+function isArchiveExpired(payload: PublicLectureArchivePayload, now: Date) {
+  return (
+    !isPermanentArchivePayload(payload) &&
+    Date.parse(payload.archive_expires_at) <= now.getTime()
+  )
 }
 
 function parseStoredArchive(value: Uint8Array): StoredLectureArchive {
@@ -913,6 +947,66 @@ async function loadManifest(
   return { manifest, object }
 }
 
+async function preservePermanentArchiveDocument(
+  env: AssetWorkerEnvironment,
+  payload: PublicLectureArchivePayload,
+  now: Date,
+) {
+  if (!isPermanentArchivePayload(payload) || !payload.pdf) return
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const loaded = await loadManifest(env, payload.pdf.lecture_public_id)
+    if (!loaded) {
+      throw Object.assign(new Error('Permanent archive manifest is missing.'), {
+        status: 409,
+      })
+    }
+    const documentIndex = loaded.manifest.documents.findIndex(
+      (document) =>
+        document.document_id === payload.pdf?.document_id &&
+        document.document_version === payload.pdf?.document_version &&
+        document.visible,
+    )
+    if (documentIndex < 0) {
+      throw Object.assign(
+        new Error('Permanent archive document is unavailable.'),
+        { status: 409 },
+      )
+    }
+    const document = loaded.manifest.documents[documentIndex]!
+    if (!document.archive_expires_at && !document.delete_after) return
+
+    const documents = [...loaded.manifest.documents]
+    documents[documentIndex] = {
+      ...document,
+      archive_expires_at: null,
+      delete_after: null,
+    }
+    const nextManifest = parseManifest({
+      ...loaded.manifest,
+      documents,
+      manifest_version: loaded.manifest.manifest_version + 1,
+      updated_at: now.toISOString(),
+    })
+    const committed = await env.PDF_BUCKET.put(
+      manifestKey(payload.pdf.lecture_public_id),
+      encodeManifest(nextManifest),
+      {
+        httpMetadata: {
+          cacheControl: 'no-store',
+          contentType: 'application/json',
+        },
+        onlyIf: { etagMatches: loaded.object.etag },
+      },
+    )
+    if (committed) return
+  }
+  throw Object.assign(
+    new Error('Permanent archive manifest publication conflicted.'),
+    { status: 409 },
+  )
+}
+
 async function loadLectureArchive(
   env: AssetWorkerEnvironment,
   lookupHash: string,
@@ -1128,6 +1222,7 @@ async function handleArchiveIngest(
       status: 400,
     })
   }
+  await preservePermanentArchiveDocument(env, payload, now)
   const lookupHash = await createArchiveLookupHash(
     lectureCode,
     configuration.lookupSecret,
@@ -1152,7 +1247,9 @@ async function createArchiveAccessResult(
   const nowSeconds = Math.floor(now.getTime() / 1000)
   const expiresAt = Math.min(
     nowSeconds + 15 * 60,
-    Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
+    isPermanentArchivePayload(loaded.archive.payload)
+      ? Number.MAX_SAFE_INTEGER
+      : Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
   )
   const archiveAccessToken = await signArchiveAccessToken(
     {
@@ -1230,7 +1327,7 @@ async function handleArchiveResolve(
     await updateArchiveFailureGuard(request, env, now, 'record_failure')
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
-  if (Date.parse(loaded.archive.archive_expires_at) <= now.getTime()) {
+  if (isArchiveExpired(loaded.archive.payload, now)) {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
   }
 
@@ -1275,7 +1372,7 @@ async function handleArchiveResume(
   }
   if (
     !loaded ||
-    Date.parse(loaded.archive.archive_expires_at) <= now.getTime() ||
+    isArchiveExpired(loaded.archive.payload, now) ||
     loaded.archive.payload.resume_token_version !== claims.ver
   ) {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 404 })
@@ -1318,7 +1415,7 @@ async function handleArchiveDocumentAccess(
   }
   if (
     !loaded ||
-    Date.parse(loaded.archive.archive_expires_at) <= now.getTime()
+    isArchiveExpired(loaded.archive.payload, now)
   ) {
     throw Object.assign(new Error('Archive is unavailable.'), { status: 410 })
   }
@@ -1360,7 +1457,9 @@ async function handleArchiveDocumentAccess(
   const expiresAt = Math.min(
     nowSeconds + 5 * 60,
     claims.exp,
-    Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
+    isPermanentArchivePayload(loaded.archive.payload)
+      ? Number.MAX_SAFE_INTEGER
+      : Math.floor(Date.parse(loaded.archive.archive_expires_at) / 1000),
   )
   const ticket = await signAssetTicket(
     {
@@ -1868,6 +1967,9 @@ export async function cleanupExpiredLectureArchives(
           archive.payload_sha256
         ) {
           throw new Error('Stored lecture archive integrity check failed.')
+        }
+        if (isPermanentArchivePayload(archive.payload)) {
+          continue
         }
         if (
           Date.parse(archive.archive_expires_at) + 7 * 24 * 60 * 60 * 1000 >

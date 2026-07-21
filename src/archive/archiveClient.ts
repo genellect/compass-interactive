@@ -28,6 +28,10 @@ type RawArchiveResponse = {
       }>
     }>
     archive_expires_at: string
+    archive_policy?: {
+      mode: 'permanent'
+      policy_id: 'phase7-27-journal-club-2026-07-23-v1'
+    }
     closed_at: string
     comments: Array<{
       body: string
@@ -173,6 +177,12 @@ function mapArchive(
     archiveAccessToken: body.archiveAccessToken,
     archiveAccessTokenExpiresAt: body.archiveAccessTokenExpiresAt,
     archiveExpiresAt: archive.archive_expires_at,
+    archiveRetentionMode:
+      archive.archive_policy?.mode === 'permanent' &&
+      archive.archive_policy.policy_id ===
+        'phase7-27-journal-club-2026-07-23-v1'
+        ? 'permanent'
+        : 'standard_30d',
     closedAt: archive.closed_at,
     comments: archive.comments.map((comment) => ({
       body: comment.body,

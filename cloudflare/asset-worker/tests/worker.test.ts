@@ -527,6 +527,20 @@ function archivePayload(
   }
 }
 
+function phase727PermanentArchivePolicy() {
+  return {
+    mode: 'permanent',
+    policy_id: 'phase7-27-journal-club-2026-07-23-v1',
+  } as const
+}
+
+function archiveSummaries(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `summary-${index + 1}`,
+    status: 'published',
+  }))
+}
+
 async function sha256Json(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
@@ -753,9 +767,7 @@ test('37-day cleanup is conflict-safe and idempotent', async () => {
 test('retention cleanup charges a manifest conflict for every attempted due document', async () => {
   const value = await fixture()
   const dueTime = new Date((value.now - 1) * 1000).toISOString()
-  const archiveTime = new Date(
-    (value.now - 7 * 86400 - 1) * 1000,
-  ).toISOString()
+  const archiveTime = new Date((value.now - 7 * 86400 - 1) * 1000).toISOString()
   value.manifest.documents = Array.from({ length: 4 }, (_, index) => {
     const documentId = `doc-${index + 1}`
     const documentVersion = String(index + 1).repeat(64)
@@ -799,9 +811,7 @@ test('retention cleanup charges a manifest conflict for every attempted due docu
 test('retention cleanup recovers distinct intents for equal hashes at different object keys', async () => {
   const value = await fixture()
   const dueTime = new Date((value.now - 1) * 1000).toISOString()
-  const archiveTime = new Date(
-    (value.now - 7 * 86400 - 1) * 1000,
-  ).toISOString()
+  const archiveTime = new Date((value.now - 7 * 86400 - 1) * 1000).toISOString()
   const documentVersion = '9'.repeat(64)
   const documents = ['same-hash-a', 'same-hash-b'].map((documentId) => ({
     ...value.manifest.documents[0]!,
@@ -1077,6 +1087,334 @@ test('archive ingest accepts the canonical payload emitted by the Supabase expor
     ok: true,
     sourceVersion: 4,
   })
+})
+
+test('phase 7.27 permanent archive policy is exact and alone permits eighteen summaries', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const worker = createAssetWorker(() => new Date(value.now * 1000))
+
+  const permanentPayload = archivePayload(value, {
+    archive_policy: phase727PermanentArchivePolicy(),
+    summaries: archiveSummaries(18),
+  })
+  const accepted = await ingestArchive({
+    code: '727180',
+    payload: permanentPayload,
+    value,
+    worker,
+  })
+  assert.equal(accepted.status, 200)
+  assert.equal(
+    ((await accepted.json()) as { accepted: boolean }).accepted,
+    true,
+  )
+
+  const permanentLookup = await createArchiveLookupHash(
+    '727180',
+    value.env.ARCHIVE_CODE_LOOKUP_SECRET!,
+  )
+  const stored = value.r2.objects.get(
+    `archives/by-code/${permanentLookup}.json`,
+  )
+  assert.ok(stored)
+  const storedArchive = JSON.parse(new TextDecoder().decode(stored.bytes)) as {
+    payload: {
+      archive_policy: Record<string, unknown>
+      summaries: Array<Record<string, unknown>>
+    }
+  }
+  assert.deepEqual(
+    storedArchive.payload.archive_policy,
+    phase727PermanentArchivePolicy(),
+  )
+  assert.equal(storedArchive.payload.summaries.length, 18)
+
+  const malformedPolicies = [
+    {
+      mode: 'permanent',
+      policy_id: 'phase7-27-journal-club-2026-07-23-v2',
+    },
+    {
+      mode: 'permanent',
+      policy_id: 'phase7-27-journal-club-2026-07-23-v1',
+      retention_days: 0,
+    },
+    {
+      mode: 'standard',
+      policy_id: 'phase7-27-journal-club-2026-07-23-v1',
+    },
+    null,
+  ]
+  for (const [index, archivePolicy] of malformedPolicies.entries()) {
+    const rejected = await ingestArchive({
+      code: `7272${String(index).padStart(2, '0')}`,
+      payload: archivePayload(value, {
+        archive_policy: archivePolicy,
+        summaries: archiveSummaries(18),
+      }),
+      value,
+      worker,
+    })
+    assert.equal(rejected.status, 400)
+  }
+
+  assert.equal(
+    (
+      await ingestArchive({
+        code: '727219',
+        payload: archivePayload(value, {
+          archive_policy: phase727PermanentArchivePolicy(),
+          summaries: archiveSummaries(19),
+        }),
+        value,
+        worker,
+      })
+    ).status,
+    400,
+  )
+
+  assert.equal(
+    (
+      await ingestArchive({
+        code: '727013',
+        payload: archivePayload(value, { summaries: archiveSummaries(13) }),
+        value,
+        worker,
+      })
+    ).status,
+    400,
+  )
+  assert.equal(
+    (
+      await ingestArchive({
+        code: '727012',
+        payload: archivePayload(value, { summaries: archiveSummaries(12) }),
+        value,
+        worker,
+      })
+    ).status,
+    200,
+  )
+})
+
+test('phase 7.27 permanent archive repairs PDF retention and survives 30, 37 and 365 days', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const turnstile = async () =>
+    Response.json({
+      action: 'archive-lookup',
+      hostname: 'compass.example',
+      success: true,
+    })
+  const ingestWorker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    turnstile,
+  )
+  const payload = archivePayload(value, {
+    archive_policy: phase727PermanentArchivePolicy(),
+    lecture_public_id: value.lecture,
+    resume_token_version: 1,
+    summaries: archiveSummaries(18),
+  })
+  assert.equal(
+    (
+      await ingestArchive({
+        code: '727365',
+        payload,
+        value,
+        worker: ingestWorker,
+      })
+    ).status,
+    200,
+  )
+
+  const manifestKey = `manifests/${value.lecture}/manifest.json`
+  const repairedObject = await value.r2.get(manifestKey)
+  assert.ok(repairedObject)
+  const repairedManifest = decodeManifest(
+    new Uint8Array(await repairedObject.arrayBuffer!()),
+  )
+  const repairedDocument = repairedManifest.documents.find(
+    (document) => document.document_id === 'doc-main',
+  )
+  assert.ok(repairedDocument)
+  assert.equal(repairedDocument.archive_expires_at, null)
+  assert.equal(repairedDocument.delete_after, null)
+  assert.equal(
+    repairedManifest.manifest_version,
+    value.manifest.manifest_version + 1,
+  )
+
+  const lookupHash = await createArchiveLookupHash(
+    '727365',
+    value.env.ARCHIVE_CODE_LOOKUP_SECRET!,
+  )
+  const resolveAt = async (days: number) => {
+    const currentTime = value.now + days * 86400
+    const worker = createAssetWorker(
+      () => new Date(currentTime * 1000),
+      turnstile,
+    )
+    const response = await worker.fetch(
+      new Request('https://pdf.example/v1/archives/resolve', {
+        body: JSON.stringify({
+          lectureCode: '727365',
+          turnstileToken: 'turnstile-token',
+        }),
+        headers: {
+          'CF-Connecting-IP': '192.0.2.72',
+          'Content-Type': 'application/json',
+          Origin: 'https://compass.example',
+          'X-Compass-Client-Id': `72736500-0000-4000-8000-${String(days).padStart(12, '0')}`,
+        },
+        method: 'POST',
+      }),
+      value.env,
+    )
+    assert.equal(response.status, 200)
+    const body = (await response.json()) as {
+      archive: {
+        archive_policy: Record<string, unknown>
+        summaries: Array<Record<string, unknown>>
+      }
+      archiveAccessToken: string
+    }
+    assert.deepEqual(
+      body.archive.archive_policy,
+      phase727PermanentArchivePolicy(),
+    )
+    assert.equal(body.archive.summaries.length, 18)
+    return { currentTime, token: body.archiveAccessToken, worker }
+  }
+
+  const assertPermanentCleanupAt = async (days: number) => {
+    const cleanupTime = new Date((value.now + days * 86400) * 1000)
+    const archiveCleanup = await cleanupExpiredLectureArchives(
+      value.env,
+      cleanupTime,
+    )
+    assert.equal(archiveCleanup.deleted, 0)
+    const documentCleanup = await cleanupExpiredDocuments(
+      value.env,
+      cleanupTime,
+    )
+    assert.equal(documentCleanup.deleted, 0)
+    assert.equal(
+      value.r2.objects.has(`archives/by-code/${lookupHash}.json`),
+      true,
+    )
+    assert.equal(value.r2.objects.has(value.objectKey), true)
+  }
+
+  await resolveAt(30)
+  await assertPermanentCleanupAt(30)
+  await resolveAt(37)
+  await assertPermanentCleanupAt(37)
+  const afterOneYear = await resolveAt(365)
+
+  const documentAccess = await afterOneYear.worker.fetch(
+    new Request(
+      `https://pdf.example/v1/archives/${lookupHash}/documents/doc-main/${value.version}/access?mode=inline`,
+      {
+        headers: {
+          Authorization: `Bearer ${afterOneYear.token}`,
+          Origin: 'https://compass.example',
+        },
+      },
+    ),
+    value.env,
+  )
+  assert.equal(documentAccess.status, 200)
+  const documentAccessBody = (await documentAccess.json()) as {
+    expiresAt: string
+    url: string
+  }
+  assert.ok(
+    Date.parse(documentAccessBody.expiresAt) <=
+      (afterOneYear.currentTime + 5 * 60) * 1000,
+  )
+
+  await assertPermanentCleanupAt(365)
+  const retainedManifestObject = await value.r2.get(manifestKey)
+  assert.ok(retainedManifestObject)
+  const retainedManifest = decodeManifest(
+    new Uint8Array(await retainedManifestObject.arrayBuffer!()),
+  )
+  assert.equal(
+    retainedManifest.documents.some(
+      (document) =>
+        document.document_id === 'doc-main' &&
+        document.archive_expires_at === null &&
+        document.delete_after === null,
+    ),
+    true,
+  )
+})
+
+test('standard archive expiry and seven-day cleanup contract remains unchanged', async () => {
+  const value = await fixture()
+  enableArchiveEnvironment(value)
+  const turnstile = async () =>
+    Response.json({
+      action: 'archive-lookup',
+      hostname: 'compass.example',
+      success: true,
+    })
+  const ingestWorker = createAssetWorker(
+    () => new Date(value.now * 1000),
+    turnstile,
+  )
+  assert.equal(
+    (
+      await ingestArchive({
+        code: '727030',
+        payload: archivePayload(value, { summaries: archiveSummaries(12) }),
+        value,
+        worker: ingestWorker,
+      })
+    ).status,
+    200,
+  )
+  const lookupHash = await createArchiveLookupHash(
+    '727030',
+    value.env.ARCHIVE_CODE_LOOKUP_SECRET!,
+  )
+  const expiryWorker = createAssetWorker(
+    () => new Date((value.now + 30 * 86400) * 1000),
+    turnstile,
+  )
+  const expired = await expiryWorker.fetch(
+    new Request('https://pdf.example/v1/archives/resolve', {
+      body: JSON.stringify({
+        lectureCode: '727030',
+        turnstileToken: 'turnstile-token',
+      }),
+      headers: {
+        'CF-Connecting-IP': '192.0.2.73',
+        'Content-Type': 'application/json',
+        Origin: 'https://compass.example',
+        'X-Compass-Client-Id': '72703000-0000-4000-8000-000000000030',
+      },
+      method: 'POST',
+    }),
+    value.env,
+  )
+  assert.equal(expired.status, 404)
+  assert.equal(
+    value.r2.objects.has(`archives/by-code/${lookupHash}.json`),
+    true,
+  )
+
+  const cleanup = await cleanupExpiredLectureArchives(
+    value.env,
+    new Date((value.now + 37 * 86400) * 1000),
+  )
+  assert.equal(cleanup.deleted, 1)
+  assert.equal(
+    value.r2.objects.has(`archives/by-code/${lookupHash}.json`),
+    false,
+  )
 })
 
 test('archive resolve validates both rate limits, Turnstile action and hostname', async () => {
@@ -2050,8 +2388,7 @@ test('hidden commit and activation fence keep publication inaccessible until DB 
     `manifests/${value.lecture}/manifest.json`,
     activeManifestBytes,
   )
-  value.r2.failNextConditionalKey =
-    `publication-ledger/${publicationId}.json`
+  value.r2.failNextConditionalKey = `publication-ledger/${publicationId}.json`
   const interruptedRollback = await worker.fetch(
     new Request(
       `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
@@ -2241,28 +2578,29 @@ test('committed hidden publication without activation binding uses normal termin
   const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     if (body.action === 'claimCleanup') {
-      const data = remainingClaims > 0
-        ? [
-            {
-              activation_operation_id: null,
-              activation_target_access_version: null,
-              cleanup_binding_version: 1,
-              cleanup_claim_id: cleanupClaimId,
-              cleanup_worker_generation: 1,
-              committed_manifest_access_version: 1,
-              committed_manifest_etag: 'hidden-etag-2',
-              committed_manifest_version: 2,
-              document_id: 'cleanup-material',
-              expected_byte_size: pdf.byteLength,
-              expected_pdf_sha256: sha,
-              lecture_public_id: value.lecture,
-              object_key: objectKey,
-              pdf_access_version: 1,
-              publication_id: publicationId,
-              state: 'expired',
-            },
-          ]
-        : []
+      const data =
+        remainingClaims > 0
+          ? [
+              {
+                activation_operation_id: null,
+                activation_target_access_version: null,
+                cleanup_binding_version: 1,
+                cleanup_claim_id: cleanupClaimId,
+                cleanup_worker_generation: 1,
+                committed_manifest_access_version: 1,
+                committed_manifest_etag: 'hidden-etag-2',
+                committed_manifest_version: 2,
+                document_id: 'cleanup-material',
+                expected_byte_size: pdf.byteLength,
+                expected_pdf_sha256: sha,
+                lecture_public_id: value.lecture,
+                object_key: objectKey,
+                pdf_access_version: 1,
+                publication_id: publicationId,
+                state: 'expired',
+              },
+            ]
+          : []
       remainingClaims -= 1
       return Response.json({ data, ok: true })
     }
@@ -2299,8 +2637,7 @@ test('committed hidden publication without activation binding uses normal termin
     true,
   )
   assert.equal(
-    (await value.r2.head(objectKey))?.customMetadata
-      ?.compassCleanupTombstone,
+    (await value.r2.head(objectKey))?.customMetadata?.compassCleanupTombstone,
     'v1',
   )
   assert.equal(
@@ -2722,12 +3059,8 @@ test('retired DB publication cleans an active Worker ledger only after its manif
     'v1',
   )
   assert.equal(
-    (
-      await readPublicationLedger(
-        scenario.value,
-        scenario.publicationId,
-      )
-    ).status,
+    (await readPublicationLedger(scenario.value, scenario.publicationId))
+      .status,
     'cleanup_complete',
   )
   const manifestObject = await scenario.value.r2.get(
@@ -2927,13 +3260,10 @@ async function createTerminalActivationCleanupScenario(
         const data = available
           ? [
               {
-                activation_operation_id:
-                  '7a200000-0000-4000-8000-000000000726',
+                activation_operation_id: '7a200000-0000-4000-8000-000000000726',
                 activation_target_access_version: 2,
                 activated_manifest_etag:
-                  ledgerStatus === 'active'
-                    ? activeManifestObject.etag
-                    : null,
+                  ledgerStatus === 'active' ? activeManifestObject.etag : null,
                 activated_manifest_version:
                   ledgerStatus === 'active'
                     ? activeManifest.manifest_version
@@ -2943,8 +3273,7 @@ async function createTerminalActivationCleanupScenario(
                 cleanup_worker_generation: 3,
                 committed_manifest_access_version: 1,
                 committed_manifest_etag: 'committed-etag-2',
-                committed_manifest_version:
-                  value.manifest.manifest_version + 1,
+                committed_manifest_version: value.manifest.manifest_version + 1,
                 document_id: documentId,
                 expected_byte_size: pdf.byteLength,
                 expected_pdf_sha256: sha,
@@ -3033,8 +3362,7 @@ test('expired activation cleanup is retryable after a manifest CAS conflict', as
     scenario.makeFetcher('7a400000-0000-4000-8000-000000000726'),
   )
   assert.equal(quiescing.failures, 1)
-  scenario.value.r2.failNextConditionalKey =
-    `manifests/${scenario.value.lecture}/manifest.json`
+  scenario.value.r2.failNextConditionalKey = `manifests/${scenario.value.lecture}/manifest.json`
   const conflicted = await cleanupExpiredPdfPublications(
     scenario.value.env,
     new Date((scenario.value.now + 601) * 1000),
@@ -3048,7 +3376,8 @@ test('expired activation cleanup is retryable after a manifest CAS conflict', as
   )
   assert.ok(await scenario.value.r2.head(scenario.objectKey))
   assert.equal(
-    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    (await readPublicationLedger(scenario.value, scenario.publicationId))
+      .status,
     'cleanup_pending',
   )
 
@@ -3072,8 +3401,7 @@ test('terminal activation cleanup resumes after manifest rollback and a lost led
     scenario.makeFetcher('7a600000-0000-4000-8000-000000000726'),
   )
   assert.equal(quiescing.failures, 1)
-  scenario.value.r2.failNextConditionalKey =
-    `publication-ledger/${scenario.publicationId}.json`
+  scenario.value.r2.failNextConditionalKey = `publication-ledger/${scenario.publicationId}.json`
   const interrupted = await cleanupExpiredPdfPublications(
     scenario.value.env,
     new Date((scenario.value.now + 601) * 1000),
@@ -3087,7 +3415,8 @@ test('terminal activation cleanup resumes after manifest rollback and a lost led
   )
   assert.ok(await scenario.value.r2.head(scenario.objectKey))
   assert.equal(
-    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    (await readPublicationLedger(scenario.value, scenario.publicationId))
+      .status,
     'cleanup_pending',
   )
   const restoredManifestObject = await scenario.value.r2.get(
@@ -3095,9 +3424,8 @@ test('terminal activation cleanup resumes after manifest rollback and a lost led
   )
   assert.ok(restoredManifestObject)
   assert.equal(
-    decodeManifest(
-      new Uint8Array(await restoredManifestObject.arrayBuffer!()),
-    ).access_version,
+    decodeManifest(new Uint8Array(await restoredManifestObject.arrayBuffer!()))
+      .access_version,
     1,
   )
 
@@ -3129,7 +3457,8 @@ test('terminal cleanup never rolls back or deletes another Worker generation', a
   )
   assert.ok(await scenario.value.r2.head(scenario.objectKey))
   assert.equal(
-    (await readPublicationLedger(scenario.value, scenario.publicationId)).status,
+    (await readPublicationLedger(scenario.value, scenario.publicationId))
+      .status,
     'active',
   )
   const manifestObject = await scenario.value.r2.get(
@@ -3207,11 +3536,9 @@ test('terminal activation rollback preserves an unrelated retention manifest upd
     updated_at: retentionMarker,
   })
   assert.ok(
-    await scenario.value.r2.put(
-      manifestKey,
-      encodeManifest(retentionUpdated),
-      { onlyIf: { etagMatches: currentObject.etag } },
-    ),
+    await scenario.value.r2.put(manifestKey, encodeManifest(retentionUpdated), {
+      onlyIf: { etagMatches: currentObject.etag },
+    }),
   )
 
   const quiescing = await cleanupExpiredPdfPublications(
@@ -3357,8 +3684,7 @@ test('cleanup tombstone fences a slow upload between receiving-ledger creation a
   assert.equal(completed.deletedObjects, 0)
   assert.equal(completed.deletedLedgers, 1)
   assert.equal(
-    (await value.r2.head(objectKey))?.customMetadata
-      ?.compassCleanupTombstone,
+    (await value.r2.head(objectKey))?.customMetadata?.compassCleanupTombstone,
     'v1',
   )
   assert.equal(
@@ -3464,9 +3790,7 @@ test('legacy retention and recovery never delete a browser-publication object or
   assert.equal(
     decodeManifest(
       new Uint8Array(await legacyManifestObject.arrayBuffer!()),
-    ).documents.some(
-      (document) => document.object_key === boundedObjectKey,
-    ),
+    ).documents.some((document) => document.object_key === boundedObjectKey),
     true,
     'browser-owned retention work is bounded by the requested limit',
   )
@@ -3524,13 +3848,11 @@ test('legacy retention and recovery never delete a browser-publication object or
   )
   assert.equal(phase726Cleanup.failures, 0)
   assert.equal(
-    (await value.r2.head(objectKey))?.customMetadata
-      ?.compassCleanupTombstone,
+    (await value.r2.head(objectKey))?.customMetadata?.compassCleanupTombstone,
     'v1',
   )
 
-  const recoveryIntentKey =
-    `cleanup-pending/${value.lecture}/${sha}.json`
+  const recoveryIntentKey = `cleanup-pending/${value.lecture}/${sha}.json`
   await value.r2.put(
     recoveryIntentKey,
     `${JSON.stringify({
@@ -3550,8 +3872,7 @@ test('legacy retention and recovery never delete a browser-publication object or
   assert.ok(recovered.pendingScanned >= 1)
   assert.equal(await value.r2.head(recoveryIntentKey), null)
   assert.equal(
-    (await value.r2.head(objectKey))?.customMetadata
-      ?.compassCleanupTombstone,
+    (await value.r2.head(objectKey))?.customMetadata?.compassCleanupTombstone,
     'v1',
   )
   assert.equal(value.r2.failNextDeleteKey, objectKey)
@@ -3675,9 +3996,7 @@ test('cleanup completion permanently fences a commit paused before an initially 
     new Uint8Array(await manifestObject.arrayBuffer!()),
   )
   assert.equal(
-    manifest.documents.some(
-      (document) => document.document_version === sha,
-    ),
+    manifest.documents.some((document) => document.document_version === sha),
     false,
   )
 })
@@ -3733,28 +4052,25 @@ test('cleanup completion wins a delayed activation and removes only its hidden s
     status: 'committed',
     ticketJti: '7b400000-0000-4000-8000-000000000726',
   })
-  const activationTicket = await createPublicationToken(
-    value.keys.privateKey,
-    {
-      aud: 'compass-pdf-publication-worker',
-      bytes: pdf.byteLength,
-      doc: documentId,
-      exp: value.now + 300,
-      gen: 1,
-      iat: value.now,
-      iss: 'compass-supabase',
-      jti: '7b500000-0000-4000-8000-000000000726',
-      lec: value.lecture,
-      nbf: value.now - 1,
-      origin: 'https://compass.example',
-      previous_av: 1,
-      pub: publicationId,
-      purpose: 'activate',
-      sha,
-      sid: '79000000-0000-4000-8000-000000000726',
-      target_av: 2,
-    },
-  )
+  const activationTicket = await createPublicationToken(value.keys.privateKey, {
+    aud: 'compass-pdf-publication-worker',
+    bytes: pdf.byteLength,
+    doc: documentId,
+    exp: value.now + 300,
+    gen: 1,
+    iat: value.now,
+    iss: 'compass-supabase',
+    jti: '7b500000-0000-4000-8000-000000000726',
+    lec: value.lecture,
+    nbf: value.now - 1,
+    origin: 'https://compass.example',
+    previous_av: 1,
+    pub: publicationId,
+    purpose: 'activate',
+    sha,
+    sid: '79000000-0000-4000-8000-000000000726',
+    target_av: 2,
+  })
   const worker = createAssetWorker(
     () => new Date(value.now * 1000),
     (async () => Response.json({ ok: true })) as typeof fetch,
@@ -3830,9 +4146,7 @@ test('cleanup completion wins a delayed activation and removes only its hidden s
   )
   assert.equal(manifest.access_version, 1)
   assert.equal(
-    manifest.documents.some(
-      (document) => document.document_version === sha,
-    ),
+    manifest.documents.some((document) => document.document_version === sha),
     false,
   )
   assert.equal(
@@ -3990,14 +4304,11 @@ test('activation rebases onto intervening Local Publisher changes and rollback r
       sameDocument ? [localVersion] : [],
     )
 
-    const rollbackTicket = await createPublicationToken(
-      value.keys.privateKey,
-      {
-        ...baseClaims,
-        jti: `${marker}300000-0000-4000-8000-000000000726`,
-        purpose: 'rollback',
-      },
-    )
+    const rollbackTicket = await createPublicationToken(value.keys.privateKey, {
+      ...baseClaims,
+      jti: `${marker}300000-0000-4000-8000-000000000726`,
+      purpose: 'rollback',
+    })
     const rolledBack = await worker.fetch(
       new Request(
         `https://pdf.example/v2/pdf-publications/${publicationId}/rollback`,
@@ -4016,9 +4327,7 @@ test('activation rebases onto intervening Local Publisher changes and rollback r
     )
     assert.equal(restored.access_version, 1)
     assert.equal(
-      restored.documents.some(
-        (document) => document.document_version === sha,
-      ),
+      restored.documents.some((document) => document.document_version === sha),
       false,
     )
     assert.equal(
@@ -4132,14 +4441,11 @@ test('same document and hash at a Local Publisher key blocks activation while me
     () => new Date(value.now * 1000),
     (async () => Response.json({ ok: true })) as typeof fetch,
   )
-  const activationTicket = await createPublicationToken(
-    value.keys.privateKey,
-    {
-      ...baseClaims,
-      jti: '7e200000-0000-4000-8000-000000000726',
-      purpose: 'activate',
-    },
-  )
+  const activationTicket = await createPublicationToken(value.keys.privateKey, {
+    ...baseClaims,
+    jti: '7e200000-0000-4000-8000-000000000726',
+    purpose: 'activate',
+  })
   assert.equal(
     (
       await worker.fetch(
@@ -4192,8 +4498,7 @@ test('same document and hash at a Local Publisher key blocks activation while me
   )
   assert.equal(
     restored.documents.some(
-      (document) =>
-        document.object_key === localObjectKey && document.visible,
+      (document) => document.object_key === localObjectKey && document.visible,
     ),
     true,
   )
