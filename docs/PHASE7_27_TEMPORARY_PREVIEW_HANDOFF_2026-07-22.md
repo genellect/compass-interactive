@@ -104,4 +104,3 @@ published.
 4. Restore application code from the immutable recovery tag.
 5. Keep additive migrations in place and repair forward; do not drop production
    schema as an emergency rollback.
-
