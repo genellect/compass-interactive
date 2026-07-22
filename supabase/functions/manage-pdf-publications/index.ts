@@ -144,7 +144,8 @@ async function readWorkerResponse(response: Response) {
   const contentLength = response.headers.get('Content-Length')
   if (
     contentLength &&
-    (!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_WORKER_RESPONSE_BYTES)
+    (!/^\d+$/.test(contentLength) ||
+      Number(contentLength) > MAX_WORKER_RESPONSE_BYTES)
   ) {
     throw new Error('PDF publication Worker response is too large.')
   }
@@ -184,20 +185,22 @@ async function readWorkerResponse(response: Response) {
   return payload
 }
 
-async function callWorker(
-  path: string,
-  token: string,
-  method: 'GET' | 'POST',
-) {
+async function callWorker(path: string, token: string, method: 'GET' | 'POST') {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS)
   try {
     const response = await fetch(`${safeWorkerBaseUrl()}${path}`, {
       headers: { Authorization: `Bearer ${token}` },
       method,
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal,
     })
+    if (response.status >= 300 && response.status < 400) {
+      throw Object.assign(
+        new Error('PDF publication Worker redirect was rejected.'),
+        { status: 502 },
+      )
+    }
     return await readWorkerResponse(response)
   } finally {
     clearTimeout(timeout)
@@ -296,7 +299,8 @@ Deno.serve(async (request) => {
   const userJwt = authorization.startsWith('Bearer ')
     ? authorization.slice(7).trim()
     : ''
-  const { data: userData, error: userError } = await service.auth.getUser(userJwt)
+  const { data: userData, error: userError } =
+    await service.auth.getUser(userJwt)
   if (userError || !userData.user) {
     return jsonResponse({ message: 'Authentication required.', ok: false }, 401)
   }
@@ -494,7 +498,10 @@ Deno.serve(async (request) => {
     }
 
     if (!UUID_PATTERN.test(body.publicationId ?? '')) {
-      return jsonResponse({ message: 'Publication ID is invalid.', ok: false }, 400)
+      return jsonResponse(
+        { message: 'Publication ID is invalid.', ok: false },
+        400,
+      )
     }
     let row = await getPublication(body.publicationId!)
 
@@ -535,10 +542,7 @@ Deno.serve(async (request) => {
       )
       if (error) throw Object.assign(new Error(error.message), { status: 409 })
       row = data as PublicationRow
-      if (
-        rollbackTicket &&
-        ['aborted', 'expired'].includes(row.state)
-      ) {
+      if (rollbackTicket && ['aborted', 'expired'].includes(row.state)) {
         await callWorker(
           `/v2/pdf-publications/${row.publication_id}/rollback`,
           rollbackTicket,
@@ -694,7 +698,8 @@ Deno.serve(async (request) => {
       const activationMatches = (candidate: PublicationRow) =>
         ['active', 'retired'].includes(candidate.state) &&
         candidate.activation_operation_id === activationOperationId &&
-        candidate.activation_target_access_version === activation.accessVersion &&
+        candidate.activation_target_access_version ===
+          activation.accessVersion &&
         candidate.activated_manifest_version === activation.manifestVersion &&
         candidate.activated_manifest_etag === activation.manifestEtag
       if (completed.error) {
