@@ -2,17 +2,17 @@
 
 ## Decision
 
-- Candidate: **IN PROGRESS**
+- Temporary public preview: **DEPLOYED**
+- Final operational Production Gate: **HOLD**
 - Production Journal Club run: **not created**
-- Human UI review: **accepted for this release by explicit operator direction**
+- Hosted human UX review: **pending after preview publication**
 - Actual production-lecture E2E: **deferred until the real lecture**
 - Stop conditions: ownership disclosure, unauthorized paid work, migration
   incompatibility, PDF replay/immutability failure, archive-policy downgrade or
   existing UX regression.
 
-This dated record supersedes the hosted decision only after every mandatory
-item below is updated to PASS. The historical 2026-07-21 HOLD record and the
-Phase 7.27 Local Gate record remain unchanged.
+This temporary preview decision does not supersede the final operational HOLD.
+The historical 2026-07-21 record and Phase 7.27 Local Gate remain unchanged.
 
 ## Release scope
 
@@ -31,7 +31,7 @@ Phase 7.27 Local Gate record remain unchanged.
 | Evidence | Value |
 | --- | --- |
 | Previous remote `main` | `cc1ae93722eedf35ea4eb8f6dd89ed5f012572e7` |
-| Immutable recovery tag | `production-archive-20260722-pre-phase7` (pending push) |
+| Immutable recovery tag | `production-archive-20260722-pre-phase7` (pushed) |
 | Previous Pages deployment | `45fa7102-104a-423b-8920-3616ebeb2633` |
 | Previous Pages deployment URL | `https://45fa7102.compass-interactive.pages.dev` |
 | Previous Worker deployment | `972cc170-51ed-4616-969c-a72e44893248` |
@@ -68,35 +68,43 @@ are recorded here.
 
 | Gate | State | Evidence |
 | --- | --- | --- |
-| Recovery tag pushed | PENDING | |
-| Nine pending migrations applied in order | PENDING | |
-| Remote DB lint / Advisor-equivalent | PENDING | |
-| New/changed Edge Functions deployed with server flags OFF | PENDING | |
-| Worker capability deployed with browser-upload flag OFF | PENDING | |
-| Existing client and ownership smoke | PENDING | |
-| Candidate integrated to `main`; hosted CI | PENDING | |
-| Public Pages routes and browser console | PENDING | |
-| Worker -> Edge -> frontend staged activation | PENDING | |
-| Hosted rehearsal prepared without creating production | PENDING | |
+| Recovery tag pushed | PASS | `production-archive-20260722-pre-phase7` -> `cc1ae93722eedf35ea4eb8f6dd89ed5f012572e7` |
+| Nine pending migrations applied in order | PASS | Remote history matches through `20260722012313` |
+| Remote DB lint / Advisor-equivalent | PASS | Zero errors; four pre-existing unused-parameter warnings |
+| New/changed Edge Functions deployed | PASS | 26 functions; 21 JWT and 5 intentional machine-only configurations verified |
+| Worker capability deployed and activated for preview | PASS | Version `3bd7062a-e674-45c7-b32a-9f0f2ae2cbb6` |
+| Existing public client smoke | PASS | Join, Demo, Display and Archive routes; no browser-console errors |
+| Authenticated Admin / production two-user separation | HOLD | Requires operator Admin authentication after preview publication |
+| Candidate integrated to `main`; hosted CI | PASS REQUIRED | Quality, browser and local-Supabase jobs must be green on the final release commit |
+| Public Pages routes and browser console | PASS | Deployment `c2070a7f-c8b8-425b-9978-43392660fde2` from `025727b` |
+| Worker -> Edge -> frontend staged activation | PASS | OFF-first deployment followed by explicit preview enablement |
+| Hosted Journal Club run | INTENTIONALLY NOT CREATED | Rehearsal and production preparation are reserved for post-preview review |
 
 ## Short-route boundary and post-release audit
 
-The operator authorized a time-bounded release route. It removes only duplicate
-local reruns and long observation windows; it does not remove recovery, dry-run,
-RLS/ownership, fail-closed flags, hosted smoke or rollback gates.
+The operator authorized a time-bounded temporary preview route. It enables the
+implemented capabilities for hosted UX verification while deliberately creating
+no Journal Club run. It is not final authorization for lecture operation.
 
 The following are explicitly tracked after publication because they cannot be
 completed inside the one-hour release window:
 
 - representative 15 MiB canary and extended Worker CPU/latency observation;
+- authenticated Admin preset/PDF path and production two-user separation;
+- real R2 publication, nonce/replay, immutable object and two-Admin race canaries;
 - cleanup Cron convergence across two real schedules;
-- real smartphone and real microphone operation;
+- real smartphone, operator UX review and real microphone operation;
 - the actual one-time production run and terminal permanent-archive hash audit;
 - longer WAF/rate-protection telemetry review.
+- GitHub CodeQL upload after the private repository's billing-controlled Code
+  Scanning capability is explicitly enabled. Until then, the pinned job remains
+  conditional; secret scan, high-severity audit, SBOM, immutable Action refs and
+  the repository's security regressions remain mandatory in Quality CI.
 
-Until those observations complete, browser PDF publication remains reversible,
-the Local Publisher stays recovery-only, paid AI still requires API PIN and the
-production Journal Club run remains uncreated.
+Until those observations complete, browser PDF publication remains enabled only
+for the reversible preview, the Local Publisher stays stopped and its writer
+credential remains isolated (not claimed revoked), paid AI still requires API
+PIN and the production Journal Club run remains uncreated.
 
 ## Rollback
 

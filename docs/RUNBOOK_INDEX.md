@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-07-21
+Last reviewed: 2026-07-22
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -79,7 +79,8 @@ Phase 7.27 also requires `npm run test:phase7-27-upgrade`,
 its Local Gate can be completed. As of 2026-07-22 the clean reset, 1,171 pgTAP,
 49 Worker tests, 55 non-live groups, upgrade/concurrency probes, real local
 Edge/Postgres integration and repeated Chromium/WebKit desktop/mobile E2E are
-PASS. Human/Hosted/Production gates remain HOLD.
+PASS. A temporary hosted preview is deployed with the required preview flags ON
+and no Journal Club run created. Final operational and human gates remain HOLD.
 
 ## 3. Local Supabase
 
@@ -129,6 +130,9 @@ CI. They require an explicit cost boundary and separate human gate.
 - Phase 7.27 production evidence: `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`
 
 Standard order:
+
+This order remains the formal operational gate. Completing a temporary preview
+does not by itself authorize a rehearsal or production lecture.
 
 1. backup, owner, change window and stop thresholds;
 2. expand migration;

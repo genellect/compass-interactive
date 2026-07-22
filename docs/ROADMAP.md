@@ -363,11 +363,14 @@ OFF; Human, Hosted and Production gates remain HOLD.
 
 ## 11. Phase 7.27 - Journal Club operational integration
 
-Status: automated Local Gate PASS on 2026-07-22. Clean reset, 1,169 pgTAP
+Status: automated Local Gate PASS and temporary hosted preview deployed on
+2026-07-22. Clean reset, 1,171 pgTAP
 checks, 49 Worker tests, 55 non-live groups, upgrade/two-connection concurrency,
 real local Edge/Postgres integration and repeated Chromium/WebKit
-desktop/mobile E2E are PASS. Human/Hosted/Production evidence remains HOLD;
-no hosted service, flag, push or deployment changed.
+desktop/mobile E2E are PASS. Expand-first migrations, Edge Functions, Worker and
+Pages are staged in hosted services and the preview flags are explicitly ON.
+No rehearsal or production run was created. Final operational evidence remains
+HOLD for hosted authenticated/R2/device checks and operator UX review.
 
 ### Tasks
 
@@ -387,6 +390,8 @@ no hosted service, flag, push or deployment changed.
   short-lived and scoped.
 - Keep frontend and Edge flags independently default OFF and retain Local
   Publisher as the Phase 7.26 compatibility/recovery path.
+  The temporary preview may explicitly enable them without changing that code
+  default or authorizing a lecture run.
 
 ### Acceptance
 
@@ -403,6 +408,10 @@ no hosted service, flag, push or deployment changed.
   cleanup-Cron and two-Admin evidence remain blocking before production.
 
 ## 12. Phase 7 Production Gate
+
+The temporary hosted preview has completed the expand-first deployment portion.
+The remaining steps below are still mandatory before formal lecture operation;
+preview publication alone is not final Production Gate completion.
 
 Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26 and 7.27 are individually
 PASS:

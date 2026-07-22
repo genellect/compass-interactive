@@ -15,13 +15,12 @@ secrets.
 
 - Application version: `0.11.0` development preview.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
-- Phase 0 through Phase 7.27 are implemented locally. Phase 7.27 is a
-  default-OFF, thin Journal Club operational preset that does not replace the
-  established lecture lifecycle. Its clean reset, 1,171 pgTAP checks, 49 Worker
-  tests, 55-group non-live regression, upgrade/concurrency probes and dedicated
-  Chromium/WebKit desktop/mobile E2E have passed. Human, Hosted and Production
-  gates remain HOLD; these changes have not been pushed, deployed or reflected
-  to hosted services.
+- Phase 0 through Phase 7.27 are implemented and the Phase 7.27 candidate is
+  available as a temporary hosted preview. The required preview flags are
+  explicitly ON, while their code defaults remain OFF. No Journal Club
+  rehearsal or production run was created by the rollout. The final operational
+  gate remains HOLD for the operator's hosted UX review and the tracked
+  post-preview canaries.
 - The Phase 0-6.5 Development Production Review deployment is recorded in
   [`docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md`](docs/PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16.md).
 - Phase 6.6 added the integrated teacher/student UX, approximate participant
@@ -59,16 +58,20 @@ secrets.
   fresh lecture UUID, six-digit code and six draft Polls without starting the
   lecture, opening a Poll, publishing a PDF or starting paid AI work. Rehearsals
   may be repeated; exactly one production run is allowed for the preset.
+- The current hosted preview explicitly enables the Phase 6.8-7.27 capabilities
+  for verification. This environment state does not change the default-OFF
+  release contract or authorize preparation/start of a Journal Club run.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
 they must not be read as the current implementation status unless the roadmap
 or a newer gate report points to them.
 
-The next combined hosted release is the **Phase 7 Production Gate**. It remains
-blocked until Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26 and 7.27 have each passed
-their local, security, UX/UI, browser, load/cost, rollback and required human or
-hosted gates.
+The temporary **Phase 7 Production Gate** hosted preview is deployed. Formal
+lecture operation and creation of a Journal Club rehearsal or production run
+remain blocked until the operator's hosted UX review and the remaining
+authenticated Admin, R2 canary, concurrency, cleanup and device gates are
+recorded.
 
 ## Implemented product surface
 
@@ -351,6 +354,7 @@ flags before attempting a destructive rollback.
 - Phase 7.26 browser PDF design: [`docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`](docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md)
 - Phase 7.26 local evidence: [`docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`](docs/PHASE7_26_LOCAL_GATE_2026-07-21.md)
 - Phase 7.27 Journal Club integration: [`docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`](docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md)
+- Phase 7.27 temporary preview and remaining operational gates: [`docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`](docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md)
 - Phase 7 production decision: [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)

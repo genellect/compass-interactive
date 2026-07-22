@@ -223,6 +223,9 @@ jobs:
 
   codeql:
     name: CodeQL JavaScript and TypeScript
+    # Private repositories require GitHub Code Scanning/Advanced Security.
+    # Keep the pinned job ready without turning a billing-controlled feature on.
+    if: ${{ vars.CODEQL_ENABLED == 'true' }}
     permissions:
       actions: read
       contents: read
