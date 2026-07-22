@@ -48,6 +48,7 @@ export function useBrowserPdfPublication({
   const [pdfPublicationRequestId, setPdfPublicationRequestId] = useState('')
   const [pdfInterruptedPublicationId, setPdfInterruptedPublicationId] =
     useState('')
+  const publishInFlightRef = useRef(false)
   const refreshAdminPdfDocumentsRef = useRef(refreshAdminPdfDocuments)
   refreshAdminPdfDocumentsRef.current = refreshAdminPdfDocuments
 
@@ -61,6 +62,7 @@ export function useBrowserPdfPublication({
       setPublisherMessage('公開するPDFを選択してください。')
       return
     }
+    if (publishInFlightRef.current) return
 
     const displayName =
       pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
@@ -69,8 +71,7 @@ export function useBrowserPdfPublication({
       pdfPublicationDraftId ||
       `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
     if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
-    const idempotencyKey = pdfPublicationRequestId || crypto.randomUUID()
-    if (!pdfPublicationRequestId) setPdfPublicationRequestId(idempotencyKey)
+    publishInFlightRef.current = true
     setPdfPublishing(true)
 
     try {
@@ -83,17 +84,59 @@ export function useBrowserPdfPublication({
         rememberBrowserPdfPublication,
       } = publicationModule
       const preflight = await preflightBrowserPdf(pdfFile)
+      let idempotencyKey = pdfPublicationRequestId
+      const adoptInflight = (
+        inflight: Awaited<
+          ReturnType<typeof browserPdfPublicationClient.discover>
+        >,
+      ) => {
+        if (!inflight) return false
+        setPdfInterruptedPublicationId(inflight.publicationId)
+        setPdfPublicationDraftId(inflight.documentId)
+        setPdfPublicationRequestId(inflight.idempotencyKey)
+        rememberBrowserPdfPublication(inflight)
+        idempotencyKey = inflight.idempotencyKey
+        return inflight.documentId === documentId
+      }
+      if (!idempotencyKey) {
+        const inflight = await browserPdfPublicationClient.discover({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+        if (inflight && !adoptInflight(inflight)) {
+          setPublisherMessage(
+            '前回のPDF公開が残っています。「中断した公開を破棄してやり直す」を押してから再度公開してください。',
+          )
+          return
+        }
+      }
+      if (!idempotencyKey) {
+        idempotencyKey = crypto.randomUUID()
+        setPdfPublicationRequestId(idempotencyKey)
+      }
+      const initiate = () =>
+        browserPdfPublicationClient.initiate({
+          adminToken,
+          displayName,
+          documentId,
+          downloadEnabled: pdfDownloadEnabled,
+          fileName: pdfFile.name,
+          idempotencyKey,
+          lectureSessionId: activeLectureSessionId,
+          preflight,
+        })
       setPublisherMessage('安全な公開先を準備しています…')
-      const publication = await browserPdfPublicationClient.initiate({
-        adminToken,
-        displayName,
-        documentId,
-        downloadEnabled: pdfDownloadEnabled,
-        fileName: pdfFile.name,
-        idempotencyKey,
-        lectureSessionId: activeLectureSessionId,
-        preflight,
-      })
+      let publication
+      try {
+        publication = await initiate()
+      } catch (error) {
+        const concurrent = await browserPdfPublicationClient.discover({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+        if (!concurrent || !adoptInflight(concurrent)) throw error
+        publication = await initiate()
+      }
       setPdfInterruptedPublicationId(publication.publicationId)
       rememberBrowserPdfPublication(publication)
       setPublisherMessage('PDFを学生用の非公開領域へ送信しています…')
@@ -136,6 +179,7 @@ export function useBrowserPdfPublication({
           : '資料を公開できませんでした。現在の資料は維持されています。',
       )
     } finally {
+      publishInFlightRef.current = false
       setPdfPublishing(false)
     }
   }

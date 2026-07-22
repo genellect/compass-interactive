@@ -16,14 +16,12 @@ const samplePdfPath = fileURLToPath(
 )
 
 type PublicationAction =
-  | 'abort'
-  | 'discover'
-  | 'finalize'
-  | 'initiate'
-  | 'status'
+  'abort' | 'discover' | 'finalize' | 'initiate' | 'status'
 
 type MockState = {
   active: boolean
+  inflightDocumentId: string | null
+  initiateIdempotencyKeys: string[]
   publicationActions: PublicationAction[]
   storedPublicationAtUpload: string | null
   uploadCount: number
@@ -94,11 +92,11 @@ function lectureResponse() {
   }
 }
 
-function activeDocument() {
+function activeDocument(activeDocumentId = documentId) {
   return {
     byteSize: 12_345,
     displayName: 'Browser publication E2E',
-    documentId,
+    documentId: activeDocumentId,
     documentVersion: 'a'.repeat(64),
     downloadEnabled: true,
     manifestVersion: 2,
@@ -177,12 +175,16 @@ async function installAdminState(page: Page, recoverPublication: boolean) {
 async function installNetworkMocks(
   page: Page,
   options: {
+    conflictOnFirstInitiate?: boolean
+    discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
     recoverPublication?: boolean
   } = {},
 ) {
   const state: MockState = {
     active: false,
+    inflightDocumentId: null,
+    initiateIdempotencyKeys: [],
     publicationActions: [],
     storedPublicationAtUpload: null,
     uploadCount: 0,
@@ -242,7 +244,9 @@ async function installNetworkMocks(
     }
     if (functionName === 'manage-pdf-documents') {
       await fulfillJson(route, {
-        documents: state.active ? [activeDocument()] : [],
+        documents: state.active
+          ? [activeDocument(state.inflightDocumentId ?? documentId)]
+          : [],
         ok: true,
       })
       return
@@ -251,11 +255,15 @@ async function installNetworkMocks(
       const action = body.action as PublicationAction
       state.publicationActions.push(action)
       if (action === 'discover') {
+        const shouldDiscover =
+          options.discoverPublication ||
+          (options.discoverPublicationAfterConflict &&
+            state.initiateIdempotencyKeys.length > 0)
         await fulfillJson(
           route,
-          options.discoverPublication
+          shouldDiscover
             ? {
-                documentId,
+                documentId: state.inflightDocumentId ?? documentId,
                 expiresAt,
                 found: true,
                 idempotencyKey,
@@ -268,6 +276,23 @@ async function installNetworkMocks(
         return
       }
       if (action === 'initiate') {
+        state.initiateIdempotencyKeys.push(String(body.idempotencyKey ?? ''))
+        if (
+          options.conflictOnFirstInitiate &&
+          state.initiateIdempotencyKeys.length === 1
+        ) {
+          state.inflightDocumentId = String(body.documentId ?? '')
+          await fulfillJson(
+            route,
+            {
+              message:
+                'A PDF publication is already in progress for this lecture.',
+              ok: false,
+            },
+            409,
+          )
+          return
+        }
         expect(body.lectureSessionId).toBe(lectureSessionId)
         expect(body.byteSize).toBeGreaterThan(5)
         expect(body.pageCount).toBe(3)
@@ -296,7 +321,7 @@ async function installNetworkMocks(
       if (action === 'finalize') {
         state.active = true
         await fulfillJson(route, {
-          documentId,
+          documentId: state.inflightDocumentId ?? documentId,
           ok: true,
           publicationId,
           status: 'active',
@@ -409,6 +434,38 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
       ),
     )
     .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin adopts an inflight publication after an initiate conflict', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    conflictOnFirstInitiate: true,
+    discoverPublicationAfterConflict: true,
+  })
+
+  await page.goto('/admin')
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect
+    .poll(() => withoutDiscovery(state.publicationActions))
+    .toEqual(['initiate', 'initiate', 'finalize'])
+  expect(discoveryCount(state.publicationActions)).toBeGreaterThanOrEqual(2)
+  expect(state.initiateIdempotencyKeys.at(-1)).toBe(idempotencyKey)
+  expect(state.uploadCount).toBe(1)
+  await expect
+    .poll(() =>
+      page
+        .locator(
+          `#admin-live select option[value="${state.inflightDocumentId}"]`,
+        )
+        .count(),
+    )
+    .toBe(1)
   await stopAdminOperatorPolling(page)
 })
 
@@ -539,9 +596,7 @@ test('Admin explicitly aborts a discovered pending publication before replacing 
   expect(discoveryCount(state.publicationActions)).toBeGreaterThanOrEqual(1)
   expect(discoveryCount(state.publicationActions)).toBeLessThanOrEqual(2)
   await abortButton.click()
-  await expect
-    .poll(() => state.publicationActions.at(-1))
-    .toBe('abort')
+  await expect.poll(() => state.publicationActions.at(-1)).toBe('abort')
   await expect(abortButton).toHaveCount(0)
   await expect(pdfPanel).toContainText(
     '選択中のPDFを新しい公開として開始できます。',
