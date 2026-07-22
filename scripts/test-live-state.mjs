@@ -157,6 +157,11 @@ const phase0Migration = read(
 )
 
 assert.match(context, /await refreshLiveSnapshot\(\)/)
+assert.match(
+  context,
+  /void refreshLiveSnapshot\(\{ forceAll: true, showLoading: true \}\)\.catch\(/,
+  'The initial live snapshot must not leak transient network failures as unhandled browser errors.',
+)
 assert.doesNotMatch(context, /Promise\.allSettled/)
 assert.equal(
   context.match(/supabaseLiveStateRepository\.getSnapshot/g)?.length,

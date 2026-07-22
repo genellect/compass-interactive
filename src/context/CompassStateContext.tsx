@@ -784,7 +784,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    void refreshLiveSnapshot({ forceAll: true, showLoading: true })
+    void refreshLiveSnapshot({ forceAll: true, showLoading: true }).catch(
+      () => undefined,
+    )
   }, [
     activeLectureSessionId,
     hasActiveLectureSessionId,
