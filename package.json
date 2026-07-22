@@ -49,7 +49,7 @@
     "test:phase6-9-load": "node scripts/test-phase6-9-load.mjs",
     "test:phase6-9-bundle": "node scripts/test-phase6-9-bundle.mjs",
     "test:phase7-1-edge": "node --experimental-strip-types scripts/test-phase7-1-edge.ts",
-    "test:phase7-1-static": "node scripts/test-phase7-1-static.mjs",
+    "test:phase7-1-static": "node --experimental-strip-types scripts/test-phase7-1-static.mjs",
     "test:phase7-1-load": "node scripts/test-phase7-1-load.mjs",
     "test:phase7-2-edge": "node --experimental-strip-types scripts/test-phase7-2-edge.ts",
     "test:phase7-2-static": "node scripts/test-phase7-2-static.mjs",
