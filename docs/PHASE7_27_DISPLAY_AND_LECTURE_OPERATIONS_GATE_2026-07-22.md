@@ -3,8 +3,7 @@
 ## Decision
 
 - Local application, database and browser gate: **PASS**.
-- Public Pages rollout: **PENDING** until the candidate commit is published and
-  the deployed routes are checked.
+- Public Pages rollout: **PASS**.
 - Real microphone and paid OpenAI provider quality: **HUMAN GATE**. No paid
   canary was executed during this repair.
 - Journal Club production run: **not created by this gate**.
@@ -46,6 +45,21 @@
 - Lint: zero errors and two pre-existing Admin hook dependency warnings.
 - DB lint: zero errors and four compatibility-signature unused-parameter
   warnings.
+
+## Production rollout evidence
+
+- GitHub `phase7-27-local` and `main`: `a85d8ed0537359c36e370511b6089e87a3693b67`.
+- Cloudflare Pages deployment:
+  `75e8aa55-4272-4b7e-8e9a-cee328452265`.
+- Versioned URL: `https://75e8aa55.compass-interactive.pages.dev`.
+- Production alias: `https://compass-interactive.pages.dev`.
+- The production build passed with all 14 existing feature flags explicitly ON.
+- `/display/` stayed on the Display route and failed closed without an issued
+  token; it no longer redirected to student join.
+- `/admin/`, `/join/`, `/demo/` and `/display/` loaded the new production asset
+  set with zero captured browser-console errors.
+- Hosted database, Edge Functions, Worker configuration and R2 objects were not
+  mutated by this frontend-only rollout.
 
 ## AI and caption operation
 
