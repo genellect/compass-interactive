@@ -128,6 +128,8 @@ CI. They require an explicit cost boundary and separate human gate.
 - Phase 6.6 human checks: `docs/PHASE6_6_HUMAN_TEST_CHECKLIST.md`
 - Phase 7 production decision: `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`
 - Phase 7.27 production evidence: `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`
+- Phase 7.27 temporary preview handoff:
+  `docs/PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22.md`
 
 Standard order:
 

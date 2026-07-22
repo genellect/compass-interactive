@@ -31,6 +31,23 @@ async function readFunctionError(error) {
   }
 }
 
+const transientPreflightStatuses = new Set([502, 503, 504])
+
+async function fetchPreflightWithRetry(url, init, maximumAttempts = 3) {
+  let response
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    response = await fetch(url, init)
+    if (!transientPreflightStatuses.has(response.status)) return response
+    if (attempt === maximumAttempts) return response
+
+    await response.arrayBuffer().catch(() => undefined)
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000))
+  }
+
+  throw new Error('Preflight retry loop ended without a response.')
+}
+
 const { data: authData, error: authError } =
   await client.auth.signInAnonymously()
 assert.ifError(authError)
@@ -54,14 +71,17 @@ for (const functionName of [
   'update-display-state',
   'verify-admin-pin',
 ]) {
-  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
-    headers: {
-      apikey: publishableKey,
-      Authorization: `Bearer ${authData.session.access_token}`,
-      Origin: allowedOrigin,
+  const response = await fetchPreflightWithRetry(
+    `${supabaseUrl}/functions/v1/${functionName}`,
+    {
+      headers: {
+        apikey: publishableKey,
+        Authorization: `Bearer ${authData.session.access_token}`,
+        Origin: allowedOrigin,
+      },
+      method: 'OPTIONS',
     },
-    method: 'OPTIONS',
-  })
+  )
   assert.equal(response.status, 200, `${functionName} preflight must pass`)
   assert.ok(
     [allowedOrigin, '*'].includes(

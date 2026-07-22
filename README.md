@@ -355,6 +355,7 @@ flags before attempting a destructive rollback.
 - Phase 7.26 local evidence: [`docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`](docs/PHASE7_26_LOCAL_GATE_2026-07-21.md)
 - Phase 7.27 Journal Club integration: [`docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`](docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md)
 - Phase 7.27 temporary preview and remaining operational gates: [`docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`](docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md)
+- Phase 7.27 temporary preview stop and resume handoff: [`docs/PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22.md`](docs/PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22.md)
 - Phase 7 production decision: [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)
