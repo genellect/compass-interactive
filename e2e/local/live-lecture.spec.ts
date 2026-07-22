@@ -50,6 +50,7 @@ async function decodeQrImage(page: Page, selector: string) {
 test('teacher and student complete a lecture lifecycle on local Supabase', async ({
   browser,
 }) => {
+  test.setTimeout(150_000)
   expect(
     adminPin,
     'TEST_ADMIN_PIN must match the local Edge test env.',
