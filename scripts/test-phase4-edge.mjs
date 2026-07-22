@@ -93,8 +93,12 @@ const call = await createOpenAiRealtimeCall({
       new Headers(init?.headers).get('X-Client-Request-Id') ?? ''
     assert.ok(init?.signal)
     assert.ok(init?.body instanceof FormData)
-    observedSdp = await init.body.get('sdp').text()
-    observedSession = JSON.parse(await init.body.get('session').text())
+    const sdpField = init.body.get('sdp')
+    const sessionField = init.body.get('session')
+    assert.equal(typeof sdpField, 'string')
+    assert.equal(typeof sessionField, 'string')
+    observedSdp = sdpField
+    observedSession = JSON.parse(sessionField)
     return new Response('v=0\r\nanswer-test-sdp', {
       headers: {
         'Content-Type': 'application/sdp',

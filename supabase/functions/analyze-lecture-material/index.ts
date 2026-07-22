@@ -343,9 +343,23 @@ Deno.serve(async (request) => {
       },
     )
     if (startError) {
+      const knownReason = [
+        'material_analysis_call_limit',
+        'poll_generation_limit',
+        'budget_limit',
+        'input_token_limit',
+        'output_token_limit',
+        'concurrency_limit',
+        'feature_disabled',
+        'ai_control_not_ready',
+      ].find((reason) => startError.message.includes(reason))
       throw new MaterialAnalysisError(
-        'operation_rejected',
-        'The billed material analysis operation could not be started.',
+        knownReason ?? 'operation_rejected',
+        knownReason === 'material_analysis_call_limit'
+          ? 'The material analysis retry limit has been reached.'
+          : knownReason === 'concurrency_limit'
+            ? 'Another batch AI operation is still running.'
+            : 'The billed material analysis operation could not be started.',
         409,
       )
     }

@@ -75,6 +75,8 @@ const [
   liveRepository,
   liveStateMappers,
   context,
+  issuePdfAccess,
+  pdfDelivery,
 ] = await Promise.all([
   read('supabase/functions/issue-display-session/index.ts'),
   read('supabase/functions/operator-live-snapshot/index.ts'),
@@ -86,6 +88,8 @@ const [
   read('src/repositories/supabaseLiveStateRepository.ts'),
   read('src/repositories/supabase/liveStateMappers.ts'),
   read('src/context/CompassStateContext.tsx'),
+  read('supabase/functions/issue-pdf-access-token/index.ts'),
+  read('src/pdf/pdfDelivery.ts'),
 ])
 
 assert.match(issueDisplay, /verifyAdminToken/)
@@ -108,6 +112,23 @@ assert.match(operatorSnapshot, /admin_get_lecture_operator_comment_history_v1/)
 assert.match(operatorSnapshot, /Math\.min\(Math\.max\(body\.limit, 1\), 50\)/)
 assert.match(operatorSnapshot, /comment_limit: 5/)
 assert.doesNotMatch(operatorSnapshot, /VITE_|OPENAI_API_KEY/)
+
+assert.match(issuePdfAccess, /getDisplayTokenClaims/)
+assert.match(
+  issuePdfAccess,
+  /Provide exactly one credential for this PDF action/,
+)
+assert.match(
+  issuePdfAccess,
+  /displayClaims\?\.lectureSessionId !== body\.lectureSessionId/,
+)
+assert.match(issuePdfAccess, /admin_get_pdf_access_claims_v1/)
+assert.doesNotMatch(issuePdfAccess, /getDisplayTerminalTokenClaims/)
+assert.match(pdfDelivery, /\? 'display'\s*:\s*'member'/)
+assert.match(
+  pdfDelivery,
+  /\.\.\.\(input\.displayToken \? \{ displayToken: input\.displayToken \} : \{\}\)/,
+)
 
 assert.match(migration, /add column hidden_comment_count bigint/)
 assert.match(migration, /add column visible_comments_version bigint/)

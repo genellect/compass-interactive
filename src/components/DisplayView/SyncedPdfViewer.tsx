@@ -22,6 +22,7 @@ const MIN_QUALITY_SCALE = 2
 type SyncedPdfViewerProps = {
   adminToken?: string
   archiveSession?: LectureArchiveSession | null
+  displayToken?: string
   documentId: string | null
   documentVersion?: string | null
   lectureSessionId?: string | null
@@ -36,6 +37,7 @@ type SyncedPdfViewerProps = {
 export function SyncedPdfViewer({
   adminToken,
   archiveSession = null,
+  displayToken,
   documentId,
   documentVersion = null,
   lectureSessionId = null,
@@ -150,6 +152,7 @@ export function SyncedPdfViewer({
     setErrorMessage('')
     void resolveRuntimePdf({
       ...(adminToken ? { adminToken } : {}),
+      ...(displayToken ? { displayToken } : {}),
       documentId,
       documentVersion,
       lectureSessionId,
@@ -180,6 +183,7 @@ export function SyncedPdfViewer({
   }, [
     adminToken,
     archiveSession,
+    displayToken,
     documentId,
     documentVersion,
     lectureSessionId,

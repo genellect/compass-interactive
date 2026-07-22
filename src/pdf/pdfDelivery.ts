@@ -78,15 +78,24 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
 
 export async function issuePdfAccessSession(input: {
   adminToken?: string
+  displayToken?: string
   lectureSessionId: string
 }): Promise<PdfAccessSession> {
-  const action = input.adminToken ? 'admin' : 'member'
+  if (input.adminToken && input.displayToken) {
+    throw new Error('PDF認証情報が重複しています。')
+  }
+  const action = input.adminToken
+    ? 'admin'
+    : input.displayToken
+      ? 'display'
+      : 'member'
   const { data, error } = await supabase.functions.invoke<AccessTokenResponse>(
     'issue-pdf-access-token',
     {
       body: {
         action,
         ...(input.adminToken ? { adminToken: input.adminToken } : {}),
+        ...(input.displayToken ? { displayToken: input.displayToken } : {}),
         lectureSessionId: input.lectureSessionId,
       },
     },
@@ -136,6 +145,16 @@ async function getAdminSession(adminToken: string, lectureSessionId: string) {
   })
 }
 
+async function getDisplaySession(
+  displayToken: string,
+  lectureSessionId: string,
+) {
+  return issuePdfAccessSession({
+    displayToken,
+    lectureSessionId,
+  })
+}
+
 async function requestWorkerJson<T>(url: string, accessToken: string) {
   const response = await fetch(url, {
     cache: 'no-store',
@@ -157,15 +176,24 @@ async function requestWorkerJson<T>(url: string, accessToken: string) {
 
 export async function resolveRuntimePdf(input: {
   adminToken?: string
+  displayToken?: string
   documentId: string
   documentVersion: string
   lectureSessionId: string
   manifestVersion: number
 }) {
-  const getSession = (force = false) =>
-    input.adminToken
-      ? getAdminSession(input.adminToken, input.lectureSessionId)
-      : getMemberSession(input.lectureSessionId, force)
+  if (input.adminToken && input.displayToken) {
+    throw new Error('PDF認証情報が重複しています。')
+  }
+  const getSession = (force = false) => {
+    if (input.adminToken) {
+      return getAdminSession(input.adminToken, input.lectureSessionId)
+    }
+    if (input.displayToken) {
+      return getDisplaySession(input.displayToken, input.lectureSessionId)
+    }
+    return getMemberSession(input.lectureSessionId, force)
+  }
   let session = await getSession()
   const fetchManifest = () =>
     requestWorkerJson<PublicManifestResponse>(

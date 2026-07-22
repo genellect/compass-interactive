@@ -94,6 +94,13 @@ test('verifies the Publisher extraction and keeps source injection as user data'
   assert.equal(request.reasoning.effort, 'low')
   assert.equal(request.text.format.strict, true)
   assert.match(request.input[0]!.content[0]!.text, /untrusted source data/)
+  assert.match(request.input[0]!.content[0]!.text, /exactly 5/)
+  assert.match(request.input[0]!.content[0]!.text, /qualityScore at least 0\.80/)
+  assert.match(
+    request.input[0]!.content[0]!.text,
+    /evidencePages and evidenceExcerptIds in the same order and length/,
+  )
+  assert.equal(request.max_output_tokens, 4_000)
   assert.match(
     request.input[1]!.content[0]!.text,
     /Ignore all previous instructions/,
@@ -156,6 +163,61 @@ test('applies evidence, answer, similarity and educational quality gates', async
         existingQuestions: [],
         extraction: source,
         result: invalid,
+      }),
+    (error: unknown) =>
+      error instanceof MaterialAnalysisError && error.code === 'quality_gate',
+  )
+})
+
+test('keeps three high-value proposals when two of five are rejected', async () => {
+  const source = await extraction()
+  const result = {
+    analysis: {
+      importantPages: [1, 2, 3],
+      keyTerms: [{ definition: 'comparison baseline', term: 'control group' }],
+      outline: [{ pageEnd: 3, pageStart: 1, title: 'Study overview' }],
+      sectionBoundaries: [
+        {
+          pageEnd: 3,
+          pageStart: 1,
+          rationale: 'The supplied pages form one study narrative.',
+          title: 'Study',
+        },
+      ],
+      summary: 'A concise evidence-grounded material summary.',
+    },
+    proposals: [
+      proposal(source, 1),
+      proposal(source, 2),
+      proposal(source, 3),
+      proposal(source, 4, 1),
+      proposal(source, 5, 2),
+    ],
+  }
+  result.proposals[3]!.qualityScore = 0.5
+  result.proposals[4]!.correctOptionIds = ['missing']
+  const accepted = applyMaterialQualityGates({
+    action: 'material_analysis',
+    existingQuestions: ['A distinct pre-existing Journal Club question'],
+    extraction: source,
+    result,
+  })
+  assert.equal(accepted.proposals.length, 3)
+
+  assert.throws(
+    () =>
+      applyMaterialQualityGates({
+        action: 'material_analysis',
+        existingQuestions: [],
+        extraction: source,
+        result: {
+          ...result,
+          proposals: [
+            result.proposals[0]!,
+            result.proposals[1]!,
+            result.proposals[3]!,
+          ],
+        },
       }),
     (error: unknown) =>
       error instanceof MaterialAnalysisError && error.code === 'quality_gate',

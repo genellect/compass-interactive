@@ -24,6 +24,7 @@ type DisplayViewProps = {
   commentsLoading: boolean
   displayState: DisplayState | null
   displayStateError: string | null
+  displayToken?: string
   hasJoinedLectureSession: boolean
   isSessionSyncPaused: boolean
   lecture: LectureSession
@@ -47,6 +48,7 @@ export function DisplayView({
   commentsLoading,
   displayState,
   displayStateError,
+  displayToken,
   hasJoinedLectureSession,
   isSessionSyncPaused,
   lecture,
@@ -87,7 +89,7 @@ export function DisplayView({
           </span>
           <div>
             <p className="eyebrow">COMPASS INTERACTIVE</p>
-            <h1>{lecture.title}</h1>
+            <h1 title={lecture.title}>{lecture.title}</h1>
           </div>
         </div>
         <div className="display-status-row">
@@ -149,6 +151,7 @@ export function DisplayView({
         <section className="display-main-stage">
           <div className="display-placeholder slide-placeholder">
             <SyncedPdfViewer
+              displayToken={displayToken}
               documentId={displayState?.pdfDocumentId ?? null}
               documentVersion={displayState?.pdfDocumentVersion}
               lectureSessionId={activeLectureSessionId}

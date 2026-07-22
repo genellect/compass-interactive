@@ -18,7 +18,10 @@ const journalClubPollQuestions = [
   'COMPASS Interactiveは、今回の発表内容の理解や議論への参加に役立ちましたか？',
 ] as const
 
-async function installLocalPdfDeliveryMock(page: Page) {
+async function installLocalPdfDeliveryMock(
+  page: Page,
+  onIssueAccess?: (body: Record<string, unknown>) => void,
+) {
   const corsHeaders = {
     'access-control-allow-headers': 'authorization, content-type, apikey',
     'access-control-allow-methods': 'GET, OPTIONS, POST',
@@ -32,6 +35,9 @@ async function installLocalPdfDeliveryMock(page: Page) {
       await route.fulfill({ headers: corsHeaders, status: 204 })
       return
     }
+    onIssueAccess?.(
+      (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
+    )
     await route.fulfill({
       body: JSON.stringify({
         accessToken: 'local-journal-club-pdf-token',
@@ -385,6 +391,61 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   })
   await pageController.getByRole('button', { name: '前へ' }).click()
   await expect(pageController).toContainText('1 / 34')
+
+  const displayPopupPromise = page.waitForEvent('popup')
+  const displaySessionResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/functions/v1/issue-display-session') &&
+      response.status() === 200,
+  )
+  await page.getByRole('button', { name: '共有画面を開く' }).click()
+  const displayPopup = await displayPopupPromise
+  const displaySession = (await (
+    await displaySessionResponsePromise
+  ).json()) as {
+    displayToken: string
+    lectureSessionId: string
+  }
+  await displayPopup.close()
+
+  const displayContext = await browser.newContext()
+  const displayPage = await displayContext.newPage()
+  const displaySafety = await installBrowserSafetyMonitor(displayPage)
+  const displayPdfRequests: Array<Record<string, unknown>> = []
+  await installLocalPdfDeliveryMock(displayPage, (body) => {
+    displayPdfRequests.push(body)
+  })
+  try {
+    const displayUrl = new URL(
+      '/display',
+      process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
+    )
+    displayUrl.hash = new URLSearchParams({
+      code: rehearsalCode ?? '',
+      lecture: displaySession.lectureSessionId,
+      token: displaySession.displayToken,
+    }).toString()
+    await displayPage.goto(displayUrl.toString())
+    await expect(
+      displayPage.getByRole('heading', {
+        name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
+      }),
+    ).toBeVisible()
+    await expect(displayPage.locator('.pdf-canvas')).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(
+      displayPage.getByText('PDF access is unavailable.', { exact: false }),
+    ).toHaveCount(0)
+    expect(displayPdfRequests).toContainEqual({
+      action: 'display',
+      displayToken: displaySession.displayToken,
+      lectureSessionId: rehearsal!.lecture_session_id,
+    })
+    await displaySafety.assertClean()
+  } finally {
+    await displayContext.close()
+  }
 
   const studentContext = await browser.newContext()
   const studentPage = await studentContext.newPage()

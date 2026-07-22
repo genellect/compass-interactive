@@ -53,6 +53,13 @@ const files = {
     new URL('../supabase/functions/_shared/requestBody.ts', import.meta.url),
     'utf8',
   ),
+  retryMigration: await readFile(
+    new URL(
+      '../supabase/migrations/20260722213000_phase7_27_material_analysis_recovery.sql',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
   ui: await readFile(
     new URL(
       '../src/components/AdminAiControl/MaterialAnalysisControl.tsx',
@@ -82,6 +89,14 @@ assert.doesNotMatch(files.model, /input_image|input_file|file_id/)
 assert.doesNotMatch(files.model, /\btools\s*:/)
 assert.match(files.model, /reasoning: \{ effort: 'low' \}/)
 assert.match(files.model, /strict: true/)
+assert.match(files.model, /phase5-material-v2/)
+assert.match(files.model, /exactly 5 genuinely high-value proposals/)
+assert.match(
+  files.retryMigration,
+  /alter column material_analysis_call_limit set default 2/,
+)
+assert.match(files.retryMigration, /lecture\.status in \('draft', 'open'\)/)
+assert.match(files.retryMigration, /control\.material_analysis_call_limit = 1/)
 assert.match(files.edge, /readJsonBody<RequestBody>/)
 assert.match(files.requestBody, /request\.body\?\.getReader\(\)/)
 assert.match(files.requestBody, /totalBytes > maxBytes/)

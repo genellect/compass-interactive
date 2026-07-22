@@ -3420,12 +3420,25 @@ input:disabled {
 .display-title-group {
   align-items: center;
   display: flex;
+  flex: 1 1 auto;
   gap: 16px;
+  min-width: 0;
+}
+
+.display-title-group > div {
+  min-width: 0;
 }
 
 .display-title-group h1 {
-  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  display: -webkit-box;
+  font-size: clamp(1.45rem, 2.25vw, 2.2rem);
+  line-height: 1.08;
   margin: 0;
+  max-width: min(54vw, 920px);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .display-title-group .eyebrow { margin-bottom: 4px; }
@@ -3913,9 +3926,14 @@ input:disabled {
   .display-title-group {
     align-items: flex-start;
     flex-direction: column;
+    max-width: 100%;
+    width: 100%;
   }
 
-  .display-title-group h1 { font-size: 1.8rem; }
+  .display-title-group h1 {
+    font-size: 1.8rem;
+    max-width: 100%;
+  }
 
   .display-status-row {
     display: grid;

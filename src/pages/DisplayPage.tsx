@@ -147,6 +147,7 @@ export function DisplayPage() {
       commentsLoading={commentsLoading}
       displayState={displayState}
       displayStateError={displayStateError}
+      displayToken={displayLaunch.displayToken}
       hasJoinedLectureSession={hasJoinedLectureSession}
       isSessionSyncPaused={isSessionSyncPaused}
       lecture={lecture}

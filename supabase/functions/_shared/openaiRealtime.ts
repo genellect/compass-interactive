@@ -90,18 +90,11 @@ export async function createOpenAiRealtimeCall({
   }
 
   const formData = new FormData()
-  formData.set(
-    'sdp',
-    new Blob([sdpOffer], { type: 'application/sdp' }),
-    'offer.sdp',
-  )
-  formData.set(
-    'session',
-    new Blob([JSON.stringify(sessionConfig.session)], {
-      type: 'application/json',
-    }),
-    'session.json',
-  )
+  // OpenAI expects both multipart values as regular form fields. Supplying a
+  // filename turns them into file-upload parts and the Realtime endpoint
+  // rejects the otherwise valid session with HTTP 400.
+  formData.set('sdp', sdpOffer)
+  formData.set('session', JSON.stringify(sessionConfig.session))
 
   const response = await fetchImpl('https://api.openai.com/v1/realtime/calls', {
     body: formData,

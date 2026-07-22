@@ -1,13 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  getDisplayTokenClaims,
+  getDisplayTokenSecret,
+} from '../_shared/displayToken.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { signPdfAccessToken } from '../_shared/pdfAccessToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
-  action?: 'admin' | 'member'
+  action?: 'admin' | 'display' | 'member'
   adminToken?: string
+  displayToken?: string
   lectureSessionId?: string
 }
 
@@ -46,9 +51,28 @@ Deno.serve(async (request) => {
       bodyError.status,
     )
   }
-  if (!body.lectureSessionId || !body.action) {
+  if (
+    !body.lectureSessionId ||
+    !body.action ||
+    !['admin', 'display', 'member'].includes(body.action)
+  ) {
     return jsonResponse(
       { message: 'lectureSessionId and action are required.', ok: false },
+      400,
+    )
+  }
+  const hasAdminToken = typeof body.adminToken === 'string'
+  const hasDisplayToken = typeof body.displayToken === 'string'
+  if (
+    (body.action === 'admin' && (!hasAdminToken || hasDisplayToken)) ||
+    (body.action === 'display' && (!hasDisplayToken || hasAdminToken)) ||
+    (body.action === 'member' && (hasAdminToken || hasDisplayToken))
+  ) {
+    return jsonResponse(
+      {
+        message: 'Provide exactly one credential for this PDF action.',
+        ok: false,
+      },
       400,
     )
   }
@@ -83,6 +107,40 @@ Deno.serve(async (request) => {
       !(await verifyAdminToken(body.adminToken, adminSecret, request))
     ) {
       return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
+    }
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    })
+    const { data, error } = await serviceClient.rpc(
+      'admin_get_pdf_access_claims_v1',
+      { target_lecture_session_id: body.lectureSessionId },
+    )
+    if (error) return jsonResponse({ message: error.message, ok: false }, 500)
+    claims = data as AccessClaimRow | null
+  } else if (body.action === 'display') {
+    let displayClaims
+    try {
+      displayClaims = body.displayToken
+        ? await getDisplayTokenClaims(
+            body.displayToken,
+            getDisplayTokenSecret(),
+          )
+        : null
+    } catch (error) {
+      return jsonResponse(
+        {
+          message:
+            error instanceof Error ? error.message : 'Display auth failed.',
+          ok: false,
+        },
+        500,
+      )
+    }
+    if (displayClaims?.lectureSessionId !== body.lectureSessionId) {
+      return jsonResponse(
+        { message: 'Invalid Display session.', ok: false },
+        401,
+      )
     }
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
