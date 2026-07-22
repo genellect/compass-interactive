@@ -95,8 +95,7 @@ assert.match(
   files.retryMigration,
   /alter column material_analysis_call_limit set default 2/,
 )
-assert.match(files.retryMigration, /lecture\.status in \('draft', 'open'\)/)
-assert.match(files.retryMigration, /control\.material_analysis_call_limit = 1/)
+assert.doesNotMatch(files.retryMigration, /update public\.lecture_ai_control/)
 assert.match(files.edge, /readJsonBody<RequestBody>/)
 assert.match(files.requestBody, /request\.body\?\.getReader\(\)/)
 assert.match(files.requestBody, /totalBytes > maxBytes/)

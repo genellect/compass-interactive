@@ -89,6 +89,7 @@ jobs:
     timeout-minutes: 35
     env:
       TEST_ADMIN_PIN: '246810'
+      TEST_ADMIN_SESSION_SECRET: compass-ci-only-admin-session-secret-2026-at-least-32-bytes
       TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -168,6 +169,7 @@ jobs:
           PHASE7_27_JOURNAL_CLUB_ENABLED=true
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
+          node --input-type=module -e "const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']); console.log('PDF_ACCESS_PRIVATE_JWK=' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)))" >> "$edge_env"
           npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/compass-edge.pid"
 

@@ -14,6 +14,9 @@ begin
     null
   );
 
+  insert into public.lecture_ai_control (lecture_session_id)
+  values (lecture_id);
+
   poll_id := public.admin_create_poll(
     lecture_id,
     'Existing Phase 7.26 Poll remains isolated?',

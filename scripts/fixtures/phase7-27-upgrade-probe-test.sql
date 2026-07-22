@@ -1,5 +1,5 @@
 begin;
-select plan(9);
+select plan(10);
 
 select is(
   (
@@ -97,6 +97,18 @@ select is(
   ),
   null,
   'pre-Phase-7.27 Local Publisher metadata remains backward-compatible'
+);
+
+select is(
+  (
+    select control.material_analysis_call_limit
+    from public.lecture_ai_control as control
+    join public.lecture_sessions as lecture
+      on lecture.id = control.lecture_session_id
+    where lecture.title = 'Phase 7.27 upgrade preservation probe'
+  ),
+  1,
+  'the recovery default does not rewrite an existing per-lecture call cap'
 );
 
 select * from finish();

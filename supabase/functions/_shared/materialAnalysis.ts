@@ -558,7 +558,7 @@ export function applyMaterialQualityGates(input: {
         proposal.type,
       ) ||
       !Number.isFinite(proposal.qualityScore) ||
-      proposal.qualityScore < 0.72
+      proposal.qualityScore < 0.8
     ) {
       continue
     }

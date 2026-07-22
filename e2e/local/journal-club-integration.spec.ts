@@ -1,10 +1,16 @@
+import { Buffer } from 'node:buffer'
+import { randomUUID, webcrypto } from 'node:crypto'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
+const adminSessionSecret =
+  process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
+const publishableKey =
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 const eventKey = 'journal-club-2026-07-23'
 const canonicalPdfSha256 =
@@ -18,9 +24,48 @@ const journalClubPollQuestions = [
   'COMPASS Interactiveは、今回の発表内容の理解や議論への参加に役立ちましたか？',
 ] as const
 
+async function createLocalDisplayToken(input: {
+  expiresAt: number
+  issuedAt: number
+  lectureSessionId: string
+  secret: string
+}) {
+  const payload = Buffer.from(
+    JSON.stringify({
+      aud: 'operator-live-snapshot',
+      exp: input.expiresAt,
+      iat: input.issuedAt,
+      jti: randomUUID(),
+      lectureSessionId: input.lectureSessionId,
+      scope: 'compass-display',
+      terminalExp: input.expiresAt + 30 * 24 * 60 * 60,
+    }),
+    'utf8',
+  ).toString('base64url')
+  const key = await webcrypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(input.secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await webcrypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(payload),
+  )
+
+  return `${payload}.${Buffer.from(signature).toString('base64url')}`
+}
+
+type LocalPdfDeliveryMockOptions = {
+  mockAccessToken?: boolean
+  onIssueAccess?: (body: Record<string, unknown>) => void
+}
+
 async function installLocalPdfDeliveryMock(
   page: Page,
-  onIssueAccess?: (body: Record<string, unknown>) => void,
+  options: LocalPdfDeliveryMockOptions = {},
 ) {
   const corsHeaders = {
     'access-control-allow-headers': 'authorization, content-type, apikey',
@@ -30,28 +75,30 @@ async function installLocalPdfDeliveryMock(
   const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString()
   const lecturePublicId = 'lecture_local_journal_club'
 
-  await page.route('**/functions/v1/issue-pdf-access-token', async (route) => {
-    if (route.request().method() === 'OPTIONS') {
-      await route.fulfill({ headers: corsHeaders, status: 204 })
-      return
-    }
-    onIssueAccess?.(
-      (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
-    )
-    await route.fulfill({
-      body: JSON.stringify({
-        accessToken: 'local-journal-club-pdf-token',
-        expiresAt,
-        lecturePublicId,
-        manifestVersion: 1,
-        ok: true,
-        workerBaseUrl: 'http://127.0.0.1:8787',
-      }),
-      contentType: 'application/json',
-      headers: corsHeaders,
-      status: 200,
+  if (options.mockAccessToken !== false) {
+    await page.route('**/functions/v1/issue-pdf-access-token', async (route) => {
+      if (route.request().method() === 'OPTIONS') {
+        await route.fulfill({ headers: corsHeaders, status: 204 })
+        return
+      }
+      options.onIssueAccess?.(
+        (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
+      )
+      await route.fulfill({
+        body: JSON.stringify({
+          accessToken: 'local-journal-club-pdf-token',
+          expiresAt,
+          lecturePublicId,
+          manifestVersion: 1,
+          ok: true,
+          workerBaseUrl: 'http://127.0.0.1:8787',
+        }),
+        contentType: 'application/json',
+        headers: corsHeaders,
+        status: 200,
+      })
     })
-  })
+  }
 
   await page.route(
     /127\.0\.0\.1:8787\/v1\/lectures\/[^/]+\/manifest$/,
@@ -134,6 +181,14 @@ function createLocalServiceClient() {
   expect(
     serviceRoleKey,
     'TEST_SUPABASE_SERVICE_ROLE_KEY is required.',
+  ).not.toBe('')
+  expect(
+    adminSessionSecret,
+    'TEST_ADMIN_SESSION_SECRET must match the local Edge env.',
+  ).not.toBe('')
+  expect(
+    publishableKey,
+    'VITE_SUPABASE_PUBLISHABLE_KEY is required.',
   ).not.toBe('')
 
   const parsedUrl = new URL(supabaseUrl)
@@ -412,9 +467,18 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   const displayPage = await displayContext.newPage()
   const displaySafety = await installBrowserSafetyMonitor(displayPage)
   const displayPdfRequests: Array<Record<string, unknown>> = []
-  await installLocalPdfDeliveryMock(displayPage, (body) => {
-    displayPdfRequests.push(body)
+  displayPage.on('request', (request) => {
+    if (
+      request.method() !== 'POST' ||
+      !request.url().endsWith('/functions/v1/issue-pdf-access-token')
+    ) {
+      return
+    }
+    displayPdfRequests.push(
+      (request.postDataJSON() ?? {}) as Record<string, unknown>,
+    )
   })
+  await installLocalPdfDeliveryMock(displayPage, { mockAccessToken: false })
   try {
     const displayUrl = new URL(
       '/display',
@@ -425,7 +489,14 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       lecture: displaySession.lectureSessionId,
       token: displaySession.displayToken,
     }).toString()
+    const pdfAccessResponsePromise = displayPage.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/issue-pdf-access-token') &&
+        response.request().method() === 'POST',
+    )
     await displayPage.goto(displayUrl.toString())
+    const pdfAccessResponse = await pdfAccessResponsePromise
+    expect(pdfAccessResponse.status()).toBe(200)
     await expect(
       displayPage.getByRole('heading', {
         name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
@@ -441,6 +512,70 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       action: 'display',
       displayToken: displaySession.displayToken,
       lectureSessionId: rehearsal!.lecture_session_id,
+    })
+
+    const edgeHeaders = {
+      apikey: publishableKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      Origin:
+        process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
+    }
+    const pdfAccessEndpoint = `${supabaseUrl}/functions/v1/issue-pdf-access-token`
+    const dualCredentialResponse = await displayContext.request.post(
+      pdfAccessEndpoint,
+      {
+        data: {
+          action: 'display',
+          adminToken: 'must-not-be-accepted-with-display-token',
+          displayToken: displaySession.displayToken,
+          lectureSessionId: rehearsal!.lecture_session_id,
+        },
+        headers: edgeHeaders,
+      },
+    )
+    expect(dualCredentialResponse.status()).toBe(400)
+    expect(await dualCredentialResponse.json()).toMatchObject({ ok: false })
+
+    const mismatchedLectureResponse = await displayContext.request.post(
+      pdfAccessEndpoint,
+      {
+        data: {
+          action: 'display',
+          displayToken: displaySession.displayToken,
+          lectureSessionId: production!.lecture_session_id,
+        },
+        headers: edgeHeaders,
+      },
+    )
+    expect(mismatchedLectureResponse.status()).toBe(401)
+    expect(await mismatchedLectureResponse.json()).toMatchObject({
+      message: 'Invalid Display session.',
+      ok: false,
+    })
+
+    const issuedAt = Math.floor((Date.now() - 120_000) / 1_000)
+    const expiredDisplayToken = await createLocalDisplayToken({
+      expiresAt: issuedAt + 60,
+      issuedAt,
+      lectureSessionId: rehearsal!.lecture_session_id,
+      secret: adminSessionSecret,
+    })
+    const expiredTokenResponse = await displayContext.request.post(
+      pdfAccessEndpoint,
+      {
+        data: {
+          action: 'display',
+          displayToken: expiredDisplayToken,
+          lectureSessionId: rehearsal!.lecture_session_id,
+        },
+        headers: edgeHeaders,
+      },
+    )
+    expect(expiredTokenResponse.status()).toBe(401)
+    expect(await expiredTokenResponse.json()).toMatchObject({
+      message: 'Invalid Display session.',
+      ok: false,
     })
     await displaySafety.assertClean()
   } finally {

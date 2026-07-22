@@ -224,6 +224,49 @@ test('keeps three high-value proposals when two of five are rejected', async () 
   )
 })
 
+test('enforces the educational quality boundary at 0.80', async () => {
+  const source = await extraction()
+  const result = {
+    analysis: {
+      importantPages: [1, 2, 3],
+      keyTerms: [{ definition: 'comparison baseline', term: 'control group' }],
+      outline: [{ pageEnd: 3, pageStart: 1, title: 'Study overview' }],
+      sectionBoundaries: [
+        {
+          pageEnd: 3,
+          pageStart: 1,
+          rationale: 'The supplied pages form one study narrative.',
+          title: 'Study',
+        },
+      ],
+      summary: 'A concise evidence-grounded material summary.',
+    },
+    proposals: [proposal(source, 1), proposal(source, 2), proposal(source, 3)],
+  }
+
+  result.proposals[2]!.qualityScore = 0.799
+  assert.throws(
+    () =>
+      applyMaterialQualityGates({
+        action: 'material_analysis',
+        existingQuestions: [],
+        extraction: source,
+        result,
+      }),
+    (error: unknown) =>
+      error instanceof MaterialAnalysisError && error.code === 'quality_gate',
+  )
+
+  result.proposals[2]!.qualityScore = 0.8
+  const accepted = applyMaterialQualityGates({
+    action: 'material_analysis',
+    existingQuestions: [],
+    extraction: source,
+    result,
+  })
+  assert.equal(accepted.proposals.length, 3)
+})
+
 test('requires page-bound evidence for additional Poll proposals', async () => {
   const source = await extraction()
   assert.throws(
