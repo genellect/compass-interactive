@@ -1,9 +1,13 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
 
 const rehearsalLectureId = '72700000-0000-4000-8000-000000000001'
 const productionLectureId = '72700000-0000-4000-8000-000000000002'
 const expectedDocumentId = 'journal-club-2026-07-23-v1'
+const samplePdfPath = fileURLToPath(
+  new URL('../../public/lecture-assets/m4-sample-v1.pdf', import.meta.url),
+)
 
 const pollQuestions = [
   'QUIZ1: C9orf72リピートはどの方向に転写される？',
@@ -45,6 +49,7 @@ type MockState = {
   lectures: Lecture[]
   lectureRequests: Array<Record<string, unknown>>
   pdfPublicationActions: string[]
+  pdfPublicationRequests: Array<Record<string, unknown>>
   pollRequests: Array<Record<string, unknown>>
   uploadRequests: number
 }
@@ -225,6 +230,7 @@ async function installNetworkMocks(
     lectures: [],
     lectureRequests: [],
     pdfPublicationActions: [],
+    pdfPublicationRequests: [],
     pollRequests: [],
     uploadRequests: 0,
   }
@@ -304,6 +310,7 @@ async function installNetworkMocks(
     }
     if (functionName === 'manage-pdf-publications') {
       state.pdfPublicationActions.push(String(body.action ?? ''))
+      state.pdfPublicationRequests.push(body)
       await fulfillJson(route, { found: false, ok: true })
       return
     }
@@ -474,6 +481,53 @@ test.describe('Phase 7.27 flag ON', () => {
       .toBe(true)
   })
 
+  test('keeps the canonical Journal Club document binding when the teacher selects a PDF', async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    const state = await installNetworkMocks(page)
+
+    await page.goto('/admin')
+    await page.getByRole('button', { name: 'リハーサルを一覧に追加' }).click()
+
+    const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+    await expect(pdfPanel).toBeVisible()
+    await expect(
+      pdfPanel.getByRole('heading', {
+        name: 'Journal Club正本資料を公開する',
+      }),
+    ).toBeVisible()
+    await expect(pdfPanel).toContainText('正本PDFを選択（34ページ・5.55MB）')
+    await expect(pdfPanel).toContainText(
+      '正本資料: 260723 JournalClub Presentation.pdf',
+    )
+
+    const documentOptions = page.locator(
+      '#admin-live .pdf-document-control select option',
+    )
+    await expect(documentOptions).toHaveCount(1)
+    await expect(documentOptions.first()).toHaveText(
+      '正本資料を上の欄から公開してください',
+    )
+
+    await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+    const publishButton = pdfPanel.locator('button.primary-button')
+    await expect(publishButton).toBeEnabled()
+    await publishButton.click()
+
+    await expect
+      .poll(() =>
+        state.pdfPublicationRequests.find(
+          (request) => request.action === 'initiate',
+        ),
+      )
+      .toMatchObject({
+        action: 'initiate',
+        documentId: expectedDocumentId,
+        lectureSessionId: rehearsalLectureId,
+      })
+  })
+
   test('clears a missing saved lecture without revoking the Admin session', async ({
     page,
   }) => {
@@ -574,9 +628,7 @@ test.describe('Phase 7.27 flag ON', () => {
     await installNetworkMocks(page, { rejectStartWithoutPdf: true })
 
     await page.goto('/admin')
-    await page
-      .getByRole('button', { name: 'リハーサルを一覧に追加' })
-      .click()
+    await page.getByRole('button', { name: 'リハーサルを一覧に追加' }).click()
     const rehearsalRow = page
       .locator('.lecture-admin-row')
       .filter({ hasText: 'リハーサル' })
@@ -585,9 +637,7 @@ test.describe('Phase 7.27 flag ON', () => {
       .click()
 
     await expect(
-      page.getByText(
-        '正本資料を学生に公開してから講義を開始してください。',
-      ),
+      page.getByText('正本資料を学生に公開してから講義を開始してください。'),
     ).toBeVisible()
     await expect(rehearsalRow.locator('.status-pill.draft')).toHaveText(
       '準備中',

@@ -39,6 +39,12 @@ type AdminPdfControlProps = {
   publisherPairingCode: string
   publisherSessionToken: string
   publisherStatus: 'checking' | 'connected' | 'disconnected' | 'paired'
+  requiredDocument: {
+    displayName: string
+    documentId: string
+    expectedByteSize: number
+    expectedPageCount: number
+  } | null
   selectedAsset: PdfAsset | null | undefined
 }
 
@@ -77,9 +83,13 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     publisherPairingCode,
     publisherSessionToken,
     publisherStatus,
+    requiredDocument,
     selectedAsset,
   } = props
   const closed = lectureStatus === 'closed'
+  const requiredDocumentPublished = requiredDocument
+    ? availableAssets.some((asset) => asset.id === requiredDocument.documentId)
+    : false
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     onFileChange(event.target.files?.[0] ?? null)
@@ -101,18 +111,26 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">LECTURE MATERIAL</p>
-              <h3>講義資料を公開する</h3>
+              <h3>
+                {requiredDocument
+                  ? 'Journal Club正本資料を公開する'
+                  : '講義資料を公開する'}
+              </h3>
             </div>
             <span className="metric">
-              {browserPublishingEnabled
-                ? 'ブラウザから公開できます'
-                : publisherStatus === 'paired'
-                  ? '公開できます'
-                  : publisherStatus === 'connected'
-                    ? '初回確認が必要'
-                    : publisherStatus === 'checking'
-                      ? '準備を確認中'
-                      : '公開アプリを確認'}
+              {requiredDocument
+                ? requiredDocumentPublished
+                  ? '正本資料は公開済み'
+                  : '正本資料は未公開'
+                : browserPublishingEnabled
+                  ? 'ブラウザから公開できます'
+                  : publisherStatus === 'paired'
+                    ? '公開できます'
+                    : publisherStatus === 'connected'
+                      ? '初回確認が必要'
+                      : publisherStatus === 'checking'
+                        ? '準備を確認中'
+                        : '公開アプリを確認'}
             </span>
           </div>
           {!browserPublishingEnabled && publisherStatus !== 'paired' ? (
@@ -145,7 +163,15 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           ) : null}
           <div className="display-control-form">
             <label className="field compact-field">
-              <span>PDFを選択（15MB・75ページ・20,000文字以下）</span>
+              <span>
+                {requiredDocument
+                  ? `正本PDFを選択（${requiredDocument.expectedPageCount}ページ・${(
+                      requiredDocument.expectedByteSize /
+                      1024 /
+                      1024
+                    ).toFixed(2)}MB）`
+                  : 'PDFを選択（15MB・75ページ・20,000文字以下）'}
+              </span>
               <input
                 accept="application/pdf,.pdf"
                 disabled={pdfPublishing || closed}
@@ -198,6 +224,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           >
             {publisherMessage || 'PDFを選択して公開してください。'}
           </p>
+          {requiredDocument ? (
+            <p className="note">正本資料: {requiredDocument.displayName}</p>
+          ) : null}
           {browserPublishingEnabled && hasInterruptedPublication ? (
             <button
               className="secondary-button"
@@ -225,7 +254,11 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
                 onChange={(event) => onSelectDocument(event.target.value)}
                 value={pdfDocumentInput}
               >
-                <option value="">資料を表示しない</option>
+                <option value="">
+                  {requiredDocument && !requiredDocumentPublished
+                    ? '正本資料を上の欄から公開してください'
+                    : '資料を表示しない'}
+                </option>
                 {availableAssets.map((asset) => (
                   <option key={asset.id} value={asset.id}>
                     {asset.title}（{asset.pageCount}ページ）

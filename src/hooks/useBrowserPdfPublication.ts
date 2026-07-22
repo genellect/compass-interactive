@@ -16,6 +16,7 @@ type UseBrowserPdfPublicationInput = {
   pdfDisplayName: string
   pdfDownloadEnabled: boolean
   pdfFile: File | null
+  requiredDocumentId?: string | null
   refreshAdminPdfDocuments: (
     lectureSessionId?: string,
     token?: string,
@@ -35,6 +36,7 @@ export function useBrowserPdfPublication({
   pdfDisplayName,
   pdfDownloadEnabled,
   pdfFile,
+  requiredDocumentId,
   refreshAdminPdfDocuments,
   setPdfDisplayName,
   setPdfDocumentInput,
@@ -63,6 +65,7 @@ export function useBrowserPdfPublication({
     const displayName =
       pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
     const documentId =
+      requiredDocumentId ||
       pdfPublicationDraftId ||
       `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
     if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
@@ -72,9 +75,8 @@ export function useBrowserPdfPublication({
 
     try {
       setPublisherMessage('PDFをブラウザ内で確認しています…')
-      const publicationModule = await import(
-        '../pdf/browserPdfPublicationClient'
-      )
+      const publicationModule =
+        await import('../pdf/browserPdfPublicationClient')
       const {
         browserPdfPublicationClient,
         forgetBrowserPdfPublication,
@@ -107,7 +109,7 @@ export function useBrowserPdfPublication({
 
       setPdfDocumentInput(finalized.documentId ?? documentId)
       setPdfFile(null)
-      setPdfPublicationDraftId('')
+      setPdfPublicationDraftId(requiredDocumentId ?? '')
       setPdfPublicationRequestId('')
       setPdfDisplayName('')
       if (finalized.status === 'active') {
@@ -150,10 +152,8 @@ export function useBrowserPdfPublication({
     setPdfPublishing(true)
     setPublisherMessage('中断したPDF公開を安全に破棄しています…')
     try {
-      const {
-        browserPdfPublicationClient,
-        forgetBrowserPdfPublication,
-      } = await import('../pdf/browserPdfPublicationClient')
+      const { browserPdfPublicationClient, forgetBrowserPdfPublication } =
+        await import('../pdf/browserPdfPublicationClient')
       await browserPdfPublicationClient.abort({
         adminToken,
         lectureSessionId: activeLectureSessionId,
@@ -162,7 +162,7 @@ export function useBrowserPdfPublication({
       })
       forgetBrowserPdfPublication(activeLectureSessionId)
       setPdfInterruptedPublicationId('')
-      setPdfPublicationDraftId('')
+      setPdfPublicationDraftId(requiredDocumentId ?? '')
       setPdfPublicationRequestId('')
       setPublisherMessage(
         '中断した公開を破棄しました。選択中のPDFを新しい公開として開始できます。',
@@ -180,7 +180,7 @@ export function useBrowserPdfPublication({
 
   useEffect(() => {
     setPdfInterruptedPublicationId('')
-    setPdfPublicationDraftId('')
+    setPdfPublicationDraftId(requiredDocumentId ?? '')
     setPdfPublicationRequestId('')
     if (
       !browserPublishingEnabled ||
@@ -280,13 +280,14 @@ export function useBrowserPdfPublication({
     adminToken,
     browserPublishingEnabled,
     isAuthenticated,
+    requiredDocumentId,
     setPdfDocumentInput,
     setPublisherMessage,
   ])
 
   function resetBrowserPdfPublication() {
     setPdfInterruptedPublicationId('')
-    setPdfPublicationDraftId('')
+    setPdfPublicationDraftId(requiredDocumentId ?? '')
     setPdfPublicationRequestId('')
   }
 

@@ -133,6 +133,22 @@ export function AdminPage() {
   const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
   const [pdfPublishing, setPdfPublishing] = useState(false)
   const {
+    activeAdminLecture,
+    activeJournalClubRun,
+    canShowPollHistory,
+    journalClubLectureIds,
+    orderedLectures,
+    visibleAdminPolls,
+    visibleLectures,
+  } = buildAdminPageView({
+    activeLectureSessionId,
+    adminPolls,
+    adminPollsHasMore,
+    lectures,
+    showLectureHistory,
+    showPollHistory,
+  })
+  const {
     abortInterruptedPdfPublication,
     pdfInterruptedPublicationId,
     pdfPublicationDraftId,
@@ -149,6 +165,7 @@ export function AdminPage() {
     pdfDisplayName,
     pdfDownloadEnabled,
     pdfFile,
+    requiredDocumentId: activeJournalClubRun?.expectedDocumentId ?? null,
     refreshAdminPdfDocuments,
     setPdfDisplayName,
     setPdfDocumentInput,
@@ -163,29 +180,18 @@ export function AdminPage() {
           pageCount: document.pageCount,
           title: document.displayName,
         })),
-        ...lecturePdfAssets,
+        ...(activeJournalClubRun ? [] : lecturePdfAssets),
       ]
-    : lecturePdfAssets
+    : activeJournalClubRun
+      ? []
+      : lecturePdfAssets
   const selectedPdfAsset =
     availablePdfAssets.find(
       (asset) => asset.id === displayState?.pdfDocumentId,
-    ) ?? getLecturePdfAsset(displayState?.pdfDocumentId)
-  const {
-    activeAdminLecture,
-    activeJournalClubRun,
-    canShowPollHistory,
-    journalClubLectureIds,
-    orderedLectures,
-    visibleAdminPolls,
-    visibleLectures,
-  } = buildAdminPageView({
-    activeLectureSessionId,
-    adminPolls,
-    adminPollsHasMore,
-    lectures,
-    showLectureHistory,
-    showPollHistory,
-  })
+    ) ??
+    (activeJournalClubRun
+      ? null
+      : getLecturePdfAsset(displayState?.pdfDocumentId))
 
   useEffect(() => {
     if (!isAuthenticated || !adminToken) {
@@ -371,6 +377,7 @@ export function AdminPage() {
     const displayName =
       pdfDisplayName.trim() || pdfFile.name.replace(/\.pdf$/i, '')
     const documentId =
+      activeJournalClubRun?.expectedDocumentId ||
       pdfPublicationDraftId ||
       `doc-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
     if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
@@ -429,7 +436,7 @@ export function AdminPage() {
       setAdminPdfDocuments(documents)
       setPdfDocumentInput(published.document.documentId)
       setPdfFile(null)
-      setPdfPublicationDraftId('')
+      setPdfPublicationDraftId(activeJournalClubRun?.expectedDocumentId ?? '')
       setPdfPublicationRequestId('')
       setPdfDisplayName('')
       const displayUpdated = await updateDisplayState('setDocument', {
@@ -1240,7 +1247,11 @@ export function AdminPage() {
         onDownloadEnabledChange={setPdfDownloadEnabled}
         onFileChange={(file) => {
           setPdfFile(file)
-          if (!pdfPublicationRequestId) setPdfPublicationDraftId('')
+          if (!pdfPublicationRequestId) {
+            setPdfPublicationDraftId(
+              activeJournalClubRun?.expectedDocumentId ?? '',
+            )
+          }
           if (file && !pdfDisplayName) {
             setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
           }
@@ -1271,6 +1282,16 @@ export function AdminPage() {
         publisherPairingCode={publisherPairingCode}
         publisherSessionToken={publisherSessionToken}
         publisherStatus={publisherStatus}
+        requiredDocument={
+          activeJournalClubRun
+            ? {
+                displayName: '260723 JournalClub Presentation.pdf',
+                documentId: activeJournalClubRun.expectedDocumentId,
+                expectedByteSize: activeJournalClubRun.expectedPdfByteSize,
+                expectedPageCount: activeJournalClubRun.expectedPdfPageCount,
+              }
+            : null
+        }
         selectedAsset={selectedPdfAsset}
       />
 
