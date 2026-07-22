@@ -497,50 +497,34 @@ function parseCleanupJobs(value: unknown, limit: number): CleanupJob[] {
   })
 }
 
-function createVerifiedPdfStream(
-  body: ReadableStream<Uint8Array>,
+async function readVerifiedPdfBody(
+  request: Request,
   expectedBytes: number,
+  expectedSha256: string,
 ) {
-  let actualBytes = 0
-  const prefix: number[] = []
-  let magicVerified = false
-  const transform = new TransformStream<Uint8Array, Uint8Array>({
-    flush() {
-      if (!magicVerified || actualBytes !== expectedBytes) {
-        throw new Error('PDF byte length or magic is invalid.')
-      }
-    },
-    transform(chunk, controller) {
-      if (!(chunk instanceof Uint8Array)) {
-        throw new Error('PDF stream is invalid.')
-      }
-      actualBytes += chunk.byteLength
-      if (actualBytes > expectedBytes || actualBytes > MAX_PDF_BYTES) {
-        throw new Error('PDF byte length is invalid.')
-      }
-      if (!magicVerified) {
-        for (const byte of chunk) {
-          if (prefix.length < 5) prefix.push(byte)
-          if (prefix.length === 5) break
-        }
-        if (prefix.length === 5) {
-          magicVerified =
-            prefix[0] === 0x25 &&
-            prefix[1] === 0x50 &&
-            prefix[2] === 0x44 &&
-            prefix[3] === 0x46 &&
-            prefix[4] === 0x2d
-          if (!magicVerified) throw new Error('PDF magic is invalid.')
-        }
-      }
-      controller.enqueue(chunk)
-    },
-  })
-  return {
-    getActualBytes: () => actualBytes,
-    getMagicVerified: () => magicVerified,
-    stream: body.pipeThrough(transform),
+  const buffer = await request.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  if (bytes.byteLength !== expectedBytes || bytes.byteLength > MAX_PDF_BYTES) {
+    throw Object.assign(new Error('PDF byte length is invalid.'), {
+      status: 400,
+    })
   }
+  if (
+    bytes[0] !== 0x25 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x44 ||
+    bytes[3] !== 0x46 ||
+    bytes[4] !== 0x2d
+  ) {
+    throw Object.assign(new Error('PDF magic is invalid.'), { status: 400 })
+  }
+  const actualSha256 = bytesToHex(await crypto.subtle.digest('SHA-256', buffer))
+  if (actualSha256 !== expectedSha256) {
+    throw Object.assign(new Error('PDF SHA-256 does not match ticket.'), {
+      status: 400,
+    })
+  }
+  return bytes
 }
 
 async function verifyStoredObject(
@@ -825,14 +809,11 @@ async function handleUpload(
   }
 
   const objectKey = receiving.objectKey
-  const verifiedStream = createVerifiedPdfStream(
-    request.body as ReadableStream<Uint8Array>,
-    claims.bytes,
-  )
+  const verifiedPdf = await readVerifiedPdfBody(request, claims.bytes, claims.sha)
   let stored: R2ObjectLike | null
   let adoptedExistingObject = false
   try {
-    stored = await env.PDF_BUCKET.put(objectKey, verifiedStream.stream, {
+    stored = await env.PDF_BUCKET.put(objectKey, verifiedPdf, {
       customMetadata: {
         pdfSha256: claims.sha,
         publicationId: claims.pub,
@@ -857,14 +838,9 @@ async function handleUpload(
     stored = await verifyStoredObject(env, objectKey, claims.bytes, claims.sha)
     adoptedExistingObject = stored !== null
   }
-  if (
-    !stored ||
-    (!adoptedExistingObject &&
-      (verifiedStream.getActualBytes() !== claims.bytes ||
-        !verifiedStream.getMagicVerified()))
-  ) {
+  if (!stored) {
     throw Object.assign(new Error('Immutable PDF upload failed.'), {
-      status: stored ? 400 : 409,
+      status: adoptedExistingObject ? 400 : 409,
     })
   }
   const verified = await verifyStoredObject(
