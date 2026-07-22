@@ -29,6 +29,51 @@
   margin: 0 0 12px;
 }
 
+.admin-pdf-page-controller {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 16px;
+  padding: 12px;
+  position: sticky;
+  top: 78px;
+  z-index: 4;
+}
+
+.admin-pdf-page-controller > strong {
+  font-variant-numeric: tabular-nums;
+  min-width: 76px;
+  text-align: center;
+}
+
+.admin-pdf-page-jump,
+.admin-pdf-page-jump label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.admin-pdf-page-jump span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-pdf-page-jump input {
+  max-width: 76px;
+}
+
+@media (max-width: 640px) {
+  .admin-pdf-page-controller {
+    position: static;
+  }
+}
+
 .material-summary-review {
   background: color-mix(in srgb, var(--panel) 92%, var(--accent-soft));
   border: 1px solid var(--border);

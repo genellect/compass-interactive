@@ -112,7 +112,7 @@ export function AdminJournalClubPreset({
         ) : null}
       </div>
       <p className="note">
-        正本資料と6件の投票を、独立した講義として追加します。
+        講義資料と6件の投票を、独立した講義として追加します。
       </p>
       <div className="button-row journal-club-preset-actions">
         <button

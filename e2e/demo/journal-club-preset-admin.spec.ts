@@ -374,7 +374,7 @@ test.describe('Phase 7.27 flag ON', () => {
       'Dual-targeting CasRx for C9orf72 ALS/FTD',
     )
     await expect(preset).toContainText(
-      '正本資料と6件の投票を、独立した講義として追加します。',
+      '講義資料と6件の投票を、独立した講義として追加します。',
     )
     await expectNoSeriousAccessibilityViolations(page)
 
@@ -494,12 +494,12 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect(pdfPanel).toBeVisible()
     await expect(
       pdfPanel.getByRole('heading', {
-        name: 'Journal Club正本資料を公開する',
+        name: '講義資料を公開する',
       }),
     ).toBeVisible()
-    await expect(pdfPanel).toContainText('正本PDFを選択（34ページ・5.55MB）')
+    await expect(pdfPanel).toContainText('講義資料を選択（34ページ・5.55MB）')
     await expect(pdfPanel).toContainText(
-      '正本資料: 260723 JournalClub Presentation.pdf',
+      '講義資料: 260723 JournalClub Presentation.pdf',
     )
 
     const documentOptions = page.locator(
@@ -507,7 +507,7 @@ test.describe('Phase 7.27 flag ON', () => {
     )
     await expect(documentOptions).toHaveCount(1)
     await expect(documentOptions.first()).toHaveText(
-      '正本資料を上の欄から公開してください',
+      '講義資料を上の欄から公開してください',
     )
 
     await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
@@ -637,7 +637,7 @@ test.describe('Phase 7.27 flag ON', () => {
       .click()
 
     await expect(
-      page.getByText('正本資料を学生に公開してから講義を開始してください。'),
+      page.getByText('講義資料を学生に公開してから講義を開始してください。'),
     ).toBeVisible()
     await expect(rehearsalRow.locator('.status-pill.draft')).toHaveText(
       '準備中',

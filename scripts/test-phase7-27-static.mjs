@@ -30,6 +30,19 @@ const manageLectures = read(
 )
 const managePolls = read('supabase', 'functions', 'manage-polls', 'index.ts')
 const adminPage = read('src', 'pages', 'AdminPage.tsx')
+const app = read('src', 'App.tsx')
+const adminPdfControl = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'AdminPdfControl.tsx',
+)
+const learningSupport = read(
+  'src',
+  'components',
+  'LearningSupport',
+  'LearningSupport.tsx',
+)
 const preset = read(
   'src',
   'components',
@@ -183,6 +196,19 @@ assert.match(preset, /prepare\('production'\)/)
 assert.match(preset, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
 assert.match(preset, /資料公開後、一覧の「開始」を押してください/)
 assert.match(adminPage, /journalClubPreset=/)
+assert.match(app, /<Route element={<DisplayPage \/>} path="\/display" \/>/)
+assert.doesNotMatch(
+  app,
+  /<RequireJoinedLecture>[\s\S]*?<DisplayPage \/>[\s\S]*?<\/RequireJoinedLecture>/,
+)
+assert.match(learningSupport, /mode === 'display'[\s\S]*display-caption-strip/)
+assert.match(
+  adminPdfControl,
+  /displayState\.pdfPageCount \?\? selectedAsset\?\.pageCount/,
+)
+assert.match(adminPdfControl, /aria-label="講義資料のページ操作"/)
+assert.doesNotMatch(preset, /正本/)
+assert.doesNotMatch(adminPdfControl, /正本/)
 assert.match(parityMigration, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
 assert.match(parityMigration, /if not exists \([\s\S]*lecture_pdf_documents/)
 assert.doesNotMatch(

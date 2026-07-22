@@ -90,6 +90,16 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
   const requiredDocumentPublished = requiredDocument
     ? availableAssets.some((asset) => asset.id === requiredDocument.documentId)
     : false
+  const activePageCount = displayState?.pdfDocumentId
+    ? (displayState.pdfPageCount ?? selectedAsset?.pageCount ?? null)
+    : null
+  const canNavigate =
+    Boolean(activeLectureSessionId) &&
+    Boolean(displayState?.pdfDocumentId) &&
+    Boolean(displayState?.pdfVisible) &&
+    Boolean(activePageCount) &&
+    !displayStateLoading &&
+    !closed
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     onFileChange(event.target.files?.[0] ?? null)
@@ -106,22 +116,68 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           現在のページ: {displayState?.currentPdfPage ?? 1}
         </span>
       </div>
+      {activeLectureSessionId && displayState?.pdfDocumentId ? (
+        <div
+          aria-label="講義資料のページ操作"
+          className="admin-pdf-page-controller"
+        >
+          <button
+            className="secondary-button"
+            disabled={!canNavigate || displayState.currentPdfPage <= 1}
+            onClick={onPrevious}
+            type="button"
+          >
+            ← 前へ
+          </button>
+          <strong aria-live="polite">
+            {displayState.currentPdfPage} / {activePageCount ?? '—'}
+          </strong>
+          <button
+            className="primary-button compact"
+            disabled={
+              !canNavigate ||
+              displayState.currentPdfPage >= (activePageCount ?? 1)
+            }
+            onClick={onNext}
+            type="button"
+          >
+            次へ →
+          </button>
+          <form className="admin-pdf-page-jump" onSubmit={onGoToPage}>
+            <label>
+              <span>ページ</span>
+              <input
+                aria-label="表示するページ番号"
+                disabled={!canNavigate}
+                max={activePageCount ?? 1}
+                min={1}
+                onChange={(event) => onPageInputChange(event.target.value)}
+                type="number"
+                value={displayPageInput}
+              />
+            </label>
+            <button
+              className="secondary-button compact"
+              disabled={!canNavigate}
+              type="submit"
+            >
+              移動
+            </button>
+          </form>
+        </div>
+      ) : null}
       {privatePdfEnabled ? (
         <div className="display-control-grid publisher-control-panel">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">LECTURE MATERIAL</p>
-              <h3>
-                {requiredDocument
-                  ? 'Journal Club正本資料を公開する'
-                  : '講義資料を公開する'}
-              </h3>
+              <h3>講義資料を公開する</h3>
             </div>
             <span className="metric">
               {requiredDocument
                 ? requiredDocumentPublished
-                  ? '正本資料は公開済み'
-                  : '正本資料は未公開'
+                  ? '講義資料は公開済み'
+                  : '講義資料は未公開'
                 : browserPublishingEnabled
                   ? 'ブラウザから公開できます'
                   : publisherStatus === 'paired'
@@ -165,7 +221,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <label className="field compact-field">
               <span>
                 {requiredDocument
-                  ? `正本PDFを選択（${requiredDocument.expectedPageCount}ページ・${(
+                  ? `講義資料を選択（${requiredDocument.expectedPageCount}ページ・${(
                       requiredDocument.expectedByteSize /
                       1024 /
                       1024
@@ -225,7 +281,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             {publisherMessage || 'PDFを選択して公開してください。'}
           </p>
           {requiredDocument ? (
-            <p className="note">正本資料: {requiredDocument.displayName}</p>
+            <p className="note">講義資料: {requiredDocument.displayName}</p>
           ) : null}
           {browserPublishingEnabled && hasInterruptedPublication ? (
             <button
@@ -256,7 +312,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               >
                 <option value="">
                   {requiredDocument && !requiredDocumentPublished
-                    ? '正本資料を上の欄から公開してください'
+                    ? '講義資料を上の欄から公開してください'
                     : '資料を表示しない'}
                 </option>
                 {availableAssets.map((asset) => (
@@ -275,54 +331,6 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               この資料を表示
             </button>
           </div>
-          <div className="display-control-actions">
-            <button
-              className="secondary-button"
-              disabled={
-                displayStateLoading ||
-                closed ||
-                !selectedAsset ||
-                (displayState?.currentPdfPage ?? 1) <= 1
-              }
-              onClick={onPrevious}
-              type="button"
-            >
-              前へ
-            </button>
-            <button
-              className="secondary-button"
-              disabled={
-                displayStateLoading ||
-                closed ||
-                !selectedAsset ||
-                (displayState?.currentPdfPage ?? 1) >= selectedAsset.pageCount
-              }
-              onClick={onNext}
-              type="button"
-            >
-              次へ
-            </button>
-          </div>
-          <form className="display-control-form" onSubmit={onGoToPage}>
-            <label className="field compact-field">
-              <span>ページ番号</span>
-              <input
-                disabled={displayStateLoading || closed}
-                max={selectedAsset?.pageCount ?? 1}
-                min={1}
-                onChange={(event) => onPageInputChange(event.target.value)}
-                type="number"
-                value={displayPageInput}
-              />
-            </label>
-            <button
-              className="secondary-button"
-              disabled={displayStateLoading || closed || !selectedAsset}
-              type="submit"
-            >
-              移動
-            </button>
-          </form>
         </div>
       )}
       {activeLectureSessionId && displayState?.pdfDocumentId ? (

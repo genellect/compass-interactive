@@ -172,9 +172,25 @@ export function LiveCaptionPanel({
   const visibleCaption =
     caption ?? (isDemo ? demoCaptionSequence[demoCaptionIndex] : null)
 
+  if (mode === 'display') {
+    if (!visibleCaption) return null
+
+    return (
+      <section
+        aria-label="講義字幕"
+        aria-live="polite"
+        className="display-caption-strip"
+      >
+        <p key={isDemo ? demoCaptionIndex : visibleCaption.text}>
+          {visibleCaption.text}
+        </p>
+      </section>
+    )
+  }
+
   return (
     <section
-      className={`learning-support caption-panel ${compact ? 'is-compact' : ''} ${mode === 'display' ? 'is-display transcript-placeholder' : ''}`}
+      className={`learning-support caption-panel ${compact ? 'is-compact' : ''}`}
     >
       <div className="learning-support-heading">
         <span className="support-icon">
@@ -451,14 +467,14 @@ export function MaterialSummaryPanel({
           <ol className="summary-points">
             {visibleSummary.points.map((point) => (
               <li key={`${point.pageLabel}-${point.title}`}>
-                  <span className="summary-page">{point.pageLabel}</span>
-                  <div>
-                    <strong>{point.title}</strong>
-                    {point.detail ? <p>{point.detail}</p> : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
+                <span className="summary-page">{point.pageLabel}</span>
+                <div>
+                  <strong>{point.title}</strong>
+                  {point.detail ? <p>{point.detail}</p> : null}
+                </div>
+              </li>
+            ))}
+          </ol>
           {visibleSummary.reflectionQuestion ? (
             <div className="reflection-prompt">
               <span>資料を読むための問い</span>

@@ -38,6 +38,7 @@ import {
   buildAdminPageView,
   makeJoinedLecture,
 } from './admin/adminPageViewModel'
+import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
@@ -90,10 +91,6 @@ export function AdminPage() {
     null,
   )
   const [displayStateLoading, setDisplayStateLoading] = useState(false)
-  const [displayLaunchError, setDisplayLaunchError] = useState<string | null>(
-    null,
-  )
-  const [isOpeningDisplay, setIsOpeningDisplay] = useState(false)
   const [displayPageInput, setDisplayPageInput] = useState('1')
   const [pdfDocumentInput, setPdfDocumentInput] = useState('')
   const [lectures, setLectures] = useState<AdminLecture[]>([])
@@ -192,6 +189,18 @@ export function AdminPage() {
     (activeJournalClubRun
       ? null
       : getLecturePdfAsset(displayState?.pdfDocumentId))
+  const activePdfPageCount = displayState?.pdfDocumentId
+    ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
+    : null
+  const {
+    error: displayLaunchError,
+    isOpening: isOpeningDisplay,
+    open: openClassroomDisplay,
+  } = useAdminDisplayLauncher({
+    activeAdminLecture,
+    activeLectureSessionId,
+    adminToken,
+  })
 
   useEffect(() => {
     if (!isAuthenticated || !adminToken) {
@@ -833,9 +842,16 @@ export function AdminPage() {
       const updatedLecture = nextLectures.find(
         (item) => item.id === lectureSessionId,
       )
-      if (updatedLecture && activeLectureSessionId === lectureSessionId) {
+      if (
+        updatedLecture &&
+        (action === 'start' || activeLectureSessionId === lectureSessionId)
+      ) {
         selectLectureSession(makeJoinedLecture(updatedLecture))
-        await refreshAdminPolls(lectureSessionId, adminToken)
+        await refreshAdminPolls(
+          lectureSessionId,
+          adminToken,
+          Boolean(updatedLecture.journalClub),
+        )
       }
     } catch (error) {
       if (handleInvalidAdminSession(error)) return
@@ -843,7 +859,7 @@ export function AdminPage() {
         error instanceof Error &&
         error.message.includes('Journal Club PDF is not active')
       ) {
-        setLecturesError('正本資料を学生に公開してから講義を開始してください。')
+        setLecturesError('講義資料を学生に公開してから講義を開始してください。')
         return
       }
       setLecturesError(
@@ -989,52 +1005,6 @@ export function AdminPage() {
     }
   }
 
-  async function openClassroomDisplay() {
-    if (
-      !adminToken ||
-      !activeLectureSessionId ||
-      activeAdminLecture?.status !== 'open'
-    ) {
-      setDisplayLaunchError('開始中の講義を選択してください。')
-      return
-    }
-
-    const displayWindow = window.open('', '_blank')
-    if (!displayWindow) {
-      setDisplayLaunchError(
-        '共有画面を開けませんでした。ポップアップを許可して再度お試しください。',
-      )
-      return
-    }
-    displayWindow.opener = null
-    displayWindow.document.title = 'COMPASS 共有画面を準備中'
-    displayWindow.document.body.textContent = '共有画面を準備しています…'
-
-    setIsOpeningDisplay(true)
-    setDisplayLaunchError(null)
-    try {
-      const session = await supabaseAdminRepository.issueDisplaySession({
-        adminToken,
-        lectureSessionId: activeLectureSessionId,
-      })
-      const fragment = new URLSearchParams({
-        code: activeAdminLecture?.lectureCode ?? '',
-        lecture: session.lectureSessionId,
-        token: session.displayToken,
-      })
-      displayWindow.location.replace(`/display#${fragment.toString()}`)
-    } catch (error) {
-      displayWindow.close()
-      setDisplayLaunchError(
-        error instanceof Error
-          ? `共有画面を開けませんでした: ${error.message}`
-          : '共有画面を開けませんでした。',
-      )
-    } finally {
-      setIsOpeningDisplay(false)
-    }
-  }
-
   async function moderateComment(
     commentId: string,
     action: 'togglePin' | 'toggleVisibility',
@@ -1071,12 +1041,12 @@ export function AdminPage() {
     if (
       !Number.isInteger(nextPage) ||
       nextPage < 1 ||
-      !selectedPdfAsset ||
-      nextPage > selectedPdfAsset.pageCount
+      !activePdfPageCount ||
+      nextPage > activePdfPageCount
     ) {
       setDisplayStateError(
-        selectedPdfAsset
-          ? `ページ番号は1〜${selectedPdfAsset.pageCount}で入力してください。`
+        activePdfPageCount
+          ? `ページ番号は1〜${activePdfPageCount}で入力してください。`
           : '先にPDF資料を選択してください。',
       )
       return

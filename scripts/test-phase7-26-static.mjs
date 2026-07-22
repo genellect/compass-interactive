@@ -43,9 +43,13 @@ const productionWrangler = read(
   'wrangler.production.jsonc',
 )
 
-assert.match(worker, /TransformStream<Uint8Array, Uint8Array>/)
-assert.match(worker, /prefix\[0\] === 0x25/)
-assert.match(worker, /actualBytes !== expectedBytes/)
+assert.match(worker, /const buffer = await request\.arrayBuffer\(\)/)
+assert.match(worker, /bytes\[0\] !== 0x25/)
+assert.match(worker, /bytes\.byteLength !== expectedBytes/)
+assert.match(
+  worker,
+  /readVerifiedPdfBody\(request, claims\.bytes, claims\.sha\)[\s\S]*?PDF_BUCKET\.put\(objectKey, verifiedPdf/,
+)
 assert.match(worker, /sha256: claims\.sha/)
 assert.match(worker, /onlyIf: \{ etagDoesNotMatch: '\*' \}/)
 assert.match(worker, /callCoordinator\(env, fetcher, \{\s*action: 'claimNonce'/s)
@@ -57,7 +61,6 @@ assert.match(worker, /COMPASS-PDF-CLEANUP-TOMBSTONE/)
 assert.match(worker, /assertManifestMutationLedgerFence/)
 assert.match(worker, /etagMatches: current\.etag/)
 assert.match(worker, /manifest_version:[\s\S]*\+ 1/)
-assert.doesNotMatch(worker, /request\.arrayBuffer\(/)
 assert.doesNotMatch(worker, /pdfjs|getDocument\(|page\.render\(/i)
 
 assert.match(crypto, /compass-pdf-publication-worker/)

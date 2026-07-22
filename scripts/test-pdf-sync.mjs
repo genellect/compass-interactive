@@ -68,7 +68,10 @@ assert.match(viewer, /rangeChunkSize: 1024 \* 1024/)
 assert.match(viewer, /教員のページに戻る/)
 assert.doesNotMatch(viewer, /type="file"|arrayBuffer\(\)/)
 assert.match(adminPage, /availablePdfAssets/)
-assert.match(adminPage, /\.\.\.lecturePdfAssets/)
+assert.match(
+  adminPage,
+  /activeJournalClubRun \? \[\] : lecturePdfAssets/,
+)
 assert.match(adminPage, /updateDisplayState\('setDocument'/)
 assert.match(lecturePage, /<SyncedPdfViewer/)
 assert.match(displayView, /<SyncedPdfViewer/)

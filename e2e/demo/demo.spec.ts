@@ -56,10 +56,7 @@ test('join page opens the isolated demo and exposes the learning flow', async ({
     page.getByRole('link', {
       name: 'Impact of proficiency on Chinese EFL learners’ interaction with AI-generated feedback for translation revision',
     }),
-  ).toHaveAttribute(
-    'href',
-    'https://doi.org/10.1080/09588221.2026.2631658',
-  )
+  ).toHaveAttribute('href', 'https://doi.org/10.1080/09588221.2026.2631658')
 
   if (testInfo.project.name.startsWith('mobile-')) {
     const topPositions = await page.evaluate(() => {
@@ -199,4 +196,20 @@ test('demo comments, nickname limit, poll, history and exit work locally', async
   ).toBeVisible()
 
   await safety.assertClean()
+})
+
+test('classroom display without an issued token fails closed on the display route', async ({
+  page,
+}) => {
+  await page.goto('/display')
+
+  await expect(
+    page.getByRole('heading', { name: '共有画面の確認が必要です' }),
+  ).toBeVisible()
+  await expect(page).toHaveURL(/\/display$/)
+  await expect(
+    page.getByText(
+      '管理画面から「共有画面を開く」を押して、もう一度開いてください。',
+    ),
+  ).toBeVisible()
 })

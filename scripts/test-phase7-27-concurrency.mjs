@@ -132,6 +132,17 @@ async function cleanup() {
 let failure
 try {
   await runSql(`
+    do $$
+    begin
+      if exists (
+        select 1
+        from public.phase727_journal_club_runs
+        where run_kind = 'production'
+      ) then
+        raise exception 'Phase 7.27 concurrency test requires a clean local database; run supabase db reset first';
+      end if;
+    end;
+    $$;
     drop table if exists public.phase727_race_results;
     create table public.phase727_race_results (
       id bigint generated always as identity primary key,
@@ -363,6 +374,86 @@ try {
     end;
     $$;
   `)
+
+  const pollOpenRace = await Promise.allSettled([
+    runSql(`
+      select public.admin_set_poll_status(
+        (select lecture.id
+         from public.lecture_sessions as lecture
+         join public.phase727_race_results as result
+           on result.lecture_session_id = lecture.id
+         where lecture.status = 'open'
+         limit 1),
+        (select slot.poll_id
+         from public.phase727_journal_club_poll_slots as slot
+         join public.lecture_sessions as lecture
+           on lecture.id = slot.lecture_session_id
+         where lecture.status = 'open' and slot.display_order = 1
+         limit 1),
+        'open'
+      );
+    `),
+    runSql(`
+      select public.admin_set_poll_status(
+        (select lecture.id
+         from public.lecture_sessions as lecture
+         join public.phase727_race_results as result
+           on result.lecture_session_id = lecture.id
+         where lecture.status = 'open'
+         limit 1),
+        (select slot.poll_id
+         from public.phase727_journal_club_poll_slots as slot
+         join public.lecture_sessions as lecture
+           on lecture.id = slot.lecture_session_id
+         where lecture.status = 'open' and slot.display_order = 2
+         limit 1),
+        'open'
+      );
+    `),
+  ])
+  if (pollOpenRace.some((result) => result.status === 'rejected')) {
+    throw new Error('parallel Poll starts failed instead of serializing')
+  }
+
+  await runSql(`
+    do $$
+    declare
+      open_lecture_id uuid;
+      other_poll_id uuid;
+    begin
+      select lecture.id
+      into open_lecture_id
+      from public.lecture_sessions as lecture
+      join public.phase727_race_results as result
+        on result.lecture_session_id = lecture.id
+      where lecture.status = 'open'
+      limit 1;
+
+      if (
+        select count(*)
+        from public.polls as poll
+        where poll.lecture_session_id = open_lecture_id
+          and poll.status = 'open'
+      ) <> 1 then
+        raise exception 'parallel Poll starts did not converge to one open Poll';
+      end if;
+
+      select slot.poll_id
+      into other_poll_id
+      from public.phase727_journal_club_poll_slots as slot
+      where slot.lecture_session_id <> open_lecture_id
+      limit 1;
+
+      if public.admin_set_poll_status(
+        open_lecture_id,
+        other_poll_id,
+        'open'
+      ) then
+        raise exception 'cross-lecture Poll target was accepted';
+      end if;
+    end;
+    $$;
+  `)
 } catch (error) {
   failure = error
 } finally {
@@ -375,5 +466,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Phase 7.27 two-connection idempotency, production uniqueness, rehearsal isolation, and open-run races converged.',
+  'Phase 7.27 two-connection idempotency, production uniqueness, rehearsal isolation, open-run, and Poll races converged.',
 )

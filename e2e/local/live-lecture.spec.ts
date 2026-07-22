@@ -3,8 +3,7 @@ import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
-const appBaseUrl =
-  process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
+const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const decodeQrPixels = jsQR as unknown as (
   data: Uint8ClampedArray,
   width: number,
@@ -61,6 +60,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   const admin = await openMonitoredPage(adminContext)
   const student = await openMonitoredPage(studentContext)
   let displayPage: Page | null = null
+  let isolatedDisplayContext: BrowserContext | null = null
+  let isolatedDisplayPage: Page | null = null
   const lectureTitle = `CI講義 ${Date.now()}`
 
   try {
@@ -118,9 +119,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(summaryLanguage).toHaveValue('en')
 
     const summaryControl = admin.page.locator('.lecture-summary-control')
-    const autoAcademicAnswers = summaryControl.getByLabel(
-      '学術的な質問に参考回答を自動生成',
-    )
+    const autoAcademicAnswers =
+      summaryControl.getByLabel('学術的な質問に参考回答を自動生成')
     const summarySourceDomain = summaryControl.getByLabel('参照する分野')
     await expect(autoAcademicAnswers).not.toBeChecked()
     await expect(summarySourceDomain).toHaveCount(0)
@@ -129,8 +129,19 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await autoAcademicAnswers.uncheck()
 
     const displayPopup = admin.page.waitForEvent('popup')
+    const displaySessionResponse = admin.page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/issue-display-session') &&
+        response.status() === 200,
+    )
     await admin.page.getByRole('button', { name: '共有画面を開く' }).click()
     displayPage = await displayPopup
+    const issuedDisplaySession = (
+      await displaySessionResponse
+    ).json() as Promise<{
+      displayToken: string
+      lectureSessionId: string
+    }>
     const displaySafety = await installBrowserSafetyMonitor(displayPage)
     await expect(
       displayPage.getByRole('heading', { name: lectureTitle }),
@@ -144,6 +155,24 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     expect(await decodeQrImage(displayPage, '.lecture-join-qr img')).toBe(
       canonicalJoinUrl,
     )
+
+    const isolatedSession = await issuedDisplaySession
+    isolatedDisplayContext = await browser.newContext()
+    isolatedDisplayPage = await isolatedDisplayContext.newPage()
+    const isolatedDisplaySafety =
+      await installBrowserSafetyMonitor(isolatedDisplayPage)
+    const isolatedDisplayUrl = new URL('/display', appBaseUrl)
+    isolatedDisplayUrl.hash = new URLSearchParams({
+      code: lectureCode ?? '',
+      lecture: isolatedSession.lectureSessionId,
+      token: isolatedSession.displayToken,
+    }).toString()
+    await isolatedDisplayPage.goto(isolatedDisplayUrl.toString())
+    await expect(
+      isolatedDisplayPage.getByRole('heading', { name: lectureTitle }),
+    ).toBeVisible()
+    await expect(isolatedDisplayPage).toHaveURL(/\/display$/)
+    await isolatedDisplaySafety.assertClean()
 
     await student.page.goto('/join')
     await student.page.getByLabel('講義コード').fill(lectureCode ?? '')
@@ -229,6 +258,12 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       })
       await displaySafety.assertClean()
     }
+    if (isolatedDisplayPage) {
+      await expect(isolatedDisplayPage.locator('.lecture-join-qr')).toHaveCount(
+        0,
+        { timeout: 25_000 },
+      )
+    }
 
     await expect(
       student.page.getByRole('heading', { name: '講義は終了しました。' }),
@@ -248,6 +283,10 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await admin.safety.assertClean()
     await student.safety.assertClean()
   } finally {
+    if (isolatedDisplayPage && !isolatedDisplayPage.isClosed()) {
+      await isolatedDisplayPage.close()
+    }
+    if (isolatedDisplayContext) await isolatedDisplayContext.close()
     if (displayPage && !displayPage.isClosed()) await displayPage.close()
     await closeContext(studentContext, student.page)
     await closeContext(adminContext, admin.page)

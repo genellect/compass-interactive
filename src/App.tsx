@@ -121,14 +121,7 @@ function AppShell() {
             path="/lecture/comments"
           />
           <Route element={<LectureArchivePage />} path="/lecture/archive" />
-          <Route
-            element={
-              <RequireJoinedLecture>
-                <DisplayPage />
-              </RequireJoinedLecture>
-            }
-            path="/display"
-          />
+          <Route element={<DisplayPage />} path="/display" />
         </Routes>
       </Suspense>
     </div>
