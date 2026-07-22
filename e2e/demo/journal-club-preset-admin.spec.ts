@@ -389,8 +389,10 @@ test.describe('Phase 7.27 flag ON', () => {
     await page.keyboard.press('Tab')
     await expect(productionButton).toBeFocused()
 
-    page.once('dialog', async (dialog) => dialog.dismiss())
-    await productionButton.click()
+    await Promise.all([
+      page.waitForEvent('dialog').then((dialog) => dialog.dismiss()),
+      productionButton.click(),
+    ])
     expect(
       state.lectureRequests.filter(
         (request) => request.action === 'createJournalClubRun',
@@ -415,11 +417,13 @@ test.describe('Phase 7.27 flag ON', () => {
       page.getByRole('button', { name: '投票履歴を見る' }),
     ).toHaveCount(0)
 
-    page.once('dialog', async (dialog) => {
-      expect(dialog.message()).toContain('講義と投票はまだ開始されません。')
-      await dialog.accept()
-    })
-    await preset.getByRole('button', { name: '7/23 本番を一覧に追加' }).click()
+    await Promise.all([
+      page.waitForEvent('dialog').then(async (dialog) => {
+        expect(dialog.message()).toContain('講義と投票はまだ開始されません。')
+        await dialog.accept()
+      }),
+      preset.getByRole('button', { name: '7/23 本番を一覧に追加' }).click(),
+    ])
     await expect(preset.getByRole('status')).toContainText(
       '本番を講義一覧に追加しました。',
     )
