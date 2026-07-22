@@ -162,6 +162,11 @@ assert.match(
   /void refreshLiveSnapshot\(\{ forceAll: true, showLoading: true \}\)\.catch\(/,
   'The initial live snapshot must not leak transient network failures as unhandled browser errors.',
 )
+assert.match(
+  context,
+  /const \[snapshot, participantState\] = await Promise\.all\(\[/,
+  'Concurrent shared and participant snapshots must receive rejection handlers immediately.',
+)
 assert.doesNotMatch(context, /Promise\.allSettled/)
 assert.equal(
   context.match(/supabaseLiveStateRepository\.getSnapshot/g)?.length,

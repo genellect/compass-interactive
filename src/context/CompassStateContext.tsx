@@ -479,8 +479,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               forcePolls,
             },
           )
-          const snapshot = activeOperatorAccess
-            ? await supabaseLiveStateRepository.getOperatorSnapshot({
+          const snapshotPromise = activeOperatorAccess
+            ? supabaseLiveStateRepository.getOperatorSnapshot({
                 commentCursor: commentCursorRef.current,
                 lectureSessionId: activeLectureSessionId,
                 protocolVersion: 2,
@@ -489,13 +489,16 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
                   ? { adminToken: activeOperatorAccess.token }
                   : { displayToken: activeOperatorAccess.token }),
               })
-            : await supabaseLiveStateRepository.getSnapshot({
+            : supabaseLiveStateRepository.getSnapshot({
                 commentCursor: commentCursorRef.current,
                 lectureSessionId: activeLectureSessionId,
                 protocolVersion: isPhase1SyncProtocolEnabled ? 2 : 1,
                 versions: requestedVersions,
               })
-          const participantState = await participantStatePromise
+          const [snapshot, participantState] = await Promise.all([
+            snapshotPromise,
+            participantStatePromise,
+          ])
 
           if (snapshot.serverTime) {
             serverClockSampleRef.current = createServerClockSample(
