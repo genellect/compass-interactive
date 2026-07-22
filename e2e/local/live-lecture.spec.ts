@@ -233,7 +233,10 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
         ownHistoryRequests.push(request.url())
       }
     })
-    await student.page.goto('/lecture/comments')
+    await student.page.evaluate(() => {
+      window.history.pushState(window.history.state, '', '/lecture/comments')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
     await student.page.getByRole('tab', { name: '自分' }).click()
     await expect(
       student.page.getByRole('heading', { name: '自分のコメント' }),
@@ -244,7 +247,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect.poll(() => ownHistoryRequests.length).toBe(1)
     await student.page.waitForTimeout(5_500)
     expect(ownHistoryRequests).toHaveLength(1)
-    await student.page.goto('/lecture')
+    await student.page.getByRole('link', { name: '講義へ戻る' }).click()
     await expect(
       student.page.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()

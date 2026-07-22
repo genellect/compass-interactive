@@ -286,7 +286,9 @@ export function LecturePage() {
           {!isLectureClosed ? (
             <button
               className="primary-button compact"
-              onClick={() => void resumeSessionSync()}
+              onClick={() => {
+                void resumeSessionSync().catch(() => undefined)
+              }}
               type="button"
             >
               もう一度つなぐ
