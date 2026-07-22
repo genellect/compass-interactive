@@ -76,7 +76,7 @@ are recorded here.
 | Existing public client smoke | PASS | Join, Demo, Display and Archive routes; no browser-console errors |
 | Authenticated Admin / production two-user separation | HOLD | Requires operator Admin authentication after preview publication |
 | Candidate integrated to `main`; hosted CI | PASS REQUIRED | Quality, browser and local-Supabase jobs must be green on the final release commit |
-| Public Pages routes and browser console | PASS | Deployment `c2070a7f-c8b8-425b-9978-43392660fde2` from `025727b` |
+| Public Pages routes and browser console | PASS | Deployment `2b2708ac-2cad-446b-8a03-a1e879ef1c3d` from `3383265` |
 | Worker -> Edge -> frontend staged activation | PASS | OFF-first deployment followed by explicit preview enablement |
 | Hosted Journal Club run | INTENTIONALLY NOT CREATED | Rehearsal and production preparation are reserved for post-preview review |
 
