@@ -17,7 +17,7 @@ secrets.
 - Repository baseline before Phase 6.7: `cc1ae93` on `main`.
 - Phase 0 through Phase 7.27 are implemented locally. Phase 7.27 is a
   default-OFF, thin Journal Club operational preset that does not replace the
-  established lecture lifecycle. Its clean reset, 1,169 pgTAP checks, 49 Worker
+  established lecture lifecycle. Its clean reset, 1,171 pgTAP checks, 49 Worker
   tests, 55-group non-live regression, upgrade/concurrency probes and dedicated
   Chromium/WebKit desktop/mobile E2E have passed. Human, Hosted and Production
   gates remain HOLD; these changes have not been pushed, deployed or reflected
@@ -53,8 +53,9 @@ secrets.
   hidden commit, activation and terminal cleanup are independently enforced by
   Edge, Postgres and the Cloudflare Worker. Local Publisher is recovery-only and
   must not retain an active R2 write credential while browser mode is enabled.
-- Phase 7.27 adds a default-OFF `7.23 Journal Club` preparation preset on top of
-  those existing contracts. Each production or rehearsal preparation creates a
+- Phase 7.27 adds a default-OFF `7.23 Journal Club` preparation preset for
+  `Dual-targeting CasRx for C9orf72 ALS/FTD` on top of those existing contracts.
+  Each production or rehearsal preparation creates a
   fresh lecture UUID, six-digit code and six draft Polls without starting the
   lecture, opening a Poll, publishing a PDF or starting paid AI work. Rehearsals
   may be repeated; exactly one production run is allowed for the preset.
@@ -152,6 +153,8 @@ Pages does not depend on a catch-all redirect.
   byte count and page count; the preset stores no PDF bytes and triggers no AI.
   Only the exact production archive policy receives the permanent R2 retention
   exception; normal lectures and rehearsals retain the standard 30-day policy.
+  Prepared runs enter the conventional lecture list and use its existing start
+  control; both run kinds share the same PDF-gated lifecycle path.
 - **OpenAI:** only explicitly authorized, bounded text/audio needed by the
   selected feature. The API key remains in Supabase Edge secrets.
 - **Email provider:** one content-bounded daily operations digest when activity

@@ -4,6 +4,8 @@
 
 Phase 7.27は、2026年7月23日のJournal Clubを安全に準備・リハーサル・実施し、実施後の記録を継続公開するための薄い運用プリセットである。新しい講義状態機械、Poll配信方式、PDF配信方式、AI起動方式は作らない。Phase 0〜7.26の認証、RLS、90分終了、Poll、コメント、Private R2、AI利用量、Archive、CI/E2E契約をそのまま正本として再利用する。
 
+講義タイトルは本番・リハーサルとも `Dual-targeting CasRx for C9orf72 ALS/FTD` とする。準備後のrunは従来の教員UIの講義一覧へ追加し、開始は一覧にある既存の講義開始操作だけから行う。プリセット専用の開始状態機械や開始CTAは作らない。
+
 本Phaseが自動化するのは、次の2点だけである。
 
 1. 本番またはリハーサル用の独立したdraft講義を1件作る。
@@ -40,7 +42,7 @@ PDF本体や開発者PC上の絶対パスはGitまたはSupabaseへ保存しな�
 Adminが準備
   -> lecture=draft + Poll 6件=draft
   -> PDFを選択・検証・非公開upload・commit・active
-  -> Adminが講義開始（既存90分hard stop）
+  -> 従来の講義一覧からAdminが講義開始（両runともexact active PDF必須、既存90分hard stop）
   -> AdminがPollを1件ずつ明示開始・終了
   -> Admin手動終了 または DB時刻による90分終了
   -> 既存Archive outboxがsanitized snapshotをPrivate R2へexport

@@ -334,9 +334,7 @@ export function RealtimeCaptionControl({
           maxAudioSeconds: requestedAudioSeconds,
           sdpOffer,
         })
-      setPricingRateMicrousdPerMinute(
-        providerCall.pricingRateMicrousdPerMinute,
-      )
+      setPricingRateMicrousdPerMinute(providerCall.pricingRateMicrousdPerMinute)
       operationIdRef.current = providerCall.operationId
       await session.connect(providerCall.sdpAnswer)
       updateStatus('running')
@@ -512,9 +510,7 @@ export function RealtimeCaptionControl({
   const requestedAudioSeconds =
     duration === 'remaining' ? remainingAudioSeconds : Number(duration)
   const estimatedMicrousd = pricingRateMicrousdPerMinute
-    ? Math.ceil(
-        (requestedAudioSeconds * pricingRateMicrousdPerMinute) / 60,
-      )
+    ? Math.ceil((requestedAudioSeconds * pricingRateMicrousdPerMinute) / 60)
     : null
   return (
     <section className="realtime-caption-control">
@@ -540,10 +536,7 @@ export function RealtimeCaptionControl({
       </div>
 
       <p className="privacy-notice">
-        マイク音声はOpenAIへリアルタイム送信されますが、COMPASSは音声ファイルを保存しません。
-        差分字幕は教員端末内だけ、学生には完了済みの短い字幕窓だけを5秒同期します。
-        この「字幕を開始」操作以外から自動でOpenAI
-        Realtimeへ接続することはありません。
+        音声はOpenAIへリアルタイム送信されます。COMPASSは音声ファイルを保存せず、この操作以外から自動開始しません。
       </p>
 
       <div className="caption-control-form">

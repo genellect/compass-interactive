@@ -141,8 +141,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [caption, setCaption] = useState<PublicCaption | null>(null)
   const [summaries, setSummaries] = useState<PublicLectureSummary[]>([])
-  const [academicAnswers, setAcademicAnswers] =
-    useState<PublicAcademicAnswer[]>([])
+  const [academicAnswers, setAcademicAnswers] = useState<
+    PublicAcademicAnswer[]
+  >([])
   const [materialSummary, setMaterialSummary] =
     useState<PublicMaterialSummary | null>(null)
   const {
@@ -973,6 +974,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     clearLectureSessionState(true)
   }, [clearLectureSessionState])
 
+  const clearSelectedLectureSession = useCallback(() => {
+    clearLectureSessionState(false)
+  }, [clearLectureSessionState])
+
   const getServerNow = useCallback(() => {
     const sample = serverClockSampleRef.current
     if (!sample) return runtimeMode === 'demo' ? new Date().toISOString() : null
@@ -1026,6 +1031,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       lastActivityAt,
       lastSuccessfulSyncAt,
       getServerNow,
+      clearSelectedLectureSession,
       leaveLecture,
       setOperatorLiveAccess,
       resumeSessionSync,
@@ -1487,6 +1493,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       lastActivityAt,
       lastSuccessfulSyncAt,
       getServerNow,
+      clearSelectedLectureSession,
       leaveLecture,
       setOperatorLiveAccess,
       recordSessionActivity,

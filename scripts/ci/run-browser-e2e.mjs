@@ -63,6 +63,25 @@ function parseEnvOutput(output) {
 }
 
 function readLocalSupabaseEnvironment() {
+  const injected = {
+    TEST_SUPABASE_SERVICE_ROLE_KEY:
+      process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? '',
+    TEST_SUPABASE_URL: process.env.TEST_SUPABASE_URL?.trim() ?? '',
+    VITE_SUPABASE_PUBLISHABLE_KEY:
+      process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
+    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL?.trim() ?? '',
+  }
+  if (Object.values(injected).every(Boolean)) {
+    const parsedUrl = new URL(injected.VITE_SUPABASE_URL)
+    if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
+      throw new Error('Browser E2E refuses non-local Supabase URLs.')
+    }
+    if (injected.TEST_SUPABASE_URL !== injected.VITE_SUPABASE_URL) {
+      throw new Error('Browser and service E2E must use the same local URL.')
+    }
+    return injected
+  }
+
   const result = spawnSync(
     process.execPath,
     ['node_modules/supabase/dist/supabase.js', 'status', '-o', 'env'],

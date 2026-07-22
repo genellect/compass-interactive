@@ -213,6 +213,18 @@ export function AdminPage() {
     )
   }
 
+  function expireAdminSession() {
+    clearLocalAdminSession()
+    setAuthError('管理者認証の有効期限が切れました。再度ログインしてください。')
+  }
+
+  function handleInvalidAdminSession(error: unknown) {
+    if (!(error instanceof Error) || error.message !== 'Invalid Admin session.')
+      return false
+    expireAdminSession()
+    return true
+  }
+
   async function refreshLectures(
     token = adminToken,
     includeHistory = showLectureHistory,
@@ -232,6 +244,7 @@ export function AdminPage() {
       })
       setLectures(nextLectures)
     } catch (error) {
+      if (handleInvalidAdminSession(error)) return
       setLecturesError(
         error instanceof Error
           ? `講義一覧の取得に失敗しました: ${error.message}`
@@ -269,6 +282,7 @@ export function AdminPage() {
       applyAdminPollList(result)
       return true
     } catch (error) {
+      if (handleInvalidAdminSession(error)) return false
       setAdminPollsError(
         error instanceof Error
           ? `投票一覧の取得に失敗しました: ${error.message}`
@@ -725,15 +739,7 @@ export function AdminPage() {
           ? error.message
           : '表示画面の更新に失敗しました。'
 
-      if (message === 'Invalid Admin session.') {
-        window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
-        window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
-        setAdminToken('')
-        setIsAuthenticated(false)
-        setAuthError(
-          '管理者認証の有効期限が切れました。再度ログインしてください。',
-        )
-      }
+      handleInvalidAdminSession(error)
 
       setDisplayStateError(
         message === 'Invalid Admin session.'
@@ -776,6 +782,7 @@ export function AdminPage() {
       setNewLectureStartsAt('')
       setNewLectureEndsAt('')
     } catch (error) {
+      if (handleInvalidAdminSession(error)) return
       setLecturesError(
         error instanceof Error
           ? `講義作成に失敗しました: ${error.message}`
@@ -824,6 +831,14 @@ export function AdminPage() {
         await refreshAdminPolls(lectureSessionId, adminToken)
       }
     } catch (error) {
+      if (handleInvalidAdminSession(error)) return
+      if (
+        error instanceof Error &&
+        error.message.includes('Journal Club PDF is not active')
+      ) {
+        setLecturesError('正本資料を学生に公開してから講義を開始してください。')
+        return
+      }
       setLecturesError(
         error instanceof Error
           ? `講義状態の更新に失敗しました: ${error.message}`
@@ -1149,26 +1164,28 @@ export function AdminPage() {
         </a>
       </nav>
 
-      {isPhase727JournalClubEnabled ? (
-        <AdminJournalClubPreset
-          adminToken={adminToken}
-          isLoading={lecturesLoading}
-          lectures={lectures}
-          onLoadingChange={setLecturesLoading}
-          onPrepared={(preparedLecture, nextLectures) => {
-            setLectures(nextLectures)
-            selectAdminLecture(preparedLecture)
-            setShowLectureHistory(false)
-          }}
-          selectedRunKind={activeJournalClubRun?.runKind ?? null}
-        />
-      ) : null}
-
       <AdminLectureControl
         activeLectureSessionId={activeLectureSessionId}
         error={lecturesError}
         hiddenCommentCount={hiddenCommentCount}
         isLoading={lecturesLoading}
+        journalClubPreset={
+          isPhase727JournalClubEnabled ? (
+            <AdminJournalClubPreset
+              adminToken={adminToken}
+              isLoading={lecturesLoading}
+              lectures={lectures}
+              onLoadingChange={setLecturesLoading}
+              onPrepared={(preparedLecture, nextLectures) => {
+                setLectures(nextLectures)
+                selectAdminLecture(preparedLecture)
+                setShowLectureHistory(false)
+              }}
+              onSessionExpired={expireAdminSession}
+              selectedRunKind={activeJournalClubRun?.runKind ?? null}
+            />
+          ) : undefined
+        }
         lectures={orderedLectures}
         newEndsAt={newLectureEndsAt}
         newStartsAt={newLectureStartsAt}

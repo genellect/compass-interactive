@@ -108,7 +108,7 @@ function makeLecture(runKind: JournalClubRunKind): Lecture {
     lectureCode: runKind === 'production' ? '723001' : '723002',
     startsAt: null,
     status: 'draft',
-    title: '7.23 Journal Club',
+    title: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
     updatedAt: now,
   }
 }
@@ -186,7 +186,7 @@ function archiveResolveResponse(
       schema_version: 1,
       started_at: '2026-07-23T11:00:00.000Z',
       summaries: [],
-      title: '7.23 Journal Club',
+      title: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
     },
     archiveAccessToken: 'archive-access-token',
     archiveAccessTokenExpiresAt: '2099-07-23T12:45:00.000Z',
@@ -214,7 +214,11 @@ async function installAdminState(page: Page) {
 
 async function installNetworkMocks(
   page: Page,
-  { missingOperatorSnapshot = false } = {},
+  {
+    invalidAdminSession = false,
+    missingOperatorSnapshot = false,
+    rejectStartWithoutPdf = false,
+  } = {},
 ) {
   const state: MockState = {
     aiFunctionCalls: [],
@@ -248,6 +252,14 @@ async function installNetworkMocks(
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
     if (functionName === 'manage-lectures') {
       state.lectureRequests.push(body)
+      if (invalidAdminSession && body.action === 'list') {
+        await fulfillJson(
+          route,
+          { message: 'Invalid Admin session.', ok: false },
+          401,
+        )
+        return
+      }
       if (body.action === 'createJournalClubRun') {
         const runKind = body.runKind as JournalClubRunKind
         const created = makeLecture(runKind)
@@ -261,6 +273,14 @@ async function installNetworkMocks(
           lectures: state.lectures,
           ok: true,
         })
+        return
+      }
+      if (rejectStartWithoutPdf && body.action === 'start') {
+        await fulfillJson(
+          route,
+          { message: 'Journal Club PDF is not active', ok: false },
+          409,
+        )
         return
       }
       await fulfillJson(route, { lectures: state.lectures, ok: true })
@@ -343,15 +363,19 @@ test.describe('Phase 7.27 flag ON', () => {
     await page.goto('/admin')
     const preset = page.locator('.journal-club-preset')
     await expect(preset).toBeVisible()
-    await expect(preset).toContainText('7/23 Journal Club')
-    await expect(preset).toContainText('作成後も講義と投票は開始されません。')
+    await expect(preset).toContainText(
+      'Dual-targeting CasRx for C9orf72 ALS/FTD',
+    )
+    await expect(preset).toContainText(
+      '正本資料と6件の投票を、独立した講義として追加します。',
+    )
     await expectNoSeriousAccessibilityViolations(page)
 
     const rehearsalButton = preset.getByRole('button', {
-      name: 'リハーサルを準備',
+      name: 'リハーサルを一覧に追加',
     })
     const productionButton = preset.getByRole('button', {
-      name: '7/23 本番を準備',
+      name: '7/23 本番を一覧に追加',
     })
     await rehearsalButton.focus()
     await expect(rehearsalButton).toBeFocused()
@@ -368,7 +392,7 @@ test.describe('Phase 7.27 flag ON', () => {
 
     await rehearsalButton.click()
     await expect(preset.getByRole('status')).toContainText(
-      'リハーサルを準備しました。',
+      'リハーサルを講義一覧に追加しました。',
     )
     await expect(preset).toContainText('リハーサルを選択中')
     await expect(page.getByText('リハーサル', { exact: true })).toHaveCount(1)
@@ -388,9 +412,9 @@ test.describe('Phase 7.27 flag ON', () => {
       expect(dialog.message()).toContain('講義と投票はまだ開始されません。')
       await dialog.accept()
     })
-    await preset.getByRole('button', { name: '7/23 本番を準備' }).click()
+    await preset.getByRole('button', { name: '7/23 本番を一覧に追加' }).click()
     await expect(preset.getByRole('status')).toContainText(
-      '本番を準備しました。',
+      '本番を講義一覧に追加しました。',
     )
     await expect(preset).toContainText('本番を選択中')
     await expect(
@@ -476,10 +500,7 @@ test.describe('Phase 7.27 flag ON', () => {
         'compass-interactive-lecture-title',
         'Deleted local lecture',
       )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-status',
-        'open',
-      )
+      window.localStorage.setItem('compass-interactive-lecture-status', 'open')
     })
     await installNetworkMocks(page, { missingOperatorSnapshot: true })
     const missingSnapshotResponse = page.waitForResponse(
@@ -514,9 +535,63 @@ test.describe('Phase 7.27 flag ON', () => {
         lectureSessionId: null,
       })
     await expect(
-      page.getByRole('button', { name: 'リハーサルを準備' }),
+      page.getByRole('button', { name: 'リハーサルを一覧に追加' }),
     ).toBeEnabled()
     expect(pageErrors).toEqual([])
+  })
+
+  test('expires an invalid saved Admin session instead of leaving stale controls active', async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    await installNetworkMocks(page, { invalidAdminSession: true })
+
+    await page.goto('/admin')
+    await expect(page.getByLabel('管理PIN')).toBeVisible()
+    await expect(
+      page.getByText(
+        '管理者認証の有効期限が切れました。再度ログインしてください。',
+      ),
+    ).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          authenticated: window.sessionStorage.getItem(
+            'compass-interactive-admin-authenticated',
+          ),
+          token: window.sessionStorage.getItem(
+            'compass-interactive-admin-token',
+          ),
+        })),
+      )
+      .toEqual({ authenticated: null, token: null })
+  })
+
+  test('explains the shared PDF start guard in teacher-facing language', async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    await installNetworkMocks(page, { rejectStartWithoutPdf: true })
+
+    await page.goto('/admin')
+    await page
+      .getByRole('button', { name: 'リハーサルを一覧に追加' })
+      .click()
+    const rehearsalRow = page
+      .locator('.lecture-admin-row')
+      .filter({ hasText: 'リハーサル' })
+    await rehearsalRow
+      .getByRole('button', { name: '開始', exact: true })
+      .click()
+
+    await expect(
+      page.getByText(
+        '正本資料を学生に公開してから講義を開始してください。',
+      ),
+    ).toBeVisible()
+    await expect(rehearsalRow.locator('.status-pill.draft')).toHaveText(
+      '準備中',
+    )
   })
 
   for (const [name, policy, expectedMode] of [
@@ -585,7 +660,9 @@ test.describe('Phase 7.27 flag ON', () => {
         })
         .toContain('POST https://pdf.example/v1/archives/resolve')
       await expect(
-        page.getByRole('heading', { name: '7.23 Journal Club' }),
+        page.getByRole('heading', {
+          name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
+        }),
       ).toBeVisible()
       const retentionNote = page.locator('.archive-expiry-note')
       if (expectedMode === 'permanent') {
@@ -614,10 +691,10 @@ test.describe('Phase 7.27 flag OFF', () => {
     await page.goto('/admin')
     await expect(page.locator('.journal-club-preset')).toHaveCount(0)
     await expect(
-      page.getByRole('button', { name: 'リハーサルを準備' }),
+      page.getByRole('button', { name: 'リハーサルを一覧に追加' }),
     ).toHaveCount(0)
     await expect(
-      page.getByRole('button', { name: '7/23 本番を準備' }),
+      page.getByRole('button', { name: '7/23 本番を一覧に追加' }),
     ).toHaveCount(0)
     expect(
       state.lectureRequests.some(

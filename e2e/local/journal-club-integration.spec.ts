@@ -7,6 +7,8 @@ const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 const eventKey = 'journal-club-2026-07-23'
+const canonicalPdfSha256 =
+  '8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842'
 
 function createLocalServiceClient() {
   expect(adminPin, 'TEST_ADMIN_PIN must match the local Edge env.').not.toBe('')
@@ -68,11 +70,11 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
 
   const preset = page.locator('.journal-club-preset')
   await expect(preset).toBeVisible()
-  await expect(preset).toContainText('7/23 Journal Club')
+  await expect(preset).toContainText('Dual-targeting CasRx for C9orf72 ALS/FTD')
 
-  await preset.getByRole('button', { name: 'リハーサルを準備' }).click()
+  await preset.getByRole('button', { name: 'リハーサルを一覧に追加' }).click()
   await expect(preset.getByRole('status')).toContainText(
-    'リハーサルを準備しました。',
+    'リハーサルを講義一覧に追加しました。',
   )
   await expect(page.locator('.poll-admin-row')).toHaveCount(6)
   await expect(page.locator('.poll-admin-row .status-pill.draft')).toHaveCount(
@@ -83,8 +85,10 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
     expect(dialog.message()).toContain('講義と投票はまだ開始されません。')
     await dialog.accept()
   })
-  await preset.getByRole('button', { name: '7/23 本番を準備' }).click()
-  await expect(preset.getByRole('status')).toContainText('本番を準備しました。')
+  await preset.getByRole('button', { name: '7/23 本番を一覧に追加' }).click()
+  await expect(preset.getByRole('status')).toContainText(
+    '本番を講義一覧に追加しました。',
+  )
   await expect(
     preset.getByRole('button', { name: '本番は準備済み' }),
   ).toBeDisabled()
@@ -95,7 +99,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
 
   const rows = page
     .locator('.lecture-admin-row')
-    .filter({ hasText: '7.23 Journal Club' })
+    .filter({ hasText: 'Dual-targeting CasRx for C9orf72 ALS/FTD' })
   await expect(rows).toHaveCount(2)
   const visibleCodes = await rows.locator('code').allTextContents()
   expect(visibleCodes).toHaveLength(2)
@@ -181,5 +185,90 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
           ['generate', 'generateAuto'].includes(action)),
     ),
   ).toEqual([])
+
+  const rehearsal = runs.find((run) => run.run_kind === 'rehearsal')
+  const production = runs.find((run) => run.run_kind === 'production')
+  expect(rehearsal).toBeDefined()
+  expect(production).toBeDefined()
+
+  const rehearsalRow = rows.filter({ hasText: 'リハーサル' })
+  const productionRow = rows.filter({ hasText: '本番' })
+  await expect(rehearsalRow).toHaveCount(1)
+  await expect(productionRow).toHaveCount(1)
+
+  for (const [run, textSha256] of [
+    [rehearsal, 'a'.repeat(64)],
+    [production, 'b'.repeat(64)],
+  ] as const) {
+    const registration = await service.rpc('admin_register_pdf_document', {
+      target_byte_size: 5_816_208,
+      target_display_name: '260723 JournalClub Presentation.pdf',
+      target_document_id: 'journal-club-2026-07-23-v1',
+      target_document_version: canonicalPdfSha256,
+      target_download_enabled: true,
+      target_lecture_session_id: run!.lecture_session_id,
+      target_manifest_version: 1,
+      target_page_count: 34,
+      target_pdf_sha256: canonicalPdfSha256,
+      target_text_char_count: 10_000,
+      target_text_sha256: textSha256,
+    })
+    expect(registration.error).toBeNull()
+  }
+
+  await rehearsalRow.getByRole('button', { name: '開始', exact: true }).click()
+  await expect(rehearsalRow).toContainText('受付中')
+  const rehearsalLifecycle = await service
+    .from('lecture_sessions')
+    .select('started_at,hard_stop_at,status')
+    .eq('id', rehearsal!.lecture_session_id)
+    .single()
+  expect(rehearsalLifecycle.error).toBeNull()
+  expect(rehearsalLifecycle.data?.status).toBe('open')
+  expect(
+    Date.parse(rehearsalLifecycle.data!.hard_stop_at!) -
+      Date.parse(rehearsalLifecycle.data!.started_at!),
+  ).toBe(90 * 60 * 1_000)
+  await expect(page.locator('.poll-admin-row .status-pill.draft')).toHaveCount(
+    6,
+  )
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await rehearsalRow.getByRole('button', { name: '終了', exact: true }).click()
+  await expect(rehearsalRow.locator('.status-pill.closed')).toHaveText('締切')
+  const closedRehearsal = await service
+    .from('lecture_sessions')
+    .select('closed_at,status')
+    .eq('id', rehearsal!.lecture_session_id)
+    .single()
+  expect(closedRehearsal.error).toBeNull()
+  expect(closedRehearsal.data?.status).toBe('closed')
+  expect(closedRehearsal.data?.closed_at).not.toBeNull()
+
+  await productionRow.getByRole('button', { name: '開始', exact: true }).click()
+  await expect(productionRow).toContainText('受付中')
+  const productionLifecycle = await service
+    .from('lecture_sessions')
+    .select('started_at,hard_stop_at,status')
+    .eq('id', production!.lecture_session_id)
+    .single()
+  expect(productionLifecycle.error).toBeNull()
+  expect(productionLifecycle.data?.status).toBe('open')
+  expect(
+    Date.parse(productionLifecycle.data!.hard_stop_at!) -
+      Date.parse(productionLifecycle.data!.started_at!),
+  ).toBe(90 * 60 * 1_000)
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await productionRow.getByRole('button', { name: '終了', exact: true }).click()
+  await expect(productionRow.locator('.status-pill.closed')).toHaveText('締切')
+  const closedProduction = await service
+    .from('lecture_sessions')
+    .select('closed_at,status')
+    .eq('id', production!.lecture_session_id)
+    .single()
+  expect(closedProduction.error).toBeNull()
+  expect(closedProduction.data?.status).toBe('closed')
+  expect(closedProduction.data?.closed_at).not.toBeNull()
   await safety.assertClean()
 })

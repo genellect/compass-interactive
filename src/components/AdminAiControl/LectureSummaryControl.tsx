@@ -214,7 +214,10 @@ export function LectureSummaryControl({
             ) {
               academicRetryTimerRef.current = window.setTimeout(
                 () => void dispatchAutomaticAcademicAnswers(token, attempt),
-                Math.min(Math.max(pendingLease.retryAfterMs + 500, 1_000), 60_000),
+                Math.min(
+                  Math.max(pendingLease.retryAfterMs + 500, 1_000),
+                  60_000,
+                ),
               )
             }
             return
@@ -614,15 +617,11 @@ export function LectureSummaryControl({
         </span>
       </div>
 
-      <p className="note">
-        講義発話・現在のPDF文脈・直近コメントを1回の低コスト呼び出しで整理します。情報量不足時はAPIを呼びません。
-      </p>
       {isPhase71ClassroomExtensionsEnabled ? (
         <div className="summary-language-control">
           <label className="field compact-field">
             <span>要約言語</span>
             <select
-              aria-describedby="summary-language-help"
               disabled={busy || lectureStatus === 'closed'}
               onChange={(event) =>
                 void updateSummaryLanguage(
@@ -635,10 +634,8 @@ export function LectureSummaryControl({
               <option value="ja">日本語</option>
               <option value="en">English</option>
             </select>
+            <small>次の5分枠から反映</small>
           </label>
-          <p className="note" id="summary-language-help">
-            自動判定は直近の教員字幕を優先し、情報が少ない場合のみ講義資料を参照します。変更は次の5分枠から反映され、API呼び出し回数は増えません。
-          </p>
         </div>
       ) : null}
       {isPhase725AutoAcademicAnswersEnabled ? (
@@ -665,13 +662,17 @@ export function LectureSummaryControl({
                 value={academicSourcePolicy}
               >
                 <option value="auto">自動</option>
-                <option value="biomedical_pubmed">医学・生命科学（PubMed）</option>
-                <option value="multidisciplinary_doi">その他の分野（DOI論文）</option>
+                <option value="biomedical_pubmed">
+                  医学・生命科学（PubMed）
+                </option>
+                <option value="multidisciplinary_doi">
+                  その他の分野（DOI論文）
+                </option>
               </select>
             </label>
           ) : null}
           <p className="note">
-            教育価値の高い質問と確認できる一次文献がある場合だけ生成し、「教員未確認」で学生へ表示します。
+            条件を満たす回答だけ「教員未確認」で表示します。
           </p>
         </div>
       ) : null}

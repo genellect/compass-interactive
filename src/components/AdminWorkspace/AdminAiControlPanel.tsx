@@ -74,9 +74,6 @@ export function AdminAiControlPanel({
           {anyEnabled ? '利用可能' : '停止中'}
         </span>
       </div>
-      <p className="panel-description">
-        字幕、直近5分のハイライト、講義資料の要点が、学生の理解を途切れさせずに支えます。
-      </p>
       {realtimeEnabled && adminToken && activeLectureSessionId ? (
         <RealtimeCaptionControl
           adminToken={adminToken}
@@ -86,11 +83,7 @@ export function AdminAiControlPanel({
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
         />
-      ) : (
-        <p className="note">
-          リアルタイム字幕は現在停止しています。利用設定が完了すると、ここから開始できます。
-        </p>
-      )}
+      ) : null}
       {summariesEnabled && adminToken && activeLectureSessionId ? (
         <LectureSummaryControl
           adminToken={adminToken}
@@ -104,11 +97,7 @@ export function AdminAiControlPanel({
           publisherSessionToken={publisherSessionToken}
           startedAt={activeLecture?.startsAt ?? null}
         />
-      ) : (
-        <p className="note">
-          5分ハイライトは現在停止しています。利用時は開始にAPI利用PINが必要です。
-        </p>
-      )}
+      ) : null}
       {academicEnabled && adminToken && activeLectureSessionId ? (
         <Suspense fallback={<p className="note">参考回答を準備しています…</p>}>
           <AcademicAnswerControl
@@ -128,65 +117,12 @@ export function AdminAiControlPanel({
           onPollDraftCreated={onPollDraftCreated}
           publisherSessionToken={publisherSessionToken}
         />
-      ) : (
-        <p className="note">
-          資料分析と投票案の提案は現在停止しています。PDFを公開するだけではAPI利用は発生しません。
-        </p>
-      )}
-      <div className="api-readiness-grid">
-        <article>
-          <span className="support-icon">
-            <AppIcon name="message" size={18} />
-          </span>
-          <div>
-            <strong>リアルタイム字幕</strong>
-            <small>{realtimeEnabled ? '開始待ち' : '停止中'}</small>
-          </div>
-          <span
-            className={`readiness-dot ${realtimeEnabled ? 'is-active' : ''}`}
-          />
-        </article>
-        <article>
-          <span className="support-icon violet">
-            <AppIcon name="sparkles" size={18} />
-          </span>
-          <div>
-            <strong>5分ハイライト</strong>
-            <small>
-              {summariesEnabled ? '話の要点とみんなの反応' : '停止中'}
-            </small>
-          </div>
-          <span
-            className={`readiness-dot ${summariesEnabled ? 'is-active' : ''}`}
-          />
-        </article>
-        <article>
-          <span className="support-icon violet">
-            <AppIcon name="book" size={18} />
-          </span>
-          <div>
-            <strong>講義資料の要点</strong>
-            <small>
-              {materialEnabled ? 'ページと一緒に整理して表示' : '停止中'}
-            </small>
-          </div>
-          <span
-            className={`readiness-dot ${materialEnabled ? 'is-active' : ''}`}
-          />
-        </article>
-        <article>
-          <span className="support-icon violet">
-            <AppIcon name="book" size={18} />
-          </span>
-          <div>
-            <strong>AIによる参考回答</strong>
-            <small>{academicEnabled ? '教員確認と修正に対応' : '停止中'}</small>
-          </div>
-          <span
-            className={`readiness-dot ${academicEnabled ? 'is-active' : ''}`}
-          />
-        </article>
-      </div>
+      ) : null}
+      {!activeLectureSessionId ? (
+        <p className="note">講義を選択すると操作できます。</p>
+      ) : !anyEnabled ? (
+        <p className="note">AI機能は停止中です。</p>
+      ) : null}
     </section>
   )
 }

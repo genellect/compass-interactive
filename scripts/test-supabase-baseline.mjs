@@ -48,6 +48,8 @@ const phase726LocalPublisherFenceMigrationName =
   '20260721200000_phase7_26_local_publisher_manifest_fence.sql'
 const phase727JournalClubIntegrationMigrationName =
   '20260721210000_phase7_27_journal_club_integration.sql'
+const phase727AdminStartParityMigrationName =
+  '20260722012313_phase7_27_admin_start_parity_and_title.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -83,6 +85,7 @@ assert.deepEqual(
     phase726TerminalCleanupMigrationName,
     phase726LocalPublisherFenceMigrationName,
     phase727JournalClubIntegrationMigrationName,
+    phase727AdminStartParityMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

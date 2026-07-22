@@ -124,7 +124,7 @@ export function MaterialAnalysisControl({
         setSummaryDraft(
           response.results.analysis
             ? (response.results.publication?.body ??
-              createDefaultSummaryBody(response.results.analysis))
+                createDefaultSummaryBody(response.results.analysis))
             : null,
         )
       })
@@ -203,7 +203,7 @@ export function MaterialAnalysisControl({
       setSummaryDraft(
         nextResults.analysis
           ? (nextResults.publication?.body ??
-            createDefaultSummaryBody(nextResults.analysis))
+              createDefaultSummaryBody(nextResults.analysis))
           : null,
       )
       setMessage(
@@ -238,7 +238,9 @@ export function MaterialAnalysisControl({
       .map((option) => option.trim())
       .filter(Boolean)
     if (draftQuestion.trim().length < 10 || optionLabels.length < 2) {
-      setMessage('投票の下書きには10文字以上の質問と2個以上の選択肢が必要です。')
+      setMessage(
+        '投票の下書きには10文字以上の質問と2個以上の選択肢が必要です。',
+      )
       return
     }
     setBusy(true)
@@ -292,9 +294,7 @@ export function MaterialAnalysisControl({
     }
   }
 
-  async function setMaterialSummaryVisibility(
-    visibility: 'hidden' | 'public',
-  ) {
+  async function setMaterialSummaryVisibility(visibility: 'hidden' | 'public') {
     if (!results.analysis || !summaryDraft) return
     const normalized: AdminMaterialSummaryBody = {
       lead: summaryDraft.lead.trim(),
@@ -363,14 +363,9 @@ export function MaterialAnalysisControl({
       <div className="material-analysis-heading">
         <div>
           <strong>資料分析とAI投票候補</strong>
-          <small>教員が明示的に実行したときだけ課金されます</small>
+          <small>初回 最大約$0.09</small>
         </div>
-        <span>教員画面のみ・自動実行なし</span>
       </div>
-
-      <p className="privacy-notice">
-        PDFを公開しただけではAI分析は始まりません。教員が明示的に実行した場合だけ処理します。初回の予約上限は概算$0.09、追加候補は概算$0.08です。
-      </p>
 
       <div className="material-analysis-actions">
         <label className="field compact-field">
@@ -451,7 +446,9 @@ export function MaterialAnalysisControl({
               </dl>
             </article>
           </div>
-          <small>重要ページ: {results.analysis.importantPages.join(', ')}</small>
+          <small>
+            重要ページ: {results.analysis.importantPages.join(', ')}
+          </small>
         </div>
       ) : null}
 

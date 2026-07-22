@@ -15,6 +15,11 @@ const migrationName = readdirSync(
 assert.ok(migrationName, 'Phase 7.27 migration must exist')
 
 const migration = read('supabase', 'migrations', migrationName)
+const parityMigrationName = readdirSync(
+  new URL('supabase/migrations/', rootUrl),
+).find((name) => name.endsWith('_phase7_27_admin_start_parity_and_title.sql'))
+assert.ok(parityMigrationName, 'Phase 7.27 parity migration must exist')
+const parityMigration = read('supabase', 'migrations', parityMigrationName)
 const envExample = read('.env.local.example')
 const featureFlags = read('src', 'lib', 'featureFlags.ts')
 const manageLectures = read(
@@ -175,6 +180,15 @@ assert.match(
 )
 assert.match(preset, /prepare\('rehearsal'\)/)
 assert.match(preset, /prepare\('production'\)/)
-assert.match(preset, /作成後も講義と投票は開始されません/)
+assert.match(preset, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
+assert.match(preset, /資料公開後、一覧の「開始」を押してください/)
+assert.match(adminPage, /journalClubPreset=/)
+assert.match(parityMigration, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
+assert.match(parityMigration, /if not exists \([\s\S]*lecture_pdf_documents/)
+assert.doesNotMatch(
+  parityMigration,
+  /target_run\.run_kind\s*=\s*'production'[\s\S]*lecture_pdf_documents/,
+)
+assert.match(parityMigration, /revoke all on function[\s\S]*service_role/)
 
 console.log('Phase 7.27 static contract checks passed.')

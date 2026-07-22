@@ -56,7 +56,8 @@ function runSql(sql) {
     child.on('error', reject)
     child.on('exit', (exitCode) => {
       if (exitCode === 0) resolve(stdout)
-      else reject(new Error(stderr.trim() || `psql exited with code ${exitCode}`))
+      else
+        reject(new Error(stderr.trim() || `psql exited with code ${exitCode}`))
     })
   })
 }
@@ -110,6 +111,10 @@ async function cleanup() {
       select lecture_session_id from public.phase727_race_results
     );
     delete from public.lecture_ai_control
+    where lecture_session_id in (
+      select lecture_session_id from public.phase727_race_results
+    );
+    delete from public.lecture_pdf_documents
     where lecture_session_id in (
       select lecture_session_id from public.phase727_race_results
     );
@@ -229,7 +234,9 @@ try {
       }),
     ),
   ])
-  if (productionRace.filter((result) => result.status === 'rejected').length !== 1) {
+  if (
+    productionRace.filter((result) => result.status === 'rejected').length !== 1
+  ) {
     throw new Error('production race did not reject exactly one contender')
   }
 
@@ -296,6 +303,27 @@ try {
     $$;
   `)
 
+  await runSql(`
+    select public.admin_register_pdf_document(
+      result.lecture_session_id,
+      'journal-club-2026-07-23-v1',
+      '8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842',
+      1,
+      '260723 JournalClub Presentation.pdf',
+      34,
+      5816208,
+      10000,
+      '8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842',
+      case result.label
+        when 'rehearsal-a' then repeat('a', 64)
+        else repeat('b', 64)
+      end,
+      true
+    )
+    from public.phase727_race_results as result
+    where result.label in ('rehearsal-a', 'rehearsal-b');
+  `)
+
   const openRace = await Promise.allSettled([
     runSql(`
       select public.admin_set_lecture_status(
@@ -315,7 +343,9 @@ try {
     `),
   ])
   if (openRace.filter((result) => result.status === 'rejected').length !== 1) {
-    throw new Error('parallel rehearsal start did not reject exactly one contender')
+    throw new Error(
+      'parallel rehearsal start did not reject exactly one contender',
+    )
   }
 
   await runSql(`

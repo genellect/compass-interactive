@@ -10,6 +10,7 @@ type AdminJournalClubPresetProps = {
   lectures: AdminLecture[]
   onLoadingChange: (isLoading: boolean) => void
   onPrepared: (lecture: AdminLecture, lectures: AdminLecture[]) => void
+  onSessionExpired: () => void
   selectedRunKind: 'production' | 'rehearsal' | null
 }
 
@@ -19,6 +20,7 @@ export function AdminJournalClubPreset({
   lectures,
   onLoadingChange,
   onPrepared,
+  onSessionExpired,
   selectedRunKind,
 }: AdminJournalClubPresetProps) {
   const [message, setMessage] = useState('')
@@ -71,9 +73,16 @@ export function AdminJournalClubPreset({
         return next
       })
       setMessage(
-        `${runKind === 'production' ? '本番' : 'リハーサル'}を準備しました。修正版PDFを選択して公開し、開始する投票を確認してください。`,
+        `${runKind === 'production' ? '本番' : 'リハーサル'}を講義一覧に追加しました。資料公開後、一覧の「開始」を押してください。`,
       )
     } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'Invalid Admin session.'
+      ) {
+        onSessionExpired()
+        return
+      }
       setMessage(
         error instanceof Error
           ? `準備を完了できませんでした: ${error.message}`
@@ -86,13 +95,15 @@ export function AdminJournalClubPreset({
 
   return (
     <section
-      className="panel journal-club-preset"
+      className="journal-club-preset"
       aria-labelledby="journal-club-preset-title"
     >
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">JOURNAL CLUB PRESET</p>
-          <h2 id="journal-club-preset-title">7/23 Journal Club</h2>
+          <p className="eyebrow">7/23 JOURNAL CLUB</p>
+          <h3 id="journal-club-preset-title">
+            Dual-targeting CasRx for C9orf72 ALS/FTD
+          </h3>
         </div>
         {selectedRunKind ? (
           <span className={`journal-club-run-badge ${selectedRunKind}`}>
@@ -101,7 +112,7 @@ export function AdminJournalClubPreset({
         ) : null}
       </div>
       <p className="note">
-        修正版資料と6件の投票を同じ構成で準備します。作成後も講義と投票は開始されません。
+        正本資料と6件の投票を、独立した講義として追加します。
       </p>
       <div className="button-row journal-club-preset-actions">
         <button
@@ -110,7 +121,7 @@ export function AdminJournalClubPreset({
           onClick={() => void prepare('rehearsal')}
           type="button"
         >
-          リハーサルを準備
+          リハーサルを一覧に追加
         </button>
         <button
           className="primary-button compact"
@@ -118,7 +129,7 @@ export function AdminJournalClubPreset({
           onClick={() => void prepare('production')}
           type="button"
         >
-          {productionPrepared ? '本番は準備済み' : '7/23 本番を準備'}
+          {productionPrepared ? '本番は準備済み' : '7/23 本番を一覧に追加'}
         </button>
       </div>
       {message ? (

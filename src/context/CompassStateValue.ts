@@ -29,8 +29,7 @@ export type JoinResult =
 export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
 
 export type OperatorLiveAccess =
-  | { kind: 'admin'; token: string }
-  | { kind: 'display'; token: string }
+  { kind: 'admin'; token: string } | { kind: 'display'; token: string }
 
 export type CompassStateValue = {
   academicAnswers: PublicAcademicAnswer[]
@@ -74,6 +73,7 @@ export type CompassStateValue = {
   resumeSessionSync: () => Promise<void>
   resetDemoLecture: () => void
   retryArchiveResume: () => void
+  clearSelectedLectureSession: () => void
   leaveLecture: () => void
   setOperatorLiveAccess: (access: OperatorLiveAccess | null) => void
   selectLectureSession: (lecture: JoinedLectureSession) => void

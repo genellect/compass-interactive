@@ -101,7 +101,11 @@
 }
 
 .journal-club-preset {
+  border: 1px solid;
   border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 1rem;
+  margin: 18px 0;
+  padding: 16px;
 }
 
 .journal-club-preset-actions {

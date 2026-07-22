@@ -3,6 +3,21 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-22 - Phase 7.27 final Admin integration
+
+- Set the production and rehearsal title to
+  `Dual-targeting CasRx for C9orf72 ALS/FTD` and moved both prepared runs into
+  the conventional Admin lecture list and its existing start action.
+- Applied the same exact-PDF start guard and 90-minute lifecycle to both run
+  kinds. Only production uniqueness and permanent retention differ.
+- Compressed teacher-facing AI guidance to the action, state and high-value
+  cost/safety facts needed during a lecture.
+- Added stale lecture/session convergence and dedicated real Edge/Postgres E2E
+  for rehearsal and production parity. Phase 7.27 now has 56 assertions and the
+  full database suite has 1,171 passing assertions across 24 files.
+- Pinned `sharp` 0.35.3 for the Worker toolchain; the high-severity dependency
+  audit reports zero vulnerabilities.
+
 ## 2026-07-21 - Phase 7.27 Journal Club operational preset
 
 - Added a default-OFF, thin `7.23 Journal Club` preparation preset over the

@@ -1,4 +1,4 @@
-import type { FormEventHandler } from 'react'
+import type { FormEventHandler, ReactNode } from 'react'
 import type { AdminLecture } from '../../repositories/supabaseAdminRepository'
 import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
 import { LectureJoinQr } from '../LectureJoinQr'
@@ -25,6 +25,7 @@ type AdminLectureControlProps = {
   error: string | null
   hiddenCommentCount: number
   isLoading: boolean
+  journalClubPreset?: ReactNode
   lectures: AdminLecture[]
   newEndsAt: string
   newStartsAt: string
@@ -53,6 +54,7 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
     error,
     hiddenCommentCount,
     isLoading,
+    journalClubPreset,
     lectures,
     newEndsAt,
     newStartsAt,
@@ -132,6 +134,7 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
             新しい講義を作成
           </button>
         </form>
+        {journalClubPreset}
         {error ? <p className="error-note">{error}</p> : null}
         {isLoading ? <p className="note">講義情報を更新しています。</p> : null}
         <div className="table-like lecture-table">
@@ -204,7 +207,7 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
                     >
                       終了
                     </button>
-                    {lecture.status === 'closed' ? (
+                    {lecture.status === 'closed' && !lecture.journalClub ? (
                       <button
                         className="secondary-button"
                         disabled={isLoading}

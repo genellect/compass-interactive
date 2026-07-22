@@ -1109,7 +1109,7 @@ test('phase 7.27 archive claim flows through sanitizer, ingest, same-code resolv
     lecture_public_id: value.lecture,
     resume_token_version: 1,
     summaries: archiveSummaries(18),
-    title: '7.23 Journal Club',
+    title: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
   })
   const finalized: Array<{
     error: string | null
@@ -1193,7 +1193,10 @@ test('phase 7.27 archive claim flows through sanitizer, ingest, same-code resolv
     archiveAccessTokenExpiresAt: string
     lookupHash: string
   }
-  assert.equal(archiveSession.archive.title, '7.23 Journal Club')
+  assert.equal(
+    archiveSession.archive.title,
+    'Dual-targeting CasRx for C9orf72 ALS/FTD',
+  )
   assert.equal(archiveSession.archive.comments.length, 1)
   assert.equal(archiveSession.archive.summaries.length, 18)
   assert.deepEqual(

@@ -223,7 +223,7 @@ SELECT is(
   (SELECT lecture.title
    FROM public.lecture_sessions AS lecture, phase727_fixture AS fixture
    WHERE lecture.id = fixture.production_id),
-  '7.23 Journal Club',
+  'Dual-targeting CasRx for C9orf72 ALS/FTD',
   'preset assigns the fixed user-visible Journal Club title'
 );
 
@@ -419,7 +419,7 @@ SELECT throws_ok(
     )
   $$,
   '55000',
-  'production Journal Club PDF is not active',
+  'Journal Club PDF is not active',
   'production cannot start before the exact canonical PDF is active'
 );
 
@@ -531,6 +531,39 @@ SELECT is(
   (SELECT publication_result ->> 'state' FROM phase727_fixture),
   'pending',
   'the exact PDF descriptor may enter the existing browser publication saga'
+);
+
+SELECT throws_ok(
+  $$
+    SELECT public.admin_set_lecture_status(
+      rehearsal_two_id,
+      'start',
+      null
+    )
+    FROM phase727_fixture
+  $$,
+  '55000',
+  'Journal Club PDF is not active',
+  'rehearsal uses the same active canonical PDF start guard as production'
+);
+SELECT lives_ok(
+  $$
+    SELECT public.admin_register_pdf_document(
+      rehearsal_two_id,
+      'journal-club-2026-07-23-v1',
+      '8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842',
+      1,
+      '260723 JournalClub Presentation.pdf',
+      34,
+      5816208,
+      10000,
+      '8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842',
+      repeat('c', 64),
+      true
+    )
+    FROM phase727_fixture
+  $$,
+  'the second rehearsal can activate the same canonical PDF independently'
 );
 
 SELECT ok(

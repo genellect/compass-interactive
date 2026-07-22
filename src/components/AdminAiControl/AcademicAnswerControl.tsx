@@ -30,7 +30,9 @@ function academicSourceHref(answer: AdminAcademicAnswer, sourceId: string) {
 }
 
 function referenceLabel(answer: AdminAcademicAnswer, sourceId: string) {
-  const index = answer.sources.findIndex((source) => source.sourceId === sourceId)
+  const index = answer.sources.findIndex(
+    (source) => source.sourceId === sourceId,
+  )
   return index >= 0 ? `[${index + 1}]` : '[?]'
 }
 
@@ -290,7 +292,9 @@ export function AcademicAnswerControl({
           <strong>AIによる参考回答</strong>
           <small>最大3回／講義・自動回答は「教員未確認」で公開</small>
         </div>
-        <span>{callsUsed} / {callLimit} 回</span>
+        <span>
+          {callsUsed} / {callLimit} 回
+        </span>
       </div>
 
       <div className="academic-answer-form">
@@ -368,7 +372,9 @@ export function AcademicAnswerControl({
           >
             <option value="auto">自動</option>
             <option value="biomedical_pubmed">医学・生命科学（PubMed）</option>
-            <option value="multidisciplinary_doi">その他の分野（DOI論文）</option>
+            <option value="multidisciplinary_doi">
+              その他の分野（DOI論文）
+            </option>
           </select>
         </label>
         <label className="field">
@@ -391,10 +397,12 @@ export function AcademicAnswerControl({
           {busy ? '処理中…' : '一次文献を確認して下書きを作る'}
         </button>
       </div>
-      <p className="note">
-        1回あたり最大約$0.04。文献が不足する場合はAIを呼び出さず、費用も発生しません。
-      </p>
-      {message ? <p aria-live="polite" className="note">{message}</p> : null}
+      <p className="note">1回 最大約$0.04</p>
+      {message ? (
+        <p aria-live="polite" className="note">
+          {message}
+        </p>
+      ) : null}
 
       {results.activeRequests.map((request) => (
         <div className="academic-active-request" key={request.id} role="status">
@@ -440,9 +448,9 @@ export function AcademicAnswerControl({
                 <li key={`${answer.id}-point-${index}`}>
                   {point.text}{' '}
                   <small>
-                    {point.sourceIds.map((sourceId) =>
-                      referenceLabel(answer, sourceId),
-                    ).join(' ')}
+                    {point.sourceIds
+                      .map((sourceId) => referenceLabel(answer, sourceId))
+                      .join(' ')}
                   </small>
                 </li>
               ))}
@@ -450,7 +458,10 @@ export function AcademicAnswerControl({
             {editingAnswerId === answer.id ? (
               <div className="academic-answer-revision-form">
                 {revisionPoints.map((point, index) => (
-                  <label className="field" key={`${answer.id}-revision-${index}`}>
+                  <label
+                    className="field"
+                    key={`${answer.id}-revision-${index}`}
+                  >
                     <span>回答 {index + 1}</span>
                     <textarea
                       maxLength={500}
@@ -468,9 +479,7 @@ export function AcademicAnswerControl({
               </div>
             ) : null}
             {answer.body.limitations.length > 0 ? (
-              <p className="note">
-                限界: {answer.body.limitations.join('／')}
-              </p>
+              <p className="note">限界: {answer.body.limitations.join('／')}</p>
             ) : null}
             <details>
               <summary>根拠文献を確認</summary>
@@ -479,7 +488,10 @@ export function AcademicAnswerControl({
                   <li key={source.sourceId}>
                     {academicSourceHref(answer, source.sourceId) ? (
                       <a
-                        href={academicSourceHref(answer, source.sourceId) ?? undefined}
+                        href={
+                          academicSourceHref(answer, source.sourceId) ??
+                          undefined
+                        }
                         rel="noreferrer"
                         target="_blank"
                       >
@@ -522,14 +534,14 @@ export function AcademicAnswerControl({
                   </button>
                 </>
               ) : (
-              <button
-                className="primary-button"
-                disabled={disabled || answer.status === 'rejected'}
-                onClick={() => void reviewAnswer('approve', answer.id)}
-                type="button"
-              >
-                承認する
-              </button>
+                <button
+                  className="primary-button"
+                  disabled={disabled || answer.status === 'rejected'}
+                  onClick={() => void reviewAnswer('approve', answer.id)}
+                  type="button"
+                >
+                  承認する
+                </button>
               )}
               {editingAnswerId !== answer.id && answer.status !== 'rejected' ? (
                 <button
