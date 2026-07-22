@@ -331,9 +331,15 @@ async function callCoordinator(
       'X-Compass-Pdf-Publication-Secret': secret,
     },
     method: 'POST',
-    redirect: 'error',
+    redirect: 'manual',
     signal: AbortSignal.timeout(5_000),
   })
+  if (response.status >= 300 && response.status < 400) {
+    throw Object.assign(
+      new Error('Publication coordinator redirect was rejected.'),
+      { status: 502 },
+    )
+  }
   let result: CoordinatorResponse = {}
   try {
     const contentLength = response.headers.get('Content-Length')
@@ -456,13 +462,13 @@ function parseCleanupJobs(value: unknown, limit: number): CleanupJob[] {
           activatedManifestEtag.length <= 512 &&
           !containsControlCharacters(activatedManifestEtag))
       ) ||
-      ((committedManifestVersion === null) !==
-        (previousAccessVersion === null)) ||
-      ((committedManifestVersion === null) !==
-        (committedManifestEtag === null)) ||
-      ((activatedManifestVersion === null) !==
-        (activatedManifestEtag === null)) ||
-      ((activationOperationId === null) !== (targetAccessVersion === null)) ||
+      (committedManifestVersion === null) !==
+        (previousAccessVersion === null) ||
+      (committedManifestVersion === null) !==
+        (committedManifestEtag === null) ||
+      (activatedManifestVersion === null) !==
+        (activatedManifestEtag === null) ||
+      (activationOperationId === null) !== (targetAccessVersion === null) ||
       (targetAccessVersion !== null &&
         (previousAccessVersion === null ||
           Number(targetAccessVersion) !== Number(previousAccessVersion) + 1))
@@ -1125,16 +1131,11 @@ async function markCleanupLedgerComplete(
   return current
 }
 
-function terminalRollbackVersions(
-  ledger: PublicationLedger,
-  job: CleanupJob,
-) {
+function terminalRollbackVersions(ledger: PublicationLedger, job: CleanupJob) {
   const operationStatus = cleanupLedgerOperationStatus(ledger)
   if (
     !['aborted', 'expired'].includes(job.state) ||
-    !['active', 'activating', 'committed'].includes(
-      String(operationStatus),
-    ) ||
+    !['active', 'activating', 'committed'].includes(String(operationStatus)) ||
     job.activationOperationId === null ||
     job.committedManifestEtag === null ||
     job.committedManifestVersion === null ||
@@ -1281,11 +1282,7 @@ async function rollbackTerminalActivation(
   }
 
   if (
-    isTerminalRollbackManifest(
-      loadedManifest.manifest,
-      job,
-      previousVersions,
-    )
+    isTerminalRollbackManifest(loadedManifest.manifest, job, previousVersions)
   ) {
     return markTerminalLedgerRolledBack(
       env,
@@ -1608,9 +1605,7 @@ async function activatePublication(
   }
   assertLedgerBinding(loadedLedger.ledger, claims)
   if (
-    !['active', 'activating', 'committed'].includes(
-      loadedLedger.ledger.status,
-    )
+    !['active', 'activating', 'committed'].includes(loadedLedger.ledger.status)
   ) {
     throw Object.assign(new Error('Publication is not committed.'), {
       status: 409,
@@ -1750,9 +1745,7 @@ async function activatePublication(
     manifest_version: loadedManifest.manifest.manifest_version + 1,
     updated_at: now.toISOString(),
   })
-  await assertManifestMutationLedgerFence(env, activationFence, [
-    'activating',
-  ])
+  await assertManifestMutationLedgerFence(env, activationFence, ['activating'])
   const activatedManifest = await env.PDF_BUCKET.put(
     manifestKey(claims.lec),
     encodeManifest(nextManifest),
@@ -1804,9 +1797,7 @@ async function rollbackPublication(
   assertLedgerBinding(loadedLedger.ledger, claims)
   if (loadedLedger.ledger.status === 'rolled_back') return loadedLedger.ledger
   if (
-    !['active', 'activating', 'committed'].includes(
-      loadedLedger.ledger.status,
-    )
+    !['active', 'activating', 'committed'].includes(loadedLedger.ledger.status)
   ) {
     throw Object.assign(new Error('Only a staged publication can roll back.'), {
       status: 409,

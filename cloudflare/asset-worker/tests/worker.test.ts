@@ -4746,7 +4746,7 @@ test('publication coordinator permits only exact Supabase or loopback endpoints 
       25,
       (async (input: RequestInfo | URL, init?: RequestInit) => {
         assert.equal(String(input), new URL(coordinatorUrl).toString())
-        assert.equal(init?.redirect, 'error')
+        assert.equal(init?.redirect, 'manual')
         assert.ok(init?.signal instanceof AbortSignal)
         assert.equal(init.signal.aborted, false)
         return Response.json({ data: [], ok: true })
