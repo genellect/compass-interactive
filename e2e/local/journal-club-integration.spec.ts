@@ -6,11 +6,9 @@ import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
-const adminSessionSecret =
-  process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
+const adminSessionSecret = process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
-const publishableKey =
-  process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
+const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 const eventKey = 'journal-club-2026-07-23'
 const canonicalPdfSha256 =
@@ -76,28 +74,31 @@ async function installLocalPdfDeliveryMock(
   const lecturePublicId = 'lecture_local_journal_club'
 
   if (options.mockAccessToken !== false) {
-    await page.route('**/functions/v1/issue-pdf-access-token', async (route) => {
-      if (route.request().method() === 'OPTIONS') {
-        await route.fulfill({ headers: corsHeaders, status: 204 })
-        return
-      }
-      options.onIssueAccess?.(
-        (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
-      )
-      await route.fulfill({
-        body: JSON.stringify({
-          accessToken: 'local-journal-club-pdf-token',
-          expiresAt,
-          lecturePublicId,
-          manifestVersion: 1,
-          ok: true,
-          workerBaseUrl: 'http://127.0.0.1:8787',
-        }),
-        contentType: 'application/json',
-        headers: corsHeaders,
-        status: 200,
-      })
-    })
+    await page.route(
+      '**/functions/v1/issue-pdf-access-token',
+      async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+          await route.fulfill({ headers: corsHeaders, status: 204 })
+          return
+        }
+        options.onIssueAccess?.(
+          (route.request().postDataJSON() ?? {}) as Record<string, unknown>,
+        )
+        await route.fulfill({
+          body: JSON.stringify({
+            accessToken: 'local-journal-club-pdf-token',
+            expiresAt,
+            lecturePublicId,
+            manifestVersion: 1,
+            ok: true,
+            workerBaseUrl: 'http://127.0.0.1:8787',
+          }),
+          contentType: 'application/json',
+          headers: corsHeaders,
+          status: 200,
+        })
+      },
+    )
   }
 
   await page.route(
@@ -186,10 +187,9 @@ function createLocalServiceClient() {
     adminSessionSecret,
     'TEST_ADMIN_SESSION_SECRET must match the local Edge env.',
   ).not.toBe('')
-  expect(
-    publishableKey,
-    'VITE_SUPABASE_PUBLISHABLE_KEY is required.',
-  ).not.toBe('')
+  expect(publishableKey, 'VITE_SUPABASE_PUBLISHABLE_KEY is required.').not.toBe(
+    '',
+  )
 
   const parsedUrl = new URL(supabaseUrl)
   expect(
@@ -518,8 +518,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       apikey: publishableKey,
       Authorization: `Bearer ${serviceRoleKey}`,
       'Content-Type': 'application/json',
-      Origin:
-        process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
+      Origin: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
     }
     const pdfAccessEndpoint = `${supabaseUrl}/functions/v1/issue-pdf-access-token`
     const dualCredentialResponse = await displayContext.request.post(
@@ -585,11 +584,39 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   const studentContext = await browser.newContext()
   const studentPage = await studentContext.newPage()
   const studentSafety = await installBrowserSafetyMonitor(studentPage)
-  await installLocalPdfDeliveryMock(studentPage)
+  const studentPdfRequests: Array<Record<string, unknown>> = []
+  await installLocalPdfDeliveryMock(studentPage, {
+    onIssueAccess: (body) => studentPdfRequests.push(body),
+  })
   try {
     await studentPage.goto('/join')
     await studentPage.getByLabel('講義コード').fill(rehearsalCode ?? '')
     await studentPage.getByRole('button', { name: '参加する' }).click()
+    await expect(
+      studentPage.getByRole('heading', {
+        name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
+      }),
+    ).toBeVisible()
+
+    await studentPage.getByRole('link', { name: '教室表示' }).click()
+    await expect(studentPage).toHaveURL(/\/display$/)
+    await expect(
+      studentPage.getByRole('heading', {
+        name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',
+      }),
+    ).toBeVisible()
+    await expect(studentPage.locator('.pdf-canvas')).toBeVisible({
+      timeout: 20_000,
+    })
+    expect(studentPdfRequests).toContainEqual({
+      action: 'member',
+      lectureSessionId: rehearsal!.lecture_session_id,
+    })
+    expect(
+      functionCalls.filter((call) => call.name === 'issue-display-session'),
+    ).toHaveLength(1)
+
+    await studentPage.goto('/lecture')
     await expect(
       studentPage.getByRole('heading', {
         name: 'Dual-targeting CasRx for C9orf72 ALS/FTD',

@@ -11,6 +11,7 @@ import type {
   AdminPdfDocument,
 } from '../../repositories/supabaseAdminRepository'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
+import { resolveSummaryScheduleTiming } from '../../summary/summarySchedule'
 
 const AcademicAnswerControl = lazy(() =>
   import('../AdminAiControl/AcademicAnswerControl').then((module) => ({
@@ -26,6 +27,7 @@ type Props = {
   documents: AdminPdfDocument[]
   displayState: DisplayState | null
   fallbackHardStopAt: string | null | undefined
+  fallbackStartedAt: string | null | undefined
   getServerNow: () => string | null
   lectureStatus: AdminLecture['status']
   materialEnabled: boolean
@@ -43,6 +45,7 @@ export function AdminAiControlPanel({
   documents,
   displayState,
   fallbackHardStopAt,
+  fallbackStartedAt,
   getServerNow,
   lectureStatus,
   materialEnabled,
@@ -58,6 +61,12 @@ export function AdminAiControlPanel({
   const anyEnabled =
     realtimeEnabled || materialEnabled || summariesEnabled || academicEnabled
   const status = activeLecture?.status ?? lectureStatus
+  const summaryTiming = resolveSummaryScheduleTiming({
+    fallbackHardStopAt,
+    fallbackStartedAt,
+    hardStopAt: activeLecture?.hardStopAt,
+    startedAt: activeLecture?.startsAt,
+  })
   return (
     <section className="panel ai-readiness-panel">
       <div className="panel-heading">
@@ -90,12 +99,12 @@ export function AdminAiControlPanel({
           displayState={displayState}
           documents={documents}
           getServerNow={getServerNow}
-          hardStopAt={activeLecture?.hardStopAt ?? null}
+          hardStopAt={summaryTiming.hardStopAt}
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
           onAcademicAnswerChanged={handleAcademicAnswerChanged}
           publisherSessionToken={publisherSessionToken}
-          startedAt={activeLecture?.startsAt ?? null}
+          startedAt={summaryTiming.startedAt}
         />
       ) : null}
       {academicEnabled && adminToken && activeLectureSessionId ? (

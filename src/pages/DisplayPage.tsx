@@ -51,6 +51,17 @@ export function DisplayPage() {
 
   useEffect(() => {
     const { displayToken, lectureSessionId } = displayLaunch
+    const hasDisplayLaunch =
+      displayToken.length > 0 || lectureSessionId.length > 0
+    const hasValidDisplayLaunch =
+      displayToken.length >= 80 &&
+      displayToken.length <= 4096 &&
+      /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(lectureSessionId)
+    const hasJoinedMemberAccess =
+      !hasDisplayLaunch &&
+      runtimeMode === 'live' &&
+      hasJoinedLectureSession &&
+      Boolean(activeLectureSessionId)
     if (operatorCleanupTimerRef.current !== null) {
       window.clearTimeout(operatorCleanupTimerRef.current)
       operatorCleanupTimerRef.current = null
@@ -61,11 +72,13 @@ export function DisplayPage() {
       `${window.location.pathname}${window.location.search}`,
     )
 
-    if (
-      displayToken.length < 80 ||
-      displayToken.length > 4096 ||
-      !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(lectureSessionId)
-    ) {
+    if (hasJoinedMemberAccess) {
+      setOperatorLiveAccess(null)
+      setDisplayAccessError(null)
+      return
+    }
+
+    if (!hasValidDisplayLaunch) {
       setOperatorLiveAccess(null)
       setDisplayAccessError(
         '管理画面から「共有画面を開く」を押して、もう一度開いてください。',
@@ -75,19 +88,28 @@ export function DisplayPage() {
 
     setDisplayAccessError(null)
     setOperatorLiveAccess({ kind: 'display', token: displayToken })
-    selectLectureSession({
-      id: lectureSessionId,
-      runtimeMode: 'live',
-      status: 'open',
-      title: '講義共有画面',
-    })
+    if (activeLectureSessionId !== lectureSessionId) {
+      selectLectureSession({
+        id: lectureSessionId,
+        runtimeMode: 'live',
+        status: 'open',
+        title: '講義共有画面',
+      })
+    }
     return () => {
       operatorCleanupTimerRef.current = window.setTimeout(() => {
         setOperatorLiveAccess(null)
         operatorCleanupTimerRef.current = null
       }, 0)
     }
-  }, [displayLaunch, selectLectureSession, setOperatorLiveAccess])
+  }, [
+    activeLectureSessionId,
+    displayLaunch,
+    hasJoinedLectureSession,
+    runtimeMode,
+    selectLectureSession,
+    setOperatorLiveAccess,
+  ])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 5_000)

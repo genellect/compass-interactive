@@ -319,13 +319,11 @@ export function LectureSummaryControl({
 
   const processNextWindow = useCallback(async () => {
     const token = runTokenRef.current
-    if (
-      !token ||
-      !startedAt ||
-      !hardStopAt ||
-      lectureStatus !== 'open' ||
-      schedulerBusyRef.current
-    ) {
+    if (!token || lectureStatus !== 'open' || schedulerBusyRef.current) {
+      return
+    }
+    if (!startedAt || !hardStopAt) {
+      setMessage('講義時刻を同期してから5分境界を判定します。')
       return
     }
     const serverNow = getServerNow()
@@ -410,6 +408,20 @@ export function LectureSummaryControl({
     void processNextWindow()
     const timer = window.setInterval(() => void processNextWindow(), 20_000)
     return () => window.clearInterval(timer)
+  }, [lectureStatus, processNextWindow, runToken])
+
+  useEffect(() => {
+    if (!runToken || lectureStatus !== 'open') return
+    const catchUp = () => void processNextWindow()
+    const catchUpWhenVisible = () => {
+      if (document.visibilityState === 'visible') catchUp()
+    }
+    window.addEventListener('focus', catchUp)
+    document.addEventListener('visibilitychange', catchUpWhenVisible)
+    return () => {
+      window.removeEventListener('focus', catchUp)
+      document.removeEventListener('visibilitychange', catchUpWhenVisible)
+    }
   }, [lectureStatus, processNextWindow, runToken])
 
   useEffect(() => {

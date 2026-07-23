@@ -210,7 +210,10 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     normalizedPathname === '/admin'
       ? operatorLiveAccess?.kind === 'admin'
       : normalizedPathname === '/display'
-        ? operatorLiveAccess?.kind === 'display'
+        ? operatorLiveAccess?.kind === 'display' ||
+          (operatorLiveAccess === null &&
+            runtimeMode === 'live' &&
+            hasActiveLectureSessionId)
         : true
   const { canInteract, canRunLiveSync } = deriveLiveSessionCapabilities({
     hasActiveLectureSessionId,

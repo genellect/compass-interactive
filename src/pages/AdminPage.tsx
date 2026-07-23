@@ -1273,6 +1273,7 @@ export function AdminPage() {
         displayState={displayState}
         documents={adminPdfDocuments}
         fallbackHardStopAt={lecture.expiresAt}
+        fallbackStartedAt={lecture.startsAt}
         getServerNow={getServerNow}
         lectureStatus={lecture.status}
         materialEnabled={isPhase5MaterialAnalysisEnabled}

@@ -17,6 +17,7 @@ import {
   getDueSummaryWindows,
   selectSummaryWindowSegments,
 } from '../src/summary/summaryWindow.ts'
+import { resolveSummaryScheduleTiming } from '../src/summary/summarySchedule.ts'
 import {
   createServerClockSample,
   estimateServerTimeMs,
@@ -25,6 +26,24 @@ import {
 const lectureId = '10000000-0000-4000-8000-000000000006'
 const startedAt = '2026-07-16T00:00:00.000Z'
 const hardStopAt = '2026-07-16T01:30:00.000Z'
+
+test('keeps summary scheduling active when the selected lecture is omitted from the short Admin list', () => {
+  const fallback = resolveSummaryScheduleTiming({
+    fallbackHardStopAt: hardStopAt,
+    fallbackStartedAt: startedAt,
+    hardStopAt: null,
+    startedAt: null,
+  })
+  assert.deepEqual(fallback, { hardStopAt, startedAt })
+
+  const preferred = resolveSummaryScheduleTiming({
+    fallbackHardStopAt: '2026-07-16T02:00:00.000Z',
+    fallbackStartedAt: '2026-07-16T00:30:00.000Z',
+    hardStopAt,
+    startedAt,
+  })
+  assert.deepEqual(preferred, { hardStopAt, startedAt })
+})
 
 async function source() {
   const transcript = await normalizeTranscriptSegments(lectureId, [
@@ -36,7 +55,8 @@ async function source() {
     },
   ])
   const documentVersion = 'a'.repeat(64)
-  const pageText = '主要評価項目は事前登録され、信頼区間と効果量を合わせて解釈します。'
+  const pageText =
+    '主要評価項目は事前登録され、信頼区間と効果量を合わせて解釈します。'
   const pdf = await normalizePdfContext({
     documentId: 'doc-main',
     documentVersion,
@@ -65,7 +85,10 @@ test('uses monotonic server time and exact five-minute boundaries', () => {
     serverNow: '2026-07-16T00:05:00.000Z',
     startedAt,
   })
-  assert.deepEqual(boundary.map((item) => item.index), [1])
+  assert.deepEqual(
+    boundary.map((item) => item.index),
+    [1],
+  )
 
   const sample = createServerClockSample('2026-07-16T00:04:50.000Z', 1_000)
   assert.ok(sample)
@@ -84,13 +107,34 @@ test('selects only completed transcript segments inside the server window', () =
   })
   const selected = selectSummaryWindowSegments(
     [
-      { completedAt: '2026-07-15T23:59:59.999Z', itemId: 'old', sequence: 1, startedAt, text: 'old' },
-      { completedAt: '2026-07-16T00:01:00.000Z', itemId: 'in', sequence: 2, startedAt, text: 'in' },
-      { completedAt: '2026-07-16T00:05:00.000Z', itemId: 'next', sequence: 3, startedAt, text: 'next' },
+      {
+        completedAt: '2026-07-15T23:59:59.999Z',
+        itemId: 'old',
+        sequence: 1,
+        startedAt,
+        text: 'old',
+      },
+      {
+        completedAt: '2026-07-16T00:01:00.000Z',
+        itemId: 'in',
+        sequence: 2,
+        startedAt,
+        text: 'in',
+      },
+      {
+        completedAt: '2026-07-16T00:05:00.000Z',
+        itemId: 'next',
+        sequence: 3,
+        startedAt,
+        text: 'next',
+      },
     ],
     summaryWindow!,
   )
-  assert.deepEqual(selected.map((item) => item.itemId), ['in'])
+  assert.deepEqual(
+    selected.map((item) => item.itemId),
+    ['in'],
+  )
 })
 
 test('normalizes source, validates PDF hash and keeps source injection as data', async () => {
@@ -124,7 +168,8 @@ test('normalizes source, validates PDF hash and keeps source injection as data',
       pages: [{ excerptId: 'b'.repeat(64), pageNumber: 2, text: 'tampered' }],
     }),
     (error: unknown) =>
-      error instanceof LectureSummaryError && error.code === 'invalid_pdf_context',
+      error instanceof LectureSummaryError &&
+      error.code === 'invalid_pdf_context',
   )
 })
 
@@ -148,16 +193,33 @@ test('parses Responses structured output and classifies refusal/incomplete/schem
   assert.equal(parsed.inputTokens, 500)
   assert.equal(parsed.outputTokens, 100)
   assert.throws(
-    () => parseSummaryOpenAiResponse({ output: [{ content: [{ refusal: 'no', type: 'refusal' }] }], status: 'completed' }),
-    (error: unknown) => error instanceof LectureSummaryError && error.code === 'provider_refusal',
+    () =>
+      parseSummaryOpenAiResponse({
+        output: [{ content: [{ refusal: 'no', type: 'refusal' }] }],
+        status: 'completed',
+      }),
+    (error: unknown) =>
+      error instanceof LectureSummaryError && error.code === 'provider_refusal',
   )
   assert.throws(
-    () => parseSummaryOpenAiResponse({ incomplete_details: { reason: 'max_output_tokens' }, output: [], status: 'incomplete' }),
-    (error: unknown) => error instanceof LectureSummaryError && error.code === 'provider_incomplete',
+    () =>
+      parseSummaryOpenAiResponse({
+        incomplete_details: { reason: 'max_output_tokens' },
+        output: [],
+        status: 'incomplete',
+      }),
+    (error: unknown) =>
+      error instanceof LectureSummaryError &&
+      error.code === 'provider_incomplete',
   )
   assert.throws(
-    () => parseSummaryOpenAiResponse({ output: [{ content: [{ text: '{', type: 'output_text' }] }], status: 'completed' }),
-    (error: unknown) => error instanceof LectureSummaryError && error.retryableSchemaFailure,
+    () =>
+      parseSummaryOpenAiResponse({
+        output: [{ content: [{ text: '{', type: 'output_text' }] }],
+        status: 'completed',
+      }),
+    (error: unknown) =>
+      error instanceof LectureSummaryError && error.retryableSchemaFailure,
   )
 })
 
