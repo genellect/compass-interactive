@@ -2,8 +2,8 @@
 
 ## Decision
 
-**Controlled production canary deployed. Automated and hosted gates PASS;
-Human/paid-canary acceptance remains HOLD.**
+**Provisional Production Gate PASS authorized by the user on 2026-08-01.
+Automated and hosted gates PASS; Human/paid-canary acceptance is deferred.**
 
 Phase 7.28A remains recovery-only and OFF. Phase 7.28B was enabled in the
 required DB runtime -> Edge -> frontend order. Phase 7.28C was enabled in the
@@ -11,8 +11,9 @@ required server admission -> frontend order. At the end of the change window
 there were zero active lectures, Display bindings and AI master authorizations,
 so activation itself started no student Realtime load, provider call or charge.
 
-Do not declare the formal Production Gate PASS or fast-forward `main` until the
-human checks in this document are accepted.
+The user explicitly authorized the candidate to fast-forward into `main` under
+this provisional decision. The deferred checks below remain mandatory evidence
+for a later final, non-provisional Production Gate decision.
 
 ## Release identity and recovery points
 
@@ -137,10 +138,10 @@ Advisor references:
 - <https://supabase.com/docs/guides/database/database-advisors?queryGroups=lint&lint=0012_auth_allow_anonymous_sign_ins>
 - <https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection>
 
-## Human and bounded paid-canary gate (HOLD)
+## Deferred human and bounded paid-canary gate
 
-Before formal PASS and `main` integration, complete all of the following in the
-canonical production site:
+Before replacing the provisional decision with a final Production Gate PASS,
+complete all of the following in the canonical production site:
 
 1. Sign in to Admin without sharing the PIN in chat, start a disposable lecture
    and issue one Display link.
@@ -160,5 +161,6 @@ canonical production site:
    and OpenAI usage after the canary. Record the actual charge and ensure all
    active masters/bindings return to zero.
 
-Until these checks are accepted, the deployed feature is a reversible controlled
-canary rather than a formally completed Production Gate.
+Until these checks are accepted, the deployed feature and its `main` integration
+remain a reversible, provisionally accepted production release rather than a
+formally completed Production Gate.
