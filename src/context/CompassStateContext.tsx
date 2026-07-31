@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router'
 import { demoRepository, type DemoSnapshot } from '../demo/demoRepository'
 import { DEMO_LECTURE_CODE, demoLecture } from '../demo/demoSeedData'
 import {
@@ -684,6 +684,15 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     })
   }, [hasActiveLectureSessionId, hydrateDemo, refreshLiveSnapshot, runtimeMode])
 
+  const refreshDisplayState = useCallback(async () => {
+    if (!hasActiveLectureSessionId) return
+    if (runtimeMode === 'demo') {
+      hydrateDemo()
+      return
+    }
+    await refreshLiveSnapshot({ forceDisplay: true })
+  }, [hasActiveLectureSessionId, hydrateDemo, refreshLiveSnapshot, runtimeMode])
+
   const loadOlderComments = useCallback(async () => {
     if (
       !isPhase1SyncProtocolEnabled ||
@@ -1049,6 +1058,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       sessionSyncMessage: getSessionPauseMessage(sessionSyncPauseReason),
       sessionSyncPauseReason,
       refreshComments,
+      refreshDisplayState,
       loadOlderComments,
       refreshPollResults,
       joinLecture: async (lectureCode) => {
@@ -1511,6 +1521,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       selectLectureSession,
       sessionSyncPauseReason,
       refreshComments,
+      refreshDisplayState,
       loadOlderComments,
       refreshParticipantLiveState,
       refreshPollResults,

@@ -15,6 +15,15 @@ const featureFlags = [
   'VITE_PHASE7_27_JOURNAL_CLUB',
 ]
 
+// Optional during the expand-first rollout. Absence is deliberately equivalent
+// to false so existing production environments retire the one-off preset
+// without needing an emergency configuration change.
+const optionalFeatureFlags = [
+  'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
+  'VITE_PHASE7_28_DISPLAY_REALTIME',
+  'VITE_PHASE7_28_AI_MASTER_AUTH',
+]
+
 const forbiddenPublicNames = [
   'VITE_ADMIN_PIN',
   'VITE_ADMIN_SESSION_SECRET',
@@ -70,6 +79,12 @@ export function validateProductionEnvironment(environment) {
       errors.push(`${name} must be explicitly true or false.`)
     }
   }
+  for (const name of optionalFeatureFlags) {
+    const configuredValue = value(environment, name)
+    if (configuredValue && !['false', 'true'].includes(configuredValue)) {
+      errors.push(`${name} must be true, false or omitted.`)
+    }
+  }
   for (const name of forbiddenPublicNames) {
     if (value(environment, name)) {
       errors.push(`${name} must never be exposed to the Vite bundle.`)
@@ -117,6 +132,28 @@ export function validateProductionEnvironment(environment) {
   ]) {
     requireFlag('VITE_PHASE7_27_JOURNAL_CLUB', dependency)
   }
+  requireFlag(
+    'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
+    'VITE_PHASE7_27_JOURNAL_CLUB',
+  )
+  requireFlag(
+    'VITE_PHASE7_28_DISPLAY_REALTIME',
+    'VITE_PHASE6_8_SECURITY',
+  )
+  requireFlag(
+    'VITE_PHASE7_28_DISPLAY_REALTIME',
+    'VITE_PHASE7_1_CLASSROOM_EXTENSIONS',
+  )
+  for (const dependency of [
+    'VITE_PHASE4_REALTIME_CAPTIONS',
+    'VITE_PHASE5_MATERIAL_ANALYSIS',
+    'VITE_PHASE6_SUMMARIES',
+    'VITE_PHASE6_8_SECURITY',
+    'VITE_PHASE7_2_ACADEMIC_ANSWERS',
+    'VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS',
+  ]) {
+    requireFlag('VITE_PHASE7_28_AI_MASTER_AUTH', dependency)
+  }
 
   if (enabled('VITE_PHASE3_PRIVATE_PDF')) {
     const workerUrl = value(environment, 'VITE_PDF_WORKER_BASE_URL')
@@ -130,4 +167,84 @@ export function validateProductionEnvironment(environment) {
   return errors
 }
 
-export const productionFeatureFlags = featureFlags
+export function validateProductionServerEnvironment(environment) {
+  const errors = []
+  const presetCreationEnabled = value(
+    environment,
+    'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED',
+  )
+  const displayRealtimeEnabled = value(
+    environment,
+    'PHASE728_DISPLAY_REALTIME_ENABLED',
+  )
+  const masterEnabled = value(
+    environment,
+    'PHASE7_28_AI_MASTER_AUTH_ENABLED',
+  )
+  if (
+    presetCreationEnabled &&
+    !['false', 'true'].includes(presetCreationEnabled)
+  ) {
+    errors.push(
+      'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED must be true, false or omitted.',
+    )
+  }
+  if (masterEnabled && !['false', 'true'].includes(masterEnabled)) {
+    errors.push(
+      'PHASE7_28_AI_MASTER_AUTH_ENABLED must be true, false or omitted.',
+    )
+  }
+  if (
+    displayRealtimeEnabled &&
+    !['false', 'true'].includes(displayRealtimeEnabled)
+  ) {
+    errors.push(
+      'PHASE728_DISPLAY_REALTIME_ENABLED must be true, false or omitted.',
+    )
+  }
+  if (
+    presetCreationEnabled === 'true' &&
+    value(environment, 'PHASE7_27_JOURNAL_CLUB_ENABLED') !== 'true'
+  ) {
+    errors.push(
+      'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED=true requires PHASE7_27_JOURNAL_CLUB_ENABLED=true.',
+    )
+  }
+  if (
+    displayRealtimeEnabled === 'true' &&
+    value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
+  ) {
+    errors.push(
+      'PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
+    )
+  }
+  if (
+    masterEnabled === 'true' &&
+    value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
+  ) {
+    errors.push(
+      'PHASE7_28_AI_MASTER_AUTH_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
+    )
+  }
+  if (masterEnabled === 'true') {
+    for (const dependency of [
+      'PHASE4_REALTIME_CAPTIONS_ENABLED',
+      'PHASE5_MATERIAL_ANALYSIS_ENABLED',
+      'PHASE6_SUMMARIES_ENABLED',
+      'PHASE7_2_ACADEMIC_ANSWERS_ENABLED',
+      'PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED',
+    ]) {
+      if (value(environment, dependency) !== 'true') {
+        errors.push(
+          `PHASE7_28_AI_MASTER_AUTH_ENABLED=true requires ${dependency}=true.`,
+        )
+      }
+    }
+  }
+  return errors
+}
+
+export const productionFeatureFlags = [
+  ...featureFlags,
+  ...optionalFeatureFlags,
+]

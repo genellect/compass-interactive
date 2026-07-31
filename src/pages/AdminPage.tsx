@@ -28,7 +28,8 @@ import {
   isPhase68SecurityEnabled,
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
-  isPhase727JournalClubEnabled,
+  isPhase728DisplayRealtimeEnabled,
+  isPhase728JournalClubPresetCreationEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
@@ -39,6 +40,7 @@ import {
   makeJoinedLecture,
 } from './admin/adminPageViewModel'
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
+import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
 import './AdminPage.css'
 
 const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
@@ -193,7 +195,10 @@ export function AdminPage() {
     ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
     : null
   const {
+    copied: displayLinkCopied,
+    copyLink: copyClassroomDisplayLink,
     error: displayLaunchError,
+    isCopying: isCopyingDisplayLink,
     isOpening: isOpeningDisplay,
     open: openClassroomDisplay,
   } = useAdminDisplayLauncher({
@@ -201,6 +206,8 @@ export function AdminPage() {
     activeLectureSessionId,
     adminToken,
   })
+  const displayIsAvailable =
+    Boolean(activeLectureSessionId) && activeAdminLecture?.status === 'open'
 
   useEffect(() => {
     if (!isAuthenticated || !adminToken) {
@@ -1078,16 +1085,21 @@ export function AdminPage() {
         <div className="admin-actions">
           <button
             className="secondary-button"
-            disabled={
-              isOpeningDisplay ||
-              !activeLectureSessionId ||
-              activeAdminLecture?.status !== 'open'
-            }
+            disabled={isOpeningDisplay || !displayIsAvailable}
             onClick={() => void openClassroomDisplay()}
             type="button"
           >
             {isOpeningDisplay ? '共有画面を準備中…' : '共有画面を開く'}
           </button>
+          {isPhase728DisplayRealtimeEnabled ? (
+            <AdminDisplayLinkCopyButton
+              copied={displayLinkCopied}
+              isCopying={isCopyingDisplayLink}
+              isOpening={isOpeningDisplay}
+              lectureIsOpen={displayIsAvailable}
+              onCopy={() => void copyClassroomDisplayLink()}
+            />
+          ) : null}
           <button
             className="secondary-button"
             onClick={() => void handleLogout()}
@@ -1147,7 +1159,7 @@ export function AdminPage() {
         hiddenCommentCount={hiddenCommentCount}
         isLoading={lecturesLoading}
         journalClubPreset={
-          isPhase727JournalClubEnabled ? (
+          isPhase728JournalClubPresetCreationEnabled ? (
             <AdminJournalClubPreset
               adminToken={adminToken}
               isLoading={lecturesLoading}

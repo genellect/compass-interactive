@@ -464,6 +464,7 @@ export type Database = {
           id: string
           issued_at: string
           lecture_session_id: string
+          master_authorization_id: string | null
           nonce_hash: string
           operation_ids: string[]
           revoked_at: string | null
@@ -477,6 +478,7 @@ export type Database = {
           id?: string
           issued_at?: string
           lecture_session_id: string
+          master_authorization_id?: string | null
           nonce_hash: string
           operation_ids?: string[]
           revoked_at?: string | null
@@ -490,6 +492,7 @@ export type Database = {
           id?: string
           issued_at?: string
           lecture_session_id?: string
+          master_authorization_id?: string | null
           nonce_hash?: string
           operation_ids?: string[]
           revoked_at?: string | null
@@ -501,6 +504,13 @@ export type Database = {
             columns: ["lecture_session_id"]
             isOneToOne: false
             referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_billing_grants_master_authorization_id_fkey"
+            columns: ["master_authorization_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_ai_master_authorizations"
             referencedColumns: ["id"]
           },
         ]
@@ -535,6 +545,67 @@ export type Database = {
             foreignKeyName: "ai_billing_rate_limits_lecture_session_id_fkey"
             columns: ["lecture_session_id"]
             isOneToOne: true
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_master_authorization_events: {
+        Row: {
+          actions: string[]
+          actor_id: string
+          authorization_id: string
+          child_grant_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          lecture_session_id: string
+          reason: string | null
+          scope: string
+        }
+        Insert: {
+          actions: string[]
+          actor_id: string
+          authorization_id: string
+          child_grant_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          lecture_session_id: string
+          reason?: string | null
+          scope: string
+        }
+        Update: {
+          actions?: string[]
+          actor_id?: string
+          authorization_id?: string
+          child_grant_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          lecture_session_id?: string
+          reason?: string | null
+          scope?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_master_authorization_events_authorization_id_fkey"
+            columns: ["authorization_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_ai_master_authorizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_master_authorization_events_child_grant_id_fkey"
+            columns: ["child_grant_id"]
+            isOneToOne: false
+            referencedRelation: "ai_billing_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_master_authorization_events_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
             referencedRelation: "lecture_sessions"
             referencedColumns: ["id"]
           },
@@ -1123,6 +1194,90 @@ export type Database = {
         }
         Relationships: []
       }
+      display_realtime_sessions: {
+        Row: {
+          admin_auth_user_id: string
+          admin_session_id: string
+          caption_control_relay_count: number
+          caption_control_window_started_at: string | null
+          claimed_at: string | null
+          display_auth_user_id: string | null
+          expires_at: string
+          hard_stop_at: string
+          id: string
+          issued_at: string
+          last_caption_delta_relay_at: string | null
+          last_caption_relay_at: string | null
+          last_caption_sequence: number | null
+          last_caption_stream_id: string | null
+          lecture_session_id: string
+          revoke_reason: string | null
+          revoked_at: string | null
+          token_jti_hash: string
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          admin_auth_user_id: string
+          admin_session_id: string
+          caption_control_relay_count?: number
+          caption_control_window_started_at?: string | null
+          claimed_at?: string | null
+          display_auth_user_id?: string | null
+          expires_at: string
+          hard_stop_at: string
+          id: string
+          issued_at?: string
+          last_caption_delta_relay_at?: string | null
+          last_caption_relay_at?: string | null
+          last_caption_sequence?: number | null
+          last_caption_stream_id?: string | null
+          lecture_session_id: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          token_jti_hash: string
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          admin_auth_user_id?: string
+          admin_session_id?: string
+          caption_control_relay_count?: number
+          caption_control_window_started_at?: string | null
+          claimed_at?: string | null
+          display_auth_user_id?: string | null
+          expires_at?: string
+          hard_stop_at?: string
+          id?: string
+          issued_at?: string
+          last_caption_delta_relay_at?: string | null
+          last_caption_relay_at?: string | null
+          last_caption_sequence?: number | null
+          last_caption_stream_id?: string | null
+          lecture_session_id?: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          token_jti_hash?: string
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "display_realtime_sessions_admin_session_id_fkey"
+            columns: ["admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "display_realtime_sessions_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lecture_academic_answers: {
         Row: {
           created_at: string
@@ -1346,6 +1501,75 @@ export type Database = {
             foreignKeyName: "lecture_ai_control_lecture_session_id_fkey"
             columns: ["lecture_session_id"]
             isOneToOne: true
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lecture_ai_master_authorizations: {
+        Row: {
+          actions: string[]
+          actor_id: string
+          admin_session_id: string
+          expires_at: string
+          id: string
+          issued_at: string
+          last_used_at: string | null
+          lecture_session_id: string
+          revoke_reason: string | null
+          revoked_at: string | null
+          revoked_by_actor_id: string | null
+          scope: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          actions: string[]
+          actor_id: string
+          admin_session_id: string
+          expires_at: string
+          id?: string
+          issued_at?: string
+          last_used_at?: string | null
+          lecture_session_id: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_actor_id?: string | null
+          scope: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          actions?: string[]
+          actor_id?: string
+          admin_session_id?: string
+          expires_at?: string
+          id?: string
+          issued_at?: string
+          last_used_at?: string | null
+          lecture_session_id?: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_actor_id?: string | null
+          scope?: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_ai_master_authorizations_admin_session_id_fkey"
+            columns: ["admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_ai_master_authorizations_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
             referencedRelation: "lecture_sessions"
             referencedColumns: ["id"]
           },
@@ -3144,6 +3368,16 @@ export type Database = {
         }
         Returns: string
       }
+      admin_authorize_ai_master: {
+        Args: {
+          pin_succeeded: boolean
+          target_actor_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+          target_scope: string
+        }
+        Returns: Json
+      }
       admin_cancel_academic_answer_request: {
         Args: {
           target_actor_id: string
@@ -3393,6 +3627,14 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_get_ai_master_authorization_status: {
+        Args: {
+          target_actor_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
       admin_get_lecture_operator_access_v1: {
         Args: { target_lecture_session_id: string }
         Returns: Json
@@ -3476,6 +3718,16 @@ export type Database = {
           pin_succeeded: boolean
           target_actions: string[]
           target_actor_id: string
+          target_lecture_session_id: string
+          target_nonce_hash: string
+        }
+        Returns: Json
+      }
+      admin_issue_ai_billing_grant_from_master: {
+        Args: {
+          target_actions: string[]
+          target_actor_id: string
+          target_admin_session_id: string
           target_lecture_session_id: string
           target_nonce_hash: string
         }
@@ -3768,6 +4020,15 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_revoke_ai_master_authorization: {
+        Args: {
+          target_actor_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+          target_reason: string
+        }
+        Returns: Json
+      }
       admin_revoke_lecture_resume_tokens: {
         Args: { target_actor_id: string; target_lecture_session_id: string }
         Returns: number
@@ -4044,6 +4305,25 @@ export type Database = {
           recipient: string
         }[]
       }
+      claim_display_caption_relay_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_lecture_session_id: string
+          target_sequence: number
+          target_source: string
+          target_stream_id: string
+          target_topic: string
+        }
+        Returns: string
+      }
+      claim_display_realtime_session_v1: {
+        Args: {
+          target_display_auth_user_id: string
+          target_lecture_session_id: string
+          target_token_jti_hash: string
+        }
+        Returns: Json
+      }
       claim_due_pdf_publication_cleanup_v1: {
         Args: { job_limit?: number; target_worker_id?: string }
         Returns: Json[]
@@ -4072,6 +4352,7 @@ export type Database = {
           provider_call_id: string
         }[]
       }
+      cleanup_display_realtime_sessions_v1: { Args: never; Returns: number }
       complete_pdf_publication_cleanup_v1: {
         Args: {
           target_cleanup_claim_id: string
@@ -4328,11 +4609,30 @@ export type Database = {
         }
         Returns: boolean
       }
+      register_display_realtime_session_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+          target_session_id: string
+          target_token_expires_at: string
+          target_token_jti_hash: string
+        }
+        Returns: Json
+      }
       reset_admin_pin_rate_limit: {
         Args: { network_bucket_hash?: string; user_bucket_hash: string }
         Returns: undefined
       }
       run_phase6_6_maintenance: { Args: never; Returns: Json }
+      service_drain_ai_master_authorizations: {
+        Args: { target_reason?: string }
+        Returns: Json
+      }
+      set_display_realtime_runtime_v1: {
+        Args: { target_enabled: boolean }
+        Returns: number
+      }
       verify_and_touch_admin_session: {
         Args: {
           target_pin_version_hash: string
@@ -4340,6 +4640,22 @@ export type Database = {
           target_token_hash: string
         }
         Returns: Json
+      }
+      verify_display_realtime_session_v1: {
+        Args: {
+          target_display_auth_user_id: string
+          target_lecture_session_id: string
+          target_token_jti_hash: string
+        }
+        Returns: boolean
+      }
+      verify_display_snapshot_fallback_v1: {
+        Args: {
+          target_display_auth_user_id: string
+          target_lecture_session_id: string
+          target_token_jti_hash: string
+        }
+        Returns: boolean
       }
       worker_claim_pdf_publication_nonce_v1: {
         Args: {

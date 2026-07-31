@@ -357,8 +357,8 @@ async function installNetworkMocks(
 
 test.describe('Phase 7.27 flag ON', () => {
   test.skip(
-    process.env.VITE_PHASE7_27_JOURNAL_CLUB !== 'true',
-    'Phase 7.27 preset requires its dedicated flag-on runner.',
+    process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'true',
+    'Phase 7.27 preset creation requires its dedicated recovery runner.',
   )
 
   test('prepares isolated rehearsal and production drafts without starting paid or live work', async ({
@@ -730,10 +730,11 @@ test.describe('Phase 7.27 flag ON', () => {
   }
 })
 
-test.describe('Phase 7.27 flag OFF', () => {
+test.describe('Phase 7.28 Journal Club creation retired', () => {
   test.skip(
-    process.env.VITE_PHASE7_27_JOURNAL_CLUB !== 'false',
-    'Phase 7.27 fallback requires its dedicated flag-off runner.',
+    process.env.VITE_PHASE7_27_JOURNAL_CLUB !== 'true' ||
+      process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'false',
+    'Phase 7.28 retirement requires history compatibility ON and creation OFF.',
   )
 
   test('keeps the preset hidden and issues no Journal Club prepare request', async ({

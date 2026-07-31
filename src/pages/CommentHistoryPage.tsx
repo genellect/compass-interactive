@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { AppIcon } from '../components/AppIcon'
 import { LiveBoard } from '../components/LiveBoard'
 import { useCompassState } from '../hooks/useCompassState'

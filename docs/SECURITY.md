@@ -253,3 +253,43 @@ session revocation, CSP header contracts, resume-token expiry/version/
 cross-lecture rejection, bounded Edge input and explicit communication/provider
 deadlines. Hosted CSP route inspection and a human Admin/Join/Archive UX review
 remain blocking production evidence under `docs/ROADMAP.md`.
+
+## 15. Phase 7.28 Display and AI authorization controls
+
+- Display Realtime requires a valid signed Display token, a server-side hashed
+  JTI registration, first-claimer anonymous-auth UID, exact lecture, active
+  issuing Admin session, open lifecycle and enabled DB runtime gate.
+- Replays from another UID, cross-topic subscriptions, post-close relay and
+  claimed-token fallback are rejected. A new client may use snapshot fallback
+  only for an absent (`404`) or disabled (`503`) claim service.
+- Registered bindings remain enforced when the Edge flag is OFF. An intentional
+  DB-runtime shutdown may downgrade only the same claimed UID to the signed
+  snapshot/PDF path. A service-role-only DB RPC rechecks the disabled gate,
+  exact binding/browser, binding lifetime, open lecture, hard stop, and issuing
+  Admin revoke/absolute/idle expiry on every snapshot and PDF request;
+  replacement and lifecycle/security revocations cannot downgrade.
+- Admin revoke and lecture terminal triggers permanently overwrite an earlier
+  `feature_disabled` reason, preventing a rollback binding from resurfacing.
+- A recognized same-UID expired binding receives only a data-free expiry
+  control response so the Display can clear quietly. Cross-UID, unclaimed and
+  invalid credentials retain HTTP 401 semantics on the live/rollback path.
+  The pre-existing signed terminal-Review window is a separate time-bounded
+  capability and never grants live Realtime or active-lecture access.
+- Supabase private Broadcast temporarily carries only bounded caption text or
+  page/version metadata. No audio is relayed, no service key reaches the
+  browser, and students have no Realtime policy.
+- The claim is UID-level rather than strict tab-level. Legacy unbound tokens
+  remain an expand-first compatibility path until the documented production
+  cutover and maximum token TTL have completed.
+- AI master authorization binds lecture, tracked Admin session, actor and exact
+  scope. It stores no PIN and creates no provider call, billing reservation or
+  microphone request.
+- Every paid start consumes a fresh child grant after the existing budget,
+  concurrency, lifecycle and idempotency checks. An active master fences old
+  direct-PIN clients to prevent double admission.
+- DB runtime disable/close/session revoke terminalize Display bindings and AI
+  authorization. Stop and revoke remain free and idempotent.
+
+The Phase 7.28 Local Gate does not authorize hosted secrets, migrations, flags,
+provider calls or deployment. Production requires refreshed Admin clients,
+legacy-link expiry, hosted policy tests, telemetry and human/device evidence.

@@ -224,13 +224,13 @@ available to the browser or database client.
 
 ## 10. Trust zones and secret placement
 
-| Zone                        | May contain                                                           | Must not contain                                            |
-| --------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL   | service role, OpenAI key, PINs, R2 secret, Turnstile secret |
-| Supabase Edge secrets       | OpenAI key, Admin/API-use PIN material, service role, trigger secrets | values returned to browser or committed to Git              |
-| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material        | values in frontend variables or simultaneous browser mode   |
-| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings | plaintext lecture codes or Supabase service role         |
-| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                         | PDF/audio bytes, raw local transcript, plaintext secrets    |
+| Zone                        | May contain                                                               | Must not contain                                            |
+| --------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL       | service role, OpenAI key, PINs, R2 secret, Turnstile secret |
+| Supabase Edge secrets       | OpenAI key, Admin/API-use PIN material, service role, trigger secrets     | values returned to browser or committed to Git              |
+| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material            | values in frontend variables or simultaneous browser mode   |
+| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings | plaintext lecture codes or Supabase service role            |
+| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                             | PDF/audio bytes, raw local transcript, plaintext secrets    |
 
 See `docs/SECURITY.md` for the enforceable security contract and remaining
 hosted/human Phase 6.8 evidence.
@@ -265,3 +265,30 @@ behavior.
 
 If an older document conflicts with those sources, treat it as historical and
 open a documentation correction before implementing a new phase.
+
+## 14. Phase 7.28 operational boundaries
+
+Phase 7.28A retires only the one-off Journal Club creation surface. Its
+frontend and Edge creation flags default OFF; historical lectures, Polls and
+archives remain readable through the established paths.
+
+Phase 7.28B adds one private, claimed Display Realtime identity per lecture.
+Committed PDF page changes and bounded caption deltas accelerate through a
+private topic; the durable five-second snapshot remains authoritative and is
+the fallback. A claim binds the first anonymous-auth UID to a hashed token JTI.
+Students receive no binding, Realtime subscription or new periodic request.
+The caption relay accepts at most 12 KiB and 4,000 characters per request and
+never carries audio. The DB runtime gate is the first rollback switch. Its
+`feature_disabled` transition permits only the same claimed UID to continue on
+the signed snapshot/PDF fallback, and a service-role-only DB RPC revalidates the
+gate, binding lifetime, lecture lifecycle/hard stop and issuing Admin session
+on every fallback request. Later Admin revoke, lecture close/hard stop or link
+replacement permanently rewrites that binding's terminal reason. Every other
+registered-token failure remains closed even when the Edge flag is OFF.
+
+Phase 7.28C adds a lecture/Admin-session/actor-bound AI master authorization
+with two scopes: eligible AI excluding captions, or including captions. It
+stores no PIN and performs no provider call. Every explicit feature start still
+requires a new short-lived single-use child grant and the existing budget,
+lane, lifecycle and idempotency admission. Status and free revoke remain
+available while paid admission is disabled.

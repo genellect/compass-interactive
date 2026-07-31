@@ -9,6 +9,48 @@ export type DueSummaryWindow = {
   startAt: string
 }
 
+export type SummaryScheduleStatus = {
+  due: boolean
+  nextWindow: DueSummaryWindow | null
+}
+
+export function getSummaryScheduleStatus(input: {
+  hardStopAt: string
+  processedWindowIndexes: ReadonlySet<number>
+  serverNow: string
+  startedAt: string
+}): SummaryScheduleStatus {
+  const startedMs = Date.parse(input.startedAt)
+  const hardStopMs = Date.parse(input.hardStopAt)
+  const nowMs = Date.parse(input.serverNow)
+  if (
+    !Number.isFinite(startedMs) ||
+    !Number.isFinite(hardStopMs) ||
+    !Number.isFinite(nowMs) ||
+    hardStopMs <= startedMs
+  ) {
+    return { due: false, nextWindow: null }
+  }
+
+  for (let index = 1; index <= SUMMARY_WINDOW_LIMIT; index += 1) {
+    const startMs = startedMs + (index - 1) * SUMMARY_WINDOW_MS
+    const endMs = startMs + SUMMARY_WINDOW_MS
+    if (startMs >= hardStopMs) break
+    if (!input.processedWindowIndexes.has(index)) {
+      return {
+        due: endMs <= nowMs,
+        nextWindow: {
+          endAt: new Date(endMs).toISOString(),
+          index,
+          startAt: new Date(startMs).toISOString(),
+        },
+      }
+    }
+  }
+
+  return { due: false, nextWindow: null }
+}
+
 export function getDueSummaryWindows(input: {
   hardStopAt: string
   processedWindowIndexes: ReadonlySet<number>

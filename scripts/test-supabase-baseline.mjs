@@ -52,6 +52,10 @@ const phase727AdminStartParityMigrationName =
   '20260722012313_phase7_27_admin_start_parity_and_title.sql'
 const phase727MaterialAnalysisRecoveryMigrationName =
   '20260722213000_phase7_27_material_analysis_recovery.sql'
+const phase728DisplayRealtimeMigrationName =
+  '20260731110507_phase7_28b_authorized_display_realtime.sql'
+const phase728AiMasterAuthorizationMigrationName =
+  '20260731110753_phase7_28_ai_master_authorization.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -89,6 +93,8 @@ assert.deepEqual(
     phase727JournalClubIntegrationMigrationName,
     phase727AdminStartParityMigrationName,
     phase727MaterialAnalysisRecoveryMigrationName,
+    phase728DisplayRealtimeMigrationName,
+    phase728AiMasterAuthorizationMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

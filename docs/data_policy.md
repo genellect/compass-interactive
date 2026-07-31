@@ -205,3 +205,22 @@ following occurs:
 Preserve content-free audit evidence, rotate affected credentials and follow
 the current runbook index. Do not destroy evidence with an ad-hoc database
 rollback.
+
+## 12. Phase 7.28 transient and audit data
+
+- Private Display Broadcast may temporarily contain committed PDF page/version
+  metadata and at most 4,000 characters of caption text in a 12 KiB request.
+  Supabase manages short Broadcast retention; COMPASS does not copy those
+  deltas into an application table. Audio is never relayed or retained.
+- Display binding rows contain a token-JTI SHA-256 hash, random topic, scoped
+  auth/session identifiers and lifecycle timestamps. Raw tokens are not stored.
+  Hourly cleanup removes at most 500 terminal rows older than one day. The
+  rollback verifier reads only this metadata plus current lecture/Admin-session
+  state and returns a boolean; it creates no new content or audit copy.
+- AI master rows contain lecture/session/actor/action/lifecycle metadata only.
+  Event rows are content-free and field-size bounded; Phase 7.28 does not yet
+  define physical row-count cleanup, so monitoring and a later retention
+  contract are required.
+- No API PIN, prompt, PDF text, transcript content, provider response or budget
+  reservation is stored merely by authorizing the master scope.
+- Students receive no Phase 7.28 Realtime channel and no additional polling.

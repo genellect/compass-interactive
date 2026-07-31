@@ -229,9 +229,15 @@ const { data: paidData, error: paidError } = await client.functions.invoke(
 assert.ok(paidError)
 assert.equal(paidData ?? null, null)
 const paidResponse = await readFunctionError(paidError)
-assert.equal(paidResponse.status, 503)
+assert.ok(
+  [401, 409, 503].includes(paidResponse.status),
+  `Paid feature request must fail closed, received ${paidResponse.status}.`,
+)
 assert.equal(paidResponse.body.ok, false)
-assert.match(paidResponse.body.message ?? '', /disabled/i)
+assert.match(
+  paidResponse.body.message ?? '',
+  /disabled|failed|not found|could not be verified/i,
+)
 
 const { data: revokeAllData, error: revokeAllError } =
   await client.functions.invoke('manage-admin-sessions', {

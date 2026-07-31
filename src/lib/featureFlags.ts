@@ -53,3 +53,26 @@ export const isPhase727JournalClubEnabled =
   isPhase71ClassroomExtensionsEnabled &&
   isPhase726BrowserPdfPublishingEnabled &&
   import.meta.env.VITE_PHASE7_27_JOURNAL_CLUB === 'true'
+
+// Phase 7.27 data and archive compatibility remain enabled independently from
+// the one-off preset creation surface. Missing values intentionally fail
+// closed so an old production environment cannot recreate a retired run.
+export const isPhase728JournalClubPresetCreationEnabled =
+  isPhase727JournalClubEnabled &&
+  import.meta.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION === 'true'
+
+// Cross-browser Display Realtime is independent from student live sync. It
+// requires tracked Admin sessions and the existing classroom Display surface.
+export const isPhase728DisplayRealtimeEnabled =
+  isPhase68SecurityEnabled &&
+  isPhase71ClassroomExtensionsEnabled &&
+  import.meta.env.VITE_PHASE7_28_DISPLAY_REALTIME === 'true'
+
+export const isPhase728AiMasterAuthorizationEnabled =
+  isPhase68SecurityEnabled &&
+  isPhase4RealtimeCaptionsEnabled &&
+  isPhase5MaterialAnalysisEnabled &&
+  isPhase6SummariesEnabled &&
+  isPhase72AcademicAnswersEnabled &&
+  isPhase725AutoAcademicAnswersEnabled &&
+  import.meta.env.VITE_PHASE7_28_AI_MASTER_AUTH === 'true'

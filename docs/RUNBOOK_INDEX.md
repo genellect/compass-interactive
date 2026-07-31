@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-07-22
+Last reviewed: 2026-07-31
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -33,6 +33,8 @@ secret change and paid call still require an explicit task.
 | Phase 7.26 local evidence    | `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`    |
 | Phase 7.27 Journal Club design | `docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md` |
 | Phase 7.27 local evidence     | `docs/PHASE7_27_LOCAL_GATE_2026-07-22.md` |
+| Phase 7.28 design             | `docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md` |
+| Phase 7.28 local evidence     | `docs/PHASE7_28_LOCAL_GATE_2026-07-31.md` |
 | Phase 7 production decision  | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`  |
 | Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md` |
 
@@ -69,6 +71,12 @@ npm run test:phase7-26-load
 npm run test:phase7-27-edge
 npm run test:phase7-27-static
 npm run test:phase7-27-load
+npm run test:phase7-28b-display-realtime
+npm run test:phase7-28b-lock-order
+npm run test:phase7-28c-ai-master
+npm run test:phase7-28c-ai-concurrency
+npm run test:phase7-28-upgrade
+npm run test:phase7-28-load
 npm run build
 git diff --check
 ```
@@ -81,6 +89,14 @@ its Local Gate can be completed. As of 2026-07-22 the clean reset, 1,171 pgTAP,
 Edge/Postgres integration and repeated Chromium/WebKit desktop/mobile E2E are
 PASS. A temporary hosted preview is deployed with the required preview flags ON
 and no Journal Club run created. Final operational and human gates remain HOLD.
+
+Phase 7.28 additionally requires the populated Phase 7.27 upgrade probe,
+Display lock-order and AI-master two-connection concurrency probes, all Phase
+7.28 pgTAP tests, static security/bundle checks, and the corresponding Desktop
+Chromium/WebKit plus 390px Chromium local integration suites. The dated Phase
+7.28 Local Gate record is authoritative for exact final counts. Its production
+rollback starts with the 7.28B DB runtime gate or 7.28C server admission gate;
+the 7.28A recovery-only creation flag remains OFF in normal rollout.
 
 ## 3. Local Supabase
 

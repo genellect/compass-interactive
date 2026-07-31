@@ -1174,6 +1174,20 @@ input:disabled {
   min-height: 160px;
 }
 
+.ai-master-authorization {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--violet) 28%);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--panel) 94%, var(--violet) 6%);
+}
+
+.ai-master-authorization .summary-control-actions {
+  margin: 0;
+}
+
 .display-caption-strip {
   align-items: center;
   background: rgba(15, 23, 42, 0.72);
@@ -4058,7 +4072,7 @@ input:disabled {
 }
 
 .theme-light .brand small {
-  color: #728398;
+  color: #56697e;
 }
 
 .theme-light .brand-mark {
@@ -4781,7 +4795,32 @@ input:disabled {
 .theme-light .stat-card span,
 .theme-light .lecture-admin-row small,
 .theme-light .poll-admin-row small {
-  color: #5b6e84;
+  color: #465b70;
+}
+
+.theme-light .status-pill.open {
+  background: #dff5ec;
+  color: #08694e;
+}
+
+.theme-light .status-pill.closed {
+  background: #e7ebf0;
+  color: #465b70;
+}
+
+.theme-light .caption-local-preview small,
+.theme-light .caption-local-actions span,
+.theme-light .material-analysis-heading small {
+  color: #465b70;
+}
+
+.theme-light .presenter-sync-badge {
+  color: #08694e;
+}
+
+.theme-light .academic-answer-heading small,
+.theme-light .admin-academic-answer-card small {
+  color: #465b70;
 }
 
 .theme-light .table-row {

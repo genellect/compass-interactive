@@ -447,21 +447,34 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   await pageController.getByRole('button', { name: '前へ' }).click()
   await expect(pageController).toContainText('1 / 34')
 
-  const displayPopupPromise = page.waitForEvent('popup')
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          window.sessionStorage.setItem('phase728b-jc-display-url', value)
+        },
+      },
+    })
+  })
   const displaySessionResponsePromise = page.waitForResponse(
     (response) =>
       response.url().endsWith('/functions/v1/issue-display-session') &&
       response.status() === 200,
   )
-  await page.getByRole('button', { name: '共有画面を開く' }).click()
-  const displayPopup = await displayPopupPromise
+  await page
+    .getByRole('button', { name: '別ブラウザ用リンクをコピー' })
+    .click()
   const displaySession = (await (
     await displaySessionResponsePromise
   ).json()) as {
     displayToken: string
     lectureSessionId: string
   }
-  await displayPopup.close()
+  const copiedDisplayUrl = await page.evaluate(
+    () => window.sessionStorage.getItem('phase728b-jc-display-url') ?? '',
+  )
+  expect(copiedDisplayUrl).toContain('/display#')
 
   const displayContext = await browser.newContext()
   const displayPage = await displayContext.newPage()
@@ -480,15 +493,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   })
   await installLocalPdfDeliveryMock(displayPage, { mockAccessToken: false })
   try {
-    const displayUrl = new URL(
-      '/display',
-      process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
-    )
-    displayUrl.hash = new URLSearchParams({
-      code: rehearsalCode ?? '',
-      lecture: displaySession.lectureSessionId,
-      token: displaySession.displayToken,
-    }).toString()
+    const displayUrl = new URL(copiedDisplayUrl)
     const pdfAccessResponsePromise = displayPage.waitForResponse(
       (response) =>
         response.url().endsWith('/functions/v1/issue-pdf-access-token') &&

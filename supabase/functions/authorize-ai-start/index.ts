@@ -15,19 +15,94 @@ import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
+type MasterAuthorizationScope = 'all_except_captions' | 'all_including_captions'
+
 type AuthorizeAiStartRequest = {
+  action?: 'issueGrant' | 'authorizeMaster' | 'masterStatus' | 'revokeMaster'
   actions?: unknown
   adminToken?: string
   billingPin?: string
   lectureSessionId?: string
+  masterScope?: unknown
+  reason?: unknown
 }
 
 type GrantResult = {
   accepted?: boolean
+  actions?: string[]
   expires_at?: string
   grant_id?: string
   reason?: string
   retry_at?: string | null
+}
+
+type MasterResult = {
+  accepted?: boolean
+  authorization?: unknown
+  lecture_open?: boolean
+  reason?: string
+  retry_at?: string | null
+  server_time?: string
+}
+
+function isMasterScope(value: unknown): value is MasterAuthorizationScope {
+  return value === 'all_except_captions' || value === 'all_including_captions'
+}
+
+function validateFeatureFlags(actions: string[]) {
+  if (
+    actions.includes('captions') &&
+    Deno.env.get('PHASE4_REALTIME_CAPTIONS_ENABLED') !== 'true'
+  ) {
+    return 'Realtime captions are disabled.'
+  }
+  if (
+    actions.some((action) =>
+      ['material_analysis', 'poll_suggestions'].includes(action),
+    ) &&
+    Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') !== 'true'
+  ) {
+    return 'Material analysis is disabled.'
+  }
+  if (
+    actions.includes('summaries') &&
+    Deno.env.get('PHASE6_SUMMARIES_ENABLED') !== 'true'
+  ) {
+    return 'Five-minute summaries are disabled.'
+  }
+  if (
+    actions.includes('academic_answers') &&
+    Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') !== 'true'
+  ) {
+    return 'Academic reference answers are disabled.'
+  }
+  if (
+    actions.includes('summaries') &&
+    actions.includes('academic_answers') &&
+    (actions.length !== 2 ||
+      Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true')
+  ) {
+    return 'Automatic academic reference answers are disabled.'
+  }
+  return null
+}
+
+function validateMasterFeatureReadiness(scope: MasterAuthorizationScope) {
+  if (Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true') {
+    return 'Automatic academic reference answers are disabled.'
+  }
+  const actions = [
+    'material_analysis',
+    'poll_suggestions',
+    'summaries',
+    'academic_answers',
+    ...(scope === 'all_including_captions' ? ['captions'] : []),
+  ]
+  for (const feature of actions) {
+    const error = validateFeatureFlags([feature])
+    if (error) return error
+  }
+  return null
 }
 
 Deno.serve(async (request) => {
@@ -40,8 +115,7 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const billingPin = Deno.env.get('BILLING_PIN')
-  if (!supabaseUrl || !serviceRoleKey || !billingPin) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse(
       { ok: false, message: 'API usage authorization is not configured.' },
       503,
@@ -59,67 +133,7 @@ Deno.serve(async (request) => {
     )
   }
 
-  let actions
-  try {
-    actions = normalizeAiFeatures(body.actions)
-  } catch (error) {
-    return jsonResponse(
-      {
-        ok: false,
-        message: error instanceof Error ? error.message : 'Invalid AI actions.',
-      },
-      400,
-    )
-  }
-  if (
-    actions.includes('captions') &&
-    Deno.env.get('PHASE4_REALTIME_CAPTIONS_ENABLED') !== 'true'
-  ) {
-    return jsonResponse(
-      { ok: false, message: 'Realtime captions are disabled.' },
-      503,
-    )
-  }
-  if (
-    actions.some((action) =>
-      ['material_analysis', 'poll_suggestions'].includes(action),
-    ) &&
-    Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') !== 'true'
-  ) {
-    return jsonResponse(
-      { ok: false, message: 'Material analysis is disabled.' },
-      503,
-    )
-  }
-  if (
-    actions.includes('summaries') &&
-    Deno.env.get('PHASE6_SUMMARIES_ENABLED') !== 'true'
-  ) {
-    return jsonResponse(
-      { ok: false, message: 'Five-minute summaries are disabled.' },
-      503,
-    )
-  }
-  if (
-    actions.includes('academic_answers') &&
-    Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') !== 'true'
-  ) {
-    return jsonResponse(
-      { ok: false, message: 'Academic reference answers are disabled.' },
-      503,
-    )
-  }
-  if (
-    actions.includes('summaries') &&
-    actions.includes('academic_answers') &&
-    (actions.length !== 2 ||
-      Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true')
-  ) {
-    return jsonResponse(
-      { ok: false, message: 'Automatic academic reference answers are disabled.' },
-      503,
-    )
-  }
+  const action = body.action ?? 'issueGrant'
   if (!body.adminToken || !body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'Admin session and lecture are required.' },
@@ -148,36 +162,290 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
 
-  const nonce = createBillingGrantNonce()
-  const nonceHash = await sha256Hex(nonce)
-  const pinSucceeded = await verifyBillingPin(body.billingPin ?? '', billingPin)
   const actorId = getAdminActorId(claims)
+  const adminSessionId = claims.sid ?? null
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
-  const { data, error } = await supabase.rpc('admin_issue_ai_billing_grant', {
-    pin_succeeded: pinSucceeded,
-    target_actions: actions,
-    target_actor_id: actorId,
-    target_lecture_session_id: body.lectureSessionId,
-    target_nonce_hash: nonceHash,
-  })
+  const masterEnabled =
+    Deno.env.get('PHASE7_28_AI_MASTER_AUTH_ENABLED') === 'true'
+  const trackedAdminSessionsEnabled =
+    Deno.env.get('PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') === 'true'
 
-  if (error) {
+  if (
+    ['masterStatus', 'authorizeMaster', 'revokeMaster'].includes(action) &&
+    !trackedAdminSessionsEnabled
+  ) {
     return jsonResponse(
-      { ok: false, message: 'API usage authorization failed.' },
-      409,
+      { ok: false, message: 'Tracked Admin sessions are required.' },
+      503,
     )
   }
-  const result = data as GrantResult
-  if (!result.accepted || !result.grant_id || !result.expires_at) {
-    const rateLimited = result.reason === 'rate_limited'
+
+  if (action === 'masterStatus') {
+    if (!adminSessionId) {
+      return jsonResponse(
+        { ok: false, message: 'Tracked Admin session is required.' },
+        401,
+      )
+    }
+    const { data, error } = await supabase.rpc(
+      'admin_get_ai_master_authorization_status',
+      {
+        target_admin_session_id: adminSessionId,
+        target_actor_id: actorId,
+        target_lecture_session_id: body.lectureSessionId,
+      },
+    )
+    if (error) {
+      return jsonResponse(
+        { ok: false, message: 'AI authorization status is unavailable.' },
+        409,
+      )
+    }
+    const result = data as MasterResult
+    return jsonResponse({
+      authorization: result.authorization ?? null,
+      lectureOpen: result.lecture_open === true,
+      ok: true,
+      serverTime: result.server_time ?? null,
+    })
+  }
+
+  if (action === 'authorizeMaster') {
+    if (!masterEnabled) {
+      return jsonResponse(
+        { ok: false, message: 'Lecture-wide AI authorization is disabled.' },
+        503,
+      )
+    }
+    if (!isMasterScope(body.masterScope)) {
+      return jsonResponse(
+        { ok: false, message: 'AI authorization scope is invalid.' },
+        400,
+      )
+    }
+    const readinessError = validateMasterFeatureReadiness(body.masterScope)
+    if (readinessError) {
+      return jsonResponse({ ok: false, message: readinessError }, 503)
+    }
+    if (!adminSessionId) {
+      return jsonResponse(
+        { ok: false, message: 'Tracked Admin session is required.' },
+        401,
+      )
+    }
+    const billingPin = Deno.env.get('BILLING_PIN')
+    if (!billingPin) {
+      return jsonResponse(
+        { ok: false, message: 'API usage authorization is not configured.' },
+        503,
+      )
+    }
+    const pinSucceeded = await verifyBillingPin(
+      body.billingPin ?? '',
+      billingPin,
+    )
+    const { data, error } = await supabase.rpc('admin_authorize_ai_master', {
+      pin_succeeded: pinSucceeded,
+      target_admin_session_id: adminSessionId,
+      target_actor_id: actorId,
+      target_lecture_session_id: body.lectureSessionId,
+      target_scope: body.masterScope,
+    })
+    if (error) {
+      return jsonResponse(
+        { ok: false, message: 'Lecture-wide AI authorization failed.' },
+        409,
+      )
+    }
+    const result = data as MasterResult
+    if (!result.accepted) {
+      const rateLimited = result.reason === 'rate_limited'
+      return jsonResponse(
+        {
+          message: rateLimited
+            ? 'Too many failed attempts. Try again later.'
+            : result.reason === 'authorization_held_by_other_admin'
+              ? 'Another Admin screen already holds the lecture AI authorization.'
+              : result.reason === 'lecture_not_open'
+                ? 'AI can be authorized only while the lecture is open.'
+                : 'API usage PIN could not be verified.',
+          ok: false,
+          reason: result.reason,
+          retryAt: result.retry_at ?? null,
+        },
+        rateLimited ? 429 : result.reason === 'lecture_not_open' ? 409 : 401,
+      )
+    }
+    return jsonResponse({
+      authorization: result.authorization ?? null,
+      ok: true,
+      serverTime: result.server_time ?? null,
+    })
+  }
+
+  if (action === 'revokeMaster') {
+    if (!adminSessionId) {
+      return jsonResponse(
+        { ok: false, message: 'Tracked Admin session is required.' },
+        401,
+      )
+    }
+    const reason =
+      typeof body.reason === 'string' && body.reason.trim()
+        ? body.reason.trim().slice(0, 120)
+        : 'admin_manual_revoke'
+    const { data, error } = await supabase.rpc(
+      'admin_revoke_ai_master_authorization',
+      {
+        target_admin_session_id: adminSessionId,
+        target_actor_id: actorId,
+        target_lecture_session_id: body.lectureSessionId,
+        target_reason: reason,
+      },
+    )
+    if (error) {
+      return jsonResponse(
+        { ok: false, message: 'AI authorization could not be stopped.' },
+        409,
+      )
+    }
+    const result = data as MasterResult
+    if (!result.accepted) {
+      return jsonResponse(
+        {
+          message:
+            result.reason === 'actor_mismatch'
+              ? 'This AI authorization belongs to another Admin screen.'
+              : 'AI authorization could not be stopped.',
+          ok: false,
+          reason: result.reason,
+        },
+        409,
+      )
+    }
+
+    // The RPC atomically revokes pending child grants, stops summary/runtime
+    // state and queues any active Realtime provider call for hangup.
+    return jsonResponse({
+      authorization: result.authorization ?? null,
+      ok: true,
+    })
+  }
+
+  if (action !== 'issueGrant') {
+    return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)
+  }
+
+  let actions: string[]
+  try {
+    actions = normalizeAiFeatures(body.actions)
+  } catch (error) {
     return jsonResponse(
       {
         ok: false,
+        message: error instanceof Error ? error.message : 'Invalid AI actions.',
+      },
+      400,
+    )
+  }
+  const flagError = validateFeatureFlags(actions)
+  if (flagError) {
+    return jsonResponse({ ok: false, message: flagError }, 503)
+  }
+
+  const nonce = createBillingGrantNonce()
+  const nonceHash = await sha256Hex(nonce)
+  let result: GrantResult
+  if (body.billingPin?.trim()) {
+    const billingPin = Deno.env.get('BILLING_PIN')
+    if (!billingPin) {
+      return jsonResponse(
+        { ok: false, message: 'API usage authorization is not configured.' },
+        503,
+      )
+    }
+    const pinSucceeded = await verifyBillingPin(body.billingPin, billingPin)
+    const { data, error } = await supabase.rpc('admin_issue_ai_billing_grant', {
+      pin_succeeded: pinSucceeded,
+      target_actions: actions,
+      target_actor_id: actorId,
+      target_lecture_session_id: body.lectureSessionId,
+      target_nonce_hash: nonceHash,
+    })
+    if (error) {
+      const masterConflict = error.message.includes(
+        'lecture-wide AI authorization requires a child grant',
+      )
+      return jsonResponse(
+        {
+          ok: false,
+          message: masterConflict
+            ? 'Lecture-wide AI authorization is active. Use its authorized feature controls.'
+            : 'API usage authorization failed.',
+          reason: masterConflict ? 'master_authorization_active' : undefined,
+        },
+        409,
+      )
+    }
+    result = data as GrantResult
+  } else {
+    if (!masterEnabled) {
+      return jsonResponse(
+        { ok: false, message: 'API usage PIN is required.' },
+        400,
+      )
+    }
+    if (!trackedAdminSessionsEnabled) {
+      return jsonResponse(
+        { ok: false, message: 'Tracked Admin sessions are required.' },
+        503,
+      )
+    }
+    if (!adminSessionId) {
+      return jsonResponse(
+        { ok: false, message: 'Tracked Admin session is required.' },
+        401,
+      )
+    }
+    const { data, error } = await supabase.rpc(
+      'admin_issue_ai_billing_grant_from_master',
+      {
+        target_admin_session_id: adminSessionId,
+        target_actions: actions,
+        target_actor_id: actorId,
+        target_lecture_session_id: body.lectureSessionId,
+        target_nonce_hash: nonceHash,
+      },
+    )
+    if (error) {
+      return jsonResponse(
+        { ok: false, message: 'Lecture-wide AI authorization failed.' },
+        409,
+      )
+    }
+    result = data as GrantResult
+  }
+
+  if (!result.accepted || !result.grant_id || !result.expires_at) {
+    const rateLimited = result.reason === 'rate_limited'
+    const masterReasonMessages: Record<string, string> = {
+      lecture_not_open: 'The lecture is no longer open.',
+      master_actor_mismatch:
+        'This AI authorization belongs to another Admin screen.',
+      master_expired: 'The lecture-wide AI authorization expired.',
+      master_not_active: 'Authorize AI use for this lecture first.',
+      master_scope_mismatch:
+        'The selected AI authorization does not include this feature.',
+    }
+    return jsonResponse(
+      {
         message: rateLimited
           ? 'Too many failed attempts. Try again later.'
-          : 'API usage PIN could not be verified.',
+          : (masterReasonMessages[result.reason ?? ''] ??
+            'API usage PIN could not be verified.'),
+        ok: false,
         reason: result.reason,
         retryAt: result.retry_at ?? null,
       },
@@ -186,7 +454,7 @@ Deno.serve(async (request) => {
   }
 
   return jsonResponse({
-    actions,
+    actions: result.actions ?? actions,
     billingGrant: formatBillingGrantToken(result.grant_id, nonce),
     expiresAt: result.expires_at,
     ok: true,

@@ -1,17 +1,20 @@
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 
 import { AppIcon } from '../AppIcon'
 import {
   LectureSummaryControl,
   MaterialAnalysisControl,
   RealtimeCaptionControl,
+  AiMasterAuthorizationControl,
 } from '../AdminAiControl'
 import type {
+  AiMasterAuthorization,
   AdminLecture,
   AdminPdfDocument,
 } from '../../repositories/supabaseAdminRepository'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { resolveSummaryScheduleTiming } from '../../summary/summarySchedule'
+import { isPhase728AiMasterAuthorizationEnabled } from '../../lib/featureFlags'
 
 const AcademicAnswerControl = lazy(() =>
   import('../AdminAiControl/AcademicAnswerControl').then((module) => ({
@@ -55,6 +58,8 @@ export function AdminAiControlPanel({
   summariesEnabled,
 }: Props) {
   const [academicRefreshVersion, setAcademicRefreshVersion] = useState(0)
+  const [masterAuthorization, setMasterAuthorization] =
+    useState<AiMasterAuthorization | null>(null)
   const handleAcademicAnswerChanged = useCallback(() => {
     setAcademicRefreshVersion((version) => version + 1)
   }, [])
@@ -67,6 +72,9 @@ export function AdminAiControlPanel({
     hardStopAt: activeLecture?.hardStopAt,
     startedAt: activeLecture?.startsAt,
   })
+  useEffect(() => {
+    setMasterAuthorization(null)
+  }, [activeLectureSessionId])
   return (
     <section className="panel ai-readiness-panel">
       <div className="panel-heading">
@@ -83,6 +91,16 @@ export function AdminAiControlPanel({
           {anyEnabled ? '利用可能' : '停止中'}
         </span>
       </div>
+      {isPhase728AiMasterAuthorizationEnabled &&
+      adminToken &&
+      activeLectureSessionId ? (
+        <AiMasterAuthorizationControl
+          adminToken={adminToken}
+          lectureSessionId={activeLectureSessionId}
+          lectureStatus={status}
+          onAuthorizationChange={setMasterAuthorization}
+        />
+      ) : null}
       {realtimeEnabled && adminToken && activeLectureSessionId ? (
         <RealtimeCaptionControl
           adminToken={adminToken}
@@ -91,6 +109,7 @@ export function AdminAiControlPanel({
           }
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
+          masterAuthorization={masterAuthorization}
         />
       ) : null}
       {summariesEnabled && adminToken && activeLectureSessionId ? (
@@ -105,6 +124,7 @@ export function AdminAiControlPanel({
           onAcademicAnswerChanged={handleAcademicAnswerChanged}
           publisherSessionToken={publisherSessionToken}
           startedAt={summaryTiming.startedAt}
+          masterAuthorization={masterAuthorization}
         />
       ) : null}
       {academicEnabled && adminToken && activeLectureSessionId ? (
@@ -113,6 +133,7 @@ export function AdminAiControlPanel({
             adminToken={adminToken}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}
+            masterAuthorization={masterAuthorization}
             refreshVersion={academicRefreshVersion}
           />
         </Suspense>
@@ -125,6 +146,7 @@ export function AdminAiControlPanel({
           lectureStatus={status}
           onPollDraftCreated={onPollDraftCreated}
           publisherSessionToken={publisherSessionToken}
+          masterAuthorization={masterAuthorization}
         />
       ) : null}
       {!activeLectureSessionId ? (

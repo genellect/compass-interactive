@@ -15,6 +15,7 @@ import {
 } from '../supabase/functions/_shared/lectureSummaries.ts'
 import {
   getDueSummaryWindows,
+  getSummaryScheduleStatus,
   selectSummaryWindowSegments,
 } from '../src/summary/summaryWindow.ts'
 import { resolveSummaryScheduleTiming } from '../src/summary/summarySchedule.ts'
@@ -96,6 +97,26 @@ test('uses monotonic server time and exact five-minute boundaries', () => {
     new Date(estimateServerTimeMs(sample, 11_000)).toISOString(),
     '2026-07-16T00:05:00.000Z',
   )
+})
+
+test('reports the next boundary and catch-up state without using client time', () => {
+  const waiting = getSummaryScheduleStatus({
+    hardStopAt,
+    processedWindowIndexes: new Set(),
+    serverNow: '2026-07-16T00:04:59.999Z',
+    startedAt,
+  })
+  assert.equal(waiting.due, false)
+  assert.equal(waiting.nextWindow?.endAt, '2026-07-16T00:05:00.000Z')
+
+  const catchingUp = getSummaryScheduleStatus({
+    hardStopAt,
+    processedWindowIndexes: new Set([1]),
+    serverNow: '2026-07-16T00:12:00.000Z',
+    startedAt,
+  })
+  assert.equal(catchingUp.due, true)
+  assert.equal(catchingUp.nextWindow?.index, 2)
 })
 
 test('selects only completed transcript segments inside the server window', () => {

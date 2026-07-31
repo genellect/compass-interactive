@@ -4,13 +4,19 @@ import { buildDoiUrl } from '../../lib/academicSourceLinks'
 import {
   type AdminAcademicAnswer,
   type AdminAcademicResults,
+  type AiMasterAuthorization,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
+import {
+  masterAuthorizationHeldByOther,
+  masterAuthorizesFeature,
+} from './aiMasterAuthorization'
 
 type AcademicAnswerControlProps = {
   adminToken: string
   lectureSessionId: string
   lectureStatus: string
+  masterAuthorization: AiMasterAuthorization | null
   refreshVersion?: number
 }
 
@@ -40,6 +46,7 @@ export function AcademicAnswerControl({
   adminToken,
   lectureSessionId,
   lectureStatus,
+  masterAuthorization,
   refreshVersion = 0,
 }: AcademicAnswerControlProps) {
   const [results, setResults] = useState<AdminAcademicResults>(emptyResults)
@@ -58,6 +65,11 @@ export function AcademicAnswerControl({
   const [message, setMessage] = useState('')
   const [editingAnswerId, setEditingAnswerId] = useState('')
   const [revisionPoints, setRevisionPoints] = useState<string[]>([])
+  const masterAuthorized = masterAuthorizesFeature(
+    masterAuthorization,
+    'academic_answers',
+  )
+  const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
 
   const selectedCandidate = useMemo(
     () =>
@@ -133,14 +145,21 @@ export function AcademicAnswerControl({
     const normalizedQuestion = question.trim()
     const normalizedSearchQuery = searchQuery.trim()
     if (
-      !billingPin.trim() ||
+      (!masterAuthorized && !billingPin.trim()) ||
+      masterHeldByOther ||
       normalizedQuestion.length < 10 ||
       normalizedQuestion.length > 500 ||
       normalizedSearchQuery.length < 3 ||
       normalizedSearchQuery.length > 240 ||
       (sourceMode === 'summary_candidate' && !selectedCandidate)
     ) {
-      setMessage('質問・文献検索語・API PINを確認してください。')
+      setMessage(
+        masterHeldByOther
+          ? '別の教員画面がAI許可を保持しています。'
+          : masterAuthorized
+            ? '質問と文献検索語を確認してください。'
+            : '質問・文献検索語・API PINを確認してください。',
+      )
       return
     }
 
@@ -150,7 +169,7 @@ export function AcademicAnswerControl({
       const authorization = await supabaseAdminRepository.authorizeAiStart({
         actions: ['academic_answers'],
         adminToken,
-        billingPin,
+        billingPin: masterAuthorized ? undefined : billingPin,
         lectureSessionId,
       })
       setBillingPin('')
@@ -377,20 +396,26 @@ export function AcademicAnswerControl({
             </option>
           </select>
         </label>
-        <label className="field">
-          <span>API PIN</span>
-          <input
-            autoComplete="off"
-            disabled={disabled}
-            inputMode="numeric"
-            onChange={(event) => setBillingPin(event.target.value)}
-            type="password"
-            value={billingPin}
-          />
-        </label>
+        {masterHeldByOther ? (
+          <p className="note">別の教員画面がAI許可を保持しています。</p>
+        ) : masterAuthorized ? (
+          <p className="note">講義中のAPI許可を使用します。</p>
+        ) : (
+          <label className="field">
+            <span>API PIN</span>
+            <input
+              autoComplete="off"
+              disabled={disabled}
+              inputMode="numeric"
+              onChange={(event) => setBillingPin(event.target.value)}
+              type="password"
+              value={billingPin}
+            />
+          </label>
+        )}
         <button
           className="secondary-button"
-          disabled={disabled || callsUsed >= callLimit}
+          disabled={disabled || masterHeldByOther || callsUsed >= callLimit}
           onClick={() => void generateAnswer()}
           type="button"
         >

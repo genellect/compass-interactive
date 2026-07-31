@@ -7,6 +7,10 @@ import {
   SUPABASE_REQUEST_TIMEOUT_MS,
 } from './supabase/requestPolicy'
 import { invokeEdgeFunction } from './supabase/transport'
+import {
+  aiMasterAuthorizationRepository,
+  type AiBillingAction,
+} from './supabase/aiMasterAuthorizationRepository'
 import type {
   AdminAcademicResults,
   ManageAcademicAnswersRequest,
@@ -29,6 +33,12 @@ export type {
   AdminAcademicSource,
   ManageAcademicAnswersRequest,
 } from './supabase/adminAcademicTypes'
+export type {
+  AiBillingAction,
+  AiMasterAuthorization,
+  AiMasterAuthorizationScope,
+  AiMasterAuthorizationStatus,
+} from './supabase/aiMasterAuthorizationRepository'
 
 const {
   adminFunction: ADMIN_FUNCTION_TIMEOUT_MS,
@@ -75,6 +85,10 @@ type IssueDisplaySessionResponse = {
   lectureSessionId?: string
   message?: string
   ok?: boolean
+  realtime?: {
+    expiresAt?: string
+    topic?: string
+  } | null
 }
 
 export type AdminDisplayState = {
@@ -191,13 +205,6 @@ type ManageAiControlResponse = {
   realtimePriceMicrousdPerMinute?: number | null
   result?: unknown
 }
-
-export type AiBillingAction =
-  | 'captions'
-  | 'summaries'
-  | 'material_analysis'
-  | 'poll_suggestions'
-  | 'academic_answers'
 
 type AuthorizeAiStartResponse = {
   actions?: AiBillingAction[]
@@ -566,6 +573,8 @@ export type ManagePollsRequest =
       pollId: string
     }
 export const supabaseAdminRepository = {
+  ...aiMasterAuthorizationRepository,
+
   async verifyAdminPin(pin: string) {
     const trimmedPin = pin.trim()
 
@@ -637,6 +646,7 @@ export const supabaseAdminRepository = {
 
   async issueDisplaySession(request: {
     adminToken: string
+    enableRealtime?: boolean
     lectureSessionId: string
   }) {
     await ensureAnonymousAuthSession()
@@ -667,6 +677,13 @@ export const supabaseAdminRepository = {
       displayToken: data.displayToken,
       expiresAt: data.expiresAt,
       lectureSessionId: data.lectureSessionId,
+      realtime:
+        data.realtime?.expiresAt && data.realtime.topic
+          ? {
+              expiresAt: data.realtime.expiresAt,
+              topic: data.realtime.topic,
+            }
+          : null,
     }
   },
 
@@ -770,7 +787,7 @@ export const supabaseAdminRepository = {
   async authorizeAiStart(request: {
     actions: AiBillingAction[]
     adminToken: string
-    billingPin: string
+    billingPin?: string
     lectureSessionId: string
   }) {
     const { data, error } = await invokeEdgeFunction<AuthorizeAiStartResponse>(

@@ -9,6 +9,7 @@ import {
 } from '../../lib/featureFlags'
 import {
   type AdminLectureSummary,
+  type AiMasterAuthorization,
   type AdminPdfDocument,
   type AdminSummaryResults,
   type SummaryLanguagePreference,
@@ -17,10 +18,15 @@ import {
 import {
   formatSummaryWindowLabel,
   getDueSummaryWindows,
+  getSummaryScheduleStatus,
   selectSummaryWindowSegments,
 } from '../../summary/summaryWindow'
 import type { LectureStatus } from '../../types'
 import { AppIcon } from '../AppIcon'
+import {
+  masterAuthorizationHeldByOther,
+  masterAuthorizesFeature,
+} from './aiMasterAuthorization'
 
 type LectureSummaryControlProps = {
   adminToken: string
@@ -30,6 +36,7 @@ type LectureSummaryControlProps = {
   hardStopAt: string | null
   lectureSessionId: string
   lectureStatus: LectureStatus
+  masterAuthorization: AiMasterAuthorization | null
   onAcademicAnswerChanged?: () => void
   publisherSessionToken: string
   startedAt: string | null
@@ -69,6 +76,7 @@ export function LectureSummaryControl({
   hardStopAt,
   lectureSessionId,
   lectureStatus,
+  masterAuthorization,
   onAcademicAnswerChanged,
   publisherSessionToken,
   startedAt,
@@ -78,6 +86,7 @@ export function LectureSummaryControl({
   const [runToken, setRunToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [schedulerRevision, setSchedulerRevision] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftRecap, setDraftRecap] = useState('')
   const [draftPulse, setDraftPulse] = useState('')
@@ -91,10 +100,37 @@ export function LectureSummaryControl({
   const runTokenRef = useRef<string | null>(null)
   const academicDispatchBusyRef = useRef(false)
   const academicRetryTimerRef = useRef<number | null>(null)
+  const previousSummaryMasterAuthorizedRef = useRef(false)
+  const summaryMasterAuthorized = masterAuthorizesFeature(
+    masterAuthorization,
+    'summaries',
+  )
+  const academicMasterAuthorized = masterAuthorizesFeature(
+    masterAuthorization,
+    'academic_answers',
+  )
+  const masterAuthorizedForStart =
+    summaryMasterAuthorized &&
+    (!autoAcademicAnswers || academicMasterAuthorized)
+  const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
 
   useEffect(() => {
     runTokenRef.current = runToken
   }, [runToken])
+
+  useEffect(() => {
+    const previouslyAuthorized = previousSummaryMasterAuthorizedRef.current
+    previousSummaryMasterAuthorizedRef.current = summaryMasterAuthorized
+    if (
+      previouslyAuthorized &&
+      !summaryMasterAuthorized &&
+      runTokenRef.current
+    ) {
+      runTokenRef.current = null
+      setRunToken(null)
+      setMessage('要約を停止しました。')
+    }
+  }, [summaryMasterAuthorized])
 
   const processedIndexes = useMemo(
     () =>
@@ -137,7 +173,7 @@ export function LectureSummaryControl({
             lectureSessionId,
           })
           if (!cancelled) {
-            if (resumed.runToken) setResults(resumed.results)
+            setResults(resumed.results)
             setAutoAcademicAnswers(
               resumed.results.run?.autoAcademicAnswersEnabled ?? false,
             )
@@ -406,7 +442,10 @@ export function LectureSummaryControl({
   useEffect(() => {
     if (!runToken || lectureStatus !== 'open') return
     void processNextWindow()
-    const timer = window.setInterval(() => void processNextWindow(), 20_000)
+    const timer = window.setInterval(() => {
+      setSchedulerRevision((revision) => revision + 1)
+      void processNextWindow()
+    }, 5_000)
     return () => window.clearInterval(timer)
   }, [lectureStatus, processNextWindow, runToken])
 
@@ -417,9 +456,13 @@ export function LectureSummaryControl({
       if (document.visibilityState === 'visible') catchUp()
     }
     window.addEventListener('focus', catchUp)
+    window.addEventListener('online', catchUp)
+    window.addEventListener('pageshow', catchUp)
     document.addEventListener('visibilitychange', catchUpWhenVisible)
     return () => {
       window.removeEventListener('focus', catchUp)
+      window.removeEventListener('online', catchUp)
+      window.removeEventListener('pageshow', catchUp)
       document.removeEventListener('visibilitychange', catchUpWhenVisible)
     }
   }, [lectureStatus, processNextWindow, runToken])
@@ -429,7 +472,12 @@ export function LectureSummaryControl({
   }, [lectureStatus])
 
   async function startRun() {
-    if (!billingPin.trim() || lectureStatus !== 'open') return
+    if (
+      (!masterAuthorizedForStart && !billingPin.trim()) ||
+      masterHeldByOther ||
+      lectureStatus !== 'open'
+    )
+      return
     setBusy(true)
     setMessage('API利用PINと講義状態を確認しています…')
     try {
@@ -439,7 +487,7 @@ export function LectureSummaryControl({
             ? ['summaries', 'academic_answers']
             : ['summaries'],
         adminToken,
-        billingPin,
+        billingPin: masterAuthorizedForStart ? undefined : billingPin,
         lectureSessionId,
       })
       const started = await supabaseAdminRepository.manageLectureSummaries({
@@ -612,6 +660,38 @@ export function LectureSummaryControl({
     lectureStatus === 'open' &&
     results.run?.status === 'running' &&
     Boolean(runToken)
+  const scheduleStatus = useMemo(() => {
+    void schedulerRevision
+    const serverNow = getServerNow()
+    if (!runActive || !startedAt || !hardStopAt || !serverNow) return null
+    return getSummaryScheduleStatus({
+      hardStopAt,
+      processedWindowIndexes: processedIndexes,
+      serverNow,
+      startedAt,
+    })
+  }, [
+    getServerNow,
+    hardStopAt,
+    processedIndexes,
+    runActive,
+    schedulerRevision,
+    startedAt,
+  ])
+  const schedulerLabel = !runActive
+    ? masterHeldByOther
+      ? '別の教員画面でAI利用を許可済み／この画面では開始不可'
+      : summaryMasterAuthorized
+        ? 'AI利用を許可済み／5分要約は未開始'
+        : '要約は未開始'
+    : scheduleStatus?.due
+      ? '未処理の5分枠を再開処理中'
+      : scheduleStatus?.nextWindow
+        ? `次回 ${new Intl.DateTimeFormat('ja-JP', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }).format(new Date(scheduleStatus.nextWindow.endAt))}`
+        : '全5分枠を処理済み'
   return (
     <section className="lecture-summary-control">
       <div className="summary-control-heading">
@@ -625,7 +705,13 @@ export function LectureSummaryControl({
           </small>
         </div>
         <span className={`support-state ${runActive ? 'is-ready' : ''}`}>
-          {runActive ? '実行中' : '停止中'}
+          {runActive
+            ? '実行中'
+            : masterHeldByOther
+              ? '別画面で許可中'
+              : summaryMasterAuthorized
+                ? '要約は未開始'
+                : '停止中'}
         </span>
       </div>
 
@@ -689,21 +775,31 @@ export function LectureSummaryControl({
         </div>
       ) : null}
       <div className="summary-control-actions">
-        <label className="field compact-field">
-          <span>API利用PIN（開始時のみ）</span>
-          <input
-            autoComplete="off"
-            disabled={busy || runActive || lectureStatus !== 'open'}
-            inputMode="numeric"
-            onChange={(event) => setBillingPin(event.target.value)}
-            type="password"
-            value={billingPin}
-          />
-        </label>
+        {masterHeldByOther ? (
+          <p className="note">別の教員画面がAI許可を保持しています。</p>
+        ) : masterAuthorizedForStart ? (
+          <p className="note">講義中のAPI許可を使用します。</p>
+        ) : (
+          <label className="field compact-field">
+            <span>API利用PIN（開始時のみ）</span>
+            <input
+              autoComplete="off"
+              disabled={busy || runActive || lectureStatus !== 'open'}
+              inputMode="numeric"
+              onChange={(event) => setBillingPin(event.target.value)}
+              type="password"
+              value={billingPin}
+            />
+          </label>
+        )}
         <button
           className="primary-button"
           disabled={
-            busy || runActive || !billingPin.trim() || lectureStatus !== 'open'
+            busy ||
+            runActive ||
+            masterHeldByOther ||
+            (!masterAuthorizedForStart && !billingPin.trim()) ||
+            lectureStatus !== 'open'
           }
           onClick={() => void startRun()}
           type="button"
@@ -734,7 +830,7 @@ export function LectureSummaryControl({
               1_000_000,
           ).toFixed(3)}
         </span>
-        <span>次回: 5分境界をサーバー確認</span>
+        <span>{schedulerLabel}</span>
       </div>
       {message ? (
         <p className="note" aria-live="polite">

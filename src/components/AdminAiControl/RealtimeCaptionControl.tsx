@@ -13,15 +13,21 @@ import {
   saveCompletedCaptionSegment,
 } from '../../caption/captionTranscriptStore'
 import { createCaptionBroadcastChannel } from '../../caption/captionBroadcast'
+import { publishAdminCaptionRealtime } from '../../display/displayRealtime'
 import {
   RealtimeCaptionSession,
   type RealtimeCaptionEvent,
 } from '../../caption/realtimeCaptionSession'
 import {
   supabaseAdminRepository,
+  type AiMasterAuthorization,
   type RealtimeCaptionLanguage,
 } from '../../repositories/supabaseAdminRepository'
 import { AppIcon } from '../AppIcon'
+import {
+  masterAuthorizationHeldByOther,
+  masterAuthorizesFeature,
+} from './aiMasterAuthorization'
 import './RealtimeCaptionControl.css'
 
 type CaptionControlStatus =
@@ -34,6 +40,7 @@ type RealtimeCaptionControlProps = {
   hardStopAt?: string | null
   lectureSessionId: string
   lectureStatus: string
+  masterAuthorization: AiMasterAuthorization | null
 }
 
 function createIdempotencyKey(lectureSessionId: string) {
@@ -58,6 +65,7 @@ export function RealtimeCaptionControl({
   hardStopAt,
   lectureSessionId,
   lectureStatus,
+  masterAuthorization,
 }: RealtimeCaptionControlProps) {
   const [billingPin, setBillingPin] = useState('')
   const [language, setLanguage] = useState<RealtimeCaptionLanguage>('auto')
@@ -74,6 +82,8 @@ export function RealtimeCaptionControl({
   const sessionRef = useRef<RealtimeCaptionSession | null>(null)
   const operationIdRef = useRef<string | null>(null)
   const sequenceRef = useRef(0)
+  const transportSequenceRef = useRef(0)
+  const transportStreamIdRef = useRef(crypto.randomUUID())
   const itemSequenceRef = useRef(new Map<string, number>())
   const itemStartedAtRef = useRef(new Map<string, string>())
   const itemTextRef = useRef(new Map<string, string>())
@@ -88,10 +98,33 @@ export function RealtimeCaptionControl({
   const failClosedRef = useRef<(reason: string) => Promise<void>>(
     async () => {},
   )
+  const previousMasterAuthorizedRef = useRef(false)
+  const masterAuthorized = masterAuthorizesFeature(
+    masterAuthorization,
+    'captions',
+  )
+  const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
 
   function updateStatus(nextStatus: CaptionControlStatus) {
     statusRef.current = nextStatus
     setStatus(nextStatus)
+  }
+
+  function broadcastCaption(
+    caption: { text: string } | null,
+    source: 'completed' | 'delta' | 'stopped',
+  ) {
+    const message = {
+      caption: caption ? { text: caption.text.slice(-4_000) } : null,
+      lectureSessionId,
+      sequence: transportSequenceRef.current,
+      source,
+      streamId: transportStreamIdRef.current,
+      timestamp: Date.now(),
+    } as const
+    transportSequenceRef.current += 1
+    broadcastRef.current?.postMessage(message)
+    void publishAdminCaptionRealtime(message).catch(() => undefined)
   }
 
   function clearTimers() {
@@ -119,12 +152,7 @@ export function RealtimeCaptionControl({
     setLocalCaption('')
     updateStatus(nextStatus)
     setMessage(nextMessage)
-    broadcastRef.current?.postMessage({
-      caption: null,
-      lectureSessionId,
-      source: 'stopped',
-      timestamp: Date.now(),
-    })
+    broadcastCaption(null, 'stopped')
   }
 
   async function stopServerOperation(reason: string) {
@@ -150,14 +178,11 @@ export function RealtimeCaptionControl({
     sessionRef.current?.stop()
     sessionRef.current = null
     updateStatus('error')
-    setMessage(`${reason} 自動再接続はしません。再開にはAPI利用PINが必要です。`)
+    setMessage(
+      `${reason} 自動再接続はしません。再開は教員が明示的に操作してください。`,
+    )
     setLocalCaption('')
-    broadcastRef.current?.postMessage({
-      caption: null,
-      lectureSessionId,
-      source: 'stopped',
-      timestamp: Date.now(),
-    })
+    broadcastCaption(null, 'stopped')
     if (operationId) {
       try {
         await stopServerOperation('client_fail_closed')
@@ -170,6 +195,26 @@ export function RealtimeCaptionControl({
     operationIdRef.current = null
   }
   failClosedRef.current = failClosed
+
+  useEffect(() => {
+    const previouslyAuthorized = previousMasterAuthorizedRef.current
+    previousMasterAuthorizedRef.current = masterAuthorized
+    if (
+      previouslyAuthorized &&
+      !masterAuthorized &&
+      ['authorizing', 'connecting', 'running'].includes(statusRef.current)
+    ) {
+      void failClosedRef.current('字幕の講義中API許可が解除されました。')
+      return
+    }
+    if (statusRef.current === 'idle') {
+      setMessage(
+        masterAuthorized
+          ? '利用時間を選び、教員の操作で字幕を開始してください。'
+          : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
+      )
+    }
+  }, [masterAuthorized])
 
   function getItemSequence(itemId: string) {
     const existing = itemSequenceRef.current.get(itemId)
@@ -188,12 +233,7 @@ export function RealtimeCaptionControl({
       itemTextRef.current.set(event.itemId, nextText)
       const normalized = normalizeCaptionText(nextText)
       setLocalCaption(normalized)
-      broadcastRef.current?.postMessage({
-        caption: normalized ? { text: normalized } : null,
-        lectureSessionId,
-        source: 'delta',
-        timestamp: Date.now(),
-      })
+      broadcastCaption(normalized ? { text: normalized } : null, 'delta')
       return
     }
 
@@ -221,12 +261,7 @@ export function RealtimeCaptionControl({
     void saveCompletedCaptionSegment(segment).catch(() => {
       setMessage('字幕は継続中ですが、ローカルレビュー用保存に失敗しました。')
     })
-    broadcastRef.current?.postMessage({
-      caption: { text },
-      lectureSessionId,
-      source: 'completed',
-      timestamp: Date.now(),
-    })
+    broadcastCaption({ text }, 'completed')
   }
 
   async function publishCompletedWindow() {
@@ -277,7 +312,7 @@ export function RealtimeCaptionControl({
     if (result?.should_stop) {
       if (result.reason === 'selected_duration_elapsed') {
         stopLocal(
-          '選択した利用時間に到達したため字幕を停止しました。再開にはAPI利用PINが必要です。',
+          '選択した利用時間に到達したため字幕を停止しました。再開は教員が明示的に操作してください。',
           'idle',
         )
         return
@@ -287,12 +322,21 @@ export function RealtimeCaptionControl({
   }
 
   async function handleStart() {
-    if (status === 'running' || status === 'connecting' || !billingPin) return
+    if (
+      status === 'running' ||
+      status === 'connecting' ||
+      masterHeldByOther ||
+      (!masterAuthorized && !billingPin)
+    )
+      return
     if (lectureStatus !== 'open') {
       updateStatus('error')
       setMessage('開始済みで終了前の講義だけ字幕を開始できます。')
       return
     }
+
+    transportSequenceRef.current = 0
+    transportStreamIdRef.current = crypto.randomUUID()
 
     updateStatus('authorizing')
     setMessage('API利用PIN、選択時間、講義上限を確認しています。')
@@ -301,7 +345,7 @@ export function RealtimeCaptionControl({
       const authorization = await supabaseAdminRepository.authorizeAiStart({
         actions: ['captions'],
         adminToken,
-        billingPin,
+        billingPin: masterAuthorized ? undefined : billingPin,
         lectureSessionId,
       })
       setBillingPin('')
@@ -384,7 +428,7 @@ export function RealtimeCaptionControl({
     try {
       await stopServerOperation('selected_duration_elapsed')
       stopLocal(
-        '選択した利用時間に到達したため字幕を停止しました。再開にはAPI利用PINが必要です。',
+        '選択した利用時間に到達したため字幕を停止しました。再開は教員が明示的に操作してください。',
         'idle',
       )
     } catch {
@@ -452,6 +496,8 @@ export function RealtimeCaptionControl({
   }, [adminToken, lectureSessionId])
 
   useEffect(() => {
+    transportSequenceRef.current = 0
+    transportStreamIdRef.current = crypto.randomUUID()
     broadcastRef.current = createCaptionBroadcastChannel(lectureSessionId)
     void deleteExpiredCompletedCaptionSegments()
       .then(() => listCompletedCaptionSegments(lectureSessionId))
@@ -540,17 +586,23 @@ export function RealtimeCaptionControl({
       </p>
 
       <div className="caption-control-form">
-        <label className="field">
-          <span>API利用PIN（管理PINとは別）</span>
-          <input
-            autoComplete="new-password"
-            disabled={status === 'running' || isStarting}
-            maxLength={128}
-            onChange={(event) => setBillingPin(event.target.value)}
-            type="password"
-            value={billingPin}
-          />
-        </label>
+        {masterHeldByOther ? (
+          <p className="note">別の教員画面がAI許可を保持しています。</p>
+        ) : masterAuthorized ? (
+          <p className="note">講義中のAPI許可を使用します。</p>
+        ) : (
+          <label className="field">
+            <span>API利用PIN（管理PINとは別）</span>
+            <input
+              autoComplete="new-password"
+              disabled={status === 'running' || isStarting || masterHeldByOther}
+              maxLength={128}
+              onChange={(event) => setBillingPin(event.target.value)}
+              type="password"
+              value={billingPin}
+            />
+          </label>
+        )}
         <label className="field compact-field">
           <span>利用時間</span>
           <select
@@ -589,8 +641,9 @@ export function RealtimeCaptionControl({
           disabled={
             status === 'running' ||
             isStarting ||
+            masterHeldByOther ||
             lectureStatus !== 'open' ||
-            billingPin.length < 1
+            (!masterAuthorized && billingPin.length < 1)
           }
           onClick={() => void handleStart()}
           type="button"

@@ -15,7 +15,7 @@ function journalClubBranch(source: string) {
   return source.slice(start, end)
 }
 
-test('Journal Club Edge action is behind tracked Admin auth and a default-off server flag', () => {
+test('Journal Club Edge action is behind tracked Admin auth and two default-off server flags', () => {
   const branch = journalClubBranch(manageLectures)
   const globalClaims = manageLectures.indexOf(
     'const adminClaims = body.adminToken',
@@ -29,9 +29,30 @@ test('Journal Club Edge action is behind tracked Admin auth and a default-off se
     branch,
     /Deno\.env\.get\('PHASE7_27_JOURNAL_CLUB_ENABLED'\) !== 'true'/,
   )
+  assert.match(
+    branch,
+    /Deno\.env\.get\([\s\S]*?'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED'[\s\S]*?\) !== 'true'/,
+  )
+  assert.match(branch, /Journal Club preset creation is retired\./)
+  assert.match(branch, /410/)
   assert.match(branch, /!adminClaims\.sid/)
   assert.match(branch, /UUID_PATTERN\.test\(body\.clientRequestId\)/)
   assert.match(branch, /\['production', 'rehearsal'\]\.includes/)
+})
+
+test('Journal Club retirement rejects creation before auth-user lookup or RPC work', () => {
+  const branch = journalClubBranch(manageLectures)
+  const retirementGuard = branch.indexOf(
+    'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED',
+  )
+  const authUserLookup = branch.indexOf('await supabase.auth.getUser')
+  const creationRpc = branch.indexOf(
+    'admin_create_phase727_journal_club_run_v1',
+  )
+
+  assert.ok(retirementGuard >= 0)
+  assert.ok(authUserLookup > retirementGuard)
+  assert.ok(creationRpc > retirementGuard)
 })
 
 test('Journal Club Edge action binds the tracked token to the current Supabase user', () => {
@@ -62,6 +83,10 @@ test('Journal Club creation delegates one atomic RPC and never starts billable o
 })
 
 test('Journal Club metadata and Poll ordering add no query when the server flag is off', () => {
+  const listStart = manageLectures.indexOf('async function listLectures')
+  const createAction = manageLectures.indexOf("if (body.action === 'create')")
+  const listBranch = manageLectures.slice(listStart, createAction)
+
   assert.match(
     manageLectures,
     /if \(Deno\.env\.get\('PHASE7_27_JOURNAL_CLUB_ENABLED'\) === 'true'\) \{[\s\S]*?\.from\('phase727_journal_club_runs'\)/,
@@ -77,5 +102,9 @@ test('Journal Club metadata and Poll ordering add no query when the server flag 
   assert.match(
     managePolls,
     /return left\.templateOrder - right\.templateOrder/,
+  )
+  assert.doesNotMatch(
+    listBranch,
+    /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/,
   )
 })

@@ -52,6 +52,14 @@ const preset = read(
 
 assert.match(envExample, /^VITE_PHASE7_27_JOURNAL_CLUB=false$/m)
 assert.match(envExample, /^PHASE7_27_JOURNAL_CLUB_ENABLED=false$/m)
+assert.match(
+  envExample,
+  /^VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION=false$/m,
+)
+assert.match(
+  envExample,
+  /^PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED=false$/m,
+)
 for (const dependency of [
   'isPhase66UxIntegrationEnabled',
   'isPhase68SecurityEnabled',
@@ -63,6 +71,10 @@ for (const dependency of [
 assert.match(
   featureFlags,
   /import\.meta\.env\.VITE_PHASE7_27_JOURNAL_CLUB === 'true'/,
+)
+assert.match(
+  featureFlags,
+  /isPhase728JournalClubPresetCreationEnabled\s*=\s*[\s\S]*?isPhase727JournalClubEnabled\s*&&[\s\S]*?VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION === 'true'/,
 )
 
 const productionBase = {
@@ -183,6 +195,11 @@ assert.match(migration, /private\.phase6_public_summaries_json\([\s\S]*?18/)
 
 assert.match(manageLectures, /action: 'createJournalClubRun'/)
 assert.match(manageLectures, /PHASE7_27_JOURNAL_CLUB_ENABLED/)
+assert.match(
+  manageLectures,
+  /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/,
+)
+assert.match(manageLectures, /Journal Club preset creation is retired\./)
 assert.match(manageLectures, /admin_create_phase727_journal_club_run_v1/)
 assert.match(managePolls, /phase727_journal_club_poll_slots/)
 assert.match(managePolls, /return left\.templateOrder - right\.templateOrder/)
@@ -195,7 +212,10 @@ assert.match(preset, /prepare\('rehearsal'\)/)
 assert.match(preset, /prepare\('production'\)/)
 assert.match(preset, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
 assert.match(preset, /資料公開後、一覧の「開始」を押してください/)
-assert.match(adminPage, /journalClubPreset=/)
+assert.match(
+  adminPage,
+  /journalClubPreset={[\s\S]*?isPhase728JournalClubPresetCreationEnabled\s*\?\s*\(/,
+)
 assert.match(app, /<Route element={<DisplayPage \/>} path="\/display" \/>/)
 assert.doesNotMatch(
   app,

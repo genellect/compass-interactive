@@ -81,11 +81,11 @@ download byte ranges through the Cloudflare Worker, not through Supabase.
 | `ai_realtime_token_audit`                      | Realtime secret issuance audit                                  |
 | `ai_realtime_provider_calls`                   | Provider-call identity, deadline and idempotent hangup state    |
 | `lecture_public_captions`                      | Bounded completed caption windows for snapshot delivery         |
-| `academic_answer_requests`                     | Idempotent evidence/admission/provider-dispatch state            |
-| `lecture_academic_answers`                     | Immutable answer identity, model and prompt audit                |
-| `academic_answer_sources`                      | Verified bounded citation metadata; no abstract/body text        |
-| `academic_answer_revisions`                    | Immutable AI/teacher answer bodies                               |
-| `academic_answer_publications`                 | Hidden/public teacher-reviewed projection                        |
+| `academic_answer_requests`                     | Idempotent evidence/admission/provider-dispatch state           |
+| `lecture_academic_answers`                     | Immutable answer identity, model and prompt audit               |
+| `academic_answer_sources`                      | Verified bounded citation metadata; no abstract/body text       |
+| `academic_answer_revisions`                    | Immutable AI/teacher answer bodies                              |
+| `academic_answer_publications`                 | Hidden/public teacher-reviewed projection                       |
 
 `lecture_ai_control.summary_language` stores the future-window preference.
 Each `lecture_summary_windows` row snapshots `requested_language` and later
@@ -176,3 +176,26 @@ npm run typecheck
 
 See `docs/supabase_setup.md`, `docs/SECURITY.md` and the applicable Phase gate
 report before changing schema, grants, RLS, Cron or Edge configuration.
+
+## 11. Phase 7.28 additive objects
+
+`display_realtime_sessions` stores only server-side Display binding metadata:
+lecture, issuing Admin session/user, first claimed Display auth UID, SHA-256 JTI
+hash, random private topic, expiry/revocation and lifecycle timestamps. A
+partial unique index permits at most one active binding per lecture. RLS is ON;
+`anon` and `authenticated` have no table grant. Private service-role helpers
+issue, claim, authorize a topic, terminalize and clean at most 500 old terminal
+rows per hourly run. The service-role-only snapshot-fallback verifier joins the
+runtime gate, binding, lecture and issuing `admin_sessions` row so Edge never
+authorizes a rollback from `revoke_reason` or client state alone.
+
+`ai_master_authorizations` stores one active lecture authorization bound to a
+tracked Admin session, actor, exact action array and hard stop.
+`ai_master_authorization_events` stores content-free bounded audit metadata.
+Child paid starts continue to use `ai_billing_grants` and the existing usage,
+operation and concurrency tables. RLS is ON and only explicit service-role
+paths can access these new tables/functions.
+
+The two Phase 7.28 migrations are expand-only. A future physical-cleanup
+contract must delete dependent audit events, grants and master rows in FK-safe
+order; Phase 7.28 performs no destructive schema rollback.

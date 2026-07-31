@@ -82,6 +82,7 @@ export type CompassStateValue = {
   joinLecture: (lectureCode: string) => Promise<JoinResult>
   addComment: (body: string, nickname?: string | null) => Promise<boolean>
   refreshComments: () => Promise<void>
+  refreshDisplayState: () => Promise<void>
   loadOlderComments: () => Promise<void>
   refreshPollResults: () => Promise<void>
   toggleCommentLike: (commentId: string) => Promise<void>

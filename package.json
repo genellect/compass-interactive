@@ -4,7 +4,7 @@
   "version": "0.11.0",
   "type": "module",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.22.0"
   },
   "scripts": {
     "dev": "vite",
@@ -69,6 +69,12 @@
     "test:phase7-27-load": "node scripts/test-phase7-27-load.mjs",
     "test:phase7-27-concurrency": "node scripts/test-phase7-27-concurrency.mjs",
     "test:phase7-27-upgrade": "node scripts/test-phase7-27-upgrade.mjs",
+    "test:phase7-28b-display-realtime": "node scripts/test-phase7-28b-display-realtime.mjs",
+    "test:phase7-28b-lock-order": "node scripts/test-phase7-28b-lock-order.mjs",
+    "test:phase7-28c-ai-master": "node scripts/test-phase7-28-ai-master-static.mjs",
+    "test:phase7-28c-ai-concurrency": "node scripts/test-phase7-28-ai-master-concurrency.mjs",
+    "test:phase7-28-load": "node scripts/test-phase7-28-load.mjs",
+    "test:phase7-28-upgrade": "node scripts/test-phase7-28-upgrade.mjs",
     "test:production-gate:static": "node --experimental-strip-types scripts/test-production-gate-static.mjs",
     "test:production-env": "node scripts/test-production-env.mjs",
     "test:production-local-edge": "node scripts/test-production-local-edge.mjs",
@@ -81,6 +87,8 @@
     "test:e2e:phase7-27": "node scripts/ci/run-browser-e2e.mjs demo-jc e2e/demo/journal-club-preset-admin.spec.ts",
     "test:e2e:phase7-27:flag-off": "node scripts/ci/run-browser-e2e.mjs demo-jc-off e2e/demo/journal-club-preset-admin.spec.ts",
     "test:e2e:phase7-27:local": "node scripts/ci/run-browser-e2e.mjs local-jc e2e/local/journal-club-integration.spec.ts --project=local-supabase-chromium",
+    "test:e2e:phase7-28b:local": "node scripts/ci/run-browser-e2e.mjs local-jc e2e/local/display-realtime-integration.spec.ts --project=local-supabase-chromium --project=local-supabase-webkit --project=local-supabase-mobile-chromium",
+    "test:e2e:phase7-28c:local": "node scripts/ci/run-browser-e2e.mjs local-ai e2e/local/ai-master-authorization.spec.ts --project=local-supabase-chromium --project=local-supabase-webkit --project=local-supabase-mobile-chromium",
     "test:e2e:local": "node scripts/ci/run-browser-e2e.mjs local",
     "test:e2e:local:triple": "node scripts/ci/run-browser-e2e.mjs local --repeat-each=3",
     "test:e2e:local:direct": "playwright test --config playwright.local.config.ts",
@@ -109,7 +117,7 @@
     "qrcode": "1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.1"
+    "react-router": "8.3.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
@@ -128,6 +136,7 @@
     "wrangler": "4.110.0"
   },
   "overrides": {
+    "postcss": "8.5.25",
     "sharp": "0.35.3"
   }
 }

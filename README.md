@@ -58,9 +58,18 @@ secrets.
   fresh lecture UUID, six-digit code and six draft Polls without starting the
   lecture, opening a Poll, publishing a PDF or starting paid AI work. Rehearsals
   may be repeated; exactly one production run is allowed for the preset.
+- Phase 7.28 locally retires that one-off creation surface, adds an authorized
+  private cross-browser Display acceleration path without adding student
+  Realtime, and adds two-scope lecture-wide AI authorization while preserving a
+  fresh single-use grant for every paid start. Its automated Local Gate is
+  evaluated separately from Human/Hosted/Production gates; all code flags
+  remain default OFF.
 - The current hosted preview explicitly enables the Phase 6.8-7.27 capabilities
   for verification. This environment state does not change the default-OFF
   release contract or authorize preparation/start of a Journal Club run.
+- Phase 7.28A-C has passed its automated Local Gate. Its Human UI, Hosted and
+  formal Production gates remain HOLD, and no Phase 7.28 migration, flag, push
+  or deployment has been applied by that local decision.
 
 The authoritative future plan and stop-the-line gates are in
 [`docs/ROADMAP.md`](docs/ROADMAP.md). Historical Phase documents remain evidence;
@@ -158,6 +167,13 @@ Pages does not depend on a catch-all redirect.
   exception; normal lectures and rehearsals retain the standard 30-day policy.
   Prepared runs enter the conventional lecture list and use its existing start
   control; both run kinds share the same PDF-gated lifecycle path.
+- **Phase 7.28 operational layer (default OFF):** one-off preset creation is
+  recovery-only; one claimed Display identity per lecture may receive private
+  page/caption acceleration while students stay on five-second snapshots; AI
+  master authorization never performs paid work and only mints short-lived
+  child grants for explicit feature starts. Runtime rollback to snapshot/PDF
+  remains server-authoritative and rechecks the issuing Admin session on every
+  request.
 - **OpenAI:** only explicitly authorized, bounded text/audio needed by the
   selected feature. The API key remains in Supabase Edge secrets.
 - **Email provider:** one content-bounded daily operations digest when activity
@@ -170,7 +186,8 @@ boundaries.
 
 ## Local requirements
 
-- Node.js `24` (the repository currently requires `>=22.13.0`)
+- Node.js `>=22.22.0` (`.node-version` and CI use `22.22.0`; Node 24 is also
+  supported)
 - npm using the committed `package-lock.json`
 - Docker Desktop with the WSL2 per-user backend for local Supabase integration
 - Supabase CLI and Wrangler from this repository's pinned dev dependencies
@@ -222,6 +239,9 @@ The frontend feature flags are additive and fail closed:
 - `VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS`
 - `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING`
 - `VITE_PHASE7_27_JOURNAL_CLUB`
+- `VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION`
+- `VITE_PHASE7_28_DISPLAY_REALTIME`
+- `VITE_PHASE7_28_AI_MASTER_AUTH`
 
 Do not enable a flag merely because the frontend contains the code. The
 matching migration, Edge Function, Worker binding, secret, ownership test and
@@ -253,13 +273,20 @@ npm run test:phase7-26-load
 npm run test:phase7-27-edge
 npm run test:phase7-27-static
 npm run test:phase7-27-load
+npm run test:phase7-28b-display-realtime
+npm run test:phase7-28b-lock-order
+npm run test:phase7-28c-ai-master
+npm run test:phase7-28c-ai-concurrency
+npm run test:phase7-28-upgrade
+npm run test:phase7-28-load
 npm run build
 git diff --check
 ```
 
-Phase 7.27 completion additionally requires its upgrade and two-connection
-concurrency tests plus both flag-ON and flag-OFF Chromium/WebKit E2E modes; the
-partial results in Current status do not waive those remaining gates.
+Phase 7.27/7.28 completion additionally requires their populated upgrade and
+two-connection concurrency probes, complete pgTAP, and the applicable
+flag-ON/OFF plus local Chromium/WebKit/Mobile E2E modes. See the dated Local
+Gate record for exact counts; local PASS never waives Human or Hosted evidence.
 
 Run every non-live regression group used by CI:
 
@@ -356,6 +383,8 @@ flags before attempting a destructive rollback.
 - Phase 7.27 Journal Club integration: [`docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`](docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md)
 - Phase 7.27 temporary preview and remaining operational gates: [`docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`](docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md)
 - Phase 7.27 temporary preview stop and resume handoff: [`docs/PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22.md`](docs/PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22.md)
+- Phase 7.28 requirements and threat model: [`docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md`](docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md)
+- Phase 7.28 local evidence: [`docs/PHASE7_28_LOCAL_GATE_2026-07-31.md`](docs/PHASE7_28_LOCAL_GATE_2026-07-31.md)
 - Phase 7 production decision: [`docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`](docs/PHASE7_PRODUCTION_GATE_2026-07-21.md)
 - Future phases and global gates: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - Operations entrypoint: [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)

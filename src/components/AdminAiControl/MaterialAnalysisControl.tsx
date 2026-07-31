@@ -6,14 +6,20 @@ import {
   type AdminMaterialSummaryBody,
   type AdminPdfDocument,
   type AdminPollProposal,
+  type AiMasterAuthorization,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
+import {
+  masterAuthorizationHeldByOther,
+  masterAuthorizesFeature,
+} from './aiMasterAuthorization'
 
 type MaterialAnalysisControlProps = {
   adminToken: string
   documents: AdminPdfDocument[]
   lectureSessionId: string
   lectureStatus: string
+  masterAuthorization: AiMasterAuthorization | null
   onPollDraftCreated: () => void | Promise<void>
   publisherSessionToken: string
 }
@@ -63,6 +69,7 @@ export function MaterialAnalysisControl({
   documents,
   lectureSessionId,
   lectureStatus,
+  masterAuthorization,
   onPollDraftCreated,
   publisherSessionToken,
 }: MaterialAnalysisControlProps) {
@@ -83,6 +90,10 @@ export function MaterialAnalysisControl({
   const [draftOptions, setDraftOptions] = useState('')
   const [summaryDraft, setSummaryDraft] =
     useState<AdminMaterialSummaryBody | null>(null)
+  const masterAuthorized =
+    masterAuthorizesFeature(masterAuthorization, 'material_analysis') &&
+    masterAuthorizesFeature(masterAuthorization, 'poll_suggestions')
+  const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
 
   const selectedDocument = useMemo(
     () =>
@@ -146,9 +157,16 @@ export function MaterialAnalysisControl({
     if (
       !selectedDocument ||
       (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
-      !billingPin.trim()
+      masterHeldByOther ||
+      (!masterAuthorized && !billingPin.trim())
     ) {
-      setMessage('PDFの公開状態とAPI利用PINを確認してください。')
+      setMessage(
+        masterHeldByOther
+          ? '別の教員画面がAI許可を保持しています。'
+          : masterAuthorized
+            ? 'PDFの公開状態を確認してください。'
+            : 'PDFの公開状態とAPI利用PINを確認してください。',
+      )
       return
     }
     const start = Number(pageStart)
@@ -181,7 +199,7 @@ export function MaterialAnalysisControl({
       const authorization = await supabaseAdminRepository.authorizeAiStart({
         actions: [action],
         adminToken,
-        billingPin,
+        billingPin: masterAuthorized ? undefined : billingPin,
         lectureSessionId,
       })
       setBillingPin('')
@@ -382,25 +400,32 @@ export function MaterialAnalysisControl({
             ))}
           </select>
         </label>
-        <label className="field compact-field">
-          <span>API利用PIN（毎回）</span>
-          <input
-            autoComplete="off"
-            disabled={disabled}
-            inputMode="numeric"
-            onChange={(event) => setBillingPin(event.target.value)}
-            type="password"
-            value={billingPin}
-          />
-        </label>
+        {masterHeldByOther ? (
+          <p className="note">別の教員画面がAI許可を保持しています。</p>
+        ) : masterAuthorized ? (
+          <p className="note">講義中のAPI許可を使用します。</p>
+        ) : (
+          <label className="field compact-field">
+            <span>API利用PIN（毎回）</span>
+            <input
+              autoComplete="off"
+              disabled={disabled}
+              inputMode="numeric"
+              onChange={(event) => setBillingPin(event.target.value)}
+              type="password"
+              value={billingPin}
+            />
+          </label>
+        )}
         <button
           className="primary-button"
           disabled={
             disabled ||
+            masterHeldByOther ||
             !selectedDocument ||
             (!publisherSessionToken &&
               !isPhase726BrowserPdfPublishingEnabled) ||
-            !billingPin.trim() ||
+            (!masterAuthorized && !billingPin.trim()) ||
             Boolean(results.analysis)
           }
           onClick={() => void runAnalysis('material_analysis')}
@@ -625,7 +650,11 @@ export function MaterialAnalysisControl({
         <div className="additional-poll-actions">
           <div>
             <strong>指定ページから追加候補</strong>
-            <small>実行時にAPI利用PINをもう一度確認します</small>
+            <small>
+              {masterAuthorized
+                ? '講義中のAPI許可を使用します'
+                : '実行時にAPI利用PINをもう一度確認します'}
+            </small>
           </div>
           <label className="field compact-field">
             <span>開始</span>
@@ -651,7 +680,11 @@ export function MaterialAnalysisControl({
           </label>
           <button
             className="secondary-button"
-            disabled={disabled || !billingPin.trim()}
+            disabled={
+              disabled ||
+              masterHeldByOther ||
+              (!masterAuthorized && !billingPin.trim())
+            }
             onClick={() => void runAnalysis('poll_suggestions')}
             type="button"
           >

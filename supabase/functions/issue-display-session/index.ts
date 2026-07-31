@@ -1,15 +1,21 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import {
+  getAdminTokenClaims,
+  getAdminTokenSecret,
+  sha256Hex,
+} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import {
   createDisplayToken,
+  getDisplayTokenClaims,
   getDisplayTokenSecret,
 } from '../_shared/displayToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type IssueDisplaySessionRequest = {
   adminToken?: string
+  enableRealtime?: boolean
   lectureSessionId?: string
 }
 
@@ -18,6 +24,13 @@ type OperatorAccess = {
   lecture_session_id: string
   mode: 'live' | 'terminal' | 'unavailable'
   server_time: string
+}
+
+type DisplayRealtimeRegistration = {
+  expires_at: string
+  lecture_session_id: string
+  session_id: string
+  topic: string
 }
 
 function isUuid(value: string) {
@@ -51,7 +64,9 @@ Deno.serve(async (request) => {
   if (
     !body.adminToken ||
     !body.lectureSessionId ||
-    !isUuid(body.lectureSessionId)
+    !isUuid(body.lectureSessionId) ||
+    (body.enableRealtime !== undefined &&
+      typeof body.enableRealtime !== 'boolean')
   ) {
     return jsonResponse(
       {
@@ -75,7 +90,12 @@ Deno.serve(async (request) => {
     )
   }
 
-  if (!(await verifyAdminToken(body.adminToken, adminSecret, request))) {
+  const adminClaims = await getAdminTokenClaims(
+    body.adminToken,
+    adminSecret,
+    request,
+  )
+  if (!adminClaims) {
     return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
 
@@ -123,16 +143,102 @@ Deno.serve(async (request) => {
   )
 
   try {
+    const displaySecret = getDisplayTokenSecret()
     const displayToken = await createDisplayToken(
       body.lectureSessionId,
       expiresAtSeconds,
-      getDisplayTokenSecret(),
+      displaySecret,
     )
+    let realtime: {
+      expiresAt: string
+      topic: string
+    } | null = null
+
+    if (
+      body.enableRealtime === true &&
+      Deno.env.get('PHASE728_DISPLAY_REALTIME_ENABLED') === 'true'
+    ) {
+      if (!adminClaims.sid) {
+        return jsonResponse(
+          {
+            ok: false,
+            message: 'A tracked Admin session is required for Display Realtime.',
+          },
+          409,
+        )
+      }
+
+      const authorization = request.headers.get('Authorization') ?? ''
+      const bearerToken = authorization.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length).trim()
+        : ''
+      if (!bearerToken) {
+        return jsonResponse(
+          { ok: false, message: 'Display Realtime authentication failed.' },
+          401,
+        )
+      }
+      const { data: authData, error: authError } =
+        await supabase.auth.getUser(bearerToken)
+      if (authError || !authData.user) {
+        return jsonResponse(
+          { ok: false, message: 'Display Realtime authentication failed.' },
+          401,
+        )
+      }
+
+      const displayClaims = await getDisplayTokenClaims(
+        displayToken,
+        displaySecret,
+      )
+      if (!displayClaims) {
+        return jsonResponse(
+          { ok: false, message: 'Display session creation failed.' },
+          500,
+        )
+      }
+
+      const { data: registrationData, error: registrationError } =
+        await supabase.rpc('register_display_realtime_session_v1', {
+          target_admin_auth_user_id: authData.user.id,
+          target_admin_session_id: adminClaims.sid,
+          target_lecture_session_id: body.lectureSessionId,
+          target_session_id: crypto.randomUUID(),
+          target_token_expires_at: new Date(
+            displayClaims.exp * 1_000,
+          ).toISOString(),
+          target_token_jti_hash: await sha256Hex(displayClaims.jti),
+        })
+      if (registrationError || !registrationData) {
+        return jsonResponse(
+          { ok: false, message: 'Display Realtime could not be prepared.' },
+          registrationError?.code === '42501' ? 401 : 500,
+        )
+      }
+      const registration =
+        registrationData as unknown as DisplayRealtimeRegistration
+      if (
+        registration.lecture_session_id !== body.lectureSessionId ||
+        !registration.topic ||
+        !registration.expires_at
+      ) {
+        return jsonResponse(
+          { ok: false, message: 'Display Realtime could not be prepared.' },
+          500,
+        )
+      }
+      realtime = {
+        expiresAt: registration.expires_at,
+        topic: registration.topic,
+      }
+    }
+
     return jsonResponse({
       displayToken,
       expiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
       lectureSessionId: body.lectureSessionId,
       ok: true,
+      realtime,
     })
   } catch (error) {
     return jsonResponse(

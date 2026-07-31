@@ -92,7 +92,11 @@ const [
   read('src/pdf/pdfDelivery.ts'),
 ])
 
-assert.match(issueDisplay, /verifyAdminToken/)
+assert.match(issueDisplay, /getAdminTokenClaims/)
+assert.match(
+  issueDisplay,
+  /getAdminTokenClaims\([\s\S]*?body\.adminToken[\s\S]*?adminSecret[\s\S]*?request/,
+)
 assert.match(issueDisplay, /admin_get_lecture_operator_access_v1/)
 assert.match(issueDisplay, /access\.mode !== 'live'/)
 assert.match(issueDisplay, /hardStopSeconds \+ 5 \* 60/)
@@ -123,7 +127,11 @@ assert.match(
   /displayClaims\?\.lectureSessionId !== body\.lectureSessionId/,
 )
 assert.match(issuePdfAccess, /admin_get_pdf_access_claims_v1/)
-assert.doesNotMatch(issuePdfAccess, /getDisplayTerminalTokenClaims/)
+assert.match(issuePdfAccess, /getDisplayTerminalTokenClaims/)
+assert.match(
+  issuePdfAccess,
+  /terminalOnly[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode !== 'terminal'/,
+)
 assert.match(pdfDelivery, /\? 'display'\s*:\s*'member'/)
 assert.match(
   pdfDelivery,

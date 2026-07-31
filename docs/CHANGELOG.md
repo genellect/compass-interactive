@@ -3,6 +3,24 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-07-31 - Phase 7.28 local operational hardening
+
+- Retired the one-off Journal Club preset creation UI/API behind independent
+  default-OFF recovery flags without deleting historical lectures or archives.
+- Added a private, first-claimer-bound cross-browser Display acceleration path
+  for committed page changes and bounded captions. Students remain on the
+  existing five-second snapshot and receive no Realtime subscription.
+- Added lecture/Admin-session/actor-bound AI master authorization with two
+  scopes. Authorization performs no paid work; every explicit feature start
+  still consumes a fresh child grant under the existing budget, concurrency,
+  lifecycle and idempotency checks.
+- Added scheduler catch-up, runtime drains, additive clean/upgrade migrations,
+  pgTAP/concurrency/load/static tests and Chromium/WebKit/Mobile E2E. Hosted,
+  human and formal Production evidence remain HOLD.
+- Bound rollback snapshot/PDF access to a request-time DB verification of the
+  exact Display, gate, lecture lifetime and issuing Admin session; later Admin
+  revoke or lecture termination permanently fences the rollback binding.
+
 ## 2026-07-22 - Phase 7.27 final Admin integration
 
 - Set the production and rehearsal title to

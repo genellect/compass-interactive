@@ -436,6 +436,12 @@ verify_jwt = false
 [functions.issue-display-session]
 verify_jwt = true
 
+[functions.claim-display-realtime-session]
+verify_jwt = true
+
+[functions.broadcast-display-caption]
+verify_jwt = true
+
 [functions.operator-live-snapshot]
 verify_jwt = true
 

@@ -15,7 +15,7 @@ const demoMode =
   mode === 'demo-pdf-off' ||
   mode === 'demo-jc' ||
   mode === 'demo-jc-off'
-const localMode = mode === 'local' || mode === 'local-jc'
+const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
 const configuredPort = process.env.PLAYWRIGHT_APP_PORT
   ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
   : null
@@ -40,10 +40,11 @@ if (
     'demo-jc-off',
     'local',
     'local-jc',
+    'local-ai',
   ].includes(mode)
 ) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local|local-jc>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local|local-jc|local-ai>',
   )
 }
 
@@ -142,11 +143,12 @@ const appEnvironment = {
     'demo-jc',
     'demo-jc-off',
     'local-jc',
+    'local-ai',
   ].includes(mode)
     ? 'true'
     : 'false',
-  VITE_PHASE4_REALTIME_CAPTIONS: 'false',
-  VITE_PHASE5_MATERIAL_ANALYSIS: 'false',
+  VITE_PHASE4_REALTIME_CAPTIONS: mode === 'local-ai' ? 'true' : 'false',
+  VITE_PHASE5_MATERIAL_ANALYSIS: mode === 'local-ai' ? 'true' : 'false',
   VITE_PHASE6_SUMMARIES: localMode ? 'true' : 'false',
   VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
@@ -161,11 +163,18 @@ const appEnvironment = {
     mode === 'demo-pdf' ||
     mode === 'demo-jc' ||
     mode === 'demo-jc-off' ||
-    mode === 'local-jc'
+    mode === 'local-jc' ||
+    mode === 'local-ai'
       ? 'true'
       : 'false',
   VITE_PHASE7_27_JOURNAL_CLUB:
+    mode === 'demo-jc' || mode === 'demo-jc-off' || mode === 'local-jc'
+      ? 'true'
+      : 'false',
+  VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION:
     mode === 'demo-jc' || mode === 'local-jc' ? 'true' : 'false',
+  VITE_PHASE7_28_DISPLAY_REALTIME: mode === 'local-jc' ? 'true' : 'false',
+  VITE_PHASE7_28_AI_MASTER_AUTH: mode === 'local-ai' ? 'true' : 'false',
   VITE_PDF_WORKER_BASE_URL:
     mode === 'local-jc'
       ? 'http://127.0.0.1:8787'

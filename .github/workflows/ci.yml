@@ -86,10 +86,11 @@ jobs:
     name: Local Supabase, pgTAP and live browser E2E
     needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       TEST_ADMIN_PIN: '246810'
       TEST_ADMIN_SESSION_SECRET: compass-ci-only-admin-session-secret-2026-at-least-32-bytes
+      TEST_BILLING_PIN: '135790'
       TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -116,6 +117,12 @@ jobs:
       - name: Run real-database AI concurrency regression
         run: npm run test:phase4-1-concurrency
 
+      - name: Run lecture-wide AI authorization concurrency regression
+        run: npm run test:phase7-28c-ai-concurrency
+
+      - name: Run Display issue versus Admin revoke lock-order regression
+        run: npm run test:phase7-28b-lock-order
+
       - name: Run real-database PDF publication concurrency regression
         run: npm run test:phase7-26-concurrency
 
@@ -127,6 +134,9 @@ jobs:
 
       - name: Verify Phase 7.26 data upgrade through Phase 7.27
         run: npm run test:phase7-27-upgrade
+
+      - name: Verify populated Phase 7.27 upgrade through Phase 7.28
+        run: npm run test:phase7-28-upgrade
 
       - name: Lint the local database
         run: npx supabase db lint --local --fail-on error
@@ -159,14 +169,16 @@ jobs:
           LECTURE_RESUME_TOKEN_SECRET=compass-ci-only-lecture-resume-token-secret-at-least-32-bytes
           BILLING_PIN=135790
           COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
-          PHASE4_REALTIME_CAPTIONS_ENABLED=false
-          PHASE5_MATERIAL_ANALYSIS_ENABLED=false
+          PHASE4_REALTIME_CAPTIONS_ENABLED=true
+          PHASE5_MATERIAL_ANALYSIS_ENABLED=true
           PHASE6_SUMMARIES_ENABLED=true
           PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED=true
           PHASE7_2_ACADEMIC_ANSWERS_ENABLED=true
           PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED=true
           PHASE726_BROWSER_PDF_PUBLICATION_ENABLED=true
           PHASE7_27_JOURNAL_CLUB_ENABLED=true
+          PHASE728_DISPLAY_REALTIME_ENABLED=true
+          PHASE7_28_AI_MASTER_AUTH_ENABLED=true
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
           node --input-type=module -e "const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']); console.log('PDF_ACCESS_PRIVATE_JWK=' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)))" >> "$edge_env"
@@ -184,6 +196,12 @@ jobs:
 
       - name: Run Journal Club browser-to-Edge-to-database integration
         run: npm run test:e2e:phase7-27:local
+
+      - name: Run private cross-browser Display Realtime integration
+        run: npm run test:e2e:phase7-28b:local
+
+      - name: Run lecture-wide AI authorization browser integration
+        run: npm run test:e2e:phase7-28c:local
 
       - name: Restore a clean database before general lifecycle E2E
         run: npx supabase db reset --local --no-seed

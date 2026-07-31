@@ -359,6 +359,16 @@ Deno.serve(async (request) => {
         )
       }
       if (
+        Deno.env.get(
+          'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED',
+        ) !== 'true'
+      ) {
+        return jsonResponse(
+          { ok: false, message: 'Journal Club preset creation is retired.' },
+          410,
+        )
+      }
+      if (
         !adminClaims.sid ||
         !body.clientRequestId ||
         !UUID_PATTERN.test(body.clientRequestId) ||

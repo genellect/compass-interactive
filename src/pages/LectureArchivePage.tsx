@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { SyncedPdfViewer } from '../components/DisplayView'
 import { LiveBoard } from '../components/LiveBoard'
 import {

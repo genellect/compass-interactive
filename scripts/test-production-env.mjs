@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   productionFeatureFlags,
   validateProductionEnvironment,
+  validateProductionServerEnvironment,
 } from './productionEnvironment.mjs'
 
 const safeEnvironment = {
@@ -14,6 +15,13 @@ for (const name of productionFeatureFlags) {
 }
 
 assert.deepEqual(validateProductionEnvironment(safeEnvironment), [])
+const legacyEnvironment = { ...safeEnvironment }
+delete legacyEnvironment.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION
+assert.deepEqual(
+  validateProductionEnvironment(legacyEnvironment),
+  [],
+  'omitting the Phase 7.28 creation switch must remain a safe default-off upgrade',
+)
 assert.match(
   validateProductionEnvironment({
     ...safeEnvironment,
@@ -45,9 +53,83 @@ assert.match(
 assert.match(
   validateProductionEnvironment({
     ...safeEnvironment,
+    VITE_PHASE7_28_AI_MASTER_AUTH: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE4_REALTIME_CAPTIONS=true/,
+)
+assert.deepEqual(validateProductionServerEnvironment({}), [])
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'yes',
+  }).join('\n'),
+  /PHASE728_DISPLAY_REALTIME_ENABLED must be true, false or omitted/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'false',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+  }).join('\n'),
+  /PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+)
+assert.deepEqual(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+  }),
+  [],
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'false',
+  }).join('\n'),
+  /requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+)
+assert.deepEqual(
+  validateProductionServerEnvironment({
+    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE4_REALTIME_CAPTIONS_ENABLED: 'true',
+    PHASE5_MATERIAL_ANALYSIS_ENABLED: 'true',
+    PHASE6_SUMMARIES_ENABLED: 'true',
+    PHASE7_2_ACADEMIC_ANSWERS_ENABLED: 'true',
+    PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED: 'true',
+  }),
+  [],
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+  }).join('\n'),
+  /requires PHASE4_REALTIME_CAPTIONS_ENABLED=true/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED: 'true',
+  }).join('\n'),
+  /requires PHASE7_27_JOURNAL_CLUB_ENABLED=true/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
     VITE_PHASE7_27_JOURNAL_CLUB: 'true',
   }).join('\n'),
   /requires VITE_PHASE6_6_UX_INTEGRATION=true/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE7_27_JOURNAL_CLUB=true/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION: 'yes',
+  }).join('\n'),
+  /must be true, false or omitted/,
 )
 assert.deepEqual(
   validateProductionEnvironment({

@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { AppIcon } from '../components/AppIcon'
 import { useCompassState } from '../hooks/useCompassState'
 

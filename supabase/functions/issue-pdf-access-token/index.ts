@@ -1,9 +1,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
+import {
+  getAdminTokenSecret,
+  sha256Hex,
+  verifyAdminToken,
+} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   getDisplayTokenClaims,
   getDisplayTokenSecret,
+  getDisplayTerminalTokenClaims,
 } from '../_shared/displayToken.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { signPdfAccessToken } from '../_shared/pdfAccessToken.ts'
@@ -119,6 +124,7 @@ Deno.serve(async (request) => {
     claims = data as AccessClaimRow | null
   } else if (body.action === 'display') {
     let displayClaims
+    let terminalOnly = false
     try {
       displayClaims = body.displayToken
         ? await getDisplayTokenClaims(
@@ -126,6 +132,13 @@ Deno.serve(async (request) => {
             getDisplayTokenSecret(),
           )
         : null
+      if (!displayClaims && body.displayToken) {
+        displayClaims = await getDisplayTerminalTokenClaims(
+          body.displayToken,
+          getDisplayTokenSecret(),
+        )
+        terminalOnly = Boolean(displayClaims)
+      }
     } catch (error) {
       return jsonResponse(
         {
@@ -145,6 +158,117 @@ Deno.serve(async (request) => {
     const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
     })
+    let terminalAccessVerified = false
+    if (!terminalOnly) {
+      const authorization = request.headers.get('Authorization') ?? ''
+      const bearerToken = authorization.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length).trim()
+        : ''
+      if (!bearerToken) {
+        return jsonResponse(
+          { message: 'Invalid Display session.', ok: false },
+          401,
+        )
+      }
+      const { data: authData, error: authError } =
+        await serviceClient.auth.getUser(bearerToken)
+      if (authError || !authData.user) {
+        return jsonResponse(
+          { message: 'Invalid Display session.', ok: false },
+          401,
+        )
+      }
+      const tokenJtiHash = await sha256Hex(displayClaims.jti)
+      const { data: bindingValid, error: bindingError } =
+        await serviceClient.rpc('verify_display_realtime_session_v1', {
+          target_display_auth_user_id: authData.user.id,
+          target_lecture_session_id: body.lectureSessionId,
+          target_token_jti_hash: tokenJtiHash,
+        })
+      if (bindingError) {
+        return jsonResponse(
+          { message: 'Display session verification failed.', ok: false },
+          503,
+        )
+      }
+      if (bindingValid !== true) {
+        const { data: realtimeBinding, error: realtimeBindingError } =
+          await serviceClient
+            .from('display_realtime_sessions')
+            .select('id, display_auth_user_id, revoke_reason')
+            .eq('lecture_session_id', body.lectureSessionId)
+            .eq('token_jti_hash', tokenJtiHash)
+            .maybeSingle()
+        if (realtimeBindingError) {
+          return jsonResponse(
+            { message: 'Display session verification failed.', ok: false },
+            503,
+          )
+        }
+        // Legacy clients have no binding and intentionally keep the pre-7.28
+        // signed-token PDF path during staged rollout. A registered token may
+        // downgrade only when the DB runtime gate is OFF and a service-only RPC
+        // revalidates its browser, lecture, binding, and issuing Admin session.
+        let snapshotFallbackValid = false
+        if (realtimeBinding) {
+          const { data: fallbackValid, error: fallbackError } =
+            await serviceClient.rpc('verify_display_snapshot_fallback_v1', {
+              target_display_auth_user_id: authData.user.id,
+              target_lecture_session_id: body.lectureSessionId,
+              target_token_jti_hash: tokenJtiHash,
+            })
+          if (fallbackError) {
+            return jsonResponse(
+              { message: 'Display session verification failed.', ok: false },
+              503,
+            )
+          }
+          snapshotFallbackValid = fallbackValid === true
+        }
+        if (realtimeBinding && !snapshotFallbackValid) {
+          const { data: accessData, error: accessError } =
+            await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
+              target_lecture_session_id: body.lectureSessionId,
+            })
+          const access = accessData as {
+            mode?: unknown
+            terminal?: unknown
+          } | null
+          if (accessError || access?.mode !== 'terminal' || !access.terminal) {
+            if (realtimeBinding.display_auth_user_id === authData.user.id) {
+              return jsonResponse({
+                credentialExpired: true,
+                message: 'Display session has ended.',
+                ok: false,
+              })
+            }
+            return jsonResponse(
+              { message: 'Invalid Display session.', ok: false },
+              401,
+            )
+          }
+          terminalAccessVerified = true
+        }
+      }
+    }
+    if (terminalOnly && !terminalAccessVerified) {
+      const { data: accessData, error: accessError } = await serviceClient.rpc(
+        'admin_get_lecture_operator_access_v1',
+        {
+          target_lecture_session_id: body.lectureSessionId,
+        },
+      )
+      const access = accessData as {
+        mode?: unknown
+        terminal?: unknown
+      } | null
+      if (accessError || access?.mode !== 'terminal' || !access.terminal) {
+        return jsonResponse(
+          { message: 'Display archive is unavailable.', ok: false },
+          401,
+        )
+      }
+    }
     const { data, error } = await serviceClient.rpc(
       'admin_get_pdf_access_claims_v1',
       { target_lecture_session_id: body.lectureSessionId },

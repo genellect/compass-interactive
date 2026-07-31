@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router'
 import { lazy, Suspense, type ReactNode } from 'react'
 import { AppIcon } from './components/AppIcon'
 import { CompassStateProvider } from './context/CompassStateContext'
