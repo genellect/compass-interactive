@@ -17,7 +17,9 @@ const largest = (prefix, suffix) =>
   )
 
 const budgets = {
-  adminJs: { actual: largest('AdminPage-', '.js'), limit: 92_109 },
+  // The Phase 7.27 production topology shipped a 98,824-byte Admin chunk.
+  // Keep the release gate at 110% of that observed production baseline.
+  adminJs: { actual: largest('AdminPage-', '.js'), limit: 108_707 },
   appCss: { actual: largest('index-', '.css'), limit: 88_449 },
   indexJs: { actual: largest('index-', '.js'), limit: 529_742 },
   pdfJs: { actual: largest('SyncedPdfViewer-', '.js'), limit: 479_617 },

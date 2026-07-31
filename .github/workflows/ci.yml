@@ -37,7 +37,30 @@ jobs:
       - run: npm run typecheck:e2e
       - run: npm run lint
       - run: npm run test:ci:nonlive
-      - run: npm run build
+      - name: Build production feature topology
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_build_only
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+          VITE_PDF_WORKER_BASE_URL: https://pdf.example
+          VITE_PHASE1_SYNC_PROTOCOL: 'true'
+          VITE_PHASE2_LECTURE_LIFECYCLE: 'true'
+          VITE_PHASE3_PRIVATE_PDF: 'true'
+          VITE_PHASE4_REALTIME_CAPTIONS: 'true'
+          VITE_PHASE5_MATERIAL_ANALYSIS: 'true'
+          VITE_PHASE6_SUMMARIES: 'true'
+          VITE_PHASE6_5_COMMENT_NICKNAMES: 'true'
+          VITE_PHASE6_6_UX_INTEGRATION: 'true'
+          VITE_PHASE6_8_SECURITY: 'true'
+          VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true'
+          VITE_PHASE7_2_ACADEMIC_ANSWERS: 'true'
+          VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS: 'true'
+          VITE_PHASE7_26_BROWSER_PDF_PUBLISHING: 'true'
+          VITE_PHASE7_27_JOURNAL_CLUB: 'true'
+          VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION: 'false'
+          VITE_PHASE7_28_DISPLAY_REALTIME: 'false'
+          VITE_PHASE7_28_AI_MASTER_AUTH: 'false'
+        run: npm run build
       - run: npm run test:phase6-9-bundle
       - name: Generate CycloneDX SBOM
         shell: bash
