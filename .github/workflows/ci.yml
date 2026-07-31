@@ -230,6 +230,9 @@ jobs:
       - name: Restore a clean database before general lifecycle E2E
         run: npx supabase db reset --local --no-seed
 
+      - name: Wait for local Auth after database reset
+        run: node scripts/ci/wait-for-local-auth.mjs
+
       - name: Run teacher-student browser lifecycle three times
         run: npm run test:e2e:local:triple
 
