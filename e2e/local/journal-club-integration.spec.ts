@@ -578,7 +578,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
     )
     expect(expiredTokenResponse.status()).toBe(401)
     expect(await expiredTokenResponse.json()).toMatchObject({
-      message: 'Invalid Display session.',
+      message: 'Display archive is unavailable.',
       ok: false,
     })
     await displaySafety.assertClean()
