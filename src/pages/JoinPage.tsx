@@ -113,13 +113,16 @@ export function JoinPage() {
 
       <section className="join-hero-copy">
         <div className="hero-kicker">
-          <span className="live-dot" />
-          COMPASS Interactive
+          <AppIcon name="compass" size={14} />
+          NEXT LECTURE EXPERIENCE
         </div>
-        <h1>
-          <span className="hero-line hero-primary-line">わからないが、</span>
-          <br className="mobile-hero-break" />
-          <span className="hero-line hero-accent-line">動き出す。</span>
+        <h1 aria-label="LET EVERYTHING MOVE.">
+          <span aria-hidden="true" className="hero-line hero-primary-line">
+            LET EVERYTHING
+          </span>
+          <span aria-hidden="true" className="hero-line hero-accent-line">
+            MOVE.
+          </span>
         </h1>
 
         <div className="hero-feature-row" aria-label="講義でできること">

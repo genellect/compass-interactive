@@ -1,6 +1,7 @@
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router'
 import { lazy, Suspense, type ReactNode } from 'react'
 import { AppIcon } from './components/AppIcon'
+import { CompassContextMenu } from './components/CompassContextMenu'
 import { CompassStateProvider } from './context/CompassStateContext'
 import { useCompassState } from './hooks/useCompassState'
 import './App.css'
@@ -85,14 +86,17 @@ function AppShell() {
             <small>Lecture Experience</small>
           </span>
         </a>
-        <nav aria-label="画面切り替え">
-          {navItems.map((item) => (
-            <NavLink className="nav-link" key={item.to} to={item.to}>
-              <AppIcon name={item.icon} size={17} />
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+        <div className="app-header-actions">
+          <nav aria-label="画面切り替え">
+            {navItems.map((item) => (
+              <NavLink className="nav-link" key={item.to} to={item.to}>
+                <AppIcon name={item.icon} size={17} />
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <CompassContextMenu />
+        </div>
       </header>
 
       <Suspense fallback={<RouteFallback />}>

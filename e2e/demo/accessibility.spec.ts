@@ -24,7 +24,12 @@ test('join and lecture learning flows have no serious accessibility violations',
   await expect(
     page.getByRole('heading', { name: '講義に参加する' }),
   ).toBeVisible()
+  await page.getByRole('button', { name: 'COMPASSのリンクを開く' }).click()
+  await expect(
+    page.getByRole('link', { name: /Interactiveについて/ }),
+  ).toBeVisible()
   await expectNoSeriousAccessibilityViolations(page)
+  await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'デモ講義を体験' }).click()
   await expect(
