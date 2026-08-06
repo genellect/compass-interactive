@@ -1,0 +1,38 @@
+{
+  "name": "COMPASS Interactive Cloud Development",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [5173, 54321, 54323],
+  "portsAttributes": {
+    "5173": {
+      "label": "COMPASS Interactive Vite",
+      "onAutoForward": "openPreview"
+    },
+    "54321": {
+      "label": "Local Supabase API",
+      "onAutoForward": "silent"
+    },
+    "54323": {
+      "label": "Local Supabase Studio",
+      "onAutoForward": "notify"
+    }
+  },
+  "secrets": {
+    "OPENAI_API_KEY": {
+      "description": "Optional personal development key for explicitly requested live AI checks. Never expose it with a VITE_ prefix."
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

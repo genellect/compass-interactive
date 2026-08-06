@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Interactive: start browser development",
+      "type": "shell",
+      "command": "npm run dev -- --host 0.0.0.0",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: start isolated local Supabase",
+      "type": "shell",
+      "command": "bash .devcontainer/start-local-supabase.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: run non-live regression",
+      "type": "shell",
+      "command": "npm run security:secrets && npm run typecheck && npm run lint && npm run test:ci:nonlive",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: run demo browser E2E",
+      "type": "shell",
+      "command": "npm run test:e2e:demo",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    }
+  ]
+}

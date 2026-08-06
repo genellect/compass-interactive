@@ -332,6 +332,8 @@ CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへ
 | Container runtime | Docker Desktop / WSL2 backend       |
 | Local backend     | Supabase CLI + Docker               |
 
+GitHub CodespacesとCodex Cloudを使用する標準手順は、[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。cloud環境ではProduction env fileを引き継がず、独立DemoとCodespace内のlocal Supabaseを既定経路にします。
+
 ### Frontend
 
 依存関係をcommitted lockfileどおりに再現し、開発サーバーを起動します。
