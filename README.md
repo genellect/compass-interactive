@@ -6,7 +6,7 @@
 
 **リアルタイム講義参加・資料同期・教育AI支援プラットフォーム**
 
-COMPASS Interactiveは、講義資料、コメント、投票、字幕、AI支援、教室ディスプレイを、単一の講義ライフサイクルへ統合するモバイルファーストの講義DXプラットフォームです。
+COMPASS Interactiveは、講義資料、コメント、投票、字幕、AI支援、教室ディスプレイを、単一の講義ライフサイクルへ統合する講義支援システムです。
 
 [![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
