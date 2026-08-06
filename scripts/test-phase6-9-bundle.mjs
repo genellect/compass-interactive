@@ -20,7 +20,8 @@ const budgets = {
   // The Phase 7.27 production topology shipped a 98,824-byte Admin chunk.
   // Keep the release gate at 110% of that observed production baseline.
   adminJs: { actual: largest('AdminPage-', '.js'), limit: 108_707 },
-  appCss: { actual: largest('index-', '.css'), limit: 88_449 },
+  // The approved branding update shipped 91,262 bytes of app CSS; allow 1% drift.
+  appCss: { actual: largest('index-', '.css'), limit: 92_175 },
   indexJs: { actual: largest('index-', '.js'), limit: 529_742 },
   pdfJs: { actual: largest('SyncedPdfViewer-', '.js'), limit: 479_617 },
 }
@@ -33,5 +34,5 @@ for (const [name, budget] of Object.entries(budgets)) {
 }
 console.log(JSON.stringify(budgets, null, 2))
 console.log(
-  'Phase 6.9 bundle sizes remain within 110% of the Phase 6.8 baseline.',
+  'Phase 6.9 bundle sizes remain within their documented production budgets.',
 )
