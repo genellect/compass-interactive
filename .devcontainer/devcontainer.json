@@ -5,8 +5,9 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22.22.0"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/copilot-cli:1": {}
   },
   "forwardPorts": [5173, 54321, 54323],
   "portsAttributes": {
@@ -23,15 +24,23 @@
       "onAutoForward": "notify"
     }
   },
-  "secrets": {
-    "OPENAI_API_KEY": {
-      "description": "Optional personal development key for explicitly requested live AI checks. Never expose it with a VITE_ prefix."
-    }
-  },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "remoteEnv": {
+    "NPM_CONFIG_UPDATE_NOTIFIER": "false"
+  },
   "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "docs/CLOUD_DEVELOPMENT.md",
+        "AGENTS.md"
+      ]
+    },
     "vscode": {
       "extensions": [
+        "openai.chatgpt",
+        "github.copilot",
+        "github.copilot-chat",
+        "anthropic.claude-code",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "ms-azuretools.vscode-docker"

@@ -321,6 +321,14 @@ CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへ
 
 ---
 
+## クラウド開発（推奨）
+
+通常の開発はGitHub CodespacesまたはCodex Cloudで開始します。Docker Desktop、VS Code Dev Containers、Dev Container CLIも同じ`.devcontainer/devcontainer.json`を使用するため、PCやエージェントが変わってもNode.js、Docker、Supabase CLI、Playwright、検証手順は一致します。
+
+最短経路、Docker CLI経路、Codex／Claude Code／GitHub Copilotの共通運用、スマートフォンからの監督方法は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。Production環境変数を持ち込まず、独立DemoとDev Container内のlocal Supabaseを既定経路にします。
+
+---
+
 ## ローカル開発
 
 ### 必要環境
@@ -332,7 +340,7 @@ CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへ
 | Container runtime | Docker Desktop / WSL2 backend       |
 | Local backend     | Supabase CLI + Docker               |
 
-GitHub CodespacesとCodex Cloudを使用する標準手順は、[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。cloud環境ではProduction env fileを引き継がず、独立DemoとCodespace内のlocal Supabaseを既定経路にします。
+ローカル環境は特殊なデバイス検証や障害対応の補助経路です。日常開発ではクラウド環境を優先します。
 
 ### Frontend
 

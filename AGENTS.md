@@ -9,10 +9,18 @@ Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the a
 ## Cloud-first development
 
 - GitHub is the canonical source. Start new work from the latest `origin/main` in GitHub Codespaces or Codex Cloud.
+- Treat the Dev Container Specification as the single environment source of truth. Codespaces, VS Code + Docker Desktop, and the Dev Container CLI must use the same `.devcontainer/devcontainer.json`.
 - Use one isolated Codespace and one branch per repository and change. Do not combine this checkout with the public COMPASS repository.
 - Follow `.devcontainer/devcontainer.json` and `docs/CLOUD_DEVELOPMENT.md` for setup and browser port access.
 - Default to `/demo` and non-live tests. The demo must not call Supabase, OpenAI, Cloudflare R2, or other paid or Production services.
 - Use the local Docker-based Supabase stack for database, RLS, migration, and integration work. Do not link or push to a hosted Supabase project during ordinary development.
+
+## Agent interoperability
+
+- `AGENTS.md` is authoritative for every agent. `CLAUDE.md` and `.github/copilot-instructions.md` defer to this file and `docs/CLOUD_DEVELOPMENT.md`.
+- Codex, Claude Code, GitHub Copilot, and VS Code agents must use the same Dev Container, lockfile, migrations, and verification commands.
+- Do not run multiple write-capable agents in the same branch or worktree. Give parallel implementations separate branches or worktrees.
+- When parallel review is explicitly requested, use the read-only agents under `.codex/agents/`; the main agent owns decisions and integration.
 
 ## Secrets and privacy
 

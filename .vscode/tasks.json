@@ -4,7 +4,7 @@
     {
       "label": "Interactive: start browser development",
       "type": "shell",
-      "command": "npm run dev -- --host 0.0.0.0",
+      "command": "npm run dev:cloud",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": {
@@ -25,7 +25,7 @@
     {
       "label": "Interactive: run non-live regression",
       "type": "shell",
-      "command": "npm run security:secrets && npm run typecheck && npm run lint && npm run test:ci:nonlive",
+      "command": "npm run cloud:check",
       "problemMatcher": [],
       "presentation": {
         "panel": "dedicated",
