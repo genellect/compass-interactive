@@ -77,6 +77,7 @@ npm run dev:cloud
 | Local backend | Supabase CLI + isolated Docker stack |
 | Workspace validation | `npm run dev:doctor` |
 | Repository gate | `npm run cloud:check` |
+| Dependency security | `npm run security:audit`（high以上をfail） |
 
 ### 開発サーフェス
 
