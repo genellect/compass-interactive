@@ -114,7 +114,7 @@
     "dev:doctor": "bash .devcontainer/doctor.sh"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1083.0",
+    "@aws-sdk/client-s3": "3.1102.0",
     "@supabase/supabase-js": "^2.110.0",
     "pdfjs-dist": "^6.1.200",
     "qrcode": "1.5.4",
