@@ -16,6 +16,38 @@ GitHubを正本とし、日常開発はクラウドを優先する。Production 
 
 Dev Container Specificationを唯一の環境正本とする。Dev Container CLIはfeatures、VS Code設定、`postCreateCommand`まで適用するため、別のDockerfileや素の`docker build` / `docker run`を標準経路にしない。
 
+## 自動プロビジョニング契約
+
+新PCや新メンバーは、選んだ経路のhost前提だけを用意する。言語runtimeやglobal packageを手作業で揃えない。
+
+| 層 | 人が用意するもの | repositoryが自動で揃えるもの |
+|---|---|---|
+| Codespaces | GitHub access、repository access、Codespaces利用権 | Linux、Node 22.22.0、独立Docker daemon、Compose、GitHub CLI、Copilot CLI、VS Code extensions、npm、Playwright Chromium/WebKit、Supabase CLI、Vite |
+| VS Code + Docker | Git、Docker Desktop/Engine、VS Code、Dev Containers extension | Codespacesと同じDev Container内容 |
+| Dev Container CLI | Git、Docker Desktop/Engine、Node.js（固定CLI起動用） | Codespacesと同じDev Container内容 |
+| Codex Cloud | GitHub接続とCodex environment | Node/npm依存、Playwright、repository instructions。Docker/Supabase作業はCodespacesへhandoff |
+
+環境定義は`.devcontainer/devcontainer.json`、Feature digestは`.devcontainer/devcontainer-lock.json`、JavaScript/Supabase CLI依存は`package-lock.json`、Codex setupは`.codex/setup.sh`が正本である。`.gitattributes`はWindows checkoutでもshell scriptをLFに固定する。
+
+`postCreateCommand`は依存導入後に環境doctorを実行する。doctorはNode、GitHub CLI、Copilot CLI、Docker daemon、Compose、Playwright、Supabase CLI、Viteをfail-closedで検査する。初回作成後、Dev Container変更後、別PCでの初回利用時は次を受入証跡にする。
+
+```bash
+npm run dev:doctor
+npm run cloud:check
+npm run test:e2e:demo
+```
+
+不足を個人PCへのglobal installで回避しない。必要packageはDev Container Featureまたは`package-lock.json`へ追加し、再buildとdoctorを通す。これにより次の参加者にも自動適用される。
+
+### 新PC／新メンバーの受入チェック
+
+1. repository accessを確認し、最新`main`からCodespaceまたは専用branchを作る。
+2. container作成が自動完了し、doctorが`READY`を返すことを確認する。
+3. `npm run dev:cloud`でprivate port `5173`の`/demo`を開く。
+4. `npm run cloud:check`と`npm run test:e2e:demo`を実行する。
+5. 小さな非本番変更でcommit、push、Draft PRを実行し、PR checksとreview権限を確認する。
+6. database担当者はlocal Supabaseだけを起動し、Hosted ProjectやProduction資格情報なしでmigration、pgTAP、lintが完了することを記録する。
+
 ## 5分で開始する
 
 ### GitHub Codespaces
@@ -46,6 +78,8 @@ PowerShell:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action config
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action up
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action setup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action doctor
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action shell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/devcontainer.ps1 -Action check
 ```
@@ -55,6 +89,8 @@ Bash:
 ```bash
 ./scripts/devcontainer.sh config
 ./scripts/devcontainer.sh up
+./scripts/devcontainer.sh setup
+./scripts/devcontainer.sh doctor
 ./scripts/devcontainer.sh shell
 ./scripts/devcontainer.sh check
 ```
@@ -63,6 +99,8 @@ Bash:
 |---|---|
 | `config` | Docker daemonへ接続し、containerを作成せずDev Container定義を解決・検査する |
 | `up` | lock済みfeaturesでcontainerを作成し、setupを完了する |
+| `setup` | 依存導入を再実行し、doctorまで完了する。初回setup中断時の回復にも使う |
+| `doctor` | 起動済みcontainerのruntime、CLI、独立Docker、依存をfail-closedで検査する |
 | `shell` | 起動済みcontainerへ入る |
 | `check` | container内で`npm run cloud:check`を実行する |
 
@@ -134,14 +172,13 @@ repositoryでは次を共有する。
 Codex Cloud environmentのsetup script:
 
 ```bash
-bash .devcontainer/post-create.sh
+bash .codex/setup.sh
 ```
 
 推奨maintenance script:
 
 ```bash
-git fetch --prune
-npm ci
+bash .codex/maintenance.sh
 ```
 
 Codex CloudはDocker daemonを保証するDev Container経路ではないため、通常はDemo/non-live workに使用する。RLS、migration、Edge Function、local integrationはCodespacesまたはDocker Dev Containerへhandoffする。

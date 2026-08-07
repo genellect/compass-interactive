@@ -33,6 +33,16 @@
       }
     },
     {
+      "label": "Interactive: verify development environment",
+      "type": "shell",
+      "command": "npm run dev:doctor",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
       "label": "Interactive: run demo browser E2E",
       "type": "shell",
       "command": "npm run test:e2e:demo",

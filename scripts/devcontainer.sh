@@ -12,6 +12,12 @@ case "$action" in
   up)
     npx --yes "$cli" up --workspace-folder "$repo_root" --frozen-lockfile
     ;;
+  setup)
+    npx --yes "$cli" exec --workspace-folder "$repo_root" bash -lc "bash .devcontainer/install-dependencies.sh && bash .devcontainer/doctor.sh"
+    ;;
+  doctor)
+    npx --yes "$cli" exec --workspace-folder "$repo_root" bash .devcontainer/doctor.sh
+    ;;
   shell)
     npx --yes "$cli" exec --workspace-folder "$repo_root" bash
     ;;
@@ -19,7 +25,7 @@ case "$action" in
     npx --yes "$cli" exec --workspace-folder "$repo_root" bash -lc "npm run cloud:check"
     ;;
   *)
-    echo "Usage: $0 {config|up|shell|check}" >&2
+    echo "Usage: $0 {config|up|setup|doctor|shell|check}" >&2
     exit 2
     ;;
 esac

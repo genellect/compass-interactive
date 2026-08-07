@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("config", "up", "shell", "check")]
+  [ValidateSet("config", "up", "setup", "doctor", "shell", "check")]
   [string]$Action = "up"
 )
 
@@ -18,6 +18,12 @@ try {
     }
     "up" {
       & npx.cmd -y $cli up --workspace-folder $repoRoot --frozen-lockfile
+    }
+    "setup" {
+      & npx.cmd -y $cli exec --workspace-folder $repoRoot bash -lc "bash .devcontainer/install-dependencies.sh && bash .devcontainer/doctor.sh"
+    }
+    "doctor" {
+      & npx.cmd -y $cli exec --workspace-folder $repoRoot bash .devcontainer/doctor.sh
     }
     "shell" {
       & npx.cmd -y $cli exec --workspace-folder $repoRoot bash

@@ -3,11 +3,19 @@
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "22.22.0"
+      "version": "22.22.0",
+      "pnpmVersion": "11.20.0"
     },
-    "ghcr.io/devcontainers/features/docker-in-docker:4": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/copilot-cli:1": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "version": "29.7.1",
+      "dockerDashComposeVersion": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "2.97.0"
+    },
+    "ghcr.io/devcontainers/features/copilot-cli:1": {
+      "version": "1.0.78"
+    }
   },
   "forwardPorts": [5173, 54321, 54323],
   "portsAttributes": {
@@ -24,6 +32,11 @@
       "onAutoForward": "notify"
     }
   },
+  "mounts": [
+    "source=compass-interactive-cloud-dev-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=compass-interactive-cloud-dev-npm-cache,target=/home/node/.npm,type=volume",
+    "source=compass-interactive-cloud-dev-user-cache,target=/home/node/.cache,type=volume"
+  ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "remoteEnv": {
     "NPM_CONFIG_UPDATE_NOTIFIER": "false"
