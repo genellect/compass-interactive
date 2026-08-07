@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const read = (path) => readFileSync(resolve(root, path), 'utf8')
+const normalizedUtf8Bytes = (path) =>
+  Buffer.byteLength(read(path).replaceAll('\r\n', '\n'), 'utf8')
 const adminPage = read('src/pages/AdminPage.tsx')
 const context = read('src/context/CompassStateContext.tsx')
 const liveRepository = read('src/repositories/supabaseLiveStateRepository.ts')
@@ -30,16 +32,16 @@ for (const responsibility of [
 ]) {
   assert.match(context, new RegExp(responsibility))
 }
-assert.ok(statSync(resolve(root, 'src/pages/AdminPage.tsx')).size < 45_000)
+assert.ok(normalizedUtf8Bytes('src/pages/AdminPage.tsx') < 45_000)
 assert.ok(
-  statSync(resolve(root, 'src/context/CompassStateContext.tsx')).size < 50_000,
+  normalizedUtf8Bytes('src/context/CompassStateContext.tsx') < 50_000,
 )
 assert.ok(
-  statSync(resolve(root, 'src/repositories/supabaseLiveStateRepository.ts'))
-    .size < 20_000,
+  normalizedUtf8Bytes('src/repositories/supabaseLiveStateRepository.ts') <
+    20_000,
 )
 assert.ok(
-  statSync(resolve(root, 'src/repositories/supabaseAdminRepository.ts')).size <
+  normalizedUtf8Bytes('src/repositories/supabaseAdminRepository.ts') <
     30_000,
 )
 

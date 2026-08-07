@@ -14,12 +14,14 @@ COMPASS Interactiveは、講義資料、コメント、投票、字幕、AI支�
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%2B_Auth-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages_%2B_Workers_%2B_R2-F38020?logo=cloudflare&logoColor=white)](https://www.cloudflare.com/)
 [![Playwright](https://img.shields.io/badge/E2E-Playwright-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Open in Codespaces](https://img.shields.io/badge/Open_in-GitHub_Codespaces-24292F?logo=github)](https://codespaces.new/genellect/compass-interactive?quickstart=1)
+[![Dev Container Contract](https://github.com/genellect/compass-interactive/actions/workflows/devcontainer-contract.yml/badge.svg?branch=main)](https://github.com/genellect/compass-interactive/actions/workflows/devcontainer-contract.yml)
 
 [プロダクト紹介](https://compass-official.pages.dev/INTRO_Interactive/) ·
 [デモ](https://compass-interactive.pages.dev/demo) ·
 [開発者向け解説](https://compass-official.pages.dev/INTRO_Interactive/developers/) ·
+[Cloud-first Development](#cloud-first-development) ·
 [アーキテクチャ](#アーキテクチャ) ·
-[ローカル開発](#ローカル開発) ·
 [品質保証](#品質保証)
 
 </div>
@@ -45,6 +47,74 @@ COMPASS Interactiveは、講義資料、コメント、投票、字幕、AI支�
 - Database migration、CI、E2E、セキュリティ検証、運用ドキュメント
 
 COMPASS公式Webとは、デプロイ、データベース、秘密情報のいずれも共有しない、独立したプロダクトです。
+
+## Cloud-first Development
+
+> [!IMPORTANT]
+> **GitHubを正本とし、通常の開発はCodespacesまたはCodex Cloudで行います。** Windows、macOS、ブラウザ、VS Code、Codex、Claude Code、GitHub Copilotの入口が変わっても、同じDev Container、同じlockfile、同じdoctor、同じCIを使用します。ホストPC固有のNodeやDocker構成、平文の`.env.local`は開発品質の前提にしません。
+
+### 最短起動 — secrets不要の独立Demo
+
+1. **[Open in GitHub Codespaces](https://codespaces.new/genellect/compass-interactive?quickstart=1)** を開く。
+2. `postCreateCommand`の完了を待つ。Node、npm/pnpm CLI、Docker、Compose、GitHub CLI、Copilot CLI、Playwright、Supabase CLIが自動で揃います。
+3. ターミナルで次を実行する。
+
+```bash
+npm run dev:doctor
+npm run dev:cloud
+```
+
+ポート`5173`が自動転送されます。`/demo`はSupabase、OpenAI、Cloudflareへ接続しないため、秘密情報なしでUI開発、ブラウザ実行、E2Eを開始できます。
+
+| Contract | Pinned / canonical value |
+|---|---|
+| Node.js | `22.22.0` |
+| Package manager | **npm + `package-lock.json`**（正本） |
+| Optional pnpm CLI | `11.20.0`（lockfile移行はしない） |
+| Docker / Compose | `29.7.1` / `5.4.0`（リポジトリ専用daemon） |
+| GitHub CLI / Copilot CLI | `2.97.0` / `1.0.78` |
+| Browser tooling | Playwright + Chromium + WebKit |
+| Local backend | Supabase CLI + isolated Docker stack |
+| Workspace validation | `npm run dev:doctor` |
+| Repository gate | `npm run cloud:check` |
+| Dependency security | `npm run security:audit`（high以上をfail） |
+
+### 開発サーフェス
+
+| Entry point | 推奨用途 | セットアップ |
+|---|---|---|
+| **GitHub Codespaces** | ブラウザ、別PC、チーム参加 | リンクを開くだけ |
+| **Codex Cloud** | Codexの主要実装・検証環境 | `.codex/setup.sh`をenvironment setupへ登録 |
+| **VS Code Dev Containers** | Dockerを使うWindows / macOS | `Reopen in Container` |
+| **Dev Container CLI** | 自動化、CI、他エージェント | `./scripts/devcontainer.sh up` |
+| **ChatGPT / GitHub mobile** | Codex進捗、PR、CIの監督 | Codex RemoteとGitHub通知を利用 |
+
+COMPASSとは別のDocker daemon、`node_modules`、npm cache、ユーザーcache、ローカルSupabase volumeを使用します。両リポジトリを同時に開いても、依存、データ、ポート、資格情報は共有しません。
+
+### Secrets and `.env.local`
+
+- 既存の秘密値は、GitHub Codespaces repository/user secretsまたはCodex Cloud environment secretsへ登録して注入します。新しい鍵を作ることは必須ではありません。
+- ローカルの`.env.local`をリポジトリ、Codespaceのファイル、PR、チャットへコピーしません。
+- `VITE_`はブラウザ公開可能な値だけに限定します。OpenAI API key、Supabase service-role key、PIN、R2 credential、signing secretはserver-side secretのまま扱います。
+- hosted Supabaseへの`link`、`db push`、Edge deployは通常開発では実行しません。完全なローカル統合環境は次の1コマンドで起動します。
+
+```bash
+bash .devcontainer/start-local-supabase.sh
+```
+
+完全な操作手順、Codex/Claude/Copilot共通運用、スマートフォン監督、secret登録、復旧手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。
+
+```mermaid
+flowchart LR
+    GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
+    Workspace --> Demo["Secret-free /demo"]
+    Workspace --> Local["Isolated local Supabase"]
+    Demo --> Gate["Type / lint / 58 non-live groups\nChromium + WebKit E2E"]
+    Local --> Gate
+    Gate --> PR["Commit / Pull Request / CI"]
+    PR --> Review["Browser / mobile review"]
+    Review --> GitHub
+```
 
 ---
 
@@ -321,6 +391,16 @@ CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへ
 
 ---
 
+## クラウド開発（推奨）
+
+通常の開発はGitHub CodespacesまたはCodex Cloudで開始します。Docker Desktop、VS Code Dev Containers、Dev Container CLIも同じ`.devcontainer/devcontainer.json`を使用するため、PCやエージェントが変わってもNode.js、Docker、Supabase CLI、Playwright、検証手順は一致します。
+
+最短経路、Docker CLI経路、Codex／Claude Code／GitHub Copilotの共通運用、スマートフォンからの監督方法は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。Production環境変数を持ち込まず、独立DemoとDev Container内のlocal Supabaseを既定経路にします。
+
+初回作成と環境変更後は`npm run dev:doctor`でruntime、CLI、独立Docker、Playwright、Supabase CLI、Viteを検証します。必要packageはDev Container Featureまたは`package-lock.json`へ記録し、個人PCへの未記録global installで不足を回避しません。
+
+---
+
 ## ローカル開発
 
 ### 必要環境
@@ -331,6 +411,8 @@ CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへ
 | Package manager   | npm + committed `package-lock.json` |
 | Container runtime | Docker Desktop / WSL2 backend       |
 | Local backend     | Supabase CLI + Docker               |
+
+ローカル環境は特殊なデバイス検証や障害対応の補助経路です。日常開発ではクラウド環境を優先します。
 
 ### Frontend
 

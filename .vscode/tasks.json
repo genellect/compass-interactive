@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Interactive: start browser development",
+      "type": "shell",
+      "command": "npm run dev:cloud",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: start isolated local Supabase",
+      "type": "shell",
+      "command": "bash .devcontainer/start-local-supabase.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: run non-live regression",
+      "type": "shell",
+      "command": "npm run cloud:check",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: verify development environment",
+      "type": "shell",
+      "command": "npm run dev:doctor",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Interactive: run demo browser E2E",
+      "type": "shell",
+      "command": "npm run test:e2e:demo",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    }
+  ]
+}

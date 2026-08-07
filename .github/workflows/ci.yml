@@ -254,7 +254,10 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
+    # GitHub Dependency Review requires the dependency graph and GitHub
+    # Advanced Security for private repositories. npm audit remains the
+    # fail-closed dependency gate unless this repository becomes public.
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
     permissions:
       contents: read
     runs-on: ubuntu-latest

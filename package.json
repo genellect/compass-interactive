@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:cloud": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build && node scripts/create-route-entrypoints.mjs",
     "lint": "oxlint",
     "test:demo": "node --experimental-strip-types scripts/test-demo-repository.mjs",
@@ -108,7 +109,9 @@
     "production:check": "node scripts/check-production-env.mjs",
     "deploy:cloudflare:direct": "npm run production:check && npm run build && wrangler pages deploy dist --project-name compass-interactive --branch main",
     "worker:deploy:production:dry-run": "wrangler deploy --dry-run --config cloudflare/asset-worker/wrangler.production.jsonc",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "cloud:check": "npm run security:secrets && npm run typecheck && npm run typecheck:phase3 && npm run typecheck:e2e && npm run lint && npm run test:ci:nonlive && npm run build",
+    "dev:doctor": "bash .devcontainer/doctor.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1083.0",
