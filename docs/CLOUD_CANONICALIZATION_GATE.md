@@ -87,6 +87,25 @@ force-push/delete protection and PR review after the approved GitHub Education
 benefits become active. This limitation must not be reported as enforced
 protection.
 
+## Cloudflare build routing
+
+`compass-interactive` is a Cloudflare Pages application even though the current
+Git integration is surfaced through Workers Builds. Keep the two deploy commands
+environment-specific:
+
+- production: `npx wrangler pages deploy dist --project-name compass-interactive --branch main`;
+- non-production: `npx wrangler pages deploy dist --project-name compass-interactive --branch "$WORKERS_CI_BRANCH"`.
+
+Workers Builds injects `WORKERS_CI_BRANCH` from the push event. A pull request
+must therefore create a Pages preview for its own branch and must never pass
+`--branch main`. Plain `wrangler deploy` is a Worker deployment command and is
+not valid for this Pages project. After changing either dashboard command,
+trigger a new exact-SHA build and verify the command in that build's immutable
+settings; an old retry can retain the superseded command. A repository transfer
+or Git account rename also requires the Cloudflare Git connection to be
+reauthenticated against the canonical `genellect/compass-interactive` repository
+before the integration is treated as durable.
+
 ## Gate decision
 
 The reproducibility portion of C0 is PASS when `cloud:doctor`, `cloud:check`, the
