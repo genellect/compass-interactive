@@ -159,21 +159,21 @@ feature PIN.
 
 ## 7. Failure behavior
 
-| Failure                                          | Safe convergence                                                                              |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Bridge absent or Local Network permission denied | Pairing has a bounded timeout; manual PDF controls remain available.                          |
-| Browser closes or changes lecture during pairing | Best-effort local disconnect and server revoke run; server expiry remains authoritative.      |
-| Bridge process disappears while active           | A fresh heartbeat lease fences writes; after 45 seconds manual navigation recovers safely.    |
-| PowerPoint or slideshow disappears                | A bounded observation grace faults the Bridge, performs best-effort revoke and releases the fence. |
-| COM dispatcher stops or blocks                    | A bounded observation timeout faults the Bridge; heartbeat cannot keep a false-active session alive. |
-| Event early, duplicate or missing                | Stable actual-state polling decides; events only accelerate observation.                      |
-| Rapid jump                                       | Intermediate desired pages are replaced; only the latest stable absolute page remains queued. |
-| Network timeout                                  | Retry uses the same event ID; database replay is idempotent.                                  |
-| Stale/reordered update                           | Rejected without advancing sequence or live-state versions.                                   |
-| PowerPoint/PDF/deck mutation                     | Connection is revoked; no guessed page is sent.                                               |
-| Lecture/Admin expiry or revoke                   | Trigger and every RPC independently reject further commits.                                   |
-| Runtime flag disabled                            | Database kill switch atomically revokes all unrevoked connections.                            |
-| Cleanup scheduler absent                         | Expired connections are never treated as active; bounded cleanup can be rerun later.          |
+| Failure                                          | Safe convergence                                                                                     |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Bridge absent or Local Network permission denied | Pairing has a bounded timeout; manual PDF controls remain available.                                 |
+| Browser closes or changes lecture during pairing | Best-effort local disconnect and server revoke run; server expiry remains authoritative.             |
+| Bridge process disappears while active           | A fresh heartbeat lease fences writes; after 45 seconds manual navigation recovers safely.           |
+| PowerPoint or slideshow disappears               | A bounded observation grace faults the Bridge, performs best-effort revoke and releases the fence.   |
+| COM dispatcher stops or blocks                   | A bounded observation timeout faults the Bridge; heartbeat cannot keep a false-active session alive. |
+| Event early, duplicate or missing                | Stable actual-state polling decides; events only accelerate observation.                             |
+| Rapid jump                                       | Intermediate desired pages are replaced; only the latest stable absolute page remains queued.        |
+| Network timeout                                  | Retry uses the same event ID; database replay is idempotent.                                         |
+| Stale/reordered update                           | Rejected without advancing sequence or live-state versions.                                          |
+| PowerPoint/PDF/deck mutation                     | Connection is revoked; no guessed page is sent.                                                      |
+| Lecture/Admin expiry or revoke                   | Trigger and every RPC independently reject further commits.                                          |
+| Runtime flag disabled                            | Database kill switch atomically revokes all unrevoked connections.                                   |
+| Cleanup scheduler absent                         | Expired connections are never treated as active; bounded cleanup can be rerun later.                 |
 
 ## 8. Load and cost envelope
 
@@ -195,17 +195,27 @@ The feature makes no OpenAI request and has no OpenAI cost.
 
 ## 9. Rollout and rollback
 
-Rollout order for a later Production Gate:
+Rollout is split between dormant 7.29B placement and a separately authorized
+7.29C activation:
 
 1. preserve the current production deployment and database evidence;
 2. apply the additive migration with DB gate OFF;
 3. run hosted Advisor, grants/RLS and populated-upgrade checks;
-4. deploy both Edge functions with server admission OFF and install the
-   dedicated secret;
-5. deploy the signed per-user Bridge and verify Edge/Chrome HTTPS-to-loopback;
-6. deploy the frontend with its flag OFF;
-7. enable server admission, then DB gate, then one controlled frontend cohort;
-8. verify real PowerPoint, Display and manual handover before expansion.
+4. for 7.29B, deploy only the JWT-protected
+   `manage-presenter-connection` and compatible `update-display-state` by
+   explicit function name, with server admission OFF;
+5. leave the `verify_jwt=false` `presenter-bridge-session` machine endpoint
+   undeployed and do not provision its dedicated secret in 7.29B;
+6. deploy the frontend with its flag OFF and verify the existing manual path;
+7. only after the 7.29C rate-protection, proof-of-possession, signed installer,
+   device and Human gates pass, deploy the machine endpoint and secret;
+8. verify Edge/Chrome HTTPS-to-loopback and real PowerPoint, then enable server
+   admission, DB runtime and one controlled frontend cohort in that order;
+9. verify Display and manual handover before expansion.
+
+An entry in `supabase/config.toml` is a source contract, not proof that the
+function exists in Hosted Supabase. Unscoped all-function deployment is
+prohibited for 7.29B.
 
 Rollback starts by disabling the DB runtime gate, which drains active sessions.
 Then disable Edge admission and frontend. Manual controls and student five-

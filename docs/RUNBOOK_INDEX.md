@@ -207,11 +207,15 @@ does not by itself authorize a rehearsal or production lecture.
 9. telemetry and cost review;
 10. gate record.
 
-If Phase 7.29 is in scope, deploy its additive schema and both server surfaces
-with runtime/admission OFF, then the signed per-user Bridge and frontend with
-its flag OFF. After the real loopback and PowerPoint gates pass, enable server
-admission, database runtime and one controlled frontend cohort in that order.
-The student five-second snapshot is never changed as part of this rollout.
+If Phase 7.29B is in scope, deploy its additive schema, then only the
+JWT-protected `manage-presenter-connection` and compatible
+`update-display-state` by explicit function name with runtime/admission OFF.
+Leave `presenter-bridge-session`, its dedicated secret and the native Bridge
+undeployed. Unscoped all-function deployment is prohibited. After the separate
+7.29C rate, proof-of-possession, real loopback, signed-native and PowerPoint
+gates pass, the machine endpoint can enter a separately authorized activation
+sequence. The student five-second snapshot is never changed as part of this
+rollout.
 
 Do not drop schema on rollback. Disable the feature and restore the previous
 application/server version first.

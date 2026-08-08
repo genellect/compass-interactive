@@ -78,6 +78,8 @@ migration list, deployed Edge versions, Advisor state and rollback owner.
 3. Deploy only the JWT-protected `manage-presenter-connection` and compatible
    `update-display-state` revisions with
    `PHASE729_POWERPOINT_SYNC_ENABLED=false`.
+   Use function-name-scoped deploy commands only; an unscoped all-function
+   deploy is prohibited.
 4. Do not deploy `presenter-bridge-session` in 7.29B. Its source and tests may
    be merged, but its `verify_jwt=false` machine endpoint would create a public
    invocation, cost and abuse surface even while the feature handler returns
@@ -92,6 +94,12 @@ migration list, deployed Edge versions, Advisor state and rollback owner.
    Display fallback still works and student snapshots remain at the existing
    cadence.
 8. Run hosted Advisor/RLS/grant checks and save exact deployment evidence.
+
+The `supabase/config.toml` entry for `presenter-bridge-session` documents its
+future JWT policy; it does not authorize or prove Hosted deployment. The Hosted
+function inventory must prove that the route is absent. If it already exists,
+stop the rollout, record its current version and obtain explicit rollback or
+deletion authorization instead of removing it implicitly.
 
 No installer or native executable is uploaded in 7.29B.
 
