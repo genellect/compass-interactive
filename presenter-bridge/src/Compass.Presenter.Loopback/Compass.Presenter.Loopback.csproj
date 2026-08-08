@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
+    <ProjectReference Include="../Compass.Presenter.Core/Compass.Presenter.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -76,3 +76,11 @@ export const isPhase728AiMasterAuthorizationEnabled =
   isPhase72AcademicAnswersEnabled &&
   isPhase725AutoAcademicAnswersEnabled &&
   import.meta.env.VITE_PHASE7_28_AI_MASTER_AUTH === 'true'
+
+// PowerPoint integration is additive and fail-closed. It reuses the existing
+// private PDF and Display Realtime delivery contracts; students remain on the
+// five-second snapshot protocol.
+export const isPhase729PowerPointSyncEnabled =
+  isPhase3PrivatePdfEnabled &&
+  isPhase728DisplayRealtimeEnabled &&
+  import.meta.env.VITE_PHASE7_29_POWERPOINT_SYNC === 'true'

@@ -1,8 +1,9 @@
 # COMPASS Interactive Security Contract
 
-Last reviewed: 2026-07-21
-Status: locally implemented controls through Phase 7.26; new capabilities remain
-default-OFF and pending hosted/human production evidence
+Last reviewed: 2026-08-01
+Status: locally implemented controls through Phase 7.28 plus a default-OFF
+Phase 7.29 candidate; native, hosted and human production evidence remains
+separate
 
 ## 1. Security objectives
 
@@ -293,3 +294,37 @@ remain blocking production evidence under `docs/ROADMAP.md`.
 The Phase 7.28 Local Gate does not authorize hosted secrets, migrations, flags,
 provider calls or deployment. Production requires refreshed Admin clients,
 legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
+
+## 16. Phase 7.29 native and loopback controls
+
+- Presenter Bridge binds only IPv4 `127.0.0.1:43124`, validates exact Host and
+  production/development Origin allowlists, explicitly handles preflight and
+  Local/Private Network Access, rejects transfer ambiguity and bounds headers,
+  JSON and request rate. A hostile website receives no pairing or control
+  capability.
+- The browser keeps pairing material and the loopback session in memory only.
+  It never sends an Admin session token, API-use PIN, service-role key or other
+  long-lived credential to loopback, URL, browser storage or logs.
+- The server signs Presenter material with a dedicated
+  `PRESENTER_BRIDGE_TOKEN_SECRET` of at least 32 bytes. A pairing token is
+  Origin/audience/scope bound, lives at most 60 seconds and is atomically
+  single-use. The active capability is a short-lived bearer credential bound
+  to connection, lecture, declared installation metadata and hard stop. The
+  installation digest is not proof of possession; asymmetric per-install
+  request signing remains an activation requirement.
+- Database RPCs are service-role only, `SECURITY INVOKER`, execute with server
+  time and recheck the runtime gate, tracked Admin session, lecture lifecycle,
+  PDF/deck binding, sequence, rate and capability on every write or heartbeat.
+  Presenter tables have RLS ON, no browser grants/policies and no Realtime
+  publication membership.
+- COM callbacks are acceleration signals only. Office objects remain on one
+  STA thread, observation loss/timeout faults the connection within a bounded
+  grace, metadata and errors are bounded, and crash logs must omit tokens,
+  recovery codes and document paths/names.
+- A Presenter binding cannot authorize paid AI, captions, PDF publication or
+  another lecture. Runtime disable, Admin revoke, close, expiry, mutation or
+  explicit disconnect terminalizes it; stopping and handover remain free.
+- Production activation requires a signed per-user installer, SmartScreen and
+  update policy, x86/x64 Office matrix, real Edge/Chrome HTTPS-to-loopback tests
+  and venue/human evidence. Windows Application Control must never be disabled
+  or bypassed to make an unsigned native test pass.

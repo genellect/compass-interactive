@@ -1,0 +1,8 @@
+# Supabase CLI output is checked byte-for-byte by db:types:check.
+src/types/database.ts
+
+# Build and isolated validation outputs are not source artifacts.
+dist/
+tmp/
+presenter-bridge/**/bin/
+presenter-bridge/**/obj/

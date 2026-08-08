@@ -22,6 +22,7 @@ const optionalFeatureFlags = [
   'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
   'VITE_PHASE7_28_DISPLAY_REALTIME',
   'VITE_PHASE7_28_AI_MASTER_AUTH',
+  'VITE_PHASE7_29_POWERPOINT_SYNC',
 ]
 
 const forbiddenPublicNames = [
@@ -136,10 +137,7 @@ export function validateProductionEnvironment(environment) {
     'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
     'VITE_PHASE7_27_JOURNAL_CLUB',
   )
-  requireFlag(
-    'VITE_PHASE7_28_DISPLAY_REALTIME',
-    'VITE_PHASE6_8_SECURITY',
-  )
+  requireFlag('VITE_PHASE7_28_DISPLAY_REALTIME', 'VITE_PHASE6_8_SECURITY')
   requireFlag(
     'VITE_PHASE7_28_DISPLAY_REALTIME',
     'VITE_PHASE7_1_CLASSROOM_EXTENSIONS',
@@ -154,6 +152,11 @@ export function validateProductionEnvironment(environment) {
   ]) {
     requireFlag('VITE_PHASE7_28_AI_MASTER_AUTH', dependency)
   }
+  requireFlag('VITE_PHASE7_29_POWERPOINT_SYNC', 'VITE_PHASE3_PRIVATE_PDF')
+  requireFlag(
+    'VITE_PHASE7_29_POWERPOINT_SYNC',
+    'VITE_PHASE7_28_DISPLAY_REALTIME',
+  )
 
   if (enabled('VITE_PHASE3_PRIVATE_PDF')) {
     const workerUrl = value(environment, 'VITE_PDF_WORKER_BASE_URL')
@@ -177,9 +180,10 @@ export function validateProductionServerEnvironment(environment) {
     environment,
     'PHASE728_DISPLAY_REALTIME_ENABLED',
   )
-  const masterEnabled = value(
+  const masterEnabled = value(environment, 'PHASE7_28_AI_MASTER_AUTH_ENABLED')
+  const presenterEnabled = value(
     environment,
-    'PHASE7_28_AI_MASTER_AUTH_ENABLED',
+    'PHASE729_POWERPOINT_SYNC_ENABLED',
   )
   if (
     presetCreationEnabled &&
@@ -192,6 +196,11 @@ export function validateProductionServerEnvironment(environment) {
   if (masterEnabled && !['false', 'true'].includes(masterEnabled)) {
     errors.push(
       'PHASE7_28_AI_MASTER_AUTH_ENABLED must be true, false or omitted.',
+    )
+  }
+  if (presenterEnabled && !['false', 'true'].includes(presenterEnabled)) {
+    errors.push(
+      'PHASE729_POWERPOINT_SYNC_ENABLED must be true, false or omitted.',
     )
   }
   if (
@@ -241,10 +250,30 @@ export function validateProductionServerEnvironment(environment) {
       }
     }
   }
+  if (presenterEnabled === 'true') {
+    if (
+      value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
+    ) {
+      errors.push(
+        'PHASE729_POWERPOINT_SYNC_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
+      )
+    }
+    if (value(environment, 'PHASE728_DISPLAY_REALTIME_ENABLED') !== 'true') {
+      errors.push(
+        'PHASE729_POWERPOINT_SYNC_ENABLED=true requires PHASE728_DISPLAY_REALTIME_ENABLED=true.',
+      )
+    }
+    if (
+      new TextEncoder().encode(
+        value(environment, 'PRESENTER_BRIDGE_TOKEN_SECRET'),
+      ).byteLength < 32
+    ) {
+      errors.push(
+        'PRESENTER_BRIDGE_TOKEN_SECRET must contain at least 32 bytes when Phase 7.29 is enabled.',
+      )
+    }
+  }
   return errors
 }
 
-export const productionFeatureFlags = [
-  ...featureFlags,
-  ...optionalFeatureFlags,
-]
+export const productionFeatureFlags = [...featureFlags, ...optionalFeatureFlags]

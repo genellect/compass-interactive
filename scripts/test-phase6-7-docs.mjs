@@ -17,6 +17,10 @@ const requiredDocuments = [
   'docs/CHANGELOG.md',
   'docs/ROADMAP.md',
   'docs/RUNBOOK_INDEX.md',
+  'docs/CLOUD_CANONICALIZATION_GATE.md',
+  'docs/AGENT_EXECUTION_ROUTING.md',
+  'docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md',
+  'docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
   'docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md',
@@ -76,7 +80,18 @@ assert.doesNotMatch(
 assert.doesNotMatch(readme, /The app uses `src\/lib\/mockData\.ts` only/i)
 assert.doesNotMatch(architecture, /There is no backend, API server, database/i)
 
-for (const phase of ['6.7', '6.8', '6.9', '7.1', '7.2', '8.1', '8.2', '9']) {
+for (const phase of [
+  '6.7',
+  '6.8',
+  '6.9',
+  '7.1',
+  '7.2',
+  '7.29',
+  '7.30',
+  '8.1',
+  '8.2',
+  '9',
+]) {
   assert.ok(
     roadmap.includes(`Phase ${phase}`),
     `Roadmap missing Phase ${phase}`,

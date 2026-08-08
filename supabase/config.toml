@@ -380,6 +380,9 @@ deno_version = 2
 [functions.verify-admin-pin]
 verify_jwt = true
 
+[functions.manage-admin-sessions]
+verify_jwt = true
+
 [functions.manage-lectures]
 verify_jwt = true
 
@@ -439,11 +442,23 @@ verify_jwt = true
 [functions.claim-display-realtime-session]
 verify_jwt = true
 
+[functions.issue-lecture-resume-token]
+verify_jwt = true
+
 [functions.broadcast-display-caption]
 verify_jwt = true
 
 [functions.operator-live-snapshot]
 verify_jwt = true
+
+[functions.manage-presenter-connection]
+verify_jwt = true
+
+# Machine-to-machine Presenter Bridge endpoint. Browser Origins and OPTIONS are
+# rejected; a separate short-lived capability signed with a dedicated secret
+# is required for every active-session request.
+[functions.presenter-bridge-session]
+verify_jwt = false
 
 # Machine-to-machine endpoint: Supabase JWT verification is intentionally off;
 # the function requires a separate 32-byte Worker/Edge shared secret.

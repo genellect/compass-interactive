@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-07-21
+Last reviewed: 2026-08-01
 
 ## 1. Purpose
 
@@ -224,3 +224,26 @@ rollback.
 - No API PIN, prompt, PDF text, transcript content, provider response or budget
   reservation is stored merely by authorizing the master scope.
 - Students receive no Phase 7.28 Realtime channel and no additional polling.
+
+## 13. Phase 7.29 Presenter metadata
+
+- The teacher computer retains the PowerPoint file, Slide IDs, file path and
+  Office state. COMPASS does not upload PPTX/PDF bytes, slide text, speaker
+  notes, animations or the local path to Supabase.
+- Supabase stores only bounded coordination metadata: lecture/Admin-session
+  identifiers, SHA-256/HMAC digests for pairing, installation, PPTX, ordered
+  Slide IDs and PDF version, page/slide counts, accepted sequence/page,
+  lifecycle timestamps, terminal reason and content-free audit events. Raw
+  ticket, recovery code and active capability are never stored.
+- Browser pairing and loopback session values are memory-only and must not be
+  placed in a URL, local/session storage, analytics, crash logs or clipboard by
+  the application. The Bridge crash log must omit tokens and document
+  names/paths.
+- A 200 ms PowerPoint observation loop is local and creates no backend record.
+  The Bridge sends only stable changed pages plus a bounded heartbeat. Students
+  receive no additional request, field, Realtime subscription or Presenter
+  identifier; their existing five-second snapshot is unchanged.
+- Terminal Presenter connections and dependent content-free events become
+  eligible for bounded, idempotent cleanup after 30 days. Expired rows never
+  authorize use while waiting for cleanup. A future retention change must keep
+  FK order and audit/privacy requirements explicit.

@@ -1,7 +1,8 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-07-21
-Applies to: repository implementation through Phase 7.26
+Last reviewed: 2026-08-01
+Applies to: repository implementation candidate through Phase 7.29; later
+native, Human, Hosted and Production gates remain separately authoritative
 
 ## 1. Architectural goals
 
@@ -33,6 +34,9 @@ flowchart LR
   Worker -->|"nonce/job coordination"| Edge
   Teacher -.->|"recovery mode only"| Publisher["Local Publisher"]
   Publisher -.->|"mutually exclusive private writer"| R2["Private Cloudflare R2"]
+  PowerPoint["PowerPoint for Windows"] -.->|"actual stable slide position"| Presenter["Presenter Bridge on 127.0.0.1"]
+  Teacher -.->|"short-lived pairing"| Presenter
+  Presenter -.->|"scoped page commit"| Edge
   Student -->|"short-lived archive/PDF access"| Worker["Cloudflare Worker"]
   Worker --> R2
 
@@ -292,3 +296,34 @@ stores no PIN and performs no provider call. Every explicit feature start still
 requires a new short-lived single-use child grant and the existing budget,
 lane, lifecycle and idempotency admission. Status and free revoke remain
 available while paid admission is disabled.
+
+## 15. Phase 7.29 Presenter Bridge boundary
+
+Phase 7.29 adds an optional Windows-native operating boundary without changing
+the student or Display transport contracts. PowerPoint COM events only request
+a reconciliation; the canonical source is a stable observation of the actual
+`View.Slide.SlideID` and absolute slide index. A 200 ms local monitor covers
+missing, early, duplicate, back and jump events. Same-page observations do not
+advance the existing live-state version.
+
+The initial mapping is intentionally narrow: a normal all-slide, windowed show,
+no hidden slides, Custom Show or Presenter View, equal PPTX/PDF counts, and an
+explicit teacher confirmation after seeing both document identities and the
+PDF first page. Ordered Slide IDs and the PPTX digest are frozen for the active
+connection; a structural or save mutation revokes synchronization rather than
+guessing a mapping.
+
+The per-user Bridge binds only `127.0.0.1:43124`; Local Publisher remains on
+`43123`. Exact Host/Origin and bounded-request checks protect loopback. The
+browser sends no Admin token, PIN or service credential to the Bridge. Pairing
+and active capabilities are short-lived, single-purpose and bound to Origin,
+lecture, deck and installation. PowerPoint/PPTX/PDF bytes never enter Supabase.
+
+Database and Edge admission use independent default-OFF gates. At most one
+unrevoked Presenter binding may fence a lecture's manual page writes. Explicit
+handover, runtime disable, expiry, lecture close, Admin revoke, disconnect or
+document mutation terminalizes it and returns the teacher to the established
+manual control. The final commit still flows through the existing live-state
+mutation, so Phase 7.28 Display acceleration remains unchanged and students
+continue the five-second snapshot with no Presenter request, table or Realtime
+subscription.

@@ -41,24 +41,15 @@ import {
 } from './admin/adminPageViewModel'
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
+import {
+  ADMIN_SESSION_STORAGE_KEY,
+  ADMIN_TOKEN_SESSION_STORAGE_KEY,
+  PUBLISHER_SESSION_STORAGE_KEY,
+  restoreAdminSession,
+  restoreAdminToken,
+  restorePublisherSessionToken,
+} from './admin/adminSessionStorage'
 import './AdminPage.css'
-
-const ADMIN_SESSION_STORAGE_KEY = 'compass-interactive-admin-authenticated'
-const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
-const PUBLISHER_SESSION_STORAGE_KEY =
-  'compass-interactive-publisher-session-token'
-
-function restoreAdminSession() {
-  return window.sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY) === 'true'
-}
-
-function restoreAdminToken() {
-  return window.sessionStorage.getItem(ADMIN_TOKEN_SESSION_STORAGE_KEY) ?? ''
-}
-
-function restorePublisherSessionToken() {
-  return window.sessionStorage.getItem(PUBLISHER_SESSION_STORAGE_KEY) ?? ''
-}
 
 export function AdminPage() {
   const {
@@ -74,6 +65,7 @@ export function AdminPage() {
     loadOlderComments,
     participantCount,
     refreshComments,
+    refreshDisplayState,
     setOperatorLiveAccess,
     selectLectureSession,
     visibleCommentCount,
@@ -767,7 +759,9 @@ export function AdminPage() {
       setDisplayStateError(
         message === 'Invalid Admin session.'
           ? '管理者認証の有効期限が切れました。再度ログインしてください。'
-          : '表示画面の更新に失敗しました。少し時間をおいて再度お試しください。',
+          : message.includes('PowerPoint synchronization is active')
+            ? 'PowerPoint同期中です。先に手動操作へ切り替えてください。'
+            : '表示画面の更新に失敗しました。少し時間をおいて再度お試しください。',
       )
       return false
     } finally {
@@ -1226,6 +1220,7 @@ export function AdminPage() {
           void abortInterruptedPdfPublication()
         }
         onDisplayNameChange={setPdfDisplayName}
+        onDisplayStateRefresh={refreshDisplayState}
         onDownloadEnabledChange={setPdfDownloadEnabled}
         onFileChange={(file) => {
           setPdfFile(file)
@@ -1244,9 +1239,6 @@ export function AdminPage() {
         onPairingCodeChange={setPublisherPairingCode}
         onPrevious={() => void updateDisplayState('previous')}
         onPublish={() => void publishPdfDocument()}
-        onPublishWithLocalPublisher={() =>
-          void publishPdfDocumentWithLocalPublisher()
-        }
         onSelectDocument={setPdfDocumentInput}
         onSetDocument={() =>
           void updateDisplayState('setDocument', {

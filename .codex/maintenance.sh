@@ -6,3 +6,4 @@ cd "$repo_root"
 
 git fetch --prune
 npm ci
+npm run cloud:doctor

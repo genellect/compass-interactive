@@ -4,21 +4,37 @@ on:
   pull_request:
     paths:
       - .devcontainer/**
+      - .codex/**
+      - .claude/**
+      - AGENTS.md
+      - CLAUDE.md
+      - .github/copilot-instructions.md
       - .gitattributes
       - .node-version
       - package.json
       - package-lock.json
       - scripts/devcontainer.*
+      - scripts/cloud-workspace-doctor.mjs
+      - docs/CLOUD_DEVELOPMENT.md
+      - docs/GATE_ROUTING.md
       - .github/workflows/devcontainer-contract.yml
   push:
     branches: [main]
     paths:
       - .devcontainer/**
+      - .codex/**
+      - .claude/**
+      - AGENTS.md
+      - CLAUDE.md
+      - .github/copilot-instructions.md
       - .gitattributes
       - .node-version
       - package.json
       - package-lock.json
       - scripts/devcontainer.*
+      - scripts/cloud-workspace-doctor.mjs
+      - docs/CLOUD_DEVELOPMENT.md
+      - docs/GATE_ROUTING.md
       - .github/workflows/devcontainer-contract.yml
   workflow_dispatch:
 

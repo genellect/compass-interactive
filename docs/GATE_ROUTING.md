@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (58 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (63 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |
@@ -41,6 +41,8 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | `supabase/tests/` (pgTAP)                                                     | `npx supabase test db --local`                                                                                                                        | **No**                                                                                    |
 | `cloudflare/asset-worker/`                                                    | `cloud:check` — covered by `typecheck:phase3` and `test:phase3-worker`                                                                                | Yes                                                                                       |
 | `publisher/`                                                                  | `cloud:check` — covered by `typecheck:phase3` and `test:phase3-publisher`                                                                             | Yes                                                                                       |
+| `presenter-bridge/` source                                                    | `cloud:check`, then CI `presenter-native` x64/x86 build and deterministic x64 tests                                                                  | Partly; compile/test needs a Windows runner                                                |
+| `presenter-bridge/` installer, signing, COM or PowerPoint behavior            | signed release workflow plus Windows Device/Human gate; real Office, 500 transitions, restart, PNA and venue drill                                  | **No**                                                                                    |
 | `e2e/demo/`                                                                   | `npm run typecheck:e2e`, then the matching demo spec                                                                                                  | Yes, browsers required                                                                    |
 | `e2e/local/`                                                                  | `npm run typecheck:e2e`, then the matching local spec on the local stack                                                                              | **No**                                                                                    |
 | `scripts/` test or CI scripts                                                 | `cloud:check`. If you touched the allowlist or a forbidden-command list, `test:ci:nonlive` and `test:production-gate:static` are the ones that answer | Yes                                                                                       |
@@ -48,7 +50,8 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | `docs/` only                                                                  | `cloud:check` — `test:phase6-7-docs` asserts the required document set exists and that `package.json` and `package-lock.json` versions agree          | Yes                                                                                       |
 | `package.json` / `package-lock.json`                                          | `cloud:check` **plus** `npm run security:audit`, plus the Dev Container Contract workflow (§4)                                                        | Yes                                                                                       |
 | `.devcontainer/`, `.node-version`, `.gitattributes`, `scripts/devcontainer.*` | `npm run dev:doctor` inside the container, plus the Dev Container Contract workflow                                                                   | **No** — needs the Dev Container                                                          |
-| `AGENTS.md`, `CLAUDE.md`, `.codex/`, `.claude/`                               | `cloud:check`                                                                                                                                         | Yes                                                                                       |
+| `.codex/`, `AGENTS.md`, `CLAUDE.md`, Cloud/Gate docs                          | `npm run cloud:doctor`, `cloud:check`, then the Dev Container Contract workflow because these paths define agent admission                         | Yes for cloud doctor; Dev Container job remains separate                                  |
+| Google OAuth, Supabase Auth provider, Admin identity/RBAC or MFA              | Cloud static gate, full local Supabase/RLS gate, then separate Hosted IAM, AAL2, two-Admin, recovery and Human gates                               | Partly; provider and MFA evidence are Hosted/Human                                         |
 
 Feature-flag work spans surfaces: a `VITE_PHASE*` flag has a matching server-side `PHASE*_ENABLED` variable in the Edge Function environment, and the `:flag-off` demo specs exist because both states must hold. Changing one without the other is the failure this pairing catches.
 
@@ -63,9 +66,11 @@ npm run test:phase7-28c-ai-concurrency  # lecture-wide AI authorization
 npm run test:phase7-28b-lock-order      # Display issue versus Admin revoke
 npm run test:phase7-26-concurrency      # PDF publication
 npm run test:phase7-27-concurrency      # Journal Club
+npm run test:phase7-29-concurrency      # Presenter lifecycle and fencing
 npm run test:phase7-26-upgrade          # Phase 7.2 data through 7.26
 npm run test:phase7-27-upgrade          # Phase 7.26 data through 7.27
 npm run test:phase7-28-upgrade          # populated 7.27 data through 7.28
+npm run test:phase7-29-upgrade          # populated 7.28 data through 7.29
 npm run test:production-local-edge      # local Auth, CORS, fail-closed paid features
 npm run test:e2e:phase7-27:local        # browser to Edge to database
 npm run test:e2e:phase7-28b:local       # cross-browser Display Realtime
@@ -86,23 +91,29 @@ A migration change is not cleared by `cloud:check`. `supabase/migrations/` is on
 
 ```
 .devcontainer/**
+.codex/**
+AGENTS.md
+CLAUDE.md
 .gitattributes
 .node-version
 package.json
 package-lock.json
 scripts/devcontainer.*
+scripts/cloud-workspace-doctor.mjs
+docs/CLOUD_DEVELOPMENT.md
+docs/GATE_ROUTING.md
 .github/workflows/devcontainer-contract.yml
 ```
 
 Note that `package.json` and `package-lock.json` are in that list. A dependency change fires both the CI workflow and this one.
 
-## 5. What the 85 `test:*` scripts actually divide into
+## 5. What the 94 `test:*` scripts actually divide into
 
 | Count | Kind                               | Where it runs                                                                                                                                                                                         |
 | ----: | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    58 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
-|    13 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 5 concurrency / lock-order suites, 3 `*-upgrade` suites, `test:production-local-edge`, and 4 local E2E entries                                         |
-|     5 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, `test:e2e:phase7-26`(`:flag-off`), `test:e2e:phase7-27`(`:flag-off`)                                                                                     |
+|    63 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
+|    15 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 6 concurrency / lock-order suites, 4 `*-upgrade` suites, `test:production-local-edge`, and 4 local E2E entries                                         |
+|     7 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29 flag-ON and flag-OFF suites                                                                                                          |
 |     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                         |
 |     2 | **forbidden**                      | `test:phase5-openai-live`, `test:phase6-openai-live`. `scripts/test-pdf-sync-hosted.mjs` has no npm script and is forbidden for the same reason                                                       |
 |     6 | entrypoint variants and duplicates | `test:ci:nonlive` (the aggregator), `test:e2e:demo`, `test:e2e:demo:direct`, `test:e2e:local`, `test:e2e:local:direct`, and `test:phase6-6-operator-edge` (already invoked by `test:phase6-6-static`) |

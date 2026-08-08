@@ -68,9 +68,97 @@
   max-width: 76px;
 }
 
+.admin-presenter-sync {
+  align-items: center;
+  background: color-mix(in srgb, var(--panel) 90%, var(--accent-soft));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+  border-radius: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.admin-presenter-sync p {
+  margin: 5px 0 0;
+}
+
+.admin-presenter-sync details {
+  flex-basis: 100%;
+}
+
+.admin-presenter-review {
+  align-items: stretch;
+  display: grid;
+}
+
+.admin-presenter-binding {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.admin-presenter-binding > div:not([aria-hidden]) {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.admin-presenter-binding strong {
+  overflow-wrap: anywhere;
+}
+
+.admin-presenter-binding span,
+.admin-presenter-binding small,
+.admin-presenter-first-page > span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.admin-presenter-first-page {
+  display: grid;
+  gap: 8px;
+  margin-inline: auto;
+  max-width: 520px;
+  width: 100%;
+}
+
+.admin-presenter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-presenter-active {
+  background: color-mix(in srgb, #dff6e9 70%, var(--panel));
+  border-color: color-mix(in srgb, #198754 35%, var(--border));
+}
+
 @media (max-width: 640px) {
   .admin-pdf-page-controller {
     position: static;
+  }
+
+  .admin-presenter-binding {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-presenter-binding > div[aria-hidden] {
+    transform: rotate(90deg);
+    text-align: center;
+  }
+
+  .admin-presenter-actions > button,
+  .admin-presenter-sync > button {
+    width: 100%;
   }
 }
 

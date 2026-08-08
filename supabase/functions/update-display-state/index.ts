@@ -211,17 +211,24 @@ Deno.serve(async (request) => {
     )
   }
 
+  const presenterFenceEnabled =
+    Deno.env.get('PHASE729_POWERPOINT_SYNC_ENABLED') === 'true'
   const { error: updateError } = nextDocumentVersion
-    ? await supabase.rpc('admin_update_pdf_display_v3', {
-        target_current_pdf_page: nextPage,
-        target_display_mode: nextDisplayMode,
-        target_lecture_session_id: body.lectureSessionId,
-        target_pdf_document_id: nextDocumentId,
-        target_pdf_document_version: nextDocumentVersion,
-        target_pdf_manifest_version: nextManifestVersion,
-        target_pdf_page_count: nextPageCount,
-        target_pdf_visible: nextVisible,
-      })
+    ? await supabase.rpc(
+        presenterFenceEnabled
+          ? 'admin_update_pdf_display_with_presenter_fence_v1'
+          : 'admin_update_pdf_display_v3',
+        {
+          target_current_pdf_page: nextPage,
+          target_display_mode: nextDisplayMode,
+          target_lecture_session_id: body.lectureSessionId,
+          target_pdf_document_id: nextDocumentId,
+          target_pdf_document_version: nextDocumentVersion,
+          target_pdf_manifest_version: nextManifestVersion,
+          target_pdf_page_count: nextPageCount,
+          target_pdf_visible: nextVisible,
+        },
+      )
     : await supabase.rpc('admin_update_pdf_display', {
         target_current_pdf_page: nextPage,
         target_display_mode: nextDisplayMode,
@@ -230,6 +237,17 @@ Deno.serve(async (request) => {
       })
 
   if (updateError) {
+    if (updateError.code === 'P7291') {
+      return jsonResponse(
+        {
+          code: 'PRESENTER_SYNC_ACTIVE',
+          message:
+            'PowerPoint synchronization is active. Switch to manual control first.',
+          ok: false,
+        },
+        409,
+      )
+    }
     return jsonResponse({ ok: false, message: updateError.message }, 500)
   }
 
