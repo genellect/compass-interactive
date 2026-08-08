@@ -4,7 +4,7 @@
 
 This private repository contains the COMPASS Interactive product, including Student, Admin, Display, Archive, Supabase migrations and Edge Functions, Cloudflare asset delivery, AI orchestration, and browser verification.
 
-Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the affected source and tests before editing.
+Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the affected source and tests before editing. Any work touching Admin identity, public-source preparation, contest access, tenancy, or the next formal Production Gate must also read `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md` and `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` in full.
 
 ## Cloud-first development
 
@@ -12,6 +12,7 @@ Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the a
 - A local-only or ahead-only checkout is recovery input, never the new source of truth. Import it as a reviewed patch onto the current canonical branch, preserve provenance in the PR, and regenerate derived files from the current schema.
 - Treat the Dev Container Specification as the single environment source of truth. Codespaces, VS Code + Docker Desktop, and the Dev Container CLI must use the same `.devcontainer/devcontainer.json`.
 - Use one isolated Codespace and one branch per repository and change. Do not combine this checkout with the public COMPASS repository.
+- Keep this repository private until the Phase 7.31 public-source audit is complete and the user gives a separate approval immediately before the visibility change. A plan to publish later is not authorization to publish now.
 - Follow `.devcontainer/devcontainer.json` and `docs/CLOUD_DEVELOPMENT.md` for setup and browser port access.
 - Default to `/demo` and non-live tests. The demo must not call Supabase, OpenAI, Cloudflare R2, or other paid or Production services.
 - Use the local Docker-based Supabase stack for database, RLS, migration, and integration work. Do not link or push to a hosted Supabase project during ordinary development.
@@ -56,6 +57,17 @@ Do not run `test:phase5-openai-live`, `test:phase6-openai-live`, hosted migratio
 - Keep changes narrow, commit intentionally, push the branch, and open a Draft Pull Request.
 - This private user-owned repository currently has no enforceable branch protection without GitHub Pro. Until protection is enabled, PR-only integration and no-direct-main are mandatory procedural controls; never describe them as technically enforced.
 - Local, CI, hosted, device, human, and Production acceptance are separate gates.
+- Phase 7.29B dormant placement is not feature activation or a formal Production Gate. The next formal integrated Production Gate is Phase 7.33 and remains HOLD until the Phase 7.29 activation blockers, Phase 7.30 identity work, Phase 7.31 governance/contest environment, and Phase 7.32 commercial-readiness contract all pass.
+
+## Contest reviewer boundary
+
+- A contest reviewer is not a new privileged role. The approved mapping is the ordinary `[2] AI-capable Admin`: `role=instructor` plus `can_use_ai=true` in an isolated contest environment.
+- Invite each reviewer's own Google account. Never distribute a shared Gmail account, password, TOTP seed, recovery code, PIN, or secret.
+- Reviewers may exercise the real own-lecture teacher workflow, including permitted paid AI within server-side limits. The initial path requires Google plus TOTP AAL2, active `instructor + can_use_ai`, an enrolled personal four-digit AI PIN (or its valid remembered-browser proof), and the existing two-scope AI master CTA; no owner intervention or API PIN is required per lecture or per call. A dedicated AI Passkey is a later replacement after its WebAuthn gate. The server still enforces environment, principal, lecture, lifecycle, model/action scope, budget, concurrency and idempotency on every provider start. They may not receive `owner` or global-admin capabilities, inspect other principals or lectures, change budgets/deployments, or view any secret value.
+- The four-digit AI PIN is a low-entropy intent factor, never standalone authentication or authorization. It is accepted only inside a valid TOTP AAL2 Admin session with atomic membership-wide and coarse abuse limits. The raw PIN may appear only in a trusted form and bounded TLS request, is cleared after the response and is never persisted or logged. Remembered-browser enrollment atomically consumes a short-lived nonce bound to identity, membership, session, exact TOTP step-up, factor version, Origin and public-key fingerprint; the browser stores only a revocable browser-profile credential backed by a non-extractable key. Do not claim hardware binding before the WebAuthn gate.
+- Same-scope AI master retry is idempotent. Caption-scope escalation requires a new AI-unlock proof plus a still-fresh server-recorded TOTP step-up; downgrade and stop are free. Session, factor, browser credential, membership/entitlement, policy and lecture transitions must use the approved idempotent drain matrix. The dedicated AI Passkey is purpose-bound and cannot log in or grant owner authority.
+- Keep `ADMIN_PIN`, `BILLING_PIN` and the personal four-digit `AI PIN` distinct. `ADMIN_PIN` is only time-bounded legacy shared login; `BILLING_PIN` is only a default-OFF verified-Google-owner/AAL2 paid rollback; the personal AI PIN is the normal intent factor. A shared-login incident rollback keeps new paid starts disabled, and both legacy secrets are removed after their approved migration windows.
+- Contest identity, Supabase data, a dedicated Private R2 bucket/binding/credential, OpenAI project/budget, audit, and cleanup are isolated from Production. Prefix-only R2 separation, a frontend-only mock, or an authorization bypass is not acceptable.
 
 ## Code Review Rules
 

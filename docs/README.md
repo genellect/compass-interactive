@@ -1,8 +1,8 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 93 documents in `docs/`
-Last verified: 2026-08-08
+Scope: entrypoint and status vocabulary for the 95 documents in `docs/`
+Last verified: 2026-08-09
 
 This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through Phase 7.29. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
@@ -15,12 +15,19 @@ When two sources disagree, the higher one wins.
 1. What the user explicitly required for the task at hand
 2. Current Production behavior and the implementation on the latest `origin/main`
 3. [`AGENTS.md`](../AGENTS.md)
-4. [`README.md`](../README.md) and [`PROJECT_GUIDE.md`](../PROJECT_GUIDE.md)
-5. [`docs/CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md), [`docs/architecture.md`](architecture.md), [`docs/SECURITY.md`](SECURITY.md), [`docs/data_policy.md`](data_policy.md), [`docs/database_schema.md`](database_schema.md)
-6. [`docs/RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md), [`docs/GATE_ROUTING.md`](GATE_ROUTING.md), [`docs/CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md), and route- or feature-specific requirement documents
-7. `PHASE*` design, gate and handoff records
+4. Approved current future contracts: [`ROADMAP.md`](ROADMAP.md) controls phase
+   order and gates; [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)
+   and [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md)
+   control their detailed domain contracts
+5. [`README.md`](../README.md) and [`PROJECT_GUIDE.md`](../PROJECT_GUIDE.md)
+6. [`docs/CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md), [`docs/architecture.md`](architecture.md), [`docs/SECURITY.md`](SECURITY.md), [`docs/data_policy.md`](data_policy.md), [`docs/database_schema.md`](database_schema.md)
+7. [`docs/RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md), [`docs/GATE_ROUTING.md`](GATE_ROUTING.md), [`docs/CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md), and other route- or feature-specific requirement documents
+8. Other `PHASE*` design, gate and handoff records
 
 If Production and `origin/main` disagree, report the difference. Do not pick one as canonical by guessing.
+If the Roadmap and an approved detailed domain contract disagree, stop and
+reconcile both in the same reviewed change; neither silently overrides the
+other.
 
 ## Status vocabulary
 
@@ -38,55 +45,57 @@ A document dated in the past is not automatically `Historical` — `architecture
 
 ## Canonical documents
 
-| Document                                         | Status                 | Responsibility                                                            |
-| ------------------------------------------------ | ---------------------- | ------------------------------------------------------------------------- |
-| [`architecture.md`](architecture.md)             | Operationally verified | Component and data flow, architectural invariants                         |
-| [`SECURITY.md`](SECURITY.md)                     | Operationally verified | Security controls, known gaps                                             |
-| [`data_policy.md`](data_policy.md)               | Operationally verified | Data collection, retention, deletion                                      |
-| [`database_schema.md`](database_schema.md)       | Operationally verified | Table and policy responsibility map                                       |
-| [`CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md)   | Operationally verified | Environments, safe execution levels, isolation, completion criteria       |
-| [`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md) | Operationally verified | GitHub source admission and recovery-import contract |
-| [`GATE_ROUTING.md`](GATE_ROUTING.md)             | Operationally verified | Change surface to responsible gate                                        |
-| [`CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md) | Operationally verified | CI composition and browser E2E                                            |
-| [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)           | Operationally verified | Entrypoint for setup, verification, deployment, rollback, incidents       |
-| [`ROADMAP.md`](ROADMAP.md)                       | Planned                | Future phases, cross-phase invariants, stop-the-line gates                |
-| [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md) | Planned | Reasoning budget and internal/external agent responsibility |
-| [`CHANGELOG.md`](CHANGELOG.md)                   | Historical             | Development trajectory. Not a substitute for Git history or gate evidence |
+| Document                                                                                                                 | Status                 | Responsibility                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------- |
+| [`architecture.md`](architecture.md)                                                                                     | Operationally verified | Component and data flow, architectural invariants                                                  |
+| [`SECURITY.md`](SECURITY.md)                                                                                             | Operationally verified | Security controls, known gaps                                                                      |
+| [`data_policy.md`](data_policy.md)                                                                                       | Operationally verified | Data collection, retention, deletion                                                               |
+| [`database_schema.md`](database_schema.md)                                                                               | Operationally verified | Table and policy responsibility map                                                                |
+| [`CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md)                                                                           | Operationally verified | Environments, safe execution levels, isolation, completion criteria                                |
+| [`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md)                                                       | Operationally verified | GitHub source admission and recovery-import contract                                               |
+| [`GATE_ROUTING.md`](GATE_ROUTING.md)                                                                                     | Operationally verified | Change surface to responsible gate                                                                 |
+| [`CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md)                                                                         | Operationally verified | CI composition and browser E2E                                                                     |
+| [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified | Entrypoint for setup, verification, deployment, rollback, incidents                                |
+| [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                | Future phases, cross-phase invariants, stop-the-line gates                                         |
+| [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                | Reasoning budget and internal/external agent responsibility                                        |
+| [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Planned                | Google identity, AAL2, RBAC, COMPASS reuse and rollout contract                                    |
+| [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | Planned                | GitHub protection/publication, real reviewer environment, commercial readiness and Phase 7.33 gate |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                                                           | Historical             | Development trajectory. Not a substitute for Git history or gate evidence                          |
 
 ## Setup and deployment
 
-| Document                                                                               | Status                            | Scope                                   |
-| -------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------- |
-| [`supabase_setup.md`](supabase_setup.md)                                               | Operationally verified            | Supabase project and local stack setup  |
-| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                             | Operationally verified            | Cloudflare Pages delivery               |
-| [`gas_integration.md`](gas_integration.md)                                             | Implemented, verification pending | Google Apps Script integration boundary |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md) | Historical                        | Rollout procedure as of Phase 6.5       |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)     | Historical                        | Rollout procedure as of Phase 6.6       |
+| Document                                                                                         | Status                            | Scope                                   |
+| ------------------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------- |
+| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup  |
+| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery               |
+| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5       |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6       |
 | [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Implemented, verification pending | PPT rescue, dormant deploy and rollback |
 
 A runbook records the contract in source and the operational procedure. External state — Cloudflare dashboard, hosted secrets, real mail delivery — is not proven current by the document's date. The operator confirms it.
 
 ## Feature and subsystem documents
 
-| Document                                                             | Status                            | Scope                                              |
-| -------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
-| [`lecture_lifecycle.md`](lecture_lifecycle.md)                       | Operationally verified            | Lecture state machine, server-authoritative expiry |
-| [`milestone0_database_baseline.md`](milestone0_database_baseline.md) | Historical                        | Initial database baseline                          |
-| [`milestone4_pdf_sync.md`](milestone4_pdf_sync.md)                   | Historical                        | PDF page synchronization milestone                 |
-| [`phase2_backend_readiness.md`](phase2_backend_readiness.md)         | Historical                        | Phase 2 backend readiness                          |
-| [`phase2_poll_backend.md`](phase2_poll_backend.md)                   | Historical                        | Poll backend design                                |
-| [`phase2_poll_results_rpc.md`](phase2_poll_results_rpc.md)           | Historical                        | Poll results RPC design                            |
-| [`phase2_realtime_comments.md`](phase2_realtime_comments.md)         | Historical                        | Realtime comments design                           |
-| [`phase2_realtime_likes.md`](phase2_realtime_likes.md)               | Historical                        | Realtime likes design                              |
-| [`phase2_seed_data.md`](phase2_seed_data.md)                         | Historical                        | Seed data for Phase 2                              |
-| [`journal_club_mvp.md`](journal_club_mvp.md)                         | Historical                        | Journal Club MVP scope                             |
-| [`journal_club_join.md`](journal_club_join.md)                       | Implemented, verification pending | Journal Club join flow                             |
-| [`journal_club_display.md`](journal_club_display.md)                 | Implemented, verification pending | Journal Club Display surface                       |
-| [`journal_club_display_control.md`](journal_club_display_control.md) | Implemented, verification pending | Display control model                              |
-| [`journal_club_sync_strategy.md`](journal_club_sync_strategy.md)     | Implemented, verification pending | Synchronization strategy                           |
-| [`journal_club_admin_gate.md`](journal_club_admin_gate.md)           | Implemented, verification pending | Admin gate for Journal Club                        |
-| [`journal_club_realtime_check.md`](journal_club_realtime_check.md)   | Historical                        | Realtime behavior check record                     |
-| [`PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`](PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md) | Implemented, verification pending | Optional Windows Presenter boundary |
+| Document                                                                               | Status                            | Scope                                              |
+| -------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
+| [`lecture_lifecycle.md`](lecture_lifecycle.md)                                         | Operationally verified            | Lecture state machine, server-authoritative expiry |
+| [`milestone0_database_baseline.md`](milestone0_database_baseline.md)                   | Historical                        | Initial database baseline                          |
+| [`milestone4_pdf_sync.md`](milestone4_pdf_sync.md)                                     | Historical                        | PDF page synchronization milestone                 |
+| [`phase2_backend_readiness.md`](phase2_backend_readiness.md)                           | Historical                        | Phase 2 backend readiness                          |
+| [`phase2_poll_backend.md`](phase2_poll_backend.md)                                     | Historical                        | Poll backend design                                |
+| [`phase2_poll_results_rpc.md`](phase2_poll_results_rpc.md)                             | Historical                        | Poll results RPC design                            |
+| [`phase2_realtime_comments.md`](phase2_realtime_comments.md)                           | Historical                        | Realtime comments design                           |
+| [`phase2_realtime_likes.md`](phase2_realtime_likes.md)                                 | Historical                        | Realtime likes design                              |
+| [`phase2_seed_data.md`](phase2_seed_data.md)                                           | Historical                        | Seed data for Phase 2                              |
+| [`journal_club_mvp.md`](journal_club_mvp.md)                                           | Historical                        | Journal Club MVP scope                             |
+| [`journal_club_join.md`](journal_club_join.md)                                         | Implemented, verification pending | Journal Club join flow                             |
+| [`journal_club_display.md`](journal_club_display.md)                                   | Implemented, verification pending | Journal Club Display surface                       |
+| [`journal_club_display_control.md`](journal_club_display_control.md)                   | Implemented, verification pending | Display control model                              |
+| [`journal_club_sync_strategy.md`](journal_club_sync_strategy.md)                       | Implemented, verification pending | Synchronization strategy                           |
+| [`journal_club_admin_gate.md`](journal_club_admin_gate.md)                             | Implemented, verification pending | Admin gate for Journal Club                        |
+| [`journal_club_realtime_check.md`](journal_club_realtime_check.md)                     | Historical                        | Realtime behavior check record                     |
+| [`PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`](PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md) | Implemented, verification pending | Optional Windows Presenter boundary                |
 
 The Journal Club documents predate the Phase 7.27 integration. Where they conflict with `PHASE7_27_JOURNAL_CLUB_INTEGRATION.md` and the code, the code wins.
 
@@ -104,7 +113,7 @@ A checklist is a list of things a human must do. Its presence in the repository 
 
 `Planned` where the document states design intent, and superseded by the implementation wherever they differ. Read these for _why_, read the code for _what_.
 
-`PHASE1_SYNC_PROTOCOL`, `PHASE2_LECTURE_LIFECYCLE`, `PHASE2_REQUIREMENTS_MATRIX`, `PHASE3_PRIVATE_PDF_DELIVERY`, `PHASE3_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE4_BILLING_AND_REALTIME_CAPTIONS`, `PHASE4_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE4_1_AI_CONCURRENCY_LANES`, `PHASE5_MATERIAL_ANALYSIS_AND_POLL_PROPOSALS`, `PHASE5_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_FIVE_MINUTE_SUMMARIES`, `PHASE6_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_5_OPTIONAL_COMMENT_NICKNAMES`, `PHASE6_5_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_6_INTEGRATED_UX_AND_OPERATIONS`, `PHASE6_7_DOCUMENTATION_BASELINE`, `PHASE6_8_SECURITY_SESSIONS_TIMEOUTS`, `PHASE6_9_MODULARIZATION_AND_CI`, `PHASE7_1_CLASSROOM_UX_EXTENSIONS`, `PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS`, `PHASE7_26_BROWSER_PDF_PUBLICATION`, `PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE7_27_JOURNAL_CLUB_INTEGRATION`, `PHASE7_28_REQUIREMENTS_AND_DESIGN`, `PHASE7_29_POWERPOINT_PRESENTER_BRIDGE`
+`PHASE1_SYNC_PROTOCOL`, `PHASE2_LECTURE_LIFECYCLE`, `PHASE2_REQUIREMENTS_MATRIX`, `PHASE3_PRIVATE_PDF_DELIVERY`, `PHASE3_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE4_BILLING_AND_REALTIME_CAPTIONS`, `PHASE4_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE4_1_AI_CONCURRENCY_LANES`, `PHASE5_MATERIAL_ANALYSIS_AND_POLL_PROPOSALS`, `PHASE5_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_FIVE_MINUTE_SUMMARIES`, `PHASE6_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_5_OPTIONAL_COMMENT_NICKNAMES`, `PHASE6_5_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE6_6_INTEGRATED_UX_AND_OPERATIONS`, `PHASE6_7_DOCUMENTATION_BASELINE`, `PHASE6_8_SECURITY_SESSIONS_TIMEOUTS`, `PHASE6_9_MODULARIZATION_AND_CI`, `PHASE7_1_CLASSROOM_UX_EXTENSIONS`, `PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS`, `PHASE7_26_BROWSER_PDF_PUBLICATION`, `PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL`, `PHASE7_27_JOURNAL_CLUB_INTEGRATION`, `PHASE7_28_REQUIREMENTS_AND_DESIGN`, `PHASE7_29_POWERPOINT_PRESENTER_BRIDGE`, `PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN`, `PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS`
 
 ## Gate evidence records
 

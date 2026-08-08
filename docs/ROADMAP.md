@@ -2,32 +2,39 @@
 
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
+Last reconciled: 2026-08-09
+Future-contract approval: Phase 7.30-7.33 requirements approved; implementation
+and their Hosted/Human gates have not started
 
 ## 1. Numbering decision
 
 Existing Phase 0-6.6 implementation and historical Phase 7-9 reservations are
 preserved. Decimal phases separate risk domains without rewriting history.
 
-| Order | Phase                        | Priority | Outcome                                              |
-| ----: | ---------------------------- | -------- | ---------------------------------------------------- |
-|     1 | C0                           | Highest  | GitHub/Cloud canonicalization                        |
-|     2 | 6.7                          | Highest  | Documentation and release baseline                   |
-|     3 | 6.8                          | High     | PIN/session/CSP/resume/timeout security foundation   |
-|     4 | 6.9                          | High     | Modularization and deterministic CI quality          |
-|     5 | 7.1                          | Medium   | Summary language, own comments and lecture QR        |
-|     6 | 7.2                          | Medium   | Verified-primary-literature reference answers        |
-|     7 | 7.25                         | Medium   | Multidisciplinary automatic academic answers         |
-|     8 | 7.26                         | High     | Browser-complete private PDF publication             |
-|     9 | 7.27                         | High     | Thin Journal Club operational preset                 |
-|    10 | 7.28                         | High     | Operational cleanup, Display Realtime, AI activation |
-|    11 | 7.29A/B                      | High     | PPT rescue and dormant hosted placement              |
-|    12 | 7.29C                        | High     | Signed Presenter activation                          |
-|    13 | 7.30A-F                      | Highest  | Google Admin identity, MFA, RBAC and migration       |
-|    14 | Phase 7.30 Production Gate   | Highest  | Multi-admin controlled release                       |
-|    15 | Phase 8                      | Low      | Export/deletion evidence and unified AI review       |
-|    16 | 8.1                          | Low      | Explicit Terra advanced analysis                     |
-|    17 | 8.2                          | Low      | User-selected chronological/attention ranking        |
-|    18 | Phase 9                      | Final    | Long-run, human and operations certification         |
+| Order | Phase                      | Priority | Outcome                                              |
+| ----: | -------------------------- | -------- | ---------------------------------------------------- |
+|     1 | C0                         | Highest  | GitHub/Cloud canonicalization                        |
+|     2 | 6.7                        | Highest  | Documentation and release baseline                   |
+|     3 | 6.8                        | High     | PIN/session/CSP/resume/timeout security foundation   |
+|     4 | 6.9                        | High     | Modularization and deterministic CI quality          |
+|     5 | 7.1                        | Medium   | Summary language, own comments and lecture QR        |
+|     6 | 7.2                        | Medium   | Verified-primary-literature reference answers        |
+|     7 | 7.25                       | Medium   | Multidisciplinary automatic academic answers         |
+|     8 | 7.26                       | High     | Browser-complete private PDF publication             |
+|     9 | 7.27                       | High     | Thin Journal Club operational preset                 |
+|    10 | 7.28                       | High     | Operational cleanup, Display Realtime, AI activation |
+|    11 | 7.29A/B                    | High     | PPT rescue and dormant hosted placement              |
+|    12 | 7.29C                      | High     | Signed Presenter activation                          |
+|    13 | 7.30A-F                    | Highest  | Google Admin identity, MFA, RBAC and migration       |
+|    14 | 7.31A                      | Highest  | GitHub protection and supply-chain governance        |
+|    15 | 7.31B                      | Highest  | Public-source history, rights and privacy readiness  |
+|    16 | 7.31C                      | Highest  | Isolated real contest-review environment             |
+|    17 | 7.32                       | Highest  | Commercial multi-tenant EdTech readiness             |
+|    18 | Phase 7.33 Production Gate | Final    | Unified public, contest and commercial certification |
+|    19 | Phase 8                    | Low      | Export/deletion evidence and unified AI review       |
+|    20 | 8.1                        | Low      | Explicit Terra advanced analysis                     |
+|    21 | 8.2                        | Low      | User-selected chronological/attention ranking        |
+|    22 | Phase 9                    | Final    | Long-run, human and operations certification         |
 
 The old Phase 7 scope is split because deterministic literature verification
 must be proven before a more expensive model can be offered. The old Phase 8
@@ -43,7 +50,14 @@ Every future phase must preserve all of the following.
 - Role membership alone never authorizes a row or action.
 - New exposed tables receive RLS, explicit grants and two-user/two-lecture tests.
 - Public RPCs remain invoker-security by default.
-- Service role, API keys, PINs and delivery secrets never enter a public client.
+- Service role, provider API keys and delivery secrets never enter a public
+  client. A user-entered four-digit AI PIN may exist only transiently in the
+  trusted Admin form and its TLS request; the server keeps only a slow verifier
+  protected by a server-only pepper, and the raw value is never bundled,
+  persisted or logged. Browser remembering uses a non-extractable
+  browser-profile key and revocable server credential, never the PIN; hardware
+  binding is not claimed before WebAuthn. The legacy `BILLING_PIN` follows the
+  same no-persistence rule until retirement.
 - Privileged Admin mutations require a verified internal principal bound to
   `auth.uid()` and an AAL2 session after the Google migration; email or role
   strings alone never authorize a row.
@@ -67,15 +81,31 @@ Every future phase must preserve all of the following.
 
 ### API cost
 
-- Paid starts require explicit teacher action and API-use PIN.
+- Paid AI activation requires a valid AAL2 Admin session, active `can_use_ai`,
+  an owner-managed policy, an explicit teacher action and one personal AI-unlock
+  proof: a rate-limited four-digit AI PIN, a purpose-bound AI Passkey or a
+  revocable remembered-browser assertion. The first implementation is TOTP plus
+  the four-digit factor; AI Passkey follows its separate WebAuthn gate.
+- The unlock creates or updates the existing lecture master authorization for
+  exactly `all_except_captions` or `all_including_captions` until lecture close,
+  90-minute hard stop, explicit free stop or a security revoke of the session,
+  principal or entitlement. Creating it does not itself call a provider. Budget
+  exhaustion blocks child calls with a clear status but does not silently clear
+  the lecture's activated scope.
 - Stop remains free and easy.
 - Luna is the default runtime model where it meets the quality gate.
 - Terra is never an automatic fallback.
 - Lecture budget, call limit, concurrency and idempotency are verified before
   provider traffic.
 - Realtime transcription is never started by another AI feature.
-- Replacing the Admin login PIN does not implicitly remove the independent
-  API-use/Billing PIN used as a paid-operation step-up control.
+- A master-authorized child start never asks for the AI PIN again but still
+  receives a fresh single-use internal grant after all server checks.
+- Escalating from `all_except_captions` to `all_including_captions` requires a
+  fresh AI-unlock proof and server-recorded recent TOTP step-up; same-scope retry
+  is idempotent and downgrade/stop are free and factorless.
+- `BILLING_PIN` is removed from the normal Google/AAL2 path and retained only as
+  a default-OFF, owner-only, audited and time-bounded migration rollback. It is
+  deleted after the rollback deadline.
 
 ### Compatibility
 
@@ -517,6 +547,8 @@ activation gates remain HOLD until separately recorded.
 - **7.29B dormant placement:** apply only additive schema and compatible Edge
   and web code with DB, Edge and frontend gates independently OFF. Verify the
   old manual PDF/Display/student paths and save Hosted evidence.
+  The public `presenter-bridge-session` machine endpoint, its secret and native
+  distribution are explicitly excluded from 7.29B.
 - **7.29C activation:** implement signed per-user install/update/rollback,
   complete manual recovery, real Office/browser/PNA/500-transition/venue tests
   and then perform a controlled activation canary.
@@ -524,11 +556,14 @@ activation gates remain HOLD until separately recorded.
 The complete ordering and rollback contract is
 [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md).
 
-## 14. Phase 7 Production Gate
+## 14. Legacy Phase 7 release checklist
 
 The temporary hosted preview has completed the expand-first deployment portion.
-The remaining steps below are still mandatory before formal lecture operation;
-preview publication alone is not final Production Gate completion.
+The remaining steps below are still mandatory compatibility evidence, but this
+section is no longer the next formal integrated Production Gate. The approved
+next formal decision is Phase 7.33 after the identity, repository-publication,
+contest-isolation and commercial-readiness contracts are complete. Preview or
+dormant publication alone is not final Production Gate completion.
 
 Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26, 7.27, 7.28 and the
 applicable Phase 7.29 gates are individually PASS. Phase 7.29 may remain OFF
@@ -556,81 +591,128 @@ browser/database evidence alone.
     older-phase rollback for unrelated failures;
 12. record human, hosted and production evidence before normal activation.
 
-For a release that includes Phase 7.29, apply its additive migration and server
-capability with all three gates OFF, verify the signed per-user Bridge and real
-HTTPS-to-loopback boundary, then enable server admission, DB runtime and one
-controlled frontend cohort in that order. Rollback starts at the DB runtime
-gate and must leave manual Admin navigation, Display snapshot fallback and the
-student five-second path intact.
+For Phase 7.29B, apply its additive migration and deploy only the named
+JWT-protected management and compatible Display functions with all gates OFF;
+leave the machine endpoint, its secret and native Bridge undeployed. Phase
+7.29C separately requires rate/PoP/signed-native/real HTTPS-to-loopback gates
+before machine admission, DB runtime and a controlled frontend cohort may be
+enabled. Rollback starts at the DB runtime gate and must leave manual Admin
+navigation, Display snapshot fallback and the student five-second path intact.
 
 ## 15. Phase 7.30 - Google Admin identity, MFA and RBAC
 
-Google authentication replaces only the shared Admin login PIN after an
-expand-first compatibility gate. Student anonymous Auth, participant ownership,
-lecture lifecycle and the independent paid-operation PIN remain unchanged.
+Google authentication replaces the shared Admin login PIN after an expand-first
+compatibility gate. Student anonymous Auth, participant ownership and lecture
+lifecycle remain unchanged. Repeated `BILLING_PIN` entry and owner-issued
+per-lecture delegation are replaced in the normal path by an individual
+AI-unlock factor, owner-managed policy and the existing lecture master
+authorization; the old PIN survives only as a bounded rollback control.
 
-### 7.30A - asset reuse audit
+### 7.30A - asset, IAM and threat inventory
 
-- Read-only inventory the existing COMPASS Google platform and classify each
-  item as reusable, conditionally reusable or Interactive-only.
-- Reuse may include billing, verified domain and consent branding only after
-  ownership and rollback are confirmed. Interactive receives separate OAuth
-  clients, origins/callbacks, provider secret, service identities and rotation.
-- Request only `openid`, email and profile. Do not request offline Google API
-  access or retain Google provider tokens because Interactive does not need to
-  call Google APIs on behalf of teachers.
+- Read-only inventory the COMPASS Google platform and classify each asset as a
+  reusable pattern, conditionally reusable account resource, Interactive-only
+  credential/runtime or prohibited copy.
+- Freeze the identity, AAL2, role/capability, environment, recovery, audit,
+  invitation, AI-unlock and paid-policy threat model before schema or Hosted
+  changes.
+- Reuse no OAuth credential, service account, allowlist payload, Cloud Run/Neon
+  state or process-local rate limiter. Interactive environments get separate
+  OAuth clients, origins/callbacks, provider secrets and rollback ownership.
 
-### 7.30B - identity and mandatory AAL2
+### 7.30B - additive identity foundation
 
-- Use Supabase Google OAuth/PKCE to establish the existing Supabase
-  `auth.uid()` principal. Bind verified issuer, audience, `email_verified` and
-  immutable Google `sub` once in an internal Admin identity ledger.
-- Bootstrap the two named owner accounts create-only; subsequent authorization
-  uses the immutable identity binding and ledger status, not email comparison.
-- Require Supabase TOTP enrollment/challenge and JWT `aal2` for privileged Admin
-  access. Social login, email OTP and magic link are AAL1 recovery/bootstrap,
-  not the required second factor.
-- Keep Passkey as a later opt-in after custom-domain/RP-ID stability because
-  current Supabase support is experimental; do not present it as AAL2.
+- Add private principal, environment membership, invitation, tracked session,
+  append-only audit, AI-unlock factor, browser-profile credential, one-time
+  enrollment nonce, atomic membership/network/environment rate limits and
+  owner-managed AI policy schema behind default-OFF enforcement. Expand the existing
+  `lecture_ai_master_authorizations` with principal/membership/session/factor/
+  policy provenance instead of creating reviewer delegation grants. Require
+  RLS/grants/indexes and clean/upgrade migration tests.
+- Create a physically separate Admin Supabase client/storage key and PKCE route.
+  Its persistence adapter strips Google `provider_token` and
+  `provider_refresh_token` on login, refresh, reload and cross-tab updates.
+- Bind `auth.uid()` to the Google provider/issuer/subject exactly once from a
+  server-side Supabase Auth identity record while consuming bootstrap or a
+  one-time invitation. Request body, `user_metadata` and later email comparison
+  are not authorization sources.
+- Require TOTP AAL2 and a server-recorded short-lived recent-step-up nonce for
+  sensitive actions. Supabase Passkeys are Beta/passwordless and remain a later
+  option after custom-domain/RP-ID stability; they are not v1 AAL2.
+- Execute B in order: B1 must pass Google identity, tracked-session and mandatory
+  TOTP AAL2 gates before B2 adds the four-digit AI PIN, remembered-browser
+  credential, AI policy and master-provenance expansion. Dedicated AI Passkey is
+  deferred from the initial implementation.
 
-### 7.30C - roles, entitlements and session control
+### 7.30C - RBAC, ownership and all server authorization
 
-- Minimum roles: `owner`, `co_owner`, `admin_ai`, and `admin_standard`, with an
-  explicit capability matrix instead of client-side role branching.
-- Owner/co-owner can manage the Admin ledger, revoke an individual account or
-  session, stop any lecture and inspect bounded audit/usage records. Only owner
-  can change owners or destructive governance settings; no one can remove the
-  last active owner.
-- AI entitlement permits eligible controls but every paid start still requires
-  lecture ownership/state, explicit CTA, fresh API-use PIN grant, budget,
-  concurrency and idempotency checks.
-- Replace global `manage-admin-sessions` authority with principal-scoped list,
-  self-revoke and separately authorized owner revoke; preserve append-only
-  audit and hash-at-rest session material.
+- Minimum roles are `owner` and `instructor`; `can_use_ai` remains a separate
+  environment-scoped entitlement. Lecture ownership binds to either role's
+  active membership, not specifically to the `owner` role.
+- Migrate every Admin Edge/RPC path to verified bearer, immutable Google
+  binding, active membership/capability, tracked session, AAL2/step-up,
+  ownership/lifecycle and feature/cost checks, with transaction-time rechecks.
+- Owners can manage the Admin ledger, revoke an account/session, stop any
+  lecture and inspect bounded audit. Instructors are self/own-lecture only, and
+  no operation may suspend, demote or remove the last active owner.
+- Paid AI requires `can_use_ai`, an explicit master CTA and a personal AI-unlock
+  proof within a valid AAL2 session. Four-digit verification, Passkey challenge
+  and remembered-browser assertion are atomically replay/rate protected and
+  environment/principal/session/lecture/scope bound. Each later provider start
+  consumes only an internal single-use child grant after live policy, budget,
+  concurrency, idempotency and lifecycle checks.
+- AI PIN registration/verification permits the raw PIN only in the trusted form
+  and bounded TLS body and clears it after the response. Browser persistence
+  stores only a non-extractable profile key plus revocable public credential.
+  Short-lived one-time enrollment is bound to identity, membership, session,
+  exact TOTP step-up event, factor version, Origin and key fingerprint.
+- Five failures per 15 minutes lock the environment+membership across every
+  session/factor/browser; separate pepper-hashed network and environment circuit
+  breakers fail closed without retaining raw IP. Factor rotation cannot clear
+  the primary lockout.
+- Session, factor, browser credential, membership/entitlement, policy and lecture
+  transitions each have explicit idempotent master/child drain behavior. Budget
+  exhaustion alone preserves the activated master but denies child admissions.
 
-### 7.30D - Admin UX migration
+### 7.30D - Google, MFA and Admin-ledger UX
 
-- One Google sign-in CTA, clear MFA enrollment/challenge, account/role display,
-  session/device list and owner-only management views.
-- Preserve the existing lecture workspace after authentication. Infrastructure
-  details move to documentation; lockout/recovery guidance remains concise.
-- Accessibility, mobile/desktop, cross-browser OAuth callback and session expiry
-  E2E are mandatory.
+- Provide one Google sign-in CTA, concise TOTP enrollment/challenge,
+  account/role display, own session list and owner-only membership/lecture/audit
+  management without displacing the lecture workspace.
+- Provide a short AI-unlock enrollment: personal four-digit AI PIN in v1 and a
+  dedicated AI Passkey after the stable custom-domain/WebAuthn gate. The lecture
+  surface keeps exactly two master choices, and optional trusted-browser memory
+  is default OFF on shared devices and stores no raw PIN. It is described as
+  browser-profile-bound, not hardware/device-bound, until the WebAuthn gate.
+- Dangerous actions name target/effect, require recent step-up and are
+  idempotent/audited. Infrastructure details stay in the runbook.
+- Accessibility, mobile/desktop, Chromium/WebKit OAuth callback, storage
+  sanitizer, expiry, recovery and ledger E2E are mandatory.
 
-### 7.30E - expand-first compatibility
+### 7.30E - dual-read compatibility and full regression
 
-- Introduce identity/RBAC tables and dual-read server authorization behind
-  default-OFF gates before removing PIN login.
-- Keep the existing PIN path as a time-bounded recovery-only rollback during a
-  controlled cohort; it cannot grant broader roles or bypass AAL2 once Google
-  enforcement is enabled.
-- Migrate tracked sessions and Edge/RPC authorization without weakening
-  `auth.uid()`, RLS, lecture ownership or post-close rejection. Contract removal
-  is a later explicit migration.
+- Run Google and legacy shared-login-PIN authorization in an expand-first,
+  default-OFF dual-read period; backfill/assign legacy lecture ownership without
+  widening it.
+- Keep the PIN-login path as time-bounded break-glass rollback only. It cannot
+  grant broader roles or bypass AAL2 after Google enforcement, and it receives a
+  tested retirement deadline.
+- Keep legacy `BILLING_PIN` admission behind its own default-OFF, owner-only
+  rollback flag. Google-enforced clients fail closed on direct legacy PIN use;
+  after the deadline the secret and compatibility RPC are removed in a contract
+  migration.
+- Keep the names and authority separate: `ADMIN_PIN` is only legacy shared
+  login, `BILLING_PIN` is only the default-OFF Google-owner/AAL2 paid rollback,
+  and the personal four-digit `AI PIN` is only the normal intent factor. A full
+  shared-`ADMIN_PIN` revision rollback keeps new paid starts disabled because it
+  cannot prove an individual owner at AAL2; free stop remains available.
+- Inventory and regress every Admin Edge/RPC plus Phase 0-7.29 student, PDF,
+  Display, Poll, AI, Archive and Presenter-OFF contract before migration.
 
-### 7.30F - Hosted/Human/Production Gate
+### 7.30F - Hosted/Human identity migration gate
 
-- Two owners, one AI-enabled Admin, one standard Admin, suspended Admin,
+- In separate staging, test two owners, one AI-enabled Admin, one standard
+  Admin, suspended Admin,
   cross-user/cross-lecture denial, individual/global revoke and last-owner
   protection all PASS.
 - Google callback/origin allowlists, OAuth consent, AAL1-to-AAL2 enforcement,
@@ -639,14 +721,122 @@ lecture lifecycle and the independent paid-operation PIN remain unchanged.
   rollback regression PASS with zero Critical/High finding.
 - Exact hosted state and human MFA/recovery evidence are recorded before the
   Google enforcement flag is enabled.
+- This is a separately authorized limited identity-migration canary only. It
+  neither changes repository visibility nor invites contest reviewers, and the
+  formal integrated Phase 7.33 Gate remains HOLD.
+
+Passing 7.30F authorizes only the bounded Google-identity migration described
+above. It does not declare the repository public, invite contest reviewers,
+complete commercial readiness or satisfy the formal Phase 7.33 Production
+Gate.
 
 Current official implementation references are [Supabase Google
 login](https://supabase.com/docs/guides/auth/social-login/auth-google),
 [Supabase MFA/AAL](https://supabase.com/docs/guides/auth/auth-mfa), and the
-[experimental Passkey boundary](https://supabase.com/docs/guides/auth/passkeys).
+[Beta/passwordless Passkey boundary](https://supabase.com/docs/guides/auth/passkeys).
 Recheck them at implementation and Production Gate.
 
-## 16. Phase 8 - export, deletion evidence and unified AI review
+## 16. Phase 7.31 - protected publication and real contest review
+
+### 7.31A - GitHub governance
+
+- After GitHub Education enables the required private-repository controls,
+  enforce PR-only main integration, exact-head required checks, no force push
+  or deletion, review/conversation resolution and protected deployment
+  environments.
+- Add CodeQL, dependency review, secret scanning/push protection, action SHA
+  pinning, least-privilege workflow tokens, ownership and release provenance.
+- Until those controls are configured and negative-tested, describe main
+  protection as procedural only.
+
+### 7.31B - public-source readiness
+
+- Audit every branch, tag, Git history, artifact, release and attachment for
+  secrets, PII, lecture data, internal paths and materials without public
+  redistribution rights. Revoke and rotate every possibly exposed credential.
+- Decide the repository and third-party-content licenses explicitly; do not
+  infer a permissive license. Provide security, contribution, vulnerability,
+  architecture, build, SBOM and provenance documentation.
+- Keep the repository private until this gate passes and the user separately
+  approves the exact visibility change immediately before publication.
+
+### 7.31C - isolated real reviewer environment
+
+- Invite each reviewer's own Google account. The reviewer uses the existing
+  `[2] AI-capable Admin` contract: `role=instructor`, `can_use_ai=true`, TOTP
+  AAL2 and an individually revocable, bounded-expiry principal.
+- This is a real lecture environment using the Production-grade authentication,
+  RLS, PDF, Poll, Display, comments, AI and Archive paths. It is not a mock or
+  authorization bypass.
+- Each reviewer initially enrolls a personal four-digit AI PIN after TOTP AAL2
+  and may opt into the safe remembered-browser flow, then unlocks its own lecture
+  with the ordinary two-scope master CTA. Dedicated AI Passkey is added only
+  after its WebAuthn gate. Owner intervention and `BILLING_PIN` are not required
+  per lecture or per call. The owner preconfigures `can_use_ai`, allowed
+  features/models and bounded lecture/day/cost/Realtime limits; reviewers cannot
+  change those policies.
+- Browser remembering atomically consumes a short-lived enrollment nonce bound
+  to the reviewer, environment, membership, Admin session, exact TOTP step-up,
+  factor version, Origin and public-key fingerprint. It stores no PIN, is
+  individually revocable and is browser-profile-bound rather than hardware-bound.
+- Caption-scope escalation rechecks the AI factor and recent TOTP step-up;
+  downgrade/stop are free. The complete session/factor/browser/membership/policy
+  revoke matrix, membership-wide and coarse abuse limits, XSS/profile-copy tests
+  and no-R2-infrastructure UI acceptance are mandatory.
+- Isolate Supabase, OAuth client, Cloudflare environment/domain, a dedicated
+  Private R2 bucket/binding/credential,
+  OpenAI project/budget, audit and cleanup from Production. Reviewers receive no
+  owner/global authority, cross-lecture access, secret viewing or deployment /
+  budget administration.
+- Enforce reviewer/lecture/day budgets, concurrency, Realtime minutes, 90-minute
+  closure, expiry, individual revoke, idempotent cleanup and environment-level
+  negative tests.
+
+The complete Phase 7.31 contract and acceptance matrix is
+[`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md).
+
+## 17. Phase 7.32 - commercial EdTech readiness
+
+- Add explicit university/organization tenancy to principals, lectures, PDF,
+  comments, AI ledger, audit and Archive, with RLS/Edge/transaction isolation.
+- Separate staging, Production and contest through reproducible infrastructure;
+  add SLO/SLI, monitoring, cost alerts, incident response, backup/restore drills,
+  RTO/RPO and vendor-outage/exit procedures.
+- Validate Free 20-person and Pro approximately 300-person lectures, concurrent
+  institutions, accessibility (WCAG 2.2 AA), major browsers/devices, privacy,
+  retention/export/delete, support, onboarding and legal/DPA obligations.
+- Do not promote the contest tenant into Production; migrate the same approved
+  code and authorization contract into separately governed commercial
+  environments.
+
+## 18. Phase 7.33 - unified Production Gate
+
+This is the next formal integrated Production Gate. It revalidates, on one exact
+SHA, all Phase 0-7.32 contracts and specifically requires:
+
+Independently approved dormant placement and limited identity canaries may
+precede this Gate under their own evidence, but they do not count as its PASS
+and do not authorize public visibility, reviewer invitation or commercial
+release.
+
+- Phase 7.29 signed/native/device/venue/rate-limit/cleanup activation blockers
+  resolved;
+- Phase 7.30 Google identity, TOTP AAL2, principal/RBAC, all Edge/RPC ownership,
+  recovery and legacy-PIN migration Hosted/Human evidence;
+- Phase 7.31 protected main, public-source audit and explicit publication
+  approval, isolated reviewer E2E, expiry/revoke/cleanup/cost evidence;
+- Phase 7.32 tenant isolation, commercial operations, accessibility, privacy,
+  load, observability, backup/restore and support evidence;
+- clean and populated migration, all pgTAP, generated types, Advisor/lint,
+  supply-chain, Chromium/WebKit/mobile/visual/accessibility, real hosted services,
+  two-Admin/two-reviewer concurrency and human evidence.
+
+Any ownership/environment/secret leak, AAL2 bypass, duplicate or unbounded paid
+operation, post-close write, cleanup non-convergence, public-history secret/PII,
+rights ambiguity, Production/contest mixing or existing UX regression is an
+automatic HOLD. Only a complete PASS permits the staged final release.
+
+## 19. Phase 8 - export, deletion evidence and unified AI review
 
 - Generate teacher ZIP locally from permitted comments, published summaries,
   citations and optionally local transcript.
@@ -659,7 +849,7 @@ Recheck them at implementation and Production Gate.
 - Verify interruption recovery, Windows/macOS extraction, retention boundaries
   and global G0-G7.
 
-## 17. Phase 8.1 - explicit Terra advanced analysis
+## 20. Phase 8.1 - explicit Terra advanced analysis
 
 - Keep Luna as default.
 - Offer Terra only for multi-study conflict, methodological appraisal, advanced
@@ -672,7 +862,7 @@ Recheck them at implementation and Production Gate.
 - Routing false positives, state/budget/close behavior and global G0-G7 must
   PASS.
 
-## 18. Phase 8.2 - chronological or attention ranking
+## 21. Phase 8.2 - chronological or attention ranking
 
 - Default to chronological order.
 - Store the user's `時系列 / 注目` choice locally, not in Supabase.
@@ -684,7 +874,7 @@ Recheck them at implementation and Production Gate.
 - Boundary, concurrency, query-plan, 20/300 load, visual stability and global
   G0-G7 must PASS.
 
-## 19. Phase 9 - final production certification
+## 22. Phase 9 - final production certification
 
 - Full 90-minute real lecture and real 20-person canary.
 - 300-person modeled and appropriate measured Pro-plan review.
@@ -700,28 +890,40 @@ Final PASS requires zero Critical/High security defect, zero ownership leak,
 zero secret exposure, zero duplicate paid operation, zero post-close write/start,
 three consecutive E2E passes and complete human/hosted evidence.
 
-## 20. Codex implementation reasoning profile
+## 23. Codex implementation reasoning profile
 
 The implementation model and the application's runtime AI model are independent.
 The recommended default for repository work is GPT-5.6 Sol with Extra High
 reasoning.
 
-| Phase        | Recommended Codex effort                                                                                  | Rationale                                                                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 6.7          | Sol Extra High                                                                                            | Cross-document consistency is broad but mostly sequential and verifiable                                                                     |
-| 6.8          | **Sol Ultra for threat-model/final audit; Extra High for edits**                                          | PIN/session, CSP, resume and provider timeout are separable security streams whose interaction needs a root integration audit                |
-| 6.9          | **Sol Ultra for decomposition plan and final regression audit; Extra High for sequential refactors**      | Parallel read-only characterization is valuable, but simultaneous edits to large shared modules increase conflict risk                       |
-| 7.1          | Sol Extra High                                                                                            | Three bounded UX features with clear load contracts                                                                                          |
-| 7.2          | **Sol Ultra strongly recommended for design/eval/security review; Extra High for bounded implementation** | Literature verification, injection resistance, claim mapping, cost and publication can be independently challenged before integration        |
-| C0           | Extra High, with Ultra final contract review                                                               | Repository governance and cloud reproducibility are broad but deterministic                                                                  |
-| 7.29A/B      | **Sol Ultra primary; external Opus Max review recommended**                                                | Recovery provenance, DB/Edge/native boundaries and dormant multi-service rollout must be reconciled without activation                      |
-| 7.29C        | **Sol Ultra primary plus external Opus Max and device specialists**                                        | Signing, installer, COM/STA, localhost/PNA and venue behavior cross native and physical trust boundaries                                    |
-| 7.30A-C      | **Sol Ultra primary; external IAM/RLS review recommended**                                                 | OAuth asset separation, AAL2, immutable identity binding, roles and session revocation create the new Admin trust root                      |
-| 7.30D        | Extra High for implementation; Ultra security/accessibility review                                        | UX work is bounded after the identity contract is fixed                                                                                       |
-| 7.30E-F      | **Sol Ultra primary plus external final review**                                                           | Compatibility, account recovery, hosted state and rollback determine whether Google enforcement can safely replace shared PIN login         |
-| Phase 7 Gate | **Sol Ultra strongly recommended for read-only integrated audit**                                         | DB/RLS, provider cost, frontend UX/E2E and rollback evidence can be independently audited; deployment itself remains one controlled sequence |
+| Phase           | Recommended Codex effort                                                                                  | Rationale                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 6.7             | Sol Extra High                                                                                            | Cross-document consistency is broad but mostly sequential and verifiable                                                              |
+| 6.8             | **Sol Ultra for threat-model/final audit; Extra High for edits**                                          | PIN/session, CSP, resume and provider timeout are separable security streams whose interaction needs a root integration audit         |
+| 6.9             | **Sol Ultra for decomposition plan and final regression audit; Extra High for sequential refactors**      | Parallel read-only characterization is valuable, but simultaneous edits to large shared modules increase conflict risk                |
+| 7.1             | Sol Extra High                                                                                            | Three bounded UX features with clear load contracts                                                                                   |
+| 7.2             | **Sol Ultra strongly recommended for design/eval/security review; Extra High for bounded implementation** | Literature verification, injection resistance, claim mapping, cost and publication can be independently challenged before integration |
+| C0              | Extra High, with Ultra final contract review                                                              | Repository governance and cloud reproducibility are broad but deterministic                                                           |
+| 7.29A/B         | **Sol Ultra primary; external Opus Max review recommended**                                               | Recovery provenance, DB/Edge/native boundaries and dormant multi-service rollout must be reconciled without activation                |
+| 7.29C           | **Sol Ultra primary plus external Opus Max and device specialists**                                       | Signing, installer, COM/STA, localhost/PNA and venue behavior cross native and physical trust boundaries                              |
+| 7.30A           | **Sol Ultra primary; external IAM/threat review recommended**                                             | Asset reuse, environment separation, recovery and AI-unlock/cost policy define the new trust root before code                         |
+| 7.30B           | **Sol Ultra primary; Supabase Auth/RLS/token-storage review**                                             | B1 identity/TOTP must pass before B2 low-entropy AI PIN, browser credential/rate-limit and policy/master state intersect              |
+| 7.30C           | **Sol Ultra primary; external authorization/concurrency/cost review**                                     | Every Edge/RPC, ownership, last-owner, unlock factor, AI policy and master authorization must converge transactionally                |
+| 7.30D           | Extra High for implementation; Ultra security/accessibility review                                        | UX work is bounded after the identity contract is fixed                                                                               |
+| 7.30E           | **Sol Ultra primary; old-client/backfill/rollback review**                                                | Dual-read migration and break-glass retirement can cause lockout or privilege expansion                                               |
+| 7.30F           | **Sol Ultra primary plus external final review and Human Gate**                                           | Exact Hosted state, MFA/recovery and rollback decide the limited identity-migration canary                                            |
+| 7.31A-B         | **Sol Ultra primary plus independent supply-chain/history/license review**                                | Repository governance and public visibility can irreversibly expose history and define release authority                              |
+| 7.31C           | **Sol Ultra primary plus independent identity/isolation/cost review**                                     | Real reviewer access must exercise AI-capable instructor UX without crossing Production or owner boundaries                           |
+| 7.32            | **Sol Ultra for tenancy/security/operations; Extra High for bounded UX work**                             | Commercial readiness joins multi-tenancy, resilience, privacy, accessibility, support and cost                                        |
+| Phase 7.33 Gate | **Sol Ultra primary plus external final review and human owner approval**                                 | Every local, hosted, device, publication, reviewer and commercial evidence stream must reconcile on one exact SHA                     |
 
 Ultra should not be used merely as a stronger single-agent slider. Its value is
 highest when meaningful independent review tracks can run in parallel and a
 primary agent integrates contradictions. Most routine file edits and focused
 tests remain better suited to Sol Extra High.
+
+Recheck current model guidance before each phase. The official OpenAI guidance
+recommends higher reasoning effort only when it produces a measured quality
+gain and describes Ultra-style multi-agent work as most useful when complex
+work divides cleanly into independent streams:
+<https://developers.openai.com/api/docs/guides/latest-model>.
