@@ -1,0 +1,86 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(npm run test:phase5-openai-live)",
+      "Bash(npm run test:phase5-openai-live:*)",
+      "Bash(npm run test:phase6-openai-live)",
+      "Bash(npm run test:phase6-openai-live:*)",
+      "Bash(node scripts/test-phase5-openai-live.ts:*)",
+      "Bash(node scripts/test-phase6-openai-live.ts:*)",
+      "Bash(node scripts/test-pdf-sync-hosted.mjs:*)",
+      "Bash(supabase link:*)",
+      "Bash(supabase db push:*)",
+      "Bash(npx supabase link:*)",
+      "Bash(npx supabase db push:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npm run deploy:cloudflare:*)",
+      "Bash(npm run worker:deploy:production:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.env.publisher)",
+      "Read(./.env.publisher.*)",
+      "Read(./.dev.vars)",
+      "Read(./.dev.vars.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*service-role*)",
+      "Read(**/*service_role*)",
+      "Read(**/*.secret.*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run production:check)",
+      "Bash(bash .devcontainer/start-local-supabase.sh)",
+      "Bash(supabase:*)",
+      "Bash(npx supabase:*)",
+      "Bash(wrangler:*)",
+      "Bash(npx wrangler:*)"
+    ],
+    "allow": [
+      "Bash(npm ci)",
+      "Bash(npm ci:*)",
+      "Bash(npm run cloud:check)",
+      "Bash(npm run security:secrets)",
+      "Bash(npm run security:audit)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run typecheck:phase3)",
+      "Bash(npm run typecheck:e2e)",
+      "Bash(npm run lint)",
+      "Bash(npm run format)",
+      "Bash(npm run build)",
+      "Bash(npm run test:ci:nonlive)",
+      "Bash(npm run test:e2e:demo)",
+      "Bash(npm run test:e2e:demo:triple)",
+      "Bash(npm run test:e2e:phase7-26:*)",
+      "Bash(npm run test:e2e:phase7-27:*)",
+      "Bash(npm run dev:doctor)",
+      "Bash(npm run db:types:check)",
+      "Bash(npx playwright install:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git fetch:*)"
+    ]
+  }
+}
