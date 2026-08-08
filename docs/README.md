@@ -1,7 +1,7 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 95 documents in `docs/`
+Scope: entrypoint and status vocabulary for the 96 documents in `docs/`
 Last verified: 2026-08-09
 
 This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through Phase 7.29. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
@@ -64,14 +64,15 @@ A document dated in the past is not automatically `Historical` — `architecture
 
 ## Setup and deployment
 
-| Document                                                                                         | Status                            | Scope                                   |
-| ------------------------------------------------------------------------------------------------ | --------------------------------- | --------------------------------------- |
-| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup  |
-| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery               |
-| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5       |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6       |
-| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Implemented, verification pending | PPT rescue, dormant deploy and rollback |
+| Document                                                                                         | Status                            | Scope                                             |
+| ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------- |
+| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup            |
+| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery                         |
+| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary           |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5                 |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6                 |
+| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Production                        | PPT rescue, dormant deploy and rollback           |
+| [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)   | Historical                        | Dated Hosted evidence for the default-OFF release |
 
 A runbook records the contract in source and the operational procedure. External state — Cloudflare dashboard, hosted secrets, real mail delivery — is not proven current by the document's date. The operator confirms it.
 
@@ -120,7 +121,7 @@ A checklist is a list of things a human must do. Its presence in the repository 
 **All `Historical`.** Each records the state of a gate run on its date. A `LOCAL GATE PASS` is local acceptance only and does not imply CI, hosted, device, human or Production acceptance.
 
 - Local gate records: `PHASE0_GATE_2026-07-14`, `PHASE1_LOCAL_GATE_2026-07-14`, `PHASE2_LOCAL_GATE_2026-07-14`, `PHASE3_LOCAL_GATE_2026-07-14`, `PHASE4_LOCAL_GATE_2026-07-15`, `PHASE4_1_LOCAL_GATE_2026-07-15`, `PHASE5_LOCAL_GATE_2026-07-16`, `PHASE6_LOCAL_GATE_2026-07-16`, `PHASE6_5_LOCAL_GATE_2026-07-16`, `PHASE6_6_LOCAL_GATE_2026-07-16`, `PHASE6_7_LOCAL_GATE_2026-07-18`, `PHASE6_8_LOCAL_GATE_2026-07-18`, `PHASE6_9_LOCAL_GATE_2026-07-19`, `PHASE7_1_LOCAL_GATE_2026-07-19`, `PHASE7_2_LOCAL_GATE_2026-07-20`, `PHASE7_26_LOCAL_GATE_2026-07-21`, `PHASE7_27_LOCAL_GATE_2026-07-22`, `PHASE7_28_LOCAL_GATE_2026-07-31`, `PHASE7_29_LOCAL_GATE_2026-08-01`
-- Production gate records: `PRODUCTION_GATE_PHASE0_6_5_2026-07-16`, `PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16`, `PHASE7_PRODUCTION_GATE_2026-07-21`, `PHASE7_27_PRODUCTION_GATE_2026-07-22`, `PHASE7_27_DISPLAY_AND_LECTURE_OPERATIONS_GATE_2026-07-22`, `PHASE7_28_PRODUCTION_GATE_2026-08-01`
+- Production gate records: `PRODUCTION_GATE_PHASE0_6_5_2026-07-16`, `PRODUCTION_REVIEW_DEPLOYMENT_2026-07-16`, `PHASE7_PRODUCTION_GATE_2026-07-21`, `PHASE7_27_PRODUCTION_GATE_2026-07-22`, `PHASE7_27_DISPLAY_AND_LECTURE_OPERATIONS_GATE_2026-07-22`, `PHASE7_28_PRODUCTION_GATE_2026-08-01`, `PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09`
 - Handoff and pause records: `PHASE4_PAUSE_RECORD_2026-07-15`, `PHASE7_2_HANDOFF_2026-07-20`, `PHASE7_26_PAUSE_HANDOFF_2026-07-21`, `PHASE7_27_HANDOFF_2026-07-21`, `PHASE7_27_TEMPORARY_PREVIEW_HANDOFF_2026-07-22`
 
 Two of these carry conditions that survive their date and must be read before claiming a feature is live:
