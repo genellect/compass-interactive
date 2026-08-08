@@ -9,11 +9,11 @@ Last verified: 2026-08-08
 Phase 7.29 is split so source publication cannot be mistaken for classroom
 activation.
 
-| Stage | Included | Explicitly excluded |
-| --- | --- | --- |
-| 7.29A rescue | Current-main port of database, Edge, browser, native source, tests and docs; Windows CI compile/test | Installer, signing, real PowerPoint, Hosted state |
-| 7.29B dormant placement | Additive migration with DB gate OFF, Edge code with admission OFF, frontend build with flag OFF | Presenter UI, Bridge admission, active connections, native artifact distribution |
-| 7.29C activation | Future signed/device/hosted/human canary | Not authorized by 7.29A/B |
+| Stage                   | Included                                                                                             | Explicitly excluded                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 7.29A rescue            | Current-main port of database, Edge, browser, native source, tests and docs; Windows CI compile/test | Installer, signing, real PowerPoint, Hosted state                                |
+| 7.29B dormant placement | Additive migration with DB gate OFF, Edge code with admission OFF, frontend build with flag OFF      | Presenter UI, Bridge admission, active connections, native artifact distribution |
+| 7.29C activation        | Future signed/device/hosted/human canary                                                             | Not authorized by 7.29A/B                                                        |
 
 The dormant release must leave the existing Admin PDF controls, private Display
 fallback and student five-second snapshot behavior unchanged. It adds no
@@ -44,8 +44,10 @@ The rescued implementation keeps these boundaries:
   same-page no-op, manual handover and lifecycle-triggered revocation converge;
 - database, Edge and frontend gates are independently fail-closed.
 
-The current schema-derived TypeScript database type is regenerated from the
-rescued migration; it is never copied from the old branch.
+The recovered schema-derived TypeScript database type is only a candidate. It
+is accepted when a clean current-main database applies every migration and the
+CI `db:types:check` proves it byte-equivalent to fresh generation. The old
+branch's prior gate is not accepted as evidence.
 
 ## Automated gate
 

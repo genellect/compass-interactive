@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: GitHub canonical source, cloud-first task admission, recovery imports and handoff boundaries
-Last verified: 2026-08-08
+Last verified: 2026-08-09
 
 ## Outcome
 
@@ -54,8 +54,10 @@ An unpushed local change is handled as evidence, not history to merge blindly.
 7. Run the present-day gates; an old Local Gate cannot be transferred.
 
 Phase 7.29 uses this contract to rescue local source commit `65b56d55` onto
-canonical baseline `780ace33`. The new commit uses the configured GitHub
-`noreply` identity. The former local branch remains only recovery evidence.
+canonical baseline `64238101e123004aa388b4a0d7ba661e03a2ebb7`. CI run
+`31262545804` completed successfully for that exact baseline before the rescue
+branch was rebased. The new commits use the configured GitHub `noreply`
+identity. The former local branch remains only recovery evidence.
 
 ## Agent and repository isolation
 
@@ -81,13 +83,14 @@ As of 2026-08-08 this private user-owned repository cannot enforce branch
 protection through GitHub without a GitHub Pro plan. The repository remains
 private, and PR-only integration is therefore a procedural control. Technical
 enforcement is a separate governance subgate: enable required checks,
-force-push/delete protection and PR review after GitHub Pro is explicitly
-approved. This limitation must not be reported as enforced protection.
+force-push/delete protection and PR review after the approved GitHub Education
+benefits become active. This limitation must not be reported as enforced
+protection.
 
 ## Gate decision
 
 The reproducibility portion of C0 is PASS when `cloud:doctor`, `cloud:check`, the
 relevant environment contract and exact-head CI pass on a dedicated branch.
 The branch-protection enforcement subgate remains HOLD until the plan capability
-is available. That HOLD does not authorize bypassing PR review and does not
+is available through GitHub Education. That HOLD does not authorize bypassing PR review and does not
 require making the private repository public.

@@ -3273,6 +3273,180 @@ export type Database = {
           },
         ]
       }
+      presenter_connection_events: {
+        Row: {
+          actor_id: string
+          connection_id: string
+          created_at: string
+          event_type: string
+          id: number
+          lecture_session_id: string
+        }
+        Insert: {
+          actor_id: string
+          connection_id: string
+          created_at?: string
+          event_type: string
+          id?: never
+          lecture_session_id: string
+        }
+        Update: {
+          actor_id?: string
+          connection_id?: string
+          created_at?: string
+          event_type?: string
+          id?: never
+          lecture_session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presenter_connection_events_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "presenter_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presenter_connection_events_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      presenter_connections: {
+        Row: {
+          admin_auth_user_id: string
+          admin_session_id: string
+          capability_expires_at: string | null
+          capability_jti_hash: string | null
+          claimed_at: string | null
+          confirmed_at: string | null
+          custom_show_active: boolean | null
+          hard_stop_at: string
+          hidden_slide_count: number | null
+          id: string
+          inspected_at: string | null
+          installation_hash: string | null
+          issued_at: string
+          last_committed_pdf_page: number | null
+          last_event_id: string | null
+          last_request_at: string | null
+          last_seen_at: string | null
+          last_sequence: number
+          last_slide_id: number | null
+          last_slide_index: number | null
+          lecture_session_id: string
+          manual_code_hmac: string
+          pdf_document_id: string
+          pdf_document_version: string
+          pdf_manifest_version: number
+          pdf_page_count: number
+          pptx_file_sha256: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          slide_count: number | null
+          slide_id_order_sha256: string | null
+          state: string
+          ticket_consumed_at: string | null
+          ticket_expires_at: string
+          ticket_jti_hash: string
+          updated_at: string
+        }
+        Insert: {
+          admin_auth_user_id: string
+          admin_session_id: string
+          capability_expires_at?: string | null
+          capability_jti_hash?: string | null
+          claimed_at?: string | null
+          confirmed_at?: string | null
+          custom_show_active?: boolean | null
+          hard_stop_at: string
+          hidden_slide_count?: number | null
+          id?: string
+          inspected_at?: string | null
+          installation_hash?: string | null
+          issued_at?: string
+          last_committed_pdf_page?: number | null
+          last_event_id?: string | null
+          last_request_at?: string | null
+          last_seen_at?: string | null
+          last_sequence?: number
+          last_slide_id?: number | null
+          last_slide_index?: number | null
+          lecture_session_id: string
+          manual_code_hmac: string
+          pdf_document_id: string
+          pdf_document_version: string
+          pdf_manifest_version: number
+          pdf_page_count: number
+          pptx_file_sha256?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          slide_count?: number | null
+          slide_id_order_sha256?: string | null
+          state?: string
+          ticket_consumed_at?: string | null
+          ticket_expires_at: string
+          ticket_jti_hash: string
+          updated_at?: string
+        }
+        Update: {
+          admin_auth_user_id?: string
+          admin_session_id?: string
+          capability_expires_at?: string | null
+          capability_jti_hash?: string | null
+          claimed_at?: string | null
+          confirmed_at?: string | null
+          custom_show_active?: boolean | null
+          hard_stop_at?: string
+          hidden_slide_count?: number | null
+          id?: string
+          inspected_at?: string | null
+          installation_hash?: string | null
+          issued_at?: string
+          last_committed_pdf_page?: number | null
+          last_event_id?: string | null
+          last_request_at?: string | null
+          last_seen_at?: string | null
+          last_sequence?: number
+          last_slide_id?: number | null
+          last_slide_index?: number | null
+          lecture_session_id?: string
+          manual_code_hmac?: string
+          pdf_document_id?: string
+          pdf_document_version?: string
+          pdf_manifest_version?: number
+          pdf_page_count?: number
+          pptx_file_sha256?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          slide_count?: number | null
+          slide_id_order_sha256?: string | null
+          state?: string
+          ticket_consumed_at?: string | null
+          ticket_expires_at?: string
+          ticket_jti_hash?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presenter_connections_admin_session_id_fkey"
+            columns: ["admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presenter_connections_lecture_session_id_fkey"
+            columns: ["lecture_session_id"]
+            isOneToOne: false
+            referencedRelation: "lecture_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       summary_publications: {
         Row: {
           active_revision_id: string
@@ -4296,6 +4470,47 @@ export type Database = {
           updated_at: string
         }[]
       }
+      admin_update_pdf_display_with_presenter_fence_v1: {
+        Args: {
+          target_current_pdf_page: number
+          target_display_mode: string
+          target_lecture_session_id: string
+          target_pdf_document_id: string
+          target_pdf_document_version: string
+          target_pdf_manifest_version: number
+          target_pdf_page_count: number
+          target_pdf_visible: boolean
+        }
+        Returns: {
+          current_pdf_page: number
+          display_mode: string
+          display_version: number
+          lecture_session_id: string
+          pdf_document_id: string
+          pdf_document_version: string
+          pdf_manifest_version: number
+          pdf_page_count: number
+          pdf_version: number
+          pdf_visible: boolean
+          state_version: number
+          updated_at: string
+        }[]
+      }
+      apply_presenter_page_v1: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_event_id: string
+          target_installation_hash: string
+          target_pdf_page: number
+          target_pptx_file_sha256: string
+          target_sequence: number
+          target_slide_id: number
+          target_slide_id_order_sha256: string
+          target_slide_index: number
+        }
+        Returns: Json
+      }
       claim_daily_operations_digest_jobs: {
         Args: { job_limit: number; target_recipient: string }
         Returns: {
@@ -4339,6 +4554,16 @@ export type Database = {
           source_version: number
         }[]
       }
+      claim_presenter_connection_v1: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_credential_hash: string
+          target_credential_kind: string
+          target_installation_hash: string
+        }
+        Returns: Json
+      }
       claim_realtime_provider_hangups: {
         Args: {
           job_limit?: number
@@ -4353,6 +4578,10 @@ export type Database = {
         }[]
       }
       cleanup_display_realtime_sessions_v1: { Args: never; Returns: number }
+      cleanup_presenter_connections_v1: {
+        Args: { target_limit?: number }
+        Returns: number
+      }
       complete_pdf_publication_cleanup_v1: {
         Args: {
           target_cleanup_claim_id: string
@@ -4363,11 +4592,27 @@ export type Database = {
         }
         Returns: Json
       }
+      confirm_presenter_connection_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_connection_id: string
+        }
+        Returns: Json
+      }
       consume_admin_pin_rate_limit: {
         Args: {
           global_bucket_hash: string
           network_bucket_hash: string
           user_bucket_hash: string
+        }
+        Returns: Json
+      }
+      disconnect_presenter_connection_v1: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_installation_hash: string
         }
         Returns: Json
       }
@@ -4559,11 +4804,54 @@ export type Database = {
         Args: { target_lecture_session_id: string }
         Returns: Json
       }
+      get_presenter_connection_status_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+        }
+        Returns: Json
+      }
+      heartbeat_presenter_connection_v1: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_installation_hash: string
+          target_pptx_file_sha256: string
+          target_slide_id_order_sha256: string
+        }
+        Returns: Json
+      }
+      inspect_presenter_connection_v1: {
+        Args: {
+          target_connection_id: string
+          target_credential_hash: string
+          target_credential_kind: string
+          target_custom_show_active: boolean
+          target_hidden_slide_count: number
+          target_installation_hash: string
+          target_pptx_file_sha256: string
+          target_slide_count: number
+          target_slide_id_order_sha256: string
+        }
+        Returns: Json
+      }
       is_lecture_open: {
         Args: { target_lecture_session_id: string }
         Returns: boolean
       }
       is_poll_open: { Args: { target_poll_id: string }; Returns: boolean }
+      issue_presenter_connection_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+          target_manual_code_hmac: string
+          target_ticket_expires_at: string
+          target_ticket_jti_hash: string
+        }
+        Returns: Json
+      }
       join_lecture_by_code: {
         Args: { lecture_code: string }
         Returns: {
@@ -4624,6 +4912,15 @@ export type Database = {
         Args: { network_bucket_hash?: string; user_bucket_hash: string }
         Returns: undefined
       }
+      revoke_presenter_connection_v1: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_connection_id: string
+          target_reason?: string
+        }
+        Returns: Json
+      }
       run_phase6_6_maintenance: { Args: never; Returns: Json }
       service_drain_ai_master_authorizations: {
         Args: { target_reason?: string }
@@ -4632,6 +4929,10 @@ export type Database = {
       set_display_realtime_runtime_v1: {
         Args: { target_enabled: boolean }
         Returns: number
+      }
+      set_presenter_runtime_v1: {
+        Args: { target_enabled: boolean }
+        Returns: Json
       }
       verify_and_touch_admin_session: {
         Args: {

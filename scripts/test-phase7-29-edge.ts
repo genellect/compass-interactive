@@ -55,7 +55,7 @@ test('pairing ticket is origin-bound, scoped and valid for at most 60 seconds', 
   )
 })
 
-test('capability is installation-bound and does not accept another secret', async () => {
+test('capability carries declared installation metadata and rejects another signing secret', async () => {
   const expiresAt = Math.floor(Date.now() / 1000) + 120
   const installationHash = 'a'.repeat(64)
   const token = await createPresenterCapabilityToken({

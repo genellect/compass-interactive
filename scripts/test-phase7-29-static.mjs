@@ -56,6 +56,18 @@ const nativeCoordinator = read(
   'Compass.Presenter.App',
   'PresenterSessionCoordinator.cs',
 )
+const nativeOptions = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'BridgeOptions.cs',
+)
+const nativeRuntime = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.Core',
+  'PresenterReconciliationRuntime.cs',
+)
 const nativeLoopbackServer = read(
   'presenter-bridge',
   'src',
@@ -226,6 +238,11 @@ assert.match(nativePowerPoint, /hiddenSlideIds\.Add\(slideId\)/)
 assert.match(nativePowerPoint, /hidden:\{string\.Join\(',', hiddenSlideIds\)\}/)
 assert.match(nativeCoordinator, /IPresenterSessionFaultSource/)
 assert.match(nativeCoordinator, /SessionFaulted\?\.Invoke/)
+assert.match(nativeOptions, /pfvedtqccblecuyjlfqh\.supabase\.co/)
+assert.match(nativeOptions, /endpoint\.IsDefaultPort/)
+assert.match(nativeRuntime, /missingObservationGrace/)
+assert.match(nativeRuntime, /observationTimeout/)
+assert.match(nativeRuntime, /Faulted\?\.Invoke/)
 assert.match(nativeLoopbackSessions, /State = "faulted"/)
 assert.match(nativeLoopbackServer, /sessions\.MarkFaulted/)
 
