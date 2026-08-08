@@ -218,8 +218,7 @@ jobs:
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
           node --input-type=module -e "const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']); console.log('PDF_ACCESS_PRIVATE_JWK=' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)))" >> "$edge_env"
-          npx supabase functions serve --env-file "$edge_env" > "$RUNNER_TEMP/compass-edge.log" 2>&1 &
-          echo $! > "$RUNNER_TEMP/compass-edge.pid"
+          node scripts/ci/manage-local-edge.mjs start
 
       - name: Wait for local Edge Functions
         run: node scripts/ci/wait-for-local-edge.mjs
@@ -232,6 +231,12 @@ jobs:
 
       - name: Run Journal Club browser-to-Edge-to-database integration
         run: npm run test:e2e:phase7-27:local
+
+      - name: Restart local Edge Functions before Display Realtime integration
+        run: node scripts/ci/manage-local-edge.mjs restart
+
+      - name: Wait for restarted local Edge Functions
+        run: node scripts/ci/wait-for-local-edge.mjs
 
       - name: Run private cross-browser Display Realtime integration
         run: npm run test:e2e:phase7-28b:local
@@ -259,6 +264,10 @@ jobs:
             ${{ runner.temp }}/compass-edge.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Stop local Edge Functions
+        if: always()
+        run: node scripts/ci/manage-local-edge.mjs stop
 
       - name: Stop local Supabase
         if: always()

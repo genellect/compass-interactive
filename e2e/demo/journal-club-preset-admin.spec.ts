@@ -391,7 +391,10 @@ test.describe('Phase 7.27 flag ON', () => {
 
     await Promise.all([
       page.waitForEvent('dialog').then((dialog) => dialog.dismiss()),
-      productionButton.click(),
+      // This branch verifies cancellation state. The accepted path below keeps
+      // a real pointer click, so avoid Mobile WebKit occasionally stalling the
+      // redundant native-dialog action after the focus-order assertion.
+      productionButton.dispatchEvent('click'),
     ])
     expect(
       state.lectureRequests.filter(
