@@ -2,6 +2,18 @@
 
 <!-- What changed and why. One paragraph. -->
 
+## C0 source admission
+
+| Evidence | Value |
+| --- | --- |
+| Exact `origin/main` base SHA | |
+| Latest completed CI for that SHA | |
+| Dedicated branch / environment | |
+| Recovery-source commit, if any | none / SHA |
+
+- [ ] `origin` is `genellect/compass-interactive`
+- [ ] No local-only branch, generated database type or old README was treated as canonical
+
 # Change surface
 
 <!-- Tick every surface this PR touches. docs/GATE_ROUTING.md maps each one to its responsible gate. -->
@@ -16,6 +28,9 @@
 - [ ] `scripts/`, `.github/workflows/`
 - [ ] `package.json` / `package-lock.json`
 - [ ] `.devcontainer/`, `.node-version`, `.gitattributes`
+- [ ] `.codex/`, `AGENTS.md`, Cloud/Gate contract
+- [ ] `presenter-bridge/` Windows native boundary
+- [ ] Google OAuth / Supabase Auth / Admin RBAC / MFA
 - [ ] `docs/` or agent instructions only
 
 # Verification
@@ -27,6 +42,7 @@ Record the actual outcome of each gate. Every row must be one of **PASS**, **FAI
 | Gate                                             | Result | Notes                                                                                  |
 | ------------------------------------------------ | ------ | -------------------------------------------------------------------------------------- |
 | `npm run cloud:check`                            |        |                                                                                        |
+| `npm run cloud:doctor`                           |        | required for cloud/environment or canonicalization changes                            |
 | `npm run security:audit`                         |        | required when `package.json` or `package-lock.json` changed; not part of `cloud:check` |
 | `npm run build` + `npm run test:phase6-9-bundle` |        | required when bundling, lazy-loading or feature-flag gating changed                    |
 
@@ -37,6 +53,7 @@ Record the actual outcome of each gate. Every row must be one of **PASS**, **FAI
 | `npm run test:e2e:demo`                    |        | required for any `src/` change |
 | `npm run test:e2e:phase7-26` / `:flag-off` |        | browser PDF publication        |
 | `npm run test:e2e:phase7-27` / `:flag-off` |        | Journal Club preset            |
+| `npm run test:e2e:phase7-29` / `:flag-off` |        | Presenter browser boundary     |
 
 ## Local Supabase gate
 
@@ -50,6 +67,15 @@ Required for any change to `supabase/migrations/`, `supabase/functions/`, or `su
 | data upgrade suites                                                                 |        | `test:phase7-26-upgrade`, `test:phase7-27-upgrade`, `test:phase7-28-upgrade`                                                                            |
 | `npm run test:production-local-edge`                                                |        |                                                                                                                                                         |
 | local browser integration                                                           |        | `test:e2e:phase7-27:local`, `test:e2e:phase7-28b:local`, `test:e2e:phase7-28c:local`, `test:e2e:local:triple`                                           |
+
+## Windows Presenter gate
+
+| Gate | Result | Notes |
+| --- | --- | --- |
+| CI x64/x86 solution build | | no unsigned artifact uploaded |
+| CI deterministic Core/loopback tests | | x64 |
+| Signed installer / SmartScreen / update / rollback | | Device Gate; dormant PR may record `not executed` |
+| Real Office, 500 transitions, Edge/Chrome PNA, venue | | Device/Human Gate; dormant PR may record `not executed` |
 
 ## Dev Container gate
 
@@ -87,6 +113,16 @@ List every gate that did not run and why. This section is not optional — if it
 - [ ] `git diff` reviewed; no `.env*`, `.dev.vars*`, credential, lecture code, personal data, database dump or Production data added
 - [ ] No server-only secret placed behind a `VITE_` prefix
 - [ ] No secret value printed in output, logs, screenshots, issues, or this PR
+- [ ] Reused external-repository assets are listed below; no OAuth client, service account, secret, data or deploy state was copied
+
+External asset reuse: <!-- none, or source repository + non-secret asset + review result -->
+
+# Feature admission and rollback
+
+- [ ] New browser, Edge and DB gates are independently default OFF
+- [ ] Flag-OFF path was tested against the existing UX/backend contract
+- [ ] Rollback order and retained additive schema are documented
+- [ ] This PR does not label dormant source/deployment as feature activation
 
 # Completion criteria
 

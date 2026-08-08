@@ -1,8 +1,23 @@
 # COMPASS Interactive Cloud Development
 
-Status: canonical development workflow
+Status: Operationally verified
+Scope: canonical GitHub, cloud workspaces, safe execution levels and handoff
+Last verified: 2026-08-08
 
-GitHubを正本とし、日常開発はクラウドを優先する。Production Supabase、Cloudflare、R2、OpenAI live API、既存PCのcheckoutやenv fileへ依存しない。
+`https://github.com/genellect/compass-interactive`を正本とし、日常開発はクラウドを優先する。Production Supabase、Cloudflare、R2、OpenAI live API、既存PCのcheckoutやenv fileへ依存しない。
+
+## C0 Cloud Canonicalization Gate
+
+編集前に最新`origin/main`をfetchし、正確なSHA、そのSHAの最新CI結果、
+専用branch、実行環境、変更surface、外部影響レベルを記録する。ローカル
+だけに存在する変更は復旧inputであり、古いbranchを正本へ昇格させない。
+現行mainから作成した隔離branchへ論理単位で移植し、現行gateを再実行する。
+
+詳細な受入・復旧契約は
+[`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md)に従う。
+`npm run cloud:doctor`はcanonical origin、lockfile、Node最小version、必要fileと
+locked binaryを外部接続なしで検査する。Docker、Hosted、paid API、Windows
+COMの検査を代替しない。
 
 ## 推奨する実行経路
 
@@ -25,7 +40,7 @@ Dev Container Specificationを唯一の環境正本とする。Dev Container CLI
 | Codespaces | GitHub access、repository access、Codespaces利用権 | Linux、Node 22.22.0、独立Docker daemon、Compose、GitHub CLI、Copilot CLI、VS Code extensions、npm、Playwright Chromium/WebKit、Supabase CLI、Vite |
 | VS Code + Docker | Git、Docker Desktop/Engine、VS Code、Dev Containers extension | Codespacesと同じDev Container内容 |
 | Dev Container CLI | Git、Docker Desktop/Engine、Node.js（固定CLI起動用） | Codespacesと同じDev Container内容 |
-| Codex Cloud | GitHub接続とCodex environment | Node/npm依存、Playwright、repository instructions。Docker/Supabase作業はCodespacesへhandoff |
+| Codex Cloud | GitHub接続とCodex environment | Node/npm依存、Playwright、repository instructions、非Docker cloud doctor。Docker/Supabase作業はCodespacesへhandoff |
 
 環境定義は`.devcontainer/devcontainer.json`、Feature digestは`.devcontainer/devcontainer-lock.json`、JavaScript/Supabase CLI依存は`package-lock.json`、Codex setupは`.codex/setup.sh`が正本である。`.gitattributes`はWindows checkoutでもshell scriptをLFに固定する。
 
@@ -33,6 +48,7 @@ Dev Container Specificationを唯一の環境正本とする。Dev Container CLI
 
 ```bash
 npm run dev:doctor
+npm run cloud:doctor
 npm run cloud:check
 npm run test:e2e:demo
 ```
@@ -41,7 +57,7 @@ npm run test:e2e:demo
 
 ### 新PC／新メンバーの受入チェック
 
-1. repository accessを確認し、最新`main`からCodespaceまたは専用branchを作る。
+1. repository accessを確認し、最新`origin/main` SHAとそのCIを記録して専用branchを作る。
 2. container作成が自動完了し、doctorが`READY`を返すことを確認する。
 3. `npm run dev:cloud`でprivate port `5173`の`/demo`を開く。
 4. `npm run cloud:check`と`npm run test:e2e:demo`を実行する。
@@ -113,6 +129,8 @@ Bash:
 | Independent demo | Yes | なし |
 | Non-live regression | Yes | なし |
 | Local Supabase | Yes | repository専用Docker内のみ |
+| Windows Presenter source CI | Yes | 署名artifactを配布しないWindows runnerのみ |
+| Windows Presenter Device/Human | No | PowerPoint、COM、PNA、installer、会場運用 |
 | Live OpenAI checks | No | 有料外部API |
 | Hosted Supabase / R2 / Cloudflare | No | Hosted / Production state |
 
@@ -121,6 +139,7 @@ Bash:
 ## 共通コマンド
 
 ```bash
+npm run cloud:doctor
 npm run dev:cloud
 npm run cloud:check
 ```
@@ -131,7 +150,7 @@ Demo browser gate:
 npm run test:e2e:demo
 ```
 
-`cloud:check`はsecret scan、3種類のTypeScript検査、lint、全non-live suite、Production-equivalent frontend buildを実行する。有料APIやHosted serviceへ接続しない。
+`cloud:check`はcloud doctor、secret scan、3種類のTypeScript検査、lint、全non-live suite、Production-equivalent frontend buildを実行する。有料APIやHosted serviceへ接続しない。
 
 ## Local Supabase
 
@@ -181,6 +200,10 @@ bash .codex/setup.sh
 bash .codex/maintenance.sh
 ```
 
+setupとmaintenanceは`npm ci`後に`npm run cloud:doctor`をfail-closedで実行する。
+Git fetchや依存downloadはsetup/maintenance段階に限定し、agent実装中に個人PCの
+global packageへ逃げない。
+
 Codex CloudはDocker daemonを保証するDev Container経路ではないため、通常はDemo/non-live workに使用する。RLS、migration、Edge Function、local integrationはCodespacesまたはDocker Dev Containerへhandoffする。
 
 ## 複数エージェント運用
@@ -212,19 +235,27 @@ QR、MFA、SSO、passkeyは本人だけが扱う。pairing情報、認証code、
 
 - 一つのCodespace、container、branchへ複数repositoryを混在させない。
 - `main`へ直接commitしない。
+- 他repositoryからの再利用は先にread-only inventoryを行い、source/configの
+  適用可否を分類する。secret、OAuth client、service account、data、migration
+  history、deploy stateを暗黙にcopyしない。
 - `.env*`、credential、lecture code、個人情報、database dump、Production dataをcopyまたはcommitしない。
 - Codespacesの転送portはprivateを既定とする。
 - Demo pathからSupabase、OpenAI、Cloudflare R2、その他paid/Production serviceへ接続しない。
 - 通常taskからlive OpenAI test、Hosted migration、R2 upload、Cloudflare deploy、secret変更を行わない。
 - Local、CI、Hosted、Device、Human、Production acceptanceを相互に代替しない。
 
+このprivate user-owned repositoryでは、GitHub Proなしにrequired PR checksを
+branch protectionとして強制できない。private境界を維持し、Pro導入までは
+PR-only integrationとno-direct-mainを手続き上の必須controlとする。これは
+技術的な保護が有効という意味ではない。
+
 ## 完了基準
 
 cloud taskは次を満たしてからhandoffする。
 
-1. 最新`origin/main`から専用branchを使用している。
+1. exact `origin/main` SHAとgreen CIを記録し、そこから専用branchを使用している。
 2. 変更範囲が明確で、Hosted/Productionへの不要な影響がない。
-3. `npm run cloud:check`が完了している。
+3. `npm run cloud:doctor`と`npm run cloud:check`が完了している。
 4. UI変更では該当Demo E2E、database変更ではlocal Supabase gateが完了している。
 5. secret scanと`git diff`を確認している。
 6. commitとpushが完了し、Draft PRでreview可能である。

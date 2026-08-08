@@ -17,6 +17,7 @@ for (const name of productionFeatureFlags) {
 assert.deepEqual(validateProductionEnvironment(safeEnvironment), [])
 const legacyEnvironment = { ...safeEnvironment }
 delete legacyEnvironment.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION
+delete legacyEnvironment.VITE_PHASE7_29_POWERPOINT_SYNC
 assert.deepEqual(
   validateProductionEnvironment(legacyEnvironment),
   [],
@@ -57,7 +58,45 @@ assert.match(
   }).join('\n'),
   /requires VITE_PHASE4_REALTIME_CAPTIONS=true/,
 )
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_29_POWERPOINT_SYNC: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE3_PRIVATE_PDF=true/,
+)
 assert.deepEqual(validateProductionServerEnvironment({}), [])
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'yes',
+  }).join('\n'),
+  /PHASE729_POWERPOINT_SYNC_ENABLED must be true, false or omitted/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
+  }).join('\n'),
+  /requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
+    PRESENTER_BRIDGE_TOKEN_SECRET: 'short',
+  }).join('\n'),
+  /PRESENTER_BRIDGE_TOKEN_SECRET must contain at least 32 bytes/,
+)
+assert.deepEqual(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
+    PRESENTER_BRIDGE_TOKEN_SECRET:
+      'test-only-presenter-secret-at-least-thirty-two-bytes',
+  }),
+  [],
+)
 assert.match(
   validateProductionServerEnvironment({
     PHASE728_DISPLAY_REALTIME_ENABLED: 'yes',

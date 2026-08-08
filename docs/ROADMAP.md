@@ -8,22 +8,26 @@ Scope: Phase 6.7 through Phase 9
 Existing Phase 0-6.6 implementation and historical Phase 7-9 reservations are
 preserved. Decimal phases separate risk domains without rewriting history.
 
-| Order | Phase                   | Priority | Outcome                                              |
-| ----: | ----------------------- | -------- | ---------------------------------------------------- |
-|     1 | 6.7                     | Highest  | Documentation and release baseline                   |
-|     2 | 6.8                     | High     | PIN/session/CSP/resume/timeout security foundation   |
-|     3 | 6.9                     | High     | Modularization and deterministic CI quality          |
-|     4 | 7.1                     | Medium   | Summary language, own comments and lecture QR        |
-|     5 | 7.2                     | Medium   | Verified-primary-literature reference answers        |
-|     6 | 7.25                    | Medium   | Multidisciplinary automatic academic answers         |
-|     7 | 7.26                    | High     | Browser-complete private PDF publication             |
-|     8 | 7.27                    | High     | Thin Journal Club operational preset                 |
-|     9 | 7.28                    | High     | Operational cleanup, Display Realtime, AI activation |
-|    10 | Phase 7 Production Gate | Medium   | Next controlled production release                   |
-|    11 | Phase 8                 | Low      | Export/deletion evidence and unified AI review       |
-|    12 | 8.1                     | Low      | Explicit Terra advanced analysis                     |
-|    13 | 8.2                     | Low      | User-selected chronological/attention ranking        |
-|    14 | Phase 9                 | Final    | Long-run, human and operations certification         |
+| Order | Phase                        | Priority | Outcome                                              |
+| ----: | ---------------------------- | -------- | ---------------------------------------------------- |
+|     1 | C0                           | Highest  | GitHub/Cloud canonicalization                        |
+|     2 | 6.7                          | Highest  | Documentation and release baseline                   |
+|     3 | 6.8                          | High     | PIN/session/CSP/resume/timeout security foundation   |
+|     4 | 6.9                          | High     | Modularization and deterministic CI quality          |
+|     5 | 7.1                          | Medium   | Summary language, own comments and lecture QR        |
+|     6 | 7.2                          | Medium   | Verified-primary-literature reference answers        |
+|     7 | 7.25                         | Medium   | Multidisciplinary automatic academic answers         |
+|     8 | 7.26                         | High     | Browser-complete private PDF publication             |
+|     9 | 7.27                         | High     | Thin Journal Club operational preset                 |
+|    10 | 7.28                         | High     | Operational cleanup, Display Realtime, AI activation |
+|    11 | 7.29A/B                      | High     | PPT rescue and dormant hosted placement              |
+|    12 | 7.29C                        | High     | Signed Presenter activation                          |
+|    13 | 7.30A-F                      | Highest  | Google Admin identity, MFA, RBAC and migration       |
+|    14 | Phase 7.30 Production Gate   | Highest  | Multi-admin controlled release                       |
+|    15 | Phase 8                      | Low      | Export/deletion evidence and unified AI review       |
+|    16 | 8.1                          | Low      | Explicit Terra advanced analysis                     |
+|    17 | 8.2                          | Low      | User-selected chronological/attention ranking        |
+|    18 | Phase 9                      | Final    | Long-run, human and operations certification         |
 
 The old Phase 7 scope is split because deterministic literature verification
 must be proven before a more expensive model can be offered. The old Phase 8
@@ -40,6 +44,9 @@ Every future phase must preserve all of the following.
 - New exposed tables receive RLS, explicit grants and two-user/two-lecture tests.
 - Public RPCs remain invoker-security by default.
 - Service role, API keys, PINs and delivery secrets never enter a public client.
+- Privileged Admin mutations require a verified internal principal bound to
+  `auth.uid()` and an AAL2 session after the Google migration; email or role
+  strings alone never authorize a row.
 
 ### Lifecycle
 
@@ -67,6 +74,8 @@ Every future phase must preserve all of the following.
 - Lecture budget, call limit, concurrency and idempotency are verified before
   provider traffic.
 - Realtime transcription is never started by another AI feature.
+- Replacing the Admin login PIN does not implicitly remove the independent
+  API-use/Billing PIN used as a paid-operation step-up control.
 
 ### Compatibility
 
@@ -87,6 +96,11 @@ Every future phase must preserve all of the following.
 
 No phase may progress, deploy or enable a flag until every applicable gate is
 PASS. An automated or human test that has not run is `BLOCKED`, not `PASS`.
+
+Before G0, every task must pass the C0 source-admission contract in
+[`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md). C0 records
+the exact GitHub base, green CI evidence, branch/workspace isolation and
+external-effect boundary. A local-only commit is recovery input, not a base.
 
 ### G0 Requirements traceability
 
@@ -444,14 +458,82 @@ deployment is authorized by this status.
 - Human UI, hosted Realtime/R2/Edge, provider and production evidence remain
   blocking for the formal Production Gate.
 
-## 13. Phase 7 Production Gate
+## 13. Phase 7.29 - optional PowerPoint Presenter Bridge
+
+Status: canonical rescue and dormant placement in progress. The 2026-08-01
+automated web/database Local Gate is historical evidence from the former local
+branch and must be rerun against the current GitHub base. All browser, Edge and
+database flags remain default OFF. Signed distribution, Device, Human and
+activation gates remain HOLD until separately recorded.
+
+### Tasks
+
+- Treat PowerPoint COM events only as reconciliation triggers. The canonical
+  position is the stable actual `View.Slide.SlideID` and absolute slide index,
+  observed after a short event delay and by a 200 ms local monitor.
+- Support only a normal all-slide, windowed show with no hidden slides, Custom
+  Show or Presenter View. Require equal PPTX/PDF counts and explicit teacher
+  confirmation of the displayed document pair.
+- Freeze ordered Slide IDs and the local PPTX fingerprint for the connection;
+  stop rather than guess after add/delete/reorder/hide/save mutation.
+- Bind the Bridge only to `127.0.0.1:43124`, enforce exact Host/Origin and
+  bounded requests, and exchange only short-lived single-use pairing material
+  and short-lived lecture/deck bearer capabilities. Pin the native remote
+  endpoint to the canonical Supabase host. No Admin token, PIN, service-role
+  key or PPTX/PDF content enters loopback or browser storage.
+- Keep the server runtime gate, Edge admission and frontend flag independently
+  default OFF. An active binding fences manual page writes; explicit handover,
+  expiry, lecture close, Admin revoke or gate shutdown restores the established
+  manual path safely.
+- Reuse the existing committed live-state mutation and private Display
+  acceleration. Do not add a Presenter subscription, polling path or payload
+  field to the student five-second snapshot.
+
+### Acceptance
+
+- Clean and populated upgrade migration, full pgTAP, RLS/grants, replay,
+  two-Admin race, lock order, idempotency, same-page no-op and load checks PASS.
+- Deterministic early/duplicate/missing-event traces, rapid jumps, retry,
+  PowerPoint restart and mutation-stop behavior PASS without COM access from a
+  non-STA thread.
+- Browser flag-OFF/ON, manual handover, loopback absence, exact CORS/Host/Private
+  Network Access, keyboard/accessibility and Chromium/WebKit/Mobile regressions
+  PASS locally.
+- Local automated success does not waive signed per-user installer, SmartScreen,
+  Office x86/x64/build matrix, real Edge/Chrome HTTPS-to-loopback, 500 physical
+  transitions, PowerPoint restart, venue Extend-display and teacher binding UX.
+  Those Native/Human/Hosted checks remain blocking before activation.
+- A local application-control block or untrusted native binary is a HOLD, not a
+  reason to weaken Windows security or report the native gate as PASS.
+- Before activation, replace declared-installation metadata with an
+  asymmetric per-install proof-of-possession contract, add server-side rate
+  protection and cleanup Cron, and prove recovery after slideshow/COM loss.
+
+### 7.29A/B/C split
+
+- **7.29A rescue:** port the local source onto the current canonical main,
+  regenerate derived DB types and add Windows x64/x86 compile plus deterministic
+  Core/loopback CI. No unsigned artifact is distributed.
+- **7.29B dormant placement:** apply only additive schema and compatible Edge
+  and web code with DB, Edge and frontend gates independently OFF. Verify the
+  old manual PDF/Display/student paths and save Hosted evidence.
+- **7.29C activation:** implement signed per-user install/update/rollback,
+  complete manual recovery, real Office/browser/PNA/500-transition/venue tests
+  and then perform a controlled activation canary.
+
+The complete ordering and rollback contract is
+[`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md).
+
+## 14. Phase 7 Production Gate
 
 The temporary hosted preview has completed the expand-first deployment portion.
 The remaining steps below are still mandatory before formal lecture operation;
 preview publication alone is not final Production Gate completion.
 
-Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26, 7.27 and 7.28 are
-individually PASS:
+Only after Phase 6.7, 6.8, 6.9, 7.1, 7.2, 7.25, 7.26, 7.27, 7.28 and the
+applicable Phase 7.29 gates are individually PASS. Phase 7.29 may remain OFF
+and be excluded from a release; it may not be activated on the strength of
+browser/database evidence alone.
 
 1. record backup, owner, change window, stop and rollback thresholds;
 2. apply expand-first migration;
@@ -474,7 +556,97 @@ individually PASS:
     older-phase rollback for unrelated failures;
 12. record human, hosted and production evidence before normal activation.
 
-## 14. Phase 8 - export, deletion evidence and unified AI review
+For a release that includes Phase 7.29, apply its additive migration and server
+capability with all three gates OFF, verify the signed per-user Bridge and real
+HTTPS-to-loopback boundary, then enable server admission, DB runtime and one
+controlled frontend cohort in that order. Rollback starts at the DB runtime
+gate and must leave manual Admin navigation, Display snapshot fallback and the
+student five-second path intact.
+
+## 15. Phase 7.30 - Google Admin identity, MFA and RBAC
+
+Google authentication replaces only the shared Admin login PIN after an
+expand-first compatibility gate. Student anonymous Auth, participant ownership,
+lecture lifecycle and the independent paid-operation PIN remain unchanged.
+
+### 7.30A - asset reuse audit
+
+- Read-only inventory the existing COMPASS Google platform and classify each
+  item as reusable, conditionally reusable or Interactive-only.
+- Reuse may include billing, verified domain and consent branding only after
+  ownership and rollback are confirmed. Interactive receives separate OAuth
+  clients, origins/callbacks, provider secret, service identities and rotation.
+- Request only `openid`, email and profile. Do not request offline Google API
+  access or retain Google provider tokens because Interactive does not need to
+  call Google APIs on behalf of teachers.
+
+### 7.30B - identity and mandatory AAL2
+
+- Use Supabase Google OAuth/PKCE to establish the existing Supabase
+  `auth.uid()` principal. Bind verified issuer, audience, `email_verified` and
+  immutable Google `sub` once in an internal Admin identity ledger.
+- Bootstrap the two named owner accounts create-only; subsequent authorization
+  uses the immutable identity binding and ledger status, not email comparison.
+- Require Supabase TOTP enrollment/challenge and JWT `aal2` for privileged Admin
+  access. Social login, email OTP and magic link are AAL1 recovery/bootstrap,
+  not the required second factor.
+- Keep Passkey as a later opt-in after custom-domain/RP-ID stability because
+  current Supabase support is experimental; do not present it as AAL2.
+
+### 7.30C - roles, entitlements and session control
+
+- Minimum roles: `owner`, `co_owner`, `admin_ai`, and `admin_standard`, with an
+  explicit capability matrix instead of client-side role branching.
+- Owner/co-owner can manage the Admin ledger, revoke an individual account or
+  session, stop any lecture and inspect bounded audit/usage records. Only owner
+  can change owners or destructive governance settings; no one can remove the
+  last active owner.
+- AI entitlement permits eligible controls but every paid start still requires
+  lecture ownership/state, explicit CTA, fresh API-use PIN grant, budget,
+  concurrency and idempotency checks.
+- Replace global `manage-admin-sessions` authority with principal-scoped list,
+  self-revoke and separately authorized owner revoke; preserve append-only
+  audit and hash-at-rest session material.
+
+### 7.30D - Admin UX migration
+
+- One Google sign-in CTA, clear MFA enrollment/challenge, account/role display,
+  session/device list and owner-only management views.
+- Preserve the existing lecture workspace after authentication. Infrastructure
+  details move to documentation; lockout/recovery guidance remains concise.
+- Accessibility, mobile/desktop, cross-browser OAuth callback and session expiry
+  E2E are mandatory.
+
+### 7.30E - expand-first compatibility
+
+- Introduce identity/RBAC tables and dual-read server authorization behind
+  default-OFF gates before removing PIN login.
+- Keep the existing PIN path as a time-bounded recovery-only rollback during a
+  controlled cohort; it cannot grant broader roles or bypass AAL2 once Google
+  enforcement is enabled.
+- Migrate tracked sessions and Edge/RPC authorization without weakening
+  `auth.uid()`, RLS, lecture ownership or post-close rejection. Contract removal
+  is a later explicit migration.
+
+### 7.30F - Hosted/Human/Production Gate
+
+- Two owners, one AI-enabled Admin, one standard Admin, suspended Admin,
+  cross-user/cross-lecture denial, individual/global revoke and last-owner
+  protection all PASS.
+- Google callback/origin allowlists, OAuth consent, AAL1-to-AAL2 enforcement,
+  recovery, token rotation, stale session and account-disable behavior PASS.
+- Full Phase 0-7.30 DB, Edge, browser, CI, load, security, accessibility and
+  rollback regression PASS with zero Critical/High finding.
+- Exact hosted state and human MFA/recovery evidence are recorded before the
+  Google enforcement flag is enabled.
+
+Current official implementation references are [Supabase Google
+login](https://supabase.com/docs/guides/auth/social-login/auth-google),
+[Supabase MFA/AAL](https://supabase.com/docs/guides/auth/auth-mfa), and the
+[experimental Passkey boundary](https://supabase.com/docs/guides/auth/passkeys).
+Recheck them at implementation and Production Gate.
+
+## 16. Phase 8 - export, deletion evidence and unified AI review
 
 - Generate teacher ZIP locally from permitted comments, published summaries,
   citations and optionally local transcript.
@@ -487,7 +659,7 @@ individually PASS:
 - Verify interruption recovery, Windows/macOS extraction, retention boundaries
   and global G0-G7.
 
-## 15. Phase 8.1 - explicit Terra advanced analysis
+## 17. Phase 8.1 - explicit Terra advanced analysis
 
 - Keep Luna as default.
 - Offer Terra only for multi-study conflict, methodological appraisal, advanced
@@ -500,7 +672,7 @@ individually PASS:
 - Routing false positives, state/budget/close behavior and global G0-G7 must
   PASS.
 
-## 16. Phase 8.2 - chronological or attention ranking
+## 18. Phase 8.2 - chronological or attention ranking
 
 - Default to chronological order.
 - Store the user's `時系列 / 注目` choice locally, not in Supabase.
@@ -512,7 +684,7 @@ individually PASS:
 - Boundary, concurrency, query-plan, 20/300 load, visual stability and global
   G0-G7 must PASS.
 
-## 17. Phase 9 - final production certification
+## 19. Phase 9 - final production certification
 
 - Full 90-minute real lecture and real 20-person canary.
 - 300-person modeled and appropriate measured Pro-plan review.
@@ -528,7 +700,7 @@ Final PASS requires zero Critical/High security defect, zero ownership leak,
 zero secret exposure, zero duplicate paid operation, zero post-close write/start,
 three consecutive E2E passes and complete human/hosted evidence.
 
-## 18. Codex implementation reasoning profile
+## 20. Codex implementation reasoning profile
 
 The implementation model and the application's runtime AI model are independent.
 The recommended default for repository work is GPT-5.6 Sol with Extra High
@@ -541,6 +713,12 @@ reasoning.
 | 6.9          | **Sol Ultra for decomposition plan and final regression audit; Extra High for sequential refactors**      | Parallel read-only characterization is valuable, but simultaneous edits to large shared modules increase conflict risk                       |
 | 7.1          | Sol Extra High                                                                                            | Three bounded UX features with clear load contracts                                                                                          |
 | 7.2          | **Sol Ultra strongly recommended for design/eval/security review; Extra High for bounded implementation** | Literature verification, injection resistance, claim mapping, cost and publication can be independently challenged before integration        |
+| C0           | Extra High, with Ultra final contract review                                                               | Repository governance and cloud reproducibility are broad but deterministic                                                                  |
+| 7.29A/B      | **Sol Ultra primary; external Opus Max review recommended**                                                | Recovery provenance, DB/Edge/native boundaries and dormant multi-service rollout must be reconciled without activation                      |
+| 7.29C        | **Sol Ultra primary plus external Opus Max and device specialists**                                        | Signing, installer, COM/STA, localhost/PNA and venue behavior cross native and physical trust boundaries                                    |
+| 7.30A-C      | **Sol Ultra primary; external IAM/RLS review recommended**                                                 | OAuth asset separation, AAL2, immutable identity binding, roles and session revocation create the new Admin trust root                      |
+| 7.30D        | Extra High for implementation; Ultra security/accessibility review                                        | UX work is bounded after the identity contract is fixed                                                                                       |
+| 7.30E-F      | **Sol Ultra primary plus external final review**                                                           | Compatibility, account recovery, hosted state and rollback determine whether Google enforcement can safely replace shared PIN login         |
 | Phase 7 Gate | **Sol Ultra strongly recommended for read-only integrated audit**                                         | DB/RLS, provider cost, frontend UX/E2E and rollback evidence can be independently audited; deployment itself remains one controlled sequence |
 
 Ultra should not be used merely as a stronger single-agent slider. Its value is

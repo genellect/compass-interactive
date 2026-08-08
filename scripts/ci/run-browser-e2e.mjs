@@ -5,8 +5,13 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
+const defaultSpecs = {
+  'demo-presenter': ['e2e/demo/phase7-29-presenter.spec.ts'],
+  'demo-presenter-off': ['e2e/demo/phase7-29-presenter-flag-off.spec.ts'],
+}
 const playwrightArguments = [
   ...(mode === 'local' ? ['e2e/local/live-lecture.spec.ts'] : []),
+  ...(defaultSpecs[mode] ?? []),
   ...process.argv.slice(3),
 ]
 const demoMode =
@@ -14,7 +19,10 @@ const demoMode =
   mode === 'demo-pdf' ||
   mode === 'demo-pdf-off' ||
   mode === 'demo-jc' ||
-  mode === 'demo-jc-off'
+  mode === 'demo-jc-off' ||
+  mode === 'demo-presenter' ||
+  mode === 'demo-presenter-off'
+const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
 const configuredPort = process.env.PLAYWRIGHT_APP_PORT
   ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
@@ -38,13 +46,15 @@ if (
     'demo-pdf-off',
     'demo-jc',
     'demo-jc-off',
+    'demo-presenter',
+    'demo-presenter-off',
     'local',
     'local-jc',
     'local-ai',
   ].includes(mode)
 ) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|local|local-jc|local-ai>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|demo-presenter|demo-presenter-off|local|local-jc|local-ai>',
   )
 }
 
@@ -142,6 +152,8 @@ const appEnvironment = {
     'demo-pdf-off',
     'demo-jc',
     'demo-jc-off',
+    'demo-presenter',
+    'demo-presenter-off',
     'local-jc',
     'local-ai',
   ].includes(mode)
@@ -153,7 +165,11 @@ const appEnvironment = {
   VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
   VITE_PHASE6_6_UX_INTEGRATION: 'true',
   VITE_PHASE6_8_SECURITY:
-    localMode || mode === 'demo-jc' || mode === 'demo-jc-off'
+    localMode ||
+    mode === 'demo-jc' ||
+    mode === 'demo-jc-off' ||
+    mode === 'demo-presenter' ||
+    mode === 'demo-presenter-off'
       ? 'true'
       : 'false',
   VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
@@ -173,14 +189,22 @@ const appEnvironment = {
       : 'false',
   VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION:
     mode === 'demo-jc' || mode === 'local-jc' ? 'true' : 'false',
-  VITE_PHASE7_28_DISPLAY_REALTIME: mode === 'local-jc' ? 'true' : 'false',
+  VITE_PHASE7_28_DISPLAY_REALTIME:
+    mode === 'local-jc' ||
+    mode === 'demo-presenter' ||
+    mode === 'demo-presenter-off'
+      ? 'true'
+      : 'false',
   VITE_PHASE7_28_AI_MASTER_AUTH: mode === 'local-ai' ? 'true' : 'false',
+  VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
   VITE_PDF_WORKER_BASE_URL:
     mode === 'local-jc'
       ? 'http://127.0.0.1:8787'
       : ['demo-pdf', 'demo-pdf-off', 'demo-jc', 'demo-jc-off'].includes(mode)
         ? 'https://pdf.example'
-        : '',
+        : mode === 'demo-presenter' || mode === 'demo-presenter-off'
+          ? 'https://pdf.example'
+          : '',
   VITE_TURNSTILE_SITE_KEY: '',
   PLAYWRIGHT_BASE_URL: baseURL,
   VITE_CACHE_DIR: fileURLToPath(
@@ -188,24 +212,106 @@ const appEnvironment = {
   ),
 }
 
-async function assertPortAvailable() {
+async function assertPortAvailable(targetPort, description) {
   await new Promise((resolve, reject) => {
     const probe = createServer()
     probe.unref()
     probe.once('error', () => {
+      const recovery =
+        description === 'Vite'
+          ? ' Set PLAYWRIGHT_APP_PORT to an unused local port.'
+          : ' Stop the existing local Bridge before running this fixture; it will not be reused.'
       reject(
         new Error(
-          `E2E refused to reuse occupied port ${port}; set PLAYWRIGHT_APP_PORT to an unused local port.`,
+          `E2E refused to reuse occupied ${description} port ${targetPort}.${recovery}`,
         ),
       )
     })
-    probe.listen({ host: '127.0.0.1', port }, () => {
+    probe.listen({ host: '127.0.0.1', port: targetPort }, () => {
       probe.close((error) => (error ? reject(error) : resolve()))
     })
   })
 }
 
-await assertPortAvailable()
+await assertPortAvailable(port, 'Vite')
+if (presenterFixtureMode) {
+  await assertPortAvailable(43_124, 'Presenter loopback fixture')
+}
+
+let presenterFixtureProcess = null
+let presenterFixtureExited = true
+
+async function startPresenterFixture() {
+  presenterFixtureExited = false
+  presenterFixtureProcess = spawn(
+    process.execPath,
+    ['scripts/test-fixtures/presenter-loopback.mjs'],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PRESENTER_TEST_ALLOWED_ORIGIN: baseURL,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    },
+  )
+
+  let outputTail = ''
+  let ready = false
+  presenterFixtureProcess.stdout.on('data', (chunk) => {
+    const output = chunk.toString()
+    process.stdout.write(output)
+    outputTail = `${outputTail}${output}`.slice(-2_048)
+    if (outputTail.includes('PRESENTER_LOOPBACK_READY')) ready = true
+  })
+  presenterFixtureProcess.stderr.on('data', (chunk) => {
+    process.stderr.write(chunk)
+  })
+  presenterFixtureProcess.once('exit', () => {
+    presenterFixtureExited = true
+  })
+
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    if (presenterFixtureExited) {
+      throw new Error(
+        'Presenter loopback fixture exited before E2E could start.',
+      )
+    }
+    if (ready) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  await stopPresenterFixture()
+  throw new Error('Presenter loopback fixture did not become ready.')
+}
+
+async function stopPresenterFixture() {
+  if (!presenterFixtureProcess || presenterFixtureExited) return
+  presenterFixtureProcess.kill()
+  await Promise.race([
+    once(presenterFixtureProcess, 'exit'),
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+  ])
+  if (
+    !presenterFixtureExited &&
+    process.platform === 'win32' &&
+    presenterFixtureProcess.pid
+  ) {
+    spawnSync(
+      'taskkill.exe',
+      ['/PID', String(presenterFixtureProcess.pid), '/T', '/F'],
+      {
+        stdio: 'ignore',
+        windowsHide: true,
+      },
+    )
+  }
+}
+
+if (presenterFixtureMode) {
+  await startPresenterFixture()
+}
 
 const viteProcess = spawn(
   process.execPath,
@@ -308,6 +414,7 @@ try {
   exitCode = typeof code === 'number' ? code : 1
 } finally {
   await stopVite()
+  await stopPresenterFixture()
 }
 
 process.exit(exitCode)

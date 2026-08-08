@@ -1,6 +1,8 @@
-import type { ChangeEvent, FormEventHandler } from 'react'
+import { useState, type ChangeEvent, type FormEventHandler } from 'react'
+import { isPhase729PowerPointSyncEnabled } from '../../lib/featureFlags'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { SyncedPdfViewer } from '../DisplayView/SyncedPdfViewer'
+import { AdminPowerPointIntegration } from './AdminPowerPointIntegration'
 
 type PdfAsset = { id: string; pageCount: number; title: string }
 
@@ -18,6 +20,7 @@ type AdminPdfControlProps = {
   onAbortInterruptedPublication: () => void
   onCheckPublisher: () => void
   onDisplayNameChange: (value: string) => void
+  onDisplayStateRefresh: () => void
   onDownloadEnabledChange: (enabled: boolean) => void
   onFileChange: (file: File | null) => void
   onGoToPage: FormEventHandler<HTMLFormElement>
@@ -26,7 +29,6 @@ type AdminPdfControlProps = {
   onPairingCodeChange: (value: string) => void
   onPrevious: () => void
   onPublish: () => void
-  onPublishWithLocalPublisher: () => void
   onSelectDocument: (documentId: string) => void
   onSetDocument: () => void
   pdfDisplayName: string
@@ -63,6 +65,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     onAbortInterruptedPublication,
     onCheckPublisher,
     onDisplayNameChange,
+    onDisplayStateRefresh,
     onDownloadEnabledChange,
     onFileChange,
     onGoToPage,
@@ -86,6 +89,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     requiredDocument,
     selectedAsset,
   } = props
+  const [manualNavigationLocked, setManualNavigationLocked] = useState(false)
   const closed = lectureStatus === 'closed'
   const requiredDocumentPublished = requiredDocument
     ? availableAssets.some((asset) => asset.id === requiredDocument.documentId)
@@ -99,6 +103,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     Boolean(displayState?.pdfVisible) &&
     Boolean(activePageCount) &&
     !displayStateLoading &&
+    !manualNavigationLocked &&
     !closed
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -165,6 +170,20 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             </button>
           </form>
         </div>
+      ) : null}
+      {isPhase729PowerPointSyncEnabled &&
+      activeLectureSessionId &&
+      displayState?.pdfDocumentId ? (
+        <AdminPowerPointIntegration
+          activeLectureSessionId={activeLectureSessionId}
+          adminToken={adminToken}
+          displayState={displayState}
+          lectureStatus={lectureStatus}
+          onCommittedPage={onDisplayStateRefresh}
+          onManualNavigationLockedChange={setManualNavigationLocked}
+          pdfPageCount={activePageCount}
+          pdfTitle={selectedAsset?.title ?? '講義資料'}
+        />
       ) : null}
       {privatePdfEnabled ? (
         <div className="display-control-grid publisher-control-panel">
@@ -306,7 +325,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <label className="field compact-field">
               <span>PDF資料</span>
               <select
-                disabled={displayStateLoading || closed}
+                disabled={
+                  displayStateLoading || manualNavigationLocked || closed
+                }
                 onChange={(event) => onSelectDocument(event.target.value)}
                 value={pdfDocumentInput}
               >
@@ -324,7 +345,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             </label>
             <button
               className="secondary-button"
-              disabled={displayStateLoading || closed}
+              disabled={displayStateLoading || manualNavigationLocked || closed}
               onClick={onSetDocument}
               type="button"
             >

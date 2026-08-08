@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-07-21
+Last reviewed: 2026-08-01
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -148,7 +148,8 @@ documented query.
 
 ## 9. Migration and generated types
 
-Current migrations are ordered from the remote baseline through Phase 7.26.
+Current migrations are ordered from the remote baseline through the default-OFF
+Phase 7.29 candidate.
 The accepted workflow is:
 
 1. create an additive migration with the pinned Supabase CLI;
@@ -160,9 +161,9 @@ The accepted workflow is:
 7. deploy capability with flags OFF;
 8. defer destructive contract cleanup until old clients are retired.
 
-Phase 6.9 will make generated database types a checked-in, deterministic CI
-contract. Until then, `src/types/database.ts` must be reviewed against the local
-schema during any DB phase.
+Generated database types are a checked-in, deterministic CI contract.
+`src/types/database.ts` must be regenerated and drift-checked after a clean
+local migration reset during every DB phase.
 
 ## 10. Verification entrypoints
 
@@ -199,3 +200,34 @@ paths can access these new tables/functions.
 The two Phase 7.28 migrations are expand-only. A future physical-cleanup
 contract must delete dependent audit events, grants and master rows in FK-safe
 order; Phase 7.28 performs no destructive schema rollback.
+
+## 12. Phase 7.29 additive Presenter objects
+
+`private.presenter_runtime_gate` is a singleton server kill switch whose
+initial value is `false`. It is not exposed to browser roles.
+
+`presenter_connections` stores bounded connection/session metadata: lecture,
+issuing tracked Admin session/user, installation, hashed pairing/capability
+material, PDF/document/deck digests and counts, ordered Slide ID digest, accepted
+sequence/page, expiry/revocation and heartbeat timestamps. It stores no raw
+token, recovery code, document bytes, slide text, notes or file path. A partial
+unique index permits only one unrevoked connection per lecture.
+
+`presenter_connection_events` stores low-frequency, content-free bounded audit
+events tied to the connection. Both public tables have RLS enabled, no browser
+policy or grant, service-role-only RPC access and no Realtime publication
+membership.
+
+The additive RPC surface issues/inspects/confirms/claims/revokes a binding,
+applies an idempotent sequenced page, records bounded heartbeat, reports status,
+disconnects, fences legacy Admin page updates and performs bounded cleanup. All
+publicly callable Presenter RPCs are `SECURITY INVOKER` with execution revoked
+from PUBLIC, `anon` and `authenticated`; fixed-search-path definer triggers are
+limited to terminal revocation after lecture close, Admin revoke or PDF-binding
+change.
+
+The shared mutation remains `admin_update_pdf_display_v3`. Same-page commits do
+not increment live-state versions. The fixed lock order is runtime gate,
+tracked Admin session, lecture, live/PDF row, then Presenter row. The migration
+is expand-only; rollback disables the runtime gate and leaves the schema in
+place until a later FK-ordered contract cleanup.

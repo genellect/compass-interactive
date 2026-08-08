@@ -445,6 +445,15 @@ verify_jwt = true
 [functions.operator-live-snapshot]
 verify_jwt = true
 
+[functions.manage-presenter-connection]
+verify_jwt = true
+
+# Machine-to-machine Presenter Bridge endpoint. Browser Origins and OPTIONS are
+# rejected; a separate short-lived capability signed with a dedicated secret
+# is required for every active-session request.
+[functions.presenter-bridge-session]
+verify_jwt = false
+
 # Machine-to-machine endpoint: Supabase JWT verification is intentionally off;
 # the function requires a separate 32-byte Worker/Edge shared secret.
 [functions.get-pdf-retention-feed]

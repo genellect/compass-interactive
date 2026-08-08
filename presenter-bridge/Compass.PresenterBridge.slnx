@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
+  <Project Path="src/Compass.Presenter.Core/Compass.Presenter.Core.csproj" />
+  <Project Path="src/Compass.Presenter.PowerPoint.External/Compass.Presenter.PowerPoint.External.csproj" />
+  <Project Path="src/Compass.Presenter.Loopback/Compass.Presenter.Loopback.csproj" />
+  <Project Path="src/Compass.Presenter.App/Compass.Presenter.App.csproj" />
+  <Project Path="tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj" />
+</Solution>

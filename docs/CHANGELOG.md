@@ -3,6 +3,30 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-01 - Phase 7.29 PowerPoint Presenter Bridge local gate
+
+- Added a default-OFF optional Presenter Bridge boundary for synchronizing the
+  stable actual PowerPoint slide position with the existing absolute PDF-page
+  live-state mutation. COM events accelerate reconciliation but are not the
+  source of truth; same-page observations remain version no-ops.
+- Limited the first mapping contract to a normal all-slide, windowed show with
+  equal PPTX/PDF counts, no hidden slides or Custom Show, frozen deck digests
+  and explicit teacher confirmation. Deck mutation stops synchronization.
+- Added additive server-side connection metadata, one-unrevoked-per-lecture
+  fencing, short-lived pairing/capability contracts, loopback Host/Origin/input
+  controls, runtime drain and manual handover. Presenter metadata is not
+  browser-readable or part of Supabase Realtime.
+- Preserved Phase 7.28 private Display acceleration and the student five-second
+  snapshot without a new student request or subscription.
+- Added server-authoritative stale-Bridge recovery, same-owner Admin-session
+  handover, bounded cleanup/audit convergence and browser unmount cleanup.
+- Automated web/database Local Gate passed: clean and populated upgrades,
+  1,375 pgTAP assertions, concurrency, 63 non-live groups, Chromium/WebKit
+  Presenter E2E, four-project demo regression, DB types, secret scan and build.
+  Native execution, signed installer, Office/Edge/Chrome/venue, Human, Hosted
+  and Production evidence remain HOLD. Windows Application Control was not
+  weakened and no untrusted native binary was executed.
+
 ## 2026-07-31 - Phase 7.28 local operational hardening
 
 - Retired the one-off Journal Club preset creation UI/API behind independent

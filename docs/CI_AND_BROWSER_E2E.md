@@ -1,5 +1,9 @@
 # CI and browser E2E
 
+Status: Operationally verified
+Scope: GitHub Actions, browser E2E and non-live/hosted gate separation
+Last verified: 2026-08-08
+
 ## Purpose and safety boundary
 
 The CI gate validates COMPASS Interactive without changing or contacting any
@@ -15,7 +19,8 @@ non-local Supabase URL for the live E2E suite.
 
 ## GitHub Actions jobs
 
-`.github/workflows/ci.yml` contains three independent gates:
+`.github/workflows/ci.yml` contains four mandatory gates plus conditional
+Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
    explicit allowlist of existing non-live Phase 0-6.7 tests, documentation
@@ -28,7 +33,11 @@ non-local Supabase URL for the live E2E suite.
    zero, runs every pgTAP file plus the real-DB AI concurrency race test, runs
    DB lint, serves Edge Functions with synthetic secrets, checks
    Auth/CORS/paid-feature fail-closed behavior, then drives a teacher and a
-   student through create, start, join, comment and close lifecycle operations.
+    student through create, start, join, comment and close lifecycle operations.
+4. **Presenter Bridge Windows build and deterministic tests** restores and
+   builds the .NET solution for x64 and x86, then runs Core/loopback tests on
+   x64. It uploads no unsigned executable. It does not claim real PowerPoint,
+   installer, SmartScreen, browser PNA or venue acceptance.
 
 Both browser suites block every non-local HTTP(S) request. Browser console
 errors, uncaught page errors and horizontal overflow fail the suite. On
@@ -54,6 +63,7 @@ Run the quality gates used by CI:
 
 ```bash
 npm run typecheck
+npm run cloud:doctor
 npm run typecheck:phase3
 npm run typecheck:e2e
 npm run lint
@@ -123,6 +133,7 @@ The following remain manual, explicitly paid or hosted checks:
 - real microphone/Realtime transcription testing
 - Cloudflare Publisher/R2 production uploads
 - Hosted Supabase and public-web smoke testing
+- signed Presenter installer, real Office/COM, 500 transitions and venue/PNA
 
 They must not be added to the default workflow. The non-live suite also scans
 the workflow for production migration, deployment and paid-live commands.
@@ -130,6 +141,11 @@ the workflow for production migration, deployment and paid-live commands.
 ## Repository setup after push
 
 No repository secret is required by this workflow. After the workflow has run
-successfully on GitHub, make the three job results required status checks for
-`main` in the repository ruleset. Keep workflow permissions read-only and do
-not add production credentials to this workflow.
+successfully on GitHub, make the four mandatory job results required status
+checks for `main` in the repository ruleset. Keep workflow permissions read-only
+and do not add production credentials to this workflow.
+
+As of 2026-08-08 the private user-owned repository plan cannot enforce branch
+protection without GitHub Pro. Until that governance subgate is approved,
+PR-only integration remains mandatory process policy and must not be described
+as technically enforced.

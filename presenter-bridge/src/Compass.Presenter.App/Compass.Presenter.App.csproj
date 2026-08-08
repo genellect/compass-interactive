@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>COMPASS.PresenterBridge</AssemblyName>
+    <RootNamespace>Compass.Presenter.App</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
+    <ProjectReference Include="../Compass.Presenter.Core/Compass.Presenter.Core.csproj" />
+    <ProjectReference Include="../Compass.Presenter.Loopback/Compass.Presenter.Loopback.csproj" />
+    <ProjectReference Include="../Compass.Presenter.PowerPoint.External/Compass.Presenter.PowerPoint.External.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compass.Presenter.Tests" />
+  </ItemGroup>
+</Project>

@@ -61,6 +61,7 @@ COMPASS公式Webとは、デプロイ、データベース、秘密情報のい�
 
 ```bash
 npm run dev:doctor
+npm run cloud:doctor
 npm run dev:cloud
 ```
 
@@ -76,6 +77,7 @@ npm run dev:cloud
 | Browser tooling | Playwright + Chromium + WebKit |
 | Local backend | Supabase CLI + isolated Docker stack |
 | Workspace validation | `npm run dev:doctor` |
+| Non-Docker cloud validation | `npm run cloud:doctor` |
 | Repository gate | `npm run cloud:check` |
 | Dependency security | `npm run security:audit`（high以上をfail） |
 
@@ -121,7 +123,7 @@ flowchart LR
 ## 現在のリリース契約
 
 - Application version: `0.11.0`
-- Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。
+- Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。Phase 7.29 PowerPoint連携はdefault-OFFの候補で、Native・Device・Human・activation Gateとは分離します。
 - Phase 6.7で、README、Architecture、Security、Data Policy、Roadmap、Runbookを正本文書として整備しました。
 - Phase 7 Production Gateの判定は、コードの存在やLocal Gateとは分離し、最新のGate記録を正とします。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
@@ -336,7 +338,7 @@ OpenAI API keyはEdge secretからのみ参照し、ブラウザ、Gitリポジ�
 | **Server Functions**  | Supabase Edge Functions · Deno                                        |
 | **PDF / Archive**     | Cloudflare Workers · Private Cloudflare R2                            |
 | **AI**                | OpenAI Realtime API · OpenAI text generation                          |
-| **Local Integration** | Node.js Publisher                                                     |
+| **Local Integration** | Node.js Publisher · optional .NET Windows Presenter Bridge            |
 | **Testing**           | Node test scripts · pgTAP · Playwright · axe-core                     |
 | **CI / Security**     | GitHub Actions · immutable Action refs · secret scan · SBOM           |
 | **Deployment**        | Cloudflare Pages · Cloudflare Workers · Supabase migrations/functions |
@@ -361,6 +363,7 @@ READMEに記載する技術的な主張は、コードの存在だけでは成�
 
 ```bash
 npm run security:secrets
+npm run cloud:doctor
 npm run typecheck
 npm run typecheck:phase3
 npm run typecheck:e2e
@@ -489,6 +492,7 @@ Feature flagはdefault-OFFかつfail-closedです。対応するmigration、Edge
 - `VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION`
 - `VITE_PHASE7_28_DISPLAY_REALTIME`
 - `VITE_PHASE7_28_AI_MASTER_AUTH`
+- `VITE_PHASE7_29_POWERPOINT_SYNC`
 
 </details>
 
@@ -551,6 +555,7 @@ cloudflare/
 └─ asset-worker/           Private PDF・Archive Worker
 
 publisher/                 Local PDF Publisher / recovery path
+presenter-bridge/          Optional Windows PowerPoint integration source
 e2e/                       Playwright Demo / Local Supabase E2E
 scripts/                   CI・load・security・release検証
 docs/                      Architecture・Security・Runbook・Gate記録
@@ -589,6 +594,8 @@ READMEは、現行システムの全体像と開発の入口を示します。�
 | [`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md) | CI、browser E2E、local live test         |
 | [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)           | 運用・障害対応の入口                     |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md)                       | 今後の開発計画                           |
+| [`docs/CLOUD_CANONICALIZATION_GATE.md`](docs/CLOUD_CANONICALIZATION_GATE.md) | GitHub/Cloud正本化と復旧移植契約 |
+| [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | PPT救出・dormant rollout・rollback |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                   | release単位の変更履歴                    |
 | [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                     | 原設計、product contract、意思決定の背景 |
 

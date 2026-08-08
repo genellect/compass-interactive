@@ -67,6 +67,7 @@ for (const functionName of [
   'manage-material-analysis',
   'manage-pdf-documents',
   'manage-polls',
+  'manage-presenter-connection',
   'publish-caption-window',
   'update-display-state',
   'verify-admin-pin',
@@ -105,6 +106,25 @@ const hostileResponse = await fetch(
   },
 )
 assert.equal(hostileResponse.status, 403)
+
+const bridgeBrowserResponse = await fetch(
+  `${supabaseUrl}/functions/v1/presenter-bridge-session`,
+  {
+    body: JSON.stringify({ action: 'inspect' }),
+    headers: {
+      apikey: publishableKey,
+      Authorization: `Bearer ${authData.session.access_token}`,
+      'Content-Type': 'application/json',
+      Origin: allowedOrigin,
+    },
+    method: 'POST',
+  },
+)
+assert.equal(
+  bridgeBrowserResponse.status,
+  403,
+  'the native Bridge endpoint must reject every browser-originated request',
+)
 
 const { data: wrongPinData, error: wrongPinError } =
   await client.functions.invoke('verify-admin-pin', {
