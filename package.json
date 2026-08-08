@@ -100,7 +100,7 @@
     "test:admin-lifecycle": "node --experimental-strip-types scripts/test-admin-lifecycle.mjs",
     "test:pdf-sync": "node scripts/test-pdf-sync.mjs",
     "test:supabase:static": "node scripts/test-supabase-baseline.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit",
     "typecheck:phase3": "tsc -p tsconfig.phase3.json --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "publisher:start": "node --experimental-strip-types publisher/src/start.ts",
@@ -141,6 +141,7 @@
   "overrides": {
     "postcss": "8.5.25",
     "sharp": "0.35.3",
-    "undici": "7.29.0"
+    "undici": "7.29.0",
+    "nanoid": "3.3.18"
   }
 }
