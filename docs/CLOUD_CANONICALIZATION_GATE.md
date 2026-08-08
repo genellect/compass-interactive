@@ -89,22 +89,30 @@ protection.
 
 ## Cloudflare build routing
 
-`compass-interactive` is a Cloudflare Pages application even though the current
-Git integration is surfaced through Workers Builds. Keep the two deploy commands
-environment-specific:
+`compass-interactive` is a Cloudflare Pages application. On 2026-08-09 the
+misconfigured Workers Builds Git connection was disconnected without deleting
+or replacing the existing Worker or Pages deployment. It pointed to the
+pre-transfer repository name and attempted `wrangler pages deploy` with a broad
+Worker token that lacked Pages authority. Expanding that token or allowing a PR
+build to target Production is prohibited as a shortcut.
 
-- production: `npx wrangler pages deploy dist --project-name compass-interactive --branch main`;
-- non-production: `npx wrangler pages deploy dist --project-name compass-interactive --branch "$WORKERS_CI_BRANCH"`.
+Until a dedicated least-privilege deployment workflow is separately designed and
+approved, there is no automatic Cloudflare deployment or external Cloudflare PR
+check. GitHub exact-head CI is the source-landing gate. A Hosted release uses an
+explicitly approved Direct Upload from the exact merged main SHA:
 
-Workers Builds injects `WORKERS_CI_BRANCH` from the push event. A pull request
-must therefore create a Pages preview for its own branch and must never pass
-`--branch main`. Plain `wrangler deploy` is a Worker deployment command and is
-not valid for this Pages project. After changing either dashboard command,
-trigger a new exact-SHA build and verify the command in that build's immutable
-settings; an old retry can retain the superseded command. A repository transfer
-or Git account rename also requires the Cloudflare Git connection to be
-reauthenticated against the canonical `genellect/compass-interactive` repository
-before the integration is treated as durable.
+```bash
+npx wrangler pages deploy dist --project-name compass-interactive --branch main
+```
+
+Plain `wrangler deploy` is a Worker deployment command and is not valid for this
+Pages project. The operator must record the merged SHA, previous immutable Pages
+deployment ID, new deployment ID and rollback target, and must prove the intended
+production Vite flags before upload. A future automatic preview/Production path
+requires a canonical `genellect/compass-interactive` connection, branch-isolated
+preview command, dedicated least-privilege Pages credential, protected
+environment and exact-SHA canary. It must not reuse or privilege-expand the
+disconnected broad Worker build token.
 
 ## Gate decision
 

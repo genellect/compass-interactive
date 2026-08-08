@@ -70,7 +70,10 @@ installation or venue behavior. Those remain Device/Human gates.
 ## 7.29B deployment order
 
 Before the first mutation, record the current Production web deployment, hosted
-migration list, deployed Edge versions, Advisor state and rollback owner.
+migration list, deployed Edge versions, Advisor state and rollback owner. Verify
+that the misconfigured Workers Builds Git connection remains disconnected, no
+merge can auto-deploy a PR branch, and the production build input has
+`VITE_PHASE7_29_POWERPOINT_SYNC=false` or omitted.
 
 1. Merge the exact green PR SHA through the PR workflow.
 2. Apply only the additive Phase 7.29 migration and verify
@@ -88,7 +91,10 @@ migration list, deployed Edge versions, Advisor state and rollback owner.
 5. Do not provision `PRESENTER_BRIDGE_TOKEN_SECRET` for 7.29B. When 7.29C is
    separately authorized, keep it server-only and inspect presence by
    name/status only, never by printing its value.
-6. Deploy the frontend with `VITE_PHASE7_29_POWERPOINT_SYNC=false` or omitted.
+6. From the exact merged main SHA, build and explicitly Direct Upload the
+   frontend with `VITE_PHASE7_29_POWERPOINT_SYNC=false` or omitted. Record the
+   previous and new immutable Pages deployment IDs. Do not reconnect Workers
+   Builds or broaden its old token during this rollout.
 7. Confirm the PowerPoint panel is absent, the machine endpoint is not deployed,
    the JWT Admin endpoint fails closed, manual PDF navigation still works,
    Display fallback still works and student snapshots remain at the existing
