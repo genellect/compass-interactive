@@ -82,6 +82,21 @@ Quality, Presenter x64/x86, Demo E2E and the complete Local Supabase, pgTAP and
 live-browser job with zero flaky tests. It was integrated as canonical-main
 merge `5ec3b2cf675e9ac1cd4d907522fb72427cb1da5e`.
 
+The next docs-only exact-head run `31276427975` exposed a separate fixed-sleep
+assumption in the Phase 7.28C AI master concurrency test: a valid revoke-first
+outcome reached the existing `master authorization is no longer active` fence,
+but the test had assumed that a child consume would always win after a 100 ms
+delay. [PR #29](https://github.com/genellect/compass-interactive/pull/29)
+changed only that test. It observes transaction-scoped PostgreSQL advisory-lock
+barriers after the consume-first or revoke-first lock has actually been
+acquired, then requires the exact winning and losing outcomes without changing
+runtime SQL, timeouts or billing fences. The target real-database race passed
+20 consecutive local repetitions. Exact-head run `31277331793`, attempt 2,
+passed Quality, Presenter x64/x86, Demo E2E and the complete Local Supabase,
+pgTAP and live-browser job, including Auth recovery and the final lifecycle
+triple. It was integrated as canonical-main merge
+`6f7678f85113890d3c6fc2585cb4f8b4c2d29c2a`.
+
 The future-contract and Hosted-evidence PR was then rebased onto that merge and
 must independently pass its exact-head checks before integration. Its immutable
 GitHub PR record is the authoritative run reference. No Cloudflare external
