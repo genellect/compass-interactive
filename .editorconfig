@@ -1,0 +1,37 @@
+# Baseline editor settings for file types Prettier does not format.
+# Prettier owns .ts/.tsx/.js/.mjs/.json/.md/.css/.html and its configuration in
+# .prettierrc is authoritative there: no semicolons, single quotes, trailing
+# commas. Keep the two consistent rather than letting an editor fight Prettier.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Markdown uses trailing double-space for hard line breaks.
+[*.md]
+trim_trailing_whitespace = false
+
+# Shell scripts are pinned to LF by .gitattributes so Windows checkouts stay
+# executable in the Dev Container.
+[*.sh]
+end_of_line = lf
+
+# .gitattributes pins these to CRLF; mirror it so an editor does not fight it.
+[*.{ps1,bat,cmd}]
+end_of_line = crlf
+
+[*.{sql,toml,yml,yaml}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+[*.{png,jpg,jpeg,gif,webp,ico,pdf,zip,woff,woff2}]
+insert_final_newline = false
+trim_trailing_whitespace = false

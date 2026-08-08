@@ -43,6 +43,8 @@ npm run test:ci:nonlive
 
 For UI changes, run the relevant Playwright demo test. For database, RLS, Edge Function, or local integration changes, start the isolated local Supabase stack and use the matching tests from `.github/workflows/ci.yml`.
 
+`docs/GATE_ROUTING.md` maps each change surface to its responsible gate, records what `cloud:check` does _not_ cover, and lists the local Supabase gate in CI order. Use it instead of guessing from the phase number in a script name.
+
 Do not run `test:phase5-openai-live`, `test:phase6-openai-live`, hosted migrations, R2 uploads, Cloudflare deploys, or Production checks unless the user explicitly requests that exact external action.
 
 ## Git and review
