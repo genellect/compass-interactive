@@ -1,0 +1,124 @@
+# Gate Routing
+
+Status: Operationally verified
+Scope: which gate answers for which change surface
+Last verified: 2026-08-08
+
+`AGENTS.md` is authoritative for the boundary. `docs/CLOUD_DEVELOPMENT.md` is authoritative for environments and safe execution levels. This file answers only one question: **I changed X, which gate is responsible?**
+
+Everything below is derived from the implementation — the job composition in `.github/workflows/ci.yml`, the `safeTestScripts` allowlist in `scripts/ci/run-nonlive-suite.mjs`, the path filters in `.github/workflows/devcontainer-contract.yml`, and the `include` sets of the four `tsconfig*.json` files. When this file and those disagree, they are correct and this file is stale.
+
+## 1. What `cloud:check` does and does not cover
+
+`npm run cloud:check` is the default gate, but it is **not** the same as CI's `quality` job.
+
+| Step                                               | `cloud:check`                   | CI `quality` job                                            |
+| -------------------------------------------------- | ------------------------------- | ----------------------------------------------------------- |
+| `security:secrets`                                 | yes                             | yes                                                         |
+| `security:audit`                                   | **no**                          | yes                                                         |
+| `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
+| `lint`                                             | yes                             | yes                                                         |
+| `test:ci:nonlive` (58 groups)                      | yes                             | yes                                                         |
+| `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
+| `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
+| `git diff --check`                                 | **no**                          | yes                                                         |
+
+Consequences worth knowing before you push:
+
+- A green `cloud:check` does **not** prove `security:audit` is green. A newly published advisory turns CI red without any change on your side. Run `npm run security:audit` yourself whenever you touch `package.json` or `package-lock.json`, and after a long gap since the last CI run.
+- A green `cloud:check` does **not** prove the bundle topology gate. `test:phase6-9-bundle` inspects the built output and only runs after CI's `build`, which sets every `VITE_PHASE*` flag. If you change lazy-loading, chunking, or feature-flag gating, run `npm run build && npm run test:phase6-9-bundle` locally.
+
+Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a `quality` failure means the browser gates never ran at all — their absence in a CI run is not evidence they would pass.
+
+## 2. Change surface to gate
+
+| You changed                                                                   | Responsible gate                                                                                                                                      | Cloud-runnable?                                                                           |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/` components, routes, hooks                                              | `cloud:check`, then `npm run test:e2e:demo`                                                                                                           | Yes, if the Playwright browsers can be downloaded                                         |
+| `src/` visual layout, brand copy, accessibility                               | the above, plus `e2e/demo/visual-contract.spec.ts` and `accessibility.spec.ts` (both inside `test:e2e:demo`)                                          | Yes, browsers required                                                                    |
+| `supabase/migrations/`                                                        | `cloud:check`, then the full local Supabase gate (§3)                                                                                                 | **No** — needs a Docker daemon                                                            |
+| `supabase/functions/`                                                         | `cloud:check` (the `test:phase*-edge` groups run non-live), then `test:production-local-edge` on the local stack                                      | Partly — static and shape checks are cloud-runnable, Auth/CORS/fail-closed checks are not |
+| `supabase/tests/` (pgTAP)                                                     | `npx supabase test db --local`                                                                                                                        | **No**                                                                                    |
+| `cloudflare/asset-worker/`                                                    | `cloud:check` — covered by `typecheck:phase3` and `test:phase3-worker`                                                                                | Yes                                                                                       |
+| `publisher/`                                                                  | `cloud:check` — covered by `typecheck:phase3` and `test:phase3-publisher`                                                                             | Yes                                                                                       |
+| `e2e/demo/`                                                                   | `npm run typecheck:e2e`, then the matching demo spec                                                                                                  | Yes, browsers required                                                                    |
+| `e2e/local/`                                                                  | `npm run typecheck:e2e`, then the matching local spec on the local stack                                                                              | **No**                                                                                    |
+| `scripts/` test or CI scripts                                                 | `cloud:check`. If you touched the allowlist or a forbidden-command list, `test:ci:nonlive` and `test:production-gate:static` are the ones that answer | Yes                                                                                       |
+| `.github/workflows/`                                                          | `cloud:check` — `run-nonlive-suite.mjs` asserts that `ci.yml` contains no live or hosted command                                                      | Yes                                                                                       |
+| `docs/` only                                                                  | `cloud:check` — `test:phase6-7-docs` asserts the required document set exists and that `package.json` and `package-lock.json` versions agree          | Yes                                                                                       |
+| `package.json` / `package-lock.json`                                          | `cloud:check` **plus** `npm run security:audit`, plus the Dev Container Contract workflow (§4)                                                        | Yes                                                                                       |
+| `.devcontainer/`, `.node-version`, `.gitattributes`, `scripts/devcontainer.*` | `npm run dev:doctor` inside the container, plus the Dev Container Contract workflow                                                                   | **No** — needs the Dev Container                                                          |
+| `AGENTS.md`, `CLAUDE.md`, `.codex/`, `.claude/`                               | `cloud:check`                                                                                                                                         | Yes                                                                                       |
+
+Feature-flag work spans surfaces: a `VITE_PHASE*` flag has a matching server-side `PHASE*_ENABLED` variable in the Edge Function environment, and the `:flag-off` demo specs exist because both states must hold. Changing one without the other is the failure this pairing catches.
+
+## 3. The local Supabase gate, in CI order
+
+Run `bash .devcontainer/start-local-supabase.sh` first. It performs the stack start, the from-zero migration apply, pgTAP, and the database lint. The remaining steps below are what CI's `local-supabase` job runs on top of that, in this order:
+
+```bash
+npm run db:types:check                  # generated database type drift
+npm run test:phase4-1-concurrency       # AI concurrency lanes, real database
+npm run test:phase7-28c-ai-concurrency  # lecture-wide AI authorization
+npm run test:phase7-28b-lock-order      # Display issue versus Admin revoke
+npm run test:phase7-26-concurrency      # PDF publication
+npm run test:phase7-27-concurrency      # Journal Club
+npm run test:phase7-26-upgrade          # Phase 7.2 data through 7.26
+npm run test:phase7-27-upgrade          # Phase 7.26 data through 7.27
+npm run test:phase7-28-upgrade          # populated 7.27 data through 7.28
+npm run test:production-local-edge      # local Auth, CORS, fail-closed paid features
+npm run test:e2e:phase7-27:local        # browser to Edge to database
+npm run test:e2e:phase7-28b:local       # cross-browser Display Realtime
+npm run test:e2e:phase7-28c:local       # lecture-wide AI authorization, browser
+npm run test:e2e:local:triple           # teacher-student lifecycle, three repeats
+```
+
+Two ordering facts from `ci.yml` that are easy to get wrong locally:
+
+- `test:e2e:local:triple` runs **after** a second `supabase db reset --local --no-seed`. The concurrency and upgrade suites leave state behind, and the lifecycle E2E assumes a clean database.
+- The Edge Functions are served with synthetic test secrets from a generated env file, including a freshly generated `PDF_ACCESS_PRIVATE_JWK`. Never substitute a real key here.
+
+A migration change is not cleared by `cloud:check`. `supabase/migrations/` is only covered once this gate runs.
+
+## 4. Dev Container Contract
+
+`.github/workflows/devcontainer-contract.yml` builds the locked Dev Container and runs `npm run dev:doctor` inside it. It triggers only on these paths:
+
+```
+.devcontainer/**
+.gitattributes
+.node-version
+package.json
+package-lock.json
+scripts/devcontainer.*
+.github/workflows/devcontainer-contract.yml
+```
+
+Note that `package.json` and `package-lock.json` are in that list. A dependency change fires both the CI workflow and this one.
+
+## 5. What the 85 `test:*` scripts actually divide into
+
+| Count | Kind                               | Where it runs                                                                                                                                                                                         |
+| ----: | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    58 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
+|    13 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 5 concurrency / lock-order suites, 3 `*-upgrade` suites, `test:production-local-edge`, and 4 local E2E entries                                         |
+|     5 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, `test:e2e:phase7-26`(`:flag-off`), `test:e2e:phase7-27`(`:flag-off`)                                                                                     |
+|     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                         |
+|     2 | **forbidden**                      | `test:phase5-openai-live`, `test:phase6-openai-live`. `scripts/test-pdf-sync-hosted.mjs` has no npm script and is forbidden for the same reason                                                       |
+|     6 | entrypoint variants and duplicates | `test:ci:nonlive` (the aggregator), `test:e2e:demo`, `test:e2e:demo:direct`, `test:e2e:local`, `test:e2e:local:direct`, and `test:phase6-6-operator-edge` (already invoked by `test:phase6-6-static`) |
+
+The phase-numbered names describe _when a suite was written_, not what it covers today. Route by the surface you changed, using the table in §2, not by matching a phase number to a directory.
+
+## 6. Safe execution levels
+
+Repeated from `docs/CLOUD_DEVELOPMENT.md` because gate routing is meaningless without it.
+
+| Level                             | Ordinary cloud work | External effect              |
+| --------------------------------- | ------------------- | ---------------------------- |
+| Independent demo                  | Yes                 | None                         |
+| Non-live regression               | Yes                 | None                         |
+| Local Supabase                    | Yes                 | Repository-owned Docker only |
+| Live OpenAI checks                | No                  | Paid external API            |
+| Hosted Supabase / R2 / Cloudflare | No                  | Hosted / Production state    |
+
+Local, CI, hosted, device, human and Production acceptance are separate gates and never substitute for one another. A gate you could not run is **not executed**, never "passed".
