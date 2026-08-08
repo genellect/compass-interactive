@@ -9,6 +9,9 @@ const consumeFirstCode = String(randomInt(100000, 1000000))
 const revokeFirstCode = String(randomInt(100000, 1000000))
 const consumeFirstNonce = randomBytes(32).toString('hex')
 const revokeFirstNonce = randomBytes(32).toString('hex')
+const advisoryNamespace = randomInt(1, 2147483647)
+const consumeFirstBarrier = randomInt(1, 2147483647)
+const revokeFirstBarrier = randomInt(1, 2147483647)
 
 function sqlLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`
@@ -46,6 +49,46 @@ function runSql(sql) {
       else reject(new Error(stderr.trim() || `psql exited with code ${code}`))
     })
   })
+}
+
+function waitForAdvisoryBarrier(barrierKey) {
+  return runSql(`
+    do $$
+    declare
+      deadline timestamptz := clock_timestamp() + interval '5 seconds';
+    begin
+      loop
+        if exists (
+          select 1
+          from pg_locks
+          where locktype = 'advisory'
+            and granted
+            and classid = ${advisoryNamespace}::oid
+            and objid = ${barrierKey}::oid
+            and objsubid = 2
+        ) then
+          return;
+        end if;
+        if clock_timestamp() >= deadline then
+          raise exception 'timed out waiting for AI master race barrier';
+        end if;
+        perform pg_sleep(0.02);
+      end loop;
+    end;
+    $$;
+  `)
+}
+
+async function startTransactionAtBarrier(sql, barrierKey) {
+  const transaction = runSql(sql)
+  const firstResult = await Promise.race([
+    waitForAdvisoryBarrier(barrierKey).then(() => 'barrier'),
+    transaction.then(() => 'transaction'),
+  ])
+  if (firstResult !== 'barrier') {
+    throw new Error('AI master race transaction completed before its barrier')
+  }
+  return { transaction }
 }
 
 await runSql(`
@@ -149,8 +192,9 @@ const transactionSettings = `
   set local statement_timeout = '15s';
 `
 
-await Promise.all([
-  runSql(`
+const { transaction: consumeFirstTransaction } =
+  await startTransactionAtBarrier(
+    `
     begin;
     ${transactionSettings}
     select public.admin_start_lecture_summary_run_v2(
@@ -160,13 +204,21 @@ await Promise.all([
       ${sqlLiteral(randomBytes(32).toString('hex'))},
       ${sqlLiteral(actorId)}, false, 'auto'
     ) from public.phase728c_race_fixture;
+    select pg_advisory_xact_lock(
+      ${advisoryNamespace},
+      ${consumeFirstBarrier}
+    );
     select pg_sleep(0.5);
     commit;
-  `),
+  `,
+    consumeFirstBarrier,
+  )
+
+await Promise.all([
+  consumeFirstTransaction,
   runSql(`
     begin;
     ${transactionSettings}
-    select pg_sleep(0.1);
     select public.admin_revoke_ai_master_authorization(
       consume_first_lecture_id,
       ${sqlLiteral(sessionId)}::uuid,
@@ -177,8 +229,8 @@ await Promise.all([
   `),
 ])
 
-const revokeFirst = await Promise.allSettled([
-  runSql(`
+const { transaction: revokeFirstTransaction } = await startTransactionAtBarrier(
+  `
     begin;
     ${transactionSettings}
     select 1
@@ -187,6 +239,10 @@ const revokeFirst = await Promise.allSettled([
       select revoke_first_lecture_id from public.phase728c_race_fixture
     )
     for update;
+    select pg_advisory_xact_lock(
+      ${advisoryNamespace},
+      ${revokeFirstBarrier}
+    );
     select pg_sleep(0.5);
     select public.admin_revoke_ai_master_authorization(
       revoke_first_lecture_id,
@@ -195,11 +251,15 @@ const revokeFirst = await Promise.allSettled([
       'revoke_first_race'
     ) from public.phase728c_race_fixture;
     commit;
-  `),
+  `,
+  revokeFirstBarrier,
+)
+
+const revokeFirst = await Promise.allSettled([
+  revokeFirstTransaction,
   runSql(`
     begin;
     ${transactionSettings}
-    select pg_sleep(0.1);
     select public.admin_start_lecture_summary_run_v2(
       revoke_first_grant_id,
       ${sqlLiteral(revokeFirstNonce)},
@@ -210,8 +270,22 @@ const revokeFirst = await Promise.allSettled([
     commit;
   `),
 ])
-if (revokeFirst.filter((result) => result.status === 'rejected').length !== 1) {
-  throw new Error('revoke-first race must reject exactly the losing consume')
+if (revokeFirst[0]?.status !== 'fulfilled') {
+  throw new Error('revoke-first race unexpectedly rejected the master revoke')
+}
+if (
+  revokeFirst[1]?.status !== 'rejected' ||
+  !String(revokeFirst[1].reason).includes(
+    'direct AI grant is fenced by lecture-wide authorization',
+  )
+) {
+  throw new Error(
+    `revoke-first race did not reject the losing consume: ${String(
+      revokeFirst[1]?.status === 'rejected'
+        ? revokeFirst[1].reason
+        : revokeFirst[1]?.status,
+    )}`,
+  )
 }
 
 const fencedRetry = await Promise.allSettled([
