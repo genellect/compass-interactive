@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-08
+Last reviewed: 2026-08-09
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -8,39 +8,41 @@ secret change and paid call still require an explicit task.
 
 ## 1. Current canonical documents
 
-| Need                           | Document                                              |
-| ------------------------------ | ----------------------------------------------------- |
-| Product and local entrypoint   | `README.md`                                           |
-| Current component/data flow    | `docs/architecture.md`                                |
-| Security controls and gaps     | `docs/SECURITY.md`                                    |
-| Data collection/retention      | `docs/data_policy.md`                                 |
-| Database responsibility map    | `docs/database_schema.md`                             |
-| Future phases and gates        | `docs/ROADMAP.md`                                     |
-| Development trajectory         | `docs/CHANGELOG.md`                                   |
-| Cloud source admission         | `docs/CLOUD_CANONICALIZATION_GATE.md`                 |
-| Agent/reasoning routing        | `docs/AGENT_EXECUTION_ROUTING.md`                     |
-| Phase 6.7 acceptance           | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md`             |
-| Phase 6.7 local evidence       | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`              |
-| Phase 6.8 design               | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`         |
-| Phase 6.8 local evidence       | `docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`              |
-| Phase 6.9 design               | `docs/PHASE6_9_MODULARIZATION_AND_CI.md`              |
-| Phase 6.9 local evidence       | `docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`              |
-| Phase 7.1 design               | `docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md`            |
-| Phase 7.1 local evidence       | `docs/PHASE7_1_LOCAL_GATE_2026-07-19.md`              |
-| Phase 7.2 design               | `docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md` |
-| Phase 7.2 local evidence       | `docs/PHASE7_2_LOCAL_GATE_2026-07-20.md`              |
-| Phase 7.2 safe-stop handoff    | `docs/PHASE7_2_HANDOFF_2026-07-20.md`                 |
-| Phase 7.26 requirements        | `docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md`     |
-| Phase 7.26 browser PDF design  | `docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`           |
-| Phase 7.26 local evidence      | `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`             |
-| Phase 7.27 Journal Club design | `docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`          |
-| Phase 7.27 local evidence      | `docs/PHASE7_27_LOCAL_GATE_2026-07-22.md`             |
-| Phase 7.28 design              | `docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md`           |
-| Phase 7.28 local evidence      | `docs/PHASE7_28_LOCAL_GATE_2026-07-31.md`             |
-| Phase 7.29 Presenter design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`       |
-| Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`  |
-| Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`           |
-| Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`        |
+| Need                           | Document                                                         |
+| ------------------------------ | ---------------------------------------------------------------- |
+| Product and local entrypoint   | `README.md`                                                      |
+| Current component/data flow    | `docs/architecture.md`                                           |
+| Security controls and gaps     | `docs/SECURITY.md`                                               |
+| Data collection/retention      | `docs/data_policy.md`                                            |
+| Database responsibility map    | `docs/database_schema.md`                                        |
+| Future phases and gates        | `docs/ROADMAP.md`                                                |
+| Development trajectory         | `docs/CHANGELOG.md`                                              |
+| Cloud source admission         | `docs/CLOUD_CANONICALIZATION_GATE.md`                            |
+| Agent/reasoning routing        | `docs/AGENT_EXECUTION_ROUTING.md`                                |
+| Phase 6.7 acceptance           | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md`                        |
+| Phase 6.7 local evidence       | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`                         |
+| Phase 6.8 design               | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`                    |
+| Phase 6.8 local evidence       | `docs/PHASE6_8_LOCAL_GATE_2026-07-18.md`                         |
+| Phase 6.9 design               | `docs/PHASE6_9_MODULARIZATION_AND_CI.md`                         |
+| Phase 6.9 local evidence       | `docs/PHASE6_9_LOCAL_GATE_2026-07-19.md`                         |
+| Phase 7.1 design               | `docs/PHASE7_1_CLASSROOM_UX_EXTENSIONS.md`                       |
+| Phase 7.1 local evidence       | `docs/PHASE7_1_LOCAL_GATE_2026-07-19.md`                         |
+| Phase 7.2 design               | `docs/PHASE7_2_EVIDENCE_GROUNDED_ACADEMIC_ANSWERS.md`            |
+| Phase 7.2 local evidence       | `docs/PHASE7_2_LOCAL_GATE_2026-07-20.md`                         |
+| Phase 7.2 safe-stop handoff    | `docs/PHASE7_2_HANDOFF_2026-07-20.md`                            |
+| Phase 7.26 requirements        | `docs/PHASE7_26_REQUIREMENTS_AND_THREAT_MODEL.md`                |
+| Phase 7.26 browser PDF design  | `docs/PHASE7_26_BROWSER_PDF_PUBLICATION.md`                      |
+| Phase 7.26 local evidence      | `docs/PHASE7_26_LOCAL_GATE_2026-07-21.md`                        |
+| Phase 7.27 Journal Club design | `docs/PHASE7_27_JOURNAL_CLUB_INTEGRATION.md`                     |
+| Phase 7.27 local evidence      | `docs/PHASE7_27_LOCAL_GATE_2026-07-22.md`                        |
+| Phase 7.28 design              | `docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md`                      |
+| Phase 7.28 local evidence      | `docs/PHASE7_28_LOCAL_GATE_2026-07-31.md`                        |
+| Phase 7.29 Presenter design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`                  |
+| Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
+| Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
+| Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
+| Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
+| Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`                   |
 
 If an older Phase document conflicts with these current documents and the real
 code/migrations, treat the older document as historical evidence.
@@ -158,6 +160,8 @@ Local writer while browser mode is active.
 
 ## 6. Google Admin identity and MFA (planned)
 
+- Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
+  `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
@@ -165,10 +169,41 @@ Local writer while browser mode is active.
   and rollback; never copy secrets or deployment state.
 - Google social login establishes AAL1. Privileged Admin access requires the
   separately verified Supabase TOTP AAL2 session in the initial implementation.
-- Admin login PIN migration does not remove the API-use/Billing PIN for paid
-  operation starts.
+- Admin login migration also retires repeated API-use PIN entry from the normal
+  paid-AI UX. The initial path requires Google plus TOTP AAL2, active
+  `can_use_ai`, an owner-managed server policy, a personal four-digit AI PIN (or
+  its valid remembered-browser proof) and one lecture master CTA; every provider
+  start still rechecks scope, budget, concurrency, idempotency and lifecycle.
+  The four-digit factor is server-verified only inside AAL2 with atomic rate
+  limiting, and a remembered browser stores only a revocable
+  browser-profile-bound credential backed by a non-extractable key. Dedicated
+  AI Passkey and hardware-bound claims follow its separate gate. Browser
+  enrollment uses a short-lived identity/session/TOTP/Origin/key-bound nonce;
+  caption-scope escalation rechecks AI proof and TOTP freshness while downgrade
+  and stop are free. `ADMIN_PIN`, `BILLING_PIN` and personal `AI PIN` mean legacy
+  login, default-OFF verified-owner paid rollback and normal intent factor; they
+  are never interchangeable or browser-persisted as raw values.
 
-## 7. OpenAI and paid features
+## 7. Contest publication and commercial readiness (planned)
+
+- The authoritative contract is
+  `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`.
+- GitHub Education branch protection is a future gate. Until it is configured
+  and tested, PR-only integration remains procedural rather than enforced.
+- A reviewer is the existing `[2] AI-capable Admin`: an invited personal Google
+  identity with TOTP AAL2, `role=instructor`, and `can_use_ai=true` in an
+  isolated real contest environment. It is not a new role, owner account,
+  shared credential, secret viewer, or frontend mock.
+- The contest environment uses separate Supabase/OAuth/OpenAI resources and a
+  dedicated Private R2 bucket, binding and credential. Prefix-only separation
+  from Production is prohibited.
+- Repository visibility must remain private until the full history/PII/license
+  audit passes and the user separately approves the exact visibility change.
+- Phase 7.29B dormant placement does not satisfy this plan. The next formal
+  integrated Production Gate is Phase 7.33 after Phase 7.29C, 7.30, 7.31 and
+  7.32 requirements and their Hosted/Human evidence are complete.
+
+## 8. OpenAI and paid features
 
 - Realtime billing/captions: `docs/PHASE4_BILLING_AND_REALTIME_CAPTIONS.md`
 - Concurrency lanes: `docs/PHASE4_1_AI_CONCURRENCY_LANES.md`
@@ -178,7 +213,7 @@ Local writer while browser mode is active.
 Live OpenAI scripts and real microphone tests are intentionally outside default
 CI. They require an explicit cost boundary and separate human gate.
 
-## 8. Production deployment
+## 9. Production deployment
 
 - Pages routing/build guidance: `docs/cloudflare_pages_deploy.md`
 - Phase 0-6.5 integrated gate: `docs/PRODUCTION_GATE_PHASE0_6_5_2026-07-16.md`
@@ -220,7 +255,7 @@ rollout.
 Do not drop schema on rollback. Disable the feature and restore the previous
 application/server version first.
 
-## 9. Incident sequence
+## 10. Incident sequence
 
 1. Stop/disable the affected feature; stopping paid work must not require a PIN.
 2. Preserve audit and provider-ledger evidence.
@@ -233,7 +268,7 @@ application/server version first.
 Cross-user disclosure, unauthorized paid work, secret exposure, public R2 access
 or post-close writes are immediate stop conditions.
 
-## 10. Historical evidence
+## 11. Historical evidence
 
 Files named `PHASE*_LOCAL_GATE_*`, `PRODUCTION_GATE_*` and dated deployment
 records are immutable evidence for the commit and environment they describe.

@@ -21,6 +21,8 @@ const requiredDocuments = [
   'docs/AGENT_EXECUTION_ROUTING.md',
   'docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md',
   'docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md',
+  'docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
+  'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
   'docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md',
@@ -55,11 +57,20 @@ const roadmap = read('docs/ROADMAP.md')
 const architecture = read('docs/architecture.md')
 const security = read('docs/SECURITY.md')
 const changelog = read('docs/CHANGELOG.md')
+const contestPlan = read(
+  'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
+)
+const googleAdminPlan = read('docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md')
+const docsIndex = read('docs/README.md')
+const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
+const gateRouting = read('docs/GATE_ROUTING.md')
+const runbook = read('docs/RUNBOOK_INDEX.md')
+const agentsContract = read('AGENTS.md')
 
 for (const requiredText of [
   `Application version: \`${packageJson.version}\``,
   'Phase 6.7',
-  'Phase 7 Production Gate',
+  'Phase 7.33',
   'docs/ROADMAP.md',
   'docs/RUNBOOK_INDEX.md',
   'test:phase6-7-docs',
@@ -88,6 +99,9 @@ for (const phase of [
   '7.2',
   '7.29',
   '7.30',
+  '7.31',
+  '7.32',
+  '7.33',
   '8.1',
   '8.2',
   '9',
@@ -95,6 +109,133 @@ for (const phase of [
   assert.ok(
     roadmap.includes(`Phase ${phase}`),
     `Roadmap missing Phase ${phase}`,
+  )
+}
+for (const requiredText of [
+  'role=instructor',
+  'can_use_ai=true',
+  'TOTP',
+  'isolated real contest environment',
+  'Phase 7.33',
+  '本人専用4桁AI PIN',
+  'remembered-browser proof',
+  'lecture_ai_master_authorizations',
+  'owner介入や`BILLING_PIN`は',
+  'Private R2 bucket',
+  'prefix や namespace だけをセキュリティ境界として使うことは禁止',
+  '短命一回限りnonce',
+  'hardware/device bindingを主張しない',
+  '`all_except_captions`から`all_including_captions`',
+  '`講義資料`',
+  'R2 bucket、binding、credential、namespace',
+]) {
+  assert.ok(
+    contestPlan.includes(requiredText),
+    `Contest/publication contract missing: ${requiredText}`,
+  )
+}
+assert.doesNotMatch(
+  contestPlan,
+  /Private R2 bucket または/,
+  'Contest contract must require a dedicated R2 bucket, not prefix-only isolation',
+)
+
+for (const requiredText of [
+  'private.admin_ai_policies',
+  'private.admin_ai_unlock_factors',
+  'private.admin_ai_unlock_rate_limits',
+  'private.admin_ai_browser_credentials',
+  'private.admin_ai_browser_enrollment_nonces',
+  'public.lecture_ai_master_authorizations',
+  'provider_token',
+  'provider_refresh_token',
+  'server-recorded recent step-up',
+  'limited identity-migration release',
+  'Five failed verifications in a rolling 15-minute window',
+  'non-extractable WebCrypto private key',
+  'bounded TLS request',
+  'circuit breaker fails closed',
+  'public-key fingerprint',
+  'full-browser-profile copying',
+  'caption-scope escalation',
+  'No hardware/device-binding claim',
+  '`ADMIN_PIN` is the legacy shared Admin-login path',
+  '`BILLING_PIN` is the legacy paid-cost path',
+  'personal four-digit `AI PIN` is the normal low-entropy intent factor',
+  'all_except_captions',
+  'all_including_captions',
+  'AI Passkey is not part of the initial B2 implementation',
+]) {
+  assert.ok(
+    googleAdminPlan.includes(requiredText),
+    `Google Admin contract missing: ${requiredText}`,
+  )
+}
+
+for (const [name, document] of [
+  ['AGENTS', agentsContract],
+  ['README', readme],
+  ['Roadmap', roadmap],
+  ['Agent routing', agentRouting],
+  ['Gate routing', gateRouting],
+  ['Runbook', runbook],
+  ['Google Admin', googleAdminPlan],
+  ['contest', contestPlan],
+]) {
+  assert.doesNotMatch(
+    document,
+    /admin_cost_intent_grants|owner-issued scoped cost-intent grant|BILLING_PIN remains the root cost-intent factor/,
+    `${name} future contract must not retain per-lecture owner PIN delegation`,
+  )
+  assert.doesNotMatch(
+    document,
+    /remembered-device|private\.admin_ai_trusted_devices/,
+    `${name} must use the browser-profile-bound credential contract`,
+  )
+  assert.doesNotMatch(
+    document,
+    /no raw PIN appears in (?:storage or )?network/i,
+    `${name} must allow only the bounded TLS verification body, not promise zero network transit`,
+  )
+}
+
+for (const heading of [
+  '### 7.30A - asset, IAM and threat inventory',
+  '### 7.30B - additive identity foundation',
+  '### 7.30C - RBAC, ownership and all server authorization',
+  '### 7.30D - Google, MFA and Admin-ledger UX',
+  '### 7.30E - dual-read compatibility and full regression',
+  '### 7.30F - Hosted/Human identity migration gate',
+]) {
+  assert.ok(
+    roadmap.includes(heading),
+    `Roadmap phase mapping missing: ${heading}`,
+  )
+}
+
+for (const requiredText of [
+  'PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
+  'PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
+  'Roadmap and an approved detailed domain contract disagree',
+]) {
+  assert.ok(
+    docsIndex.includes(requiredText),
+    `Documentation precedence missing: ${requiredText}`,
+  )
+}
+
+for (const requiredText of [
+  '7.30B additive identity and AI-unlock foundation',
+  '7.30C RBAC and all server authorization',
+  'mandatory TOTP before B2 adds AI PIN',
+  'personal four-digit AI PIN',
+  'remembered-browser proof',
+  'escalation requires a new AI proof',
+  '`ADMIN_PIN`, `BILLING_PIN` and personal `AI PIN`',
+]) {
+  assert.ok(
+    agentRouting.includes(requiredText),
+    `Agent routing contract missing: ${requiredText}`,
   )
 }
 for (const gate of ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {

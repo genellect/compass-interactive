@@ -1,8 +1,8 @@
 # Phase 7.29 Cloud Rescue and Dormant Rollout
 
-Status: Implemented, verification pending
+Status: Production
 Scope: Phase 7.29A canonical rescue and Phase 7.29B default-OFF hosted placement
-Last verified: 2026-08-08
+Last verified: 2026-08-09
 
 ## Release meaning
 
