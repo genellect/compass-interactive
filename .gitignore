@@ -41,6 +41,10 @@ test-results/
 blob-report/
 playwright/.auth/
 
+# Claude Code per-user permission opt-in; ship .claude/settings.json.example only
+.claude/settings.json
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

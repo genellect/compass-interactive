@@ -16,8 +16,12 @@ fail() {
   failures=$((failures + 1))
 }
 
+has_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
 require_command() {
-  if command -v "$1" >/dev/null 2>&1; then
+  if has_command "$1"; then
     pass "$1 command"
   else
     fail "$1 command is missing"
@@ -34,18 +38,27 @@ else
   fail "workspace is not an operable Git worktree"
 fi
 
-actual_node="$(node -p 'process.versions.node')"
-if [[ "$actual_node" == "$NODE_VERSION" && "$(tr -d '\r\n' < .node-version)" == "$NODE_VERSION" ]]; then
-  pass "Node.js $actual_node"
+if has_command node; then
+  actual_node="$(node -p 'process.versions.node' 2>/dev/null || true)"
+  pinned_node="$(tr -d '\r\n' < .node-version 2>/dev/null || true)"
+  if [[ "$actual_node" == "$NODE_VERSION" && "$pinned_node" == "$NODE_VERSION" ]]; then
+    pass "Node.js $actual_node"
+  else
+    fail "Node.js ${actual_node:-unavailable} with .node-version ${pinned_node:-unavailable} (expected $NODE_VERSION)"
+  fi
 else
-  fail "Node.js $actual_node (expected $NODE_VERSION)"
+  fail "Node.js version is unverifiable without the node command (expected $NODE_VERSION)"
 fi
 
-actual_pnpm="$(pnpm --version)"
-if [[ "$actual_pnpm" == "$PNPM_VERSION" ]]; then
-  pass "pnpm CLI $actual_pnpm"
+if has_command pnpm; then
+  actual_pnpm="$(pnpm --version 2>/dev/null || true)"
+  if [[ "$actual_pnpm" == "$PNPM_VERSION" ]]; then
+    pass "pnpm CLI $actual_pnpm"
+  else
+    fail "pnpm CLI ${actual_pnpm:-unavailable} (expected $PNPM_VERSION)"
+  fi
 else
-  fail "pnpm CLI $actual_pnpm (expected $PNPM_VERSION)"
+  fail "pnpm CLI is unverifiable without the pnpm command (expected $PNPM_VERSION)"
 fi
 
 if [[ -f package-lock.json && ! -f pnpm-lock.yaml ]]; then
@@ -54,39 +67,52 @@ else
   fail "package manager boundary must remain npm with package-lock.json"
 fi
 
-docker_server=""
-for _ in $(seq 1 30); do
-  if docker_server="$(docker info --format '{{.ServerVersion}}' 2>/dev/null)"; then
-    break
+if has_command docker; then
+  docker_server=""
+  for _ in $(seq 1 30); do
+    if docker_server="$(docker info --format '{{.ServerVersion}}' 2>/dev/null)"; then
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "$docker_server" == "$DOCKER_VERSION"* ]]; then
+    pass "isolated Docker daemon $docker_server"
+  else
+    fail "Docker daemon ${docker_server:-unavailable} (expected $DOCKER_VERSION)"
   fi
-  sleep 1
-done
 
-if [[ "$docker_server" == "$DOCKER_VERSION"* ]]; then
-  pass "isolated Docker daemon $docker_server"
+  compose_version="$(docker compose version --short 2>/dev/null || true)"
+  if [[ "$compose_version" == "$DOCKER_COMPOSE_VERSION" ]]; then
+    pass "Docker Compose $compose_version"
+  else
+    fail "Docker Compose ${compose_version:-unavailable} (expected $DOCKER_COMPOSE_VERSION)"
+  fi
 else
-  fail "Docker daemon ${docker_server:-unavailable} (expected $DOCKER_VERSION)"
+  fail "Docker daemon is unverifiable without the docker command (expected $DOCKER_VERSION)"
+  fail "Docker Compose is unverifiable without the docker command (expected $DOCKER_COMPOSE_VERSION)"
 fi
 
-compose_version="$(docker compose version --short 2>/dev/null || true)"
-if [[ "$compose_version" == "$DOCKER_COMPOSE_VERSION" ]]; then
-  pass "Docker Compose $compose_version"
+if has_command gh; then
+  gh_version="$(gh --version 2>/dev/null | head -n 1 | awk '{print $3}' || true)"
+  if [[ "$gh_version" == "$GITHUB_CLI_VERSION" ]]; then
+    pass "GitHub CLI $gh_version"
+  else
+    fail "GitHub CLI ${gh_version:-unavailable} (expected $GITHUB_CLI_VERSION)"
+  fi
 else
-  fail "Docker Compose ${compose_version:-unavailable} (expected $DOCKER_COMPOSE_VERSION)"
+  fail "GitHub CLI is unverifiable without the gh command (expected $GITHUB_CLI_VERSION)"
 fi
 
-gh_version="$(gh --version | head -n 1 | awk '{print $3}')"
-if [[ "$gh_version" == "$GITHUB_CLI_VERSION" ]]; then
-  pass "GitHub CLI $gh_version"
+if has_command copilot; then
+  copilot_version="$(copilot --version 2>/dev/null | head -n 1 | awk '{print $4}' | sed 's/\.$//' || true)"
+  if [[ "$copilot_version" == "$COPILOT_CLI_VERSION" ]]; then
+    pass "GitHub Copilot CLI $copilot_version"
+  else
+    fail "GitHub Copilot CLI ${copilot_version:-unavailable} (expected $COPILOT_CLI_VERSION)"
+  fi
 else
-  fail "GitHub CLI $gh_version (expected $GITHUB_CLI_VERSION)"
-fi
-
-copilot_version="$(copilot --version | head -n 1 | awk '{print $4}' | sed 's/\.$//')"
-if [[ "$copilot_version" == "$COPILOT_CLI_VERSION" ]]; then
-  pass "GitHub Copilot CLI $copilot_version"
-else
-  fail "GitHub Copilot CLI $copilot_version (expected $COPILOT_CLI_VERSION)"
+  fail "GitHub Copilot CLI is unverifiable without the copilot command (expected $COPILOT_CLI_VERSION)"
 fi
 
 if [[ -x node_modules/.bin/playwright ]]; then
