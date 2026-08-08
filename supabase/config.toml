@@ -380,6 +380,9 @@ deno_version = 2
 [functions.verify-admin-pin]
 verify_jwt = true
 
+[functions.manage-admin-sessions]
+verify_jwt = true
+
 [functions.manage-lectures]
 verify_jwt = true
 
@@ -437,6 +440,9 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.claim-display-realtime-session]
+verify_jwt = true
+
+[functions.issue-lecture-resume-token]
 verify_jwt = true
 
 [functions.broadcast-display-caption]

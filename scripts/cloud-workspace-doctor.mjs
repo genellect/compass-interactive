@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -105,6 +105,28 @@ for (const dependency of ['playwright', 'supabase', 'vite']) {
   } else {
     fail(`${dependency} locked binary is missing`)
   }
+}
+
+const supabaseFunctions = readdirSync(resolve(root, 'supabase', 'functions'), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory() && entry.name !== '_shared')
+  .map((entry) => entry.name)
+  .sort()
+const supabaseConfig = readFileSync(
+  resolve(root, 'supabase', 'config.toml'),
+  'utf8',
+)
+const functionsMissingPolicy = supabaseFunctions.filter(
+  (functionName) =>
+    !supabaseConfig.includes(`[functions.${functionName}]`),
+)
+if (functionsMissingPolicy.length === 0) {
+  pass(`${supabaseFunctions.length} Edge Functions have explicit JWT policy`)
+} else {
+  fail(
+    `Edge Functions missing explicit JWT policy: ${functionsMissingPolicy.join(', ')}`,
+  )
 }
 
 if (command('git', ['rev-parse', '--is-inside-work-tree']) === 'true') {
