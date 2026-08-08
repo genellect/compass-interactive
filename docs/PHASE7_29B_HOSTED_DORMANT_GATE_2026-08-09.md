@@ -62,6 +62,33 @@ passed, and Phase 7.29 ON 2 passed. The earlier local Edge
 `WorkerAlreadyRetired` event did not recur; the complete Local Supabase job was
 clean on the final head.
 
+### Subsequent CI harness correction
+
+The paragraph above records the final PR #26 attempt. Canonical-main CI run
+`31272629848` and the first PR #27 run `31273411858` later reproduced a
+local-only `WorkerAlreadyRetired` failure when Display Realtime followed
+Journal Club on one long-lived Supabase Edge process. Quality, Dev Container
+and Presenter checks passed; the PR #27 Demo job was cancelled only after the
+Local job had failed, to release the runner. No Hosted Supabase, Cloudflare,
+R2 or product-runtime state changed.
+
+[PR #28](https://github.com/genellect/compass-interactive/pull/28) changed only
+CI and E2E orchestration. It restarts the local Edge process group between the
+two suites while reusing the same generated synthetic environment, PDF signing
+key and database, explicitly stops the detached process during cleanup, and
+makes only the redundant Mobile WebKit cancellation branch deterministic while
+retaining the accepted pointer-click path. Exact-head run `31275184412` passed
+Quality, Presenter x64/x86, Demo E2E and the complete Local Supabase, pgTAP and
+live-browser job with zero flaky tests. It was integrated as canonical-main
+merge `5ec3b2cf675e9ac1cd4d907522fb72427cb1da5e`.
+
+The future-contract and Hosted-evidence PR was then rebased onto that merge and
+must independently pass its exact-head checks before integration. Its immutable
+GitHub PR record is the authoritative run reference. No Cloudflare external
+build check was reintroduced. This closes the CI-harness regression; it does
+not change the Phase 7.29B dormant deployment decision or authorize Phase
+7.29C.
+
 ## Hosted database placement
 
 Migration `20260801075917_phase7_29_powerpoint_presenter_bridge.sql` was the
