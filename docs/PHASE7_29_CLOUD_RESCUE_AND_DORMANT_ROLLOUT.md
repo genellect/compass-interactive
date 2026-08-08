@@ -9,11 +9,11 @@ Last verified: 2026-08-08
 Phase 7.29 is split so source publication cannot be mistaken for classroom
 activation.
 
-| Stage                   | Included                                                                                             | Explicitly excluded                                                              |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 7.29A rescue            | Current-main port of database, Edge, browser, native source, tests and docs; Windows CI compile/test | Installer, signing, real PowerPoint, Hosted state                                |
-| 7.29B dormant placement | Additive migration with DB gate OFF, Edge code with admission OFF, frontend build with flag OFF      | Presenter UI, Bridge admission, active connections, native artifact distribution |
-| 7.29C activation        | Future signed/device/hosted/human canary                                                             | Not authorized by 7.29A/B                                                        |
+| Stage                   | Included                                                                                                                             | Explicitly excluded                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| 7.29A rescue            | Current-main port of database, Edge, browser, native source, tests and docs; Windows CI compile/test                                 | Installer, signing, real PowerPoint, Hosted state                                                         |
+| 7.29B dormant placement | Additive migration with DB gate OFF, JWT Admin and legacy-compatible Edge revisions with admission OFF, frontend build with flag OFF | Public machine endpoint, Presenter UI, Bridge admission, active connections, native artifact distribution |
+| 7.29C activation        | Future signed/device/hosted/human canary                                                                                             | Not authorized by 7.29A/B                                                                                 |
 
 The dormant release must leave the existing Admin PDF controls, private Display
 fallback and student five-second snapshot behavior unchanged. It adds no
@@ -75,17 +75,23 @@ migration list, deployed Edge versions, Advisor state and rollback owner.
 1. Merge the exact green PR SHA through the PR workflow.
 2. Apply only the additive Phase 7.29 migration and verify
    `private.presenter_runtime_gate.enabled = false`.
-3. Deploy `manage-presenter-connection`, `presenter-bridge-session` and the
-   compatible `update-display-state` revision with
+3. Deploy only the JWT-protected `manage-presenter-connection` and compatible
+   `update-display-state` revisions with
    `PHASE729_POWERPOINT_SYNC_ENABLED=false`.
-4. Keep `PRESENTER_BRIDGE_TOKEN_SECRET` server-only. Its presence may be checked
-   by name/status, never by printing its value. It is not required to admit
-   traffic while the server gate is OFF.
-5. Deploy the frontend with `VITE_PHASE7_29_POWERPOINT_SYNC=false` or omitted.
-6. Confirm the PowerPoint panel is absent, direct Presenter requests fail
-   closed, manual PDF navigation still works, Display fallback still works and
-   student snapshots remain at the existing cadence.
-7. Run hosted Advisor/RLS/grant checks and save exact deployment evidence.
+4. Do not deploy `presenter-bridge-session` in 7.29B. Its source and tests may
+   be merged, but its `verify_jwt=false` machine endpoint would create a public
+   invocation, cost and abuse surface even while the feature handler returns
+   `503`. Deployment is deferred until 7.29C adds application-level and WAF
+   rate protection and passes the enabled-handler integration gate.
+5. Do not provision `PRESENTER_BRIDGE_TOKEN_SECRET` for 7.29B. When 7.29C is
+   separately authorized, keep it server-only and inspect presence by
+   name/status only, never by printing its value.
+6. Deploy the frontend with `VITE_PHASE7_29_POWERPOINT_SYNC=false` or omitted.
+7. Confirm the PowerPoint panel is absent, the machine endpoint is not deployed,
+   the JWT Admin endpoint fails closed, manual PDF navigation still works,
+   Display fallback still works and student snapshots remain at the existing
+   cadence.
+8. Run hosted Advisor/RLS/grant checks and save exact deployment evidence.
 
 No installer or native executable is uploaded in 7.29B.
 
@@ -114,6 +120,11 @@ The same HOLD also requires asymmetric per-install proof of possession,
 application/WAF rate protection for the machine Edge endpoint, least-privilege
 cleanup Cron with monitoring, and enabled-handler integration tests against a
 real local database.
+
+The `presenter-bridge-session` machine endpoint remains undeployed throughout
+7.29B. It can enter Hosted scope only as part of the separately authorized
+7.29C activation sequence after the rate, proof-of-possession and abuse gates
+above are satisfied.
 
 The current recovery-code copy does not have a native input surface. It must be
 completed or removed before 7.29C; dormant placement is safe because the UI and
