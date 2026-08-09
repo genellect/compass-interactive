@@ -4746,10 +4746,7 @@ export type Database = {
         }[]
       }
       cleanup_admin_ai_ephemera_v1: {
-        Args: {
-          target_request_id: string
-          target_retention_before: string
-        }
+        Args: { target_request_id: string; target_retention_before: string }
         Returns: Json
       }
       cleanup_display_realtime_sessions_v1: { Args: never; Returns: number }
