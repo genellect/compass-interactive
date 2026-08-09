@@ -78,6 +78,7 @@ Deno.serve(async (request) => {
       .select(
         'id,issued_at,last_seen_at,idle_expires_at,expires_at,revoked_at,revoke_reason',
       )
+      .eq('authentication_method', 'legacy_pin')
       .order('issued_at', { ascending: false })
       .limit(20)
     if (error) {
@@ -103,6 +104,7 @@ Deno.serve(async (request) => {
         updated_at: now,
       })
       .eq('id', claims.sid)
+      .eq('authentication_method', 'legacy_pin')
       .is('revoked_at', null)
     return error
       ? jsonResponse({ ok: false, message: 'Admin logout failed.' }, 503)
@@ -121,6 +123,7 @@ Deno.serve(async (request) => {
         updated_at: now,
       })
       .eq('id', body.sessionId)
+      .eq('authentication_method', 'legacy_pin')
       .is('revoked_at', null)
     return error
       ? jsonResponse(
@@ -138,6 +141,7 @@ Deno.serve(async (request) => {
         revoked_at: now,
         updated_at: now,
       })
+      .eq('authentication_method', 'legacy_pin')
       .is('revoked_at', null)
     return error
       ? jsonResponse(

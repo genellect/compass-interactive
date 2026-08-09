@@ -6,8 +6,10 @@ import { CompassStateProvider } from './context/CompassStateContext'
 import { useCompassState } from './hooks/useCompassState'
 import './App.css'
 
-const AdminPage = lazy(() =>
-  import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })),
+const AdminRoute = lazy(() =>
+  import('./pages/AdminRoute').then((module) => ({
+    default: module.AdminRoute,
+  })),
 )
 const DisplayPage = lazy(() =>
   import('./pages/DisplayPage').then((module) => ({
@@ -107,7 +109,6 @@ function AppShell() {
             element={<Navigate replace to="/join?code=DEMO" />}
             path="/demo"
           />
-          <Route element={<AdminPage />} path="/admin" />
           <Route
             element={
               <RequireJoinedLecture>
@@ -133,6 +134,15 @@ function AppShell() {
 }
 
 function App() {
+  const location = useLocation()
+  if (location.pathname.startsWith('/admin')) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <AdminRoute />
+      </Suspense>
+    )
+  }
+
   return (
     <CompassStateProvider>
       <AppShell />

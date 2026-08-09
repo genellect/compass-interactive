@@ -17,9 +17,9 @@ const largest = (prefix, suffix) =>
   )
 
 const budgets = {
-  // The Phase 7.27 production topology shipped a 98,824-byte Admin chunk.
-  // Keep the release gate at 110% of that observed production baseline.
-  adminJs: { actual: largest('AdminPage-', '.js'), limit: 108_707 },
+  // The Phase 7.30 identity gate keeps the existing Admin workspace in the
+  // lazy AdminLegacyApp chunk. Preserve the Phase 7.27 workspace budget.
+  adminJs: { actual: largest('AdminLegacyApp-', '.js'), limit: 108_707 },
   // The approved branding update shipped 91,262 bytes of app CSS; allow 1% drift.
   appCss: { actual: largest('index-', '.css'), limit: 92_175 },
   indexJs: { actual: largest('index-', '.js'), limit: 529_742 },

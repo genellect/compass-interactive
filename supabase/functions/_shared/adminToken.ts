@@ -168,6 +168,8 @@ export async function createAdminToken(
     if (!context) throw new Error('Admin session context is required.')
     const serviceClient = await getServiceClient()
     const { error } = await serviceClient.from('admin_sessions').insert({
+      aal: 1,
+      authentication_method: 'legacy_pin',
       auth_user_id: context.authUserId,
       expires_at: new Date((now + TOKEN_TTL_SECONDS) * 1000).toISOString(),
       id: sessionId,

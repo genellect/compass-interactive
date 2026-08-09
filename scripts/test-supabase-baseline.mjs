@@ -60,6 +60,8 @@ const phase729PowerPointPresenterBridgeMigrationName =
   '20260801075917_phase7_29_powerpoint_presenter_bridge.sql'
 const phase729cPresenterProofMigrationName =
   '20260809133000_phase7_29c_presenter_proof_and_cleanup.sql'
+const phase730b1AdminIdentityMigrationName =
+  '20260809143000_phase7_30b1_admin_identity_aal2.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -101,6 +103,7 @@ assert.deepEqual(
     phase728AiMasterAuthorizationMigrationName,
     phase729PowerPointPresenterBridgeMigrationName,
     phase729cPresenterProofMigrationName,
+    phase730b1AdminIdentityMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )
@@ -148,12 +151,17 @@ assert.doesNotMatch(
 assert.match(config, /major_version = 17/)
 assert.match(config, /\[db\.seed\][\s\S]*?enabled = false/)
 assert.match(config, /enable_anonymous_sign_ins = true/)
+assert.match(
+  config,
+  /\[auth\.mfa\.totp\][\s\S]*?enroll_enabled = true[\s\S]*?verify_enabled = true/,
+)
 
 const anonymousAuth = readFileSync(anonymousAuthPath, 'utf8')
 const turnstile = readFileSync(turnstilePath, 'utf8')
 const envExample = readFileSync(envExamplePath, 'utf8')
 assert.match(anonymousAuth, /getAnonymousSignInCaptchaToken/)
 assert.match(anonymousAuth, /options: \{ captchaToken \}/)
+assert.match(anonymousAuth, /user\.is_anonymous === true/)
 assert.match(turnstile, /VITE_TURNSTILE_SITE_KEY/)
 assert.match(envExample, /VITE_PHASE1_SYNC_PROTOCOL=false/)
 assert.match(envExample, /VITE_PHASE2_LECTURE_LIFECYCLE=false/)
@@ -239,6 +247,7 @@ assert.match(
 
 for (const functionName of [
   'verify-admin-pin',
+  'admin-identity-session',
   'manage-lectures',
   'manage-polls',
   'update-display-state',

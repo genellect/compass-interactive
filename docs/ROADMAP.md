@@ -3,8 +3,8 @@
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
 Last reconciled: 2026-08-09
-Future-contract approval: Phase 7.30-7.33 requirements approved; implementation
-and their Hosted/Human gates have not started
+Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B1
+source/local implemented; B2 onward and Hosted/Human gates remain HOLD
 
 ## 1. Numbering decision
 
@@ -619,6 +619,20 @@ per-lecture delegation are replaced in the normal path by an individual
 AI-unlock factor, owner-managed policy and the existing lecture master
 authorization; the old PIN survives only as a bounded rollback control.
 
+**2026-08-09 checkpoint:** Phase 7.30A and the bounded B1 identity foundation
+are implemented in source for local verification. Database Google issuance and
+Edge admission are the two independently default-OFF authorization gates; the
+separately default-OFF frontend flag controls only UI exposure. Normal
+activation enables all three together, while legacy Admin PIN compatibility
+remains default ON. B1 includes trusted Google-subject HMAC binding, a
+five-minute digest-only TOTP nonce whose exact same-caller/session/JWT retry is
+idempotent, fresh TOTP AMR timestamp verification, and an opaque AAL2
+application session with an eight-hour absolute and 30-minute inactivity
+limit. It does not grant operational Admin authority. Phase 7.30B2, C-F, real
+Google OAuth, Hosted/Human evidence and every Production activation remain
+HOLD. See
+`docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
+
 ### 7.30A - asset, IAM and threat inventory
 
 - Read-only inventory the COMPASS Google platform and classify each asset as a
@@ -632,6 +646,10 @@ authorization; the old PIN survives only as a bounded rollback control.
   OAuth clients, origins/callbacks, provider secrets and rollback ownership.
 
 ### 7.30B - additive identity foundation
+
+Implementation is intentionally split. B1 is present locally as the dormant
+identity/session foundation described above. The AI-unlock, policy and
+master-provenance portion listed below is B2 and remains HOLD.
 
 - Add private principal, environment membership, invitation, tracked session,
   append-only audit, AI-unlock factor, browser-profile credential, one-time

@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-08-01
+Last reviewed: 2026-08-09
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -258,3 +258,31 @@ surface: `issue_presenter_connection_v2`, `inspect_presenter_connection_v2`,
 `statement_timeout` (750 ms `lock_timeout` where locking occurs), followed by
 the Edge 3.5-second abort, Gateway 4.25-second abort and native five-second
 timeout.
+
+## 13. Phase 7.30A-B1 Admin identity objects
+
+The private schema adds seven B1 tables:
+
+- `admin_identity_runtime_gate` for the default-OFF Google issuance switch and
+  default-ON legacy-login compatibility switch;
+- `admin_environments`, `admin_principals` and
+  `admin_environment_memberships` for immutable environment-scoped Google
+  identity and owner/instructor membership;
+- `admin_invitations` for digest-only, one-time bootstrap/admission material;
+- `admin_step_up_nonces` for five-minute, digest-only, Auth-session-bound TOTP
+  completion; and
+- `admin_audit_events` for bounded append-only identity events.
+
+`public.admin_sessions` remains the existing tracked-session table and gains
+authentication method, AAL, principal, membership, environment, Supabase Auth
+session, step-up timestamp and nonce provenance. Existing rows are backfilled
+as `legacy_pin`/AAL1 with their PIN-version fence intact. New
+`google_totp`/AAL2 rows require complete Google provenance and prohibit a PIN
+version hash; cross-mode rows fail a database constraint.
+
+All seven private tables have RLS enabled and no browser-role table grants.
+The append-only audit table rejects update/delete. Browser roles cannot execute
+the service wrappers; Edge uses the minimum service-role RPC surface, while
+fixed-search-path definer helpers perform the atomic admission, nonce and
+session transitions. The B1 migration is expand-first and does not alter
+lecture, PDF, AI, Display or Presenter authorization.

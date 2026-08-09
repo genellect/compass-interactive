@@ -111,7 +111,7 @@ flowchart LR
     GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
     Workspace --> Demo["Secret-free /demo"]
     Workspace --> Local["Isolated local Supabase"]
-    Demo --> Gate["Type / lint / 58 non-live groups\nChromium + WebKit E2E"]
+    Demo --> Gate["Type / lint / 65 non-live groups\nChromium + WebKit E2E"]
     Local --> Gate
     Gate --> PR["Commit / Pull Request / CI"]
     PR --> Review["Browser / mobile review"]
@@ -126,6 +126,7 @@ flowchart LR
 - Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。Phase 7.29 PowerPoint連携はdefault-OFFの候補で、Native・Device・Human・activation Gateとは分離します。
 - Phase 6.7で、README、Architecture、Security、Data Policy、Roadmap、Runbookを正本文書として整備しました。
 - Phase 7.29Bのdormant配置は機能有効化や正式なProduction Gate合格を意味しません。次の正式な統合判定はPhase 7.33であり、Presenter有効化、Google Admin/AAL2、GitHub保護・公開監査、審査員用独立実環境、商用運用品質がすべて揃うまでHOLDです。
+- Phase 7.30A-B1は、個別Google Admin identity、TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。通常activationは3つを同時に有効化し、legacy Admin PINは`VITE_PHASE7_30_LEGACY_ADMIN_PIN=true`を含めdefault-ONです。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。実Google OAuth、Hosted/Human evidence、B2のAI PIN、C以降の運用RBACとProduction activationは未実行/HOLDで、今回のlocal実装に固定費は発生しません。
 - 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
 
@@ -600,6 +601,7 @@ READMEは、現行システムの全体像と開発の入口を示します。�
 | [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)                         | PPT救出・dormant rollout・rollback                          |
 | [`docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)                                 | Presenter Gateway・署名配布・activation HOLD契約            |
 | [`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Google Admin認証・AAL2・RBAC計画                            |
+| [`docs/PHASE7_30A_B1_IMPLEMENTATION.md`](docs/PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Phase 7.30A-B1 source/local実装・dormant Gate・rollback記録 |
 | [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画 |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                       |
 | [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                    |

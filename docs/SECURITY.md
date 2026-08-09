@@ -1,9 +1,8 @@
 # COMPASS Interactive Security Contract
 
-Last reviewed: 2026-08-01
-Status: locally implemented controls through Phase 7.28 plus a default-OFF
-Phase 7.29 candidate; native, hosted and human production evidence remains
-separate
+Last reviewed: 2026-08-09
+Status: locally implemented controls through Phase 7.30A-B1; native, Hosted,
+Human and Production evidence remains separate
 
 ## 1. Security objectives
 
@@ -23,6 +22,9 @@ COMPASS must prevent:
 ## 2. Identity and participant ownership
 
 - Student browsers use Supabase Anonymous Auth.
+- The Admin Google identity client is separate from the Student singleton,
+  callback handler and storage key. Student session helpers accept only users
+  whose trusted Auth record is anonymous.
 - Anonymous users still use the PostgreSQL `authenticated` role, so every
   student operation also verifies `(select auth.uid())` ownership.
 - A participant belongs to exactly one lecture and Auth user.
@@ -79,6 +81,22 @@ individual/logout revocation, and enforces eight-hour absolute and 30-minute
 inactivity expiry. A PIN rotation invalidates every prior session. PIN checks
 consume keyed user, trusted-network-when-available and coarse global buckets;
 raw PINs and IP addresses are not stored.
+
+Phase 7.30A-B1 adds a separately flagged Google identity path without granting
+it legacy Admin operations. Edge validates the bearer through Supabase Auth and
+uses only the trusted linked Google identity; request metadata does not create
+authority. Provider tokens are stripped before the Auth SDK can persist or
+broadcast them. The application principal table stores the stable Google
+subject only as a versioned, server-peppered HMAC binding; Supabase Auth remains
+the trusted provider-identity store. A five-minute nonce binds the exact
+identity, environment, membership, Auth session, intended action and
+pre-challenge JWT.
+Completion requires a fresh TOTP AMR at AAL2 and creates only a digest-stored
+application session with an eight-hour absolute and 30-minute idle limit.
+Database constraints and distinct token scopes prevent `legacy_pin`/AAL1 and
+`google_totp`/AAL2 sessions from being interpreted interchangeably. Database
+and Edge authorization gates default OFF; the separate frontend UI flag also
+defaults OFF, while legacy compatibility defaults ON.
 
 ## 6. AI and provider safety
 
@@ -345,3 +363,20 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
   update policy, x86/x64 Office matrix, real Edge/Chrome HTTPS-to-loopback tests
   and venue/human evidence. Windows Application Control must never be disabled
   or bypassed to make an unsigned native test pass.
+
+## 17. Phase 7.30A-B1 identity controls
+
+- AAL1 admission returns eligibility only, never role, lecture, AI, ledger or
+  operational Admin data.
+- The first successful completion consumes its nonce and creates one tracked
+  session. An exact same-caller/Auth-session/JWT retry within five minutes
+  returns that same result; cross-principal, cross-session, altered or expired
+  reuse fails closed.
+- Status/touch rechecks environment, principal, membership, Auth session,
+  runtime gate, absolute expiry and idle expiry. Self-logout can revoke the
+  matching application session even after its normal expiry.
+- Google B1 tokens use a distinct scope and cannot pass legacy Admin verifiers.
+  The B1 session deliberately carries no lecture-operation authority before
+  Phase 7.30C.
+- Real Google OAuth, Hosted provider configuration, real-account recovery and
+  Hosted Advisor evidence remain separate Hosted/Human gates.

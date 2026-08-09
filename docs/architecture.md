@@ -1,8 +1,8 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-08-01
-Applies to: repository implementation candidate through Phase 7.29; later
-native, Human, Hosted and Production gates remain separately authoritative
+Last reviewed: 2026-08-09
+Applies to: repository implementation candidate through Phase 7.30A-B1;
+later native, Human, Hosted and Production gates remain separately authoritative
 
 ## 1. Architectural goals
 
@@ -48,18 +48,22 @@ flowchart LR
 
 ## 3. Frontend and routes
 
-The frontend is a Vite, React and TypeScript single-page application. Route
-components are lazy-loaded and share `CompassStateProvider`.
+The frontend is a Vite, React and TypeScript single-page application. Public,
+Student and Display route components are lazy-loaded and share the anonymous
+Student `CompassStateProvider`. The `/admin` identity shell is separately
+lazy-loaded outside that provider so its PKCE callback and Auth storage cannot
+replace or consume the Student anonymous session. The existing Admin workspace
+mounts its provider only through the separately flagged legacy path in B1.
 
-| Route               | Responsibility                          | Important boundary                                             |
-| ------------------- | --------------------------------------- | -------------------------------------------------------------- |
-| `/join`             | Validate live or archived lecture entry | Six-digit code is an entry identifier, not an Admin credential |
-| `/demo`             | Redirect to isolated Demo data          | No Supabase, OpenAI, Worker or Publisher network call          |
-| `/lecture`          | Mobile-first student session            | Five-second snapshot while active; stop on exit/terminal state |
-| `/lecture/comments` | Older comment history                   | Explicit cursor fetch; no periodic history polling             |
-| `/lecture/archive`  | Closed lecture preview                  | Cloudflare read-only access; no live Supabase loop             |
-| `/admin`            | Teacher operations                      | Admin session and separate paid-operation authorization        |
-| `/display`          | Fullscreen classroom view               | Scoped display token, never an Admin token                     |
+| Route               | Responsibility                          | Important boundary                                                            |
+| ------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| `/join`             | Validate live or archived lecture entry | Six-digit code is an entry identifier, not an Admin credential                |
+| `/demo`             | Redirect to isolated Demo data          | No Supabase, OpenAI, Worker or Publisher network call                         |
+| `/lecture`          | Mobile-first student session            | Five-second snapshot while active; stop on exit/terminal state                |
+| `/lecture/comments` | Older comment history                   | Explicit cursor fetch; no periodic history polling                            |
+| `/lecture/archive`  | Closed lecture preview                  | Cloudflare read-only access; no live Supabase loop                            |
+| `/admin`            | Teacher identity and operations         | Separate Admin Auth client; Google B1 session grants no operational authority |
+| `/display`          | Fullscreen classroom view               | Scoped display token, never an Admin token                                    |
 
 `scripts/create-route-entrypoints.mjs` copies the production `index.html` into
 each route directory. Cloudflare Pages therefore does not need an unsafe or
@@ -341,3 +345,22 @@ Signed Velopack distribution, exact Custom Domain/update feed, physical Office
 and browser testing, and verification of the 55-second automatic ticket versus
 the five-minute manual recovery-code TTL are separate Phase 7.29C
 Hosted/Device/Human gates; source or CI PASS cannot activate them.
+
+## 16. Phase 7.30A-B1 Admin identity boundary
+
+Phase 7.30A-B1 adds a separate Admin Supabase Auth client with a distinct
+storage key, explicit PKCE exchange on `/admin/auth/callback`, and URL-session
+detection disabled everywhere else. The Student client continues to accept
+only an anonymous Auth user. Google provider tokens are removed from Auth JSON
+before the SDK can persist or broadcast a session and are stripped again by
+the Admin storage adapter.
+
+The local identity path binds a trusted Supabase Auth user and linked Google
+identity to one environment membership, then requires a five-minute,
+digest-only step-up nonce and a fresh TOTP AAL2 AMR before issuing an
+application Admin session. The database and Edge authorization gates are
+default OFF; the separate frontend flag controls only UI exposure and is also
+default OFF. Legacy PIN compatibility remains default ON. The B1 Google
+session is identity-only and cannot invoke the existing lecture, PDF, AI,
+Display or Presenter Admin operations. That capability migration belongs to
+Phase 7.30C, while real Google OAuth and Hosted/Human evidence remain HOLD.

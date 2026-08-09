@@ -70,10 +70,30 @@ Deno.serve(async (request) => {
   const { data: authData, error: authError } = bearerToken
     ? await serviceClient.auth.getUser(bearerToken)
     : { data: { user: null }, error: new Error('missing bearer token') }
-  if (authError || !authData.user) {
+  if (authError || !authData.user || authData.user.is_anonymous !== true) {
     return jsonResponse(
       { ok: false, message: 'Admin PIN could not be verified.' },
       401,
+    )
+  }
+
+  if (Deno.env.get('PHASE730_LEGACY_ADMIN_PIN_ENABLED') === 'false') {
+    return jsonResponse(
+      { ok: false, message: 'Admin PIN could not be verified.' },
+      503,
+    )
+  }
+  const { data: identityGate, error: identityGateError } =
+    await serviceClient.rpc('get_admin_identity_runtime_gate_v1')
+  if (
+    identityGateError ||
+    !identityGate ||
+    (identityGate as { legacy_pin_login_enabled?: boolean })
+      .legacy_pin_login_enabled !== true
+  ) {
+    return jsonResponse(
+      { ok: false, message: 'Admin PIN could not be verified.' },
+      503,
     )
   }
 
