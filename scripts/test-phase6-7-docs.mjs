@@ -223,6 +223,7 @@ const currentAuthContracts = [
   runbook,
   security,
   architecture,
+  dataPolicy,
   googleAdminPlan,
   contestPlan,
 ].join('\n')
