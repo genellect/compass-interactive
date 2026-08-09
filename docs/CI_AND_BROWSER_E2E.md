@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: GitHub Actions, browser E2E and non-live/hosted gate separation
-Last verified: 2026-08-09
+Last verified: 2026-08-10
 
 ## Purpose and safety boundary
 
@@ -23,7 +23,7 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 65 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 66 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
@@ -34,8 +34,11 @@ Dependency Review and CodeQL jobs:
    student anonymous state, tracked-session completion and logout behavior.
 3. **Local Supabase, pgTAP and live browser E2E** applies every migration from
    zero, verifies generated types, runs every pgTAP file plus the real-DB
-   concurrency suites, proves a populated Phase 7.29C Admin session upgrades
-   through Phase 7.30B1, and runs DB lint. It then serves Edge Functions with
+   concurrency suites, proves a populated Phase 7.30B1 Google Admin session upgrades
+   through Phase 7.30B2, and runs DB lint. The B2 database step includes the
+   from-zero migration/pgTAP, a real two-transaction replay/lock-order/
+   cleanup concurrency runner and a populated Phase 7.29/B1-to-B2 upgrade. It
+   then serves Edge Functions with
    synthetic secrets, checks Auth/CORS/paid-feature fail-closed behavior, and
    drives the browser integrations. Its Phase 7.30 step enables only the local
    identity gates, performs real local GoTrue TOTP enrollment and
@@ -43,6 +46,12 @@ Dependency Review and CodeQL jobs:
    local Google-identity fixture, exercises Edge plus database tracked-session
    admission/status/logout, and restores the identity gates to OFF before the
    existing teacher/student lifecycle run.
+
+The B2 source/static contract is implemented, but this branch still needs an
+exact-head CI run before those real database steps are evidence for the B2
+candidate. Their workflow presence is not a PASS result. B2 remains default OFF
+and this job does not contact Hosted Supabase.
+
 4. **Presenter Bridge Windows x64 build and tests** restores and builds the .NET
    solution for x64, then runs the Core/loopback/security tests.
 5. **Presenter Bridge Windows x86 build and tests** repeats the locked restore,
@@ -79,6 +88,7 @@ npm run typecheck:phase3
 npm run typecheck:e2e
 npm run lint
 npm run test:phase6-7-docs
+npm run test:phase7-30b2-static
 npm run test:ci:nonlive
 npm run build
 npm run test:e2e:phase7-30
@@ -147,6 +157,8 @@ The following remain manual, explicitly paid or hosted checks:
 - Cloudflare Publisher/R2 production uploads
 - Hosted Supabase and public-web smoke testing
 - signed Presenter installer, real Office/COM, 500 transitions and venue/PNA
+- real Admin AI PIN Edge/UI flow, browser CryptoKey persistence/signature,
+  Google/TOTP factor-set invalidation and remembered-browser Human testing
 
 They must not be added to the default workflow. The non-live suite also scans
 the workflow for production migration, deployment and paid-live commands.

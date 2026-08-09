@@ -1,8 +1,8 @@
 # COMPASS Interactive Architecture
 
 Last reviewed: 2026-08-10
-Applies to: repository implementation candidate through Phase 7.30A-B1;
-later native, Human, Hosted and Production gates remain separately authoritative
+Applies to: repository implementation candidate through Phase 7.30A-B2;
+B2 runtime DB, later native, Human, Hosted and Production gates remain separately authoritative
 
 ## 1. Architectural goals
 
@@ -159,19 +159,23 @@ Phase 7.30C completes its unified verifier across every operational Admin
 Edge/RPC path. Admin identity uses Google plus Supabase Authenticator App TOTP
 AAL2, compatible with Google Authenticator; there is no email MFA or custom MFA.
 The application session has no idle timeout or periodic TOTP prompt and is
-capped at the backing `auth.sessions.created_at + 8 hours`. It is recreated only
-after logout, backing-session removal, principal/environment/membership
-invalidation, verified TOTP factor-set change or that cap. Role changes apply
-live; `can_use_ai=false` drains AI authority without logging the teacher out.
+capped at the backing `auth.sessions.created_at + 8 hours`. B2 rejects logout,
+backing-session removal, principal/environment/membership invalidation or that
+cap in its database path. The final C-integrated verifier also ends the session
+on a verified TOTP factor-set change; B2 does not yet implement that
+fingerprint/version comparison. Role changes apply live; `can_use_ai=false`
+drains AI authority without logging the teacher out.
 
 Paid intent becomes a personal AI PIN (or valid remembered-browser/future AI
 Passkey proof) checked once per new lecture master or explicit scope/cost
 escalation. Child starts do not re-prompt and still recheck lecture lifecycle,
 scope, policy, budget, concurrency and idempotency. AI-PIN rotation/revoke drains
 AI authority but preserves the Admin session. Five-minute fresh TOTP is limited
-to owner/principal, role/status, verified TOTP-factor-set, environment AI-policy
-and global-revoke control-plane changes; ordinary lecture controls, emergency
-stop, AI master/escalation and child starts never prompt. `ADMIN_PIN` is removed
+to owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
+global-revoke and AI PIN factor enrollment/rotation/reset control-plane changes.
+Initial PIN enrollment after login uses the already-fresh login TOTP without an
+extra prompt; ordinary lecture controls, emergency stop, PIN verification,
+browser proof, AI master/escalation and child starts never prompt. `ADMIN_PIN` is removed
 after the C migration and `BILLING_PIN` after personal-AI-PIN E2E, both before
 Production. Rollback is a Google-only immutable revision plus operator owner
 recovery.
@@ -387,9 +391,37 @@ session is identity-only and cannot invoke the existing lecture, PDF, AI,
 Display or Presenter Admin operations. That capability migration belongs to
 Phase 7.30C, while real Google OAuth and Hosted/Human evidence remain HOLD.
 
-Phase 7.30B2 migrates that B1 identity-only session to the continuous
+Phase 7.30B2 now migrates the default-OFF database source for that B1 identity-
+only session to the continuous
 teacher-session contract described in Section 7.1: no 30-minute idle expiry and
 no periodic TOTP. Phase 7.30C completes the unified verifier across every
 operational Admin Edge/RPC path. The later cutover makes Production authority
 Google-only and removes the shared `ADMIN_PIN`/`BILLING_PIN` paths before
 Production.
+
+## 17. Phase 7.30B2 Admin AI-unlock database boundary
+
+B2 adds a default-OFF private database subsystem for AI policy, versioned PIN
+factor, rate limits, immutable attempt/discovery receipts, browser enrollment,
+public credential and one-time assertion challenge state. The database accepts
+only a 64-hex versioned Edge-peppered HMAC, stores its bcrypt cost-12 verifier,
+and never accepts raw four-digit input. Nonblocking environment/network bcrypt
+semaphores bound expensive work before atomic membership/network/environment
+rate updates.
+
+Remembered-browser rows constrain ES256/P-256 public JWK and RFC 7638
+fingerprint state and bind nonce/challenge state to identity, session, factor,
+Origin, lecture, scope and policy. They do not implement a real browser
+CryptoKey or Edge signature verifier. Policy, factor-rotation and browser
+transitions plus bounded cleanup drain derived AI authority while preserving
+the Admin session where required. An explicit factor revoke/reset transition
+API remains B2.2/C. Existing lecture masters gain nullable provenance columns,
+but B2 does not issue a master from an AI proof.
+
+All public wrappers are service-role-only `SECURITY INVOKER`; private privileged
+helpers use a fixed empty `search_path`, minimum grants and database context
+revalidation. The source/static gate is PASS, while exact-head from-zero/
+populated upgrade, pgTAP, database concurrency, generated types and lint remain
+pending. Edge/UI, TOTP factor-set fingerprint, all Admin authorization, lecture
+ownership, proof-to-master admission, AI Passkey, Hosted/Human and activation
+are later HOLD boundaries.

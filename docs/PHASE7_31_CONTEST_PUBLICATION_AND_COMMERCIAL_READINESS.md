@@ -222,8 +222,10 @@ contest project内でのみ次のpolicyと運用を有効にする。
 - `private.admin_ai_policies`はreviewer membership、許可action/model scope、講義/日ごとの
   最大call/token/費用、Realtime分、最大同時実行、validityとversionを保持する。ownerの
   変更は5分fresh TOTP、idempotency key、append-only auditを必須とする。
-- 各reviewerは有効なTOTP AAL2 sessionで本人専用4桁AI PINを登録する。登録、利用、
-  rotate/revokeは追加のTOTP入力を求めない。serverはsaltedかつserver-peppered verifier、
+- 各reviewerは有効なTOTP AAL2 sessionで本人専用4桁AI PINを登録する。AI PIN factorの
+  enrollment/rotation/resetは5分fresh TOTP境界を使うが、login直後の初回登録はlogin時TOTPが
+  既にfreshなので追加promptを出さない。通常利用とrevokeは追加のTOTP入力を求めない。
+  serverはsaltedかつserver-peppered verifier、
   factor version、rotation/revoke metadataだけを保持する。raw PINはtrusted formと限定TLS
   bodyにだけ一時存在し、応答後に
   clearし、browser/server persistence、URL、log、audit、analytics、error traceへ残さない。

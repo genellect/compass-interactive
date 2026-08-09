@@ -42,6 +42,7 @@ secret change and paid call still require an explicit task.
 | Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
+| Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
 | Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
 | Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
 | Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`                   |
@@ -160,12 +161,14 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (A-B1 local; activation HOLD)
+## 6. Google Admin identity and MFA (A-B2 source; runtime/activation HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
 - Implemented source/local boundary, dormant controls, evidence scope and
   rollback: `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
+- Implemented B2 default-OFF database boundary and pending verification:
+  `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
 - Google session issuance is authorized only when the database runtime control
@@ -180,15 +183,16 @@ Local writer while browser mode is active.
   expiry. An exact same-caller/session/JWT retry returns that same session;
   other nonce reuse is rejected. This is the exact transitional B1 source
   behavior; B1 does not grant lecture-workspace authority.
-- The approved Phase 7.30B2/C session migration removes the idle expiry and
-  anchors the application cap to `auth.sessions.created_at + 8 hours`. B2
-  implements the continuous-session lifetime/invalidation behavior; C completes
+- The Phase 7.30B2 source migration now removes the idle expiry and anchors the
+  application cap to `auth.sessions.created_at + 8 hours`. B2 implements the
+  default-OFF continuous-session lifetime/invalidation database behavior; C completes
   its unified verifier across every operational Admin Edge/RPC path. It never
   prompts for TOTP periodically during a lecture. Logout, backing
-  `auth.sessions` removal, principal/environment/membership invalidation,
-  verified TOTP factor-set change or the cap requires login again. Role changes
-  take effect live; `can_use_ai=false` drains AI authority without ending the
-  Admin session.
+  `auth.sessions` removal, principal/environment/membership invalidation or the
+  cap. The final C-integrated verifier also ends the session on a verified TOTP
+  factor-set change; B2 does not yet implement that fingerprint/version check.
+  Role changes take effect live; `can_use_ai=false` drains AI authority without
+  ending the Admin session.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
   OAuth clients, callbacks/origins, Supabase provider secret, service identities
   and rollback; never copy secrets or deployment state.
@@ -197,8 +201,11 @@ Local writer while browser mode is active.
   initial implementation. The standard flow supports Google Authenticator;
   COMPASS configures no email MFA or custom MFA.
 - No real Google/Supabase Hosted mutation or Human MFA evidence was executed in
-  A-B1. Phase 7.30B2/C-F and Production activation remain HOLD.
-- The planned B2/C migration also retires repeated API-use PIN entry from the
+  A-B2. B2 runtime exact-head DB CI, Phase 7.30C-F and Production activation
+  remain HOLD. Run the clean migration, all pgTAP, B2 two-transaction
+  concurrency, populated Phase 7.29/B1 upgrade, generated types and DB lint in
+  the local/CI database gate before claiming runtime verification.
+- The B2 database foundation and planned C integration retire repeated API-use PIN entry from the
   normal paid-AI UX. The initial path requires Google plus TOTP AAL2, active
   `can_use_ai`, an owner-managed server policy, a personal four-digit AI PIN (or
   its valid remembered-browser proof) and one lecture master CTA. The AI PIN is
@@ -214,9 +221,11 @@ Local writer while browser mode is active.
   AI proof inside the valid AAL2 session; downgrade and stop are free. AI-PIN
   rotation/revoke drains AI authority but preserves the Admin session.
 - Five-minute fresh TOTP is used only for owner/principal, role/status, verified
-  TOTP-factor-set, environment AI-policy and global-revoke control-plane
-  changes. Normal lecture operation, emergency stop, AI master/escalation and
-  child calls never prompt.
+  TOTP-factor-set, environment AI-policy, global-revoke and AI PIN factor
+  enrollment/rotation/reset control-plane changes. Initial PIN enrollment
+  immediately after login uses the already-fresh login TOTP with no additional
+  prompt. Normal lecture operation, emergency stop, PIN verification, browser
+  proof, AI master/escalation and child calls never prompt.
 - After the Phase 7.30C authorization migration, remove `ADMIN_PIN` completely
   before Production; revoked historical rows may remain only for FK/audit.
   After personal-AI-PIN E2E, remove `BILLING_PIN` and its compatibility RPC

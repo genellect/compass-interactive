@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -286,3 +286,51 @@ the service wrappers; Edge uses the minimum service-role RPC surface, while
 fixed-search-path definer helpers perform the atomic admission, nonce and
 session transitions. The B1 migration is expand-first and does not alter
 lecture, PDF, AI, Display or Presenter authorization.
+
+## 14. Phase 7.30B2 Admin AI-unlock database objects
+
+The B2 migration adds nine RLS-enabled private tables:
+
+| Table                                   | Responsibility                                                                                  |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `admin_ai_unlock_runtime_gate`          | Singleton default-OFF AI-unlock and remembered-browser runtime controls                         |
+| `admin_ai_policies`                     | Versioned environment/membership action, model, usage, cost, concurrency and validity policy    |
+| `admin_ai_unlock_factors`               | Versioned bcrypt cost-12 verifier of a versioned Edge-peppered HMAC; no raw four-digit PIN      |
+| `admin_ai_unlock_rate_limits`           | Atomic membership, pepper-hashed coarse-network and environment failure buckets                 |
+| `admin_ai_unlock_attempt_receipts`      | Immutable request/input/actor/session/factor-bound positive and negative result replay          |
+| `admin_ai_pin_discovery_receipts`       | Five-minute actor/session/factor/version-bound pepper-discovery receipt                         |
+| `admin_ai_browser_enrollment_nonces`    | Single-use enrollment intent bound to identity, session, factor, Origin, key fingerprint/expiry |
+| `admin_ai_browser_credentials`          | Revocable ES256/P-256 public JWK, RFC 7638 fingerprint and opaque profile credential state      |
+| `admin_ai_browser_assertion_challenges` | One-time lecture/scope/session/policy/Origin-bound assertion state                              |
+
+Direct table grants are revoked from `PUBLIC`, `anon`, `authenticated` and
+`service_role`; service code uses only the minimum public wrappers. Public
+wrappers are `SECURITY INVOKER` and executable only by `service_role`. Required
+private `SECURITY DEFINER` helpers use an empty fixed `search_path`, minimum
+grants and explicit environment/principal/membership/Admin-session/
+`auth.sessions` checks.
+
+`public.admin_sessions` Google/TOTP rows are normalized to the backing
+`auth.sessions.created_at + 8 hours` cap with `idle_expires_at = expires_at`.
+The backing Auth-session row must exist; touch/new-tab activity cannot extend
+the cap. B1's 30-minute idle behavior remains a historical source fact only.
+
+`public.lecture_ai_master_authorizations` gains nullable principal, membership,
+issuing-session, unlock method, factor, browser credential, policy and request
+provenance. Existing rows remain valid under the expand-first constraint. B2
+does not implement lecture ownership or proof-to-master issuance.
+
+Before bcrypt, PIN verification uses nonblocking advisory semaphores capped at
+four slots per environment and two per coarse-network bucket. After bcrypt,
+canonical row locking atomically updates all applicable rate tiers. Factor
+rotation, policy and browser transitions use idempotent authority drains;
+cleanup is
+bounded, `SKIP LOCKED`, nonblocking by membership and returns `has_more` for
+convergence.
+
+The B2 source/static contract is implemented. From-zero migration, all pgTAP,
+real database concurrency, populated Phase 7.29/B1 upgrade, generated types and
+DB lint remain exact-head CI verification requirements. Edge raw-PIN/HMAC,
+actual browser key/signature verification, TOTP factor-set fingerprint, unified
+Admin authorization, lecture ownership, atomic master issuance and Hosted/
+Human activation are not database-schema claims of this phase.
