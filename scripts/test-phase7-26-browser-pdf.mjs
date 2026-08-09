@@ -111,6 +111,12 @@ assert.match(packageJson.scripts['test:e2e:phase7-26:flag-off'], /demo-pdf-off/)
 assert.match(workflow, /npm run test:e2e:phase7-26\b/)
 assert.match(workflow, /npm run test:e2e:phase7-26:flag-off\b/)
 assert.match(browserRunner, /assertPortAvailable/)
+assert.match(browserRunner, /allocateLoopbackPort/)
+assert.match(browserRunner, /port:\s*0/)
+assert.match(browserRunner, /String\(port\)/)
+assert.match(browserRunner, /PLAYWRIGHT_BASE_URL:\s*baseURL/)
+assert.doesNotMatch(browserRunner, /43_000\s*\+\s*\(process\.pid/)
+assert.match(browserRunner, /await waitForServer\(\)[\s\S]*await startPresenterFixture\(\)/)
 assert.match(browserRunner, /viteReady && response\.ok/)
 assert.match(
   browserRunner,

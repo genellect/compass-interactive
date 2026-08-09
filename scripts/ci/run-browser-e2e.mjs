@@ -30,6 +30,24 @@ const demoMode =
   mode === 'demo-admin-identity-off'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
+
+async function allocateLoopbackPort() {
+  return await new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.unref()
+    probe.once('error', reject)
+    probe.listen({ host: '127.0.0.1', port: 0 }, () => {
+      const address = probe.address()
+      if (!address || typeof address === 'string') {
+        probe.close()
+        reject(new Error('Could not allocate a loopback port for browser E2E.'))
+        return
+      }
+      probe.close((error) => (error ? reject(error) : resolve(address.port)))
+    })
+  })
+}
+
 const configuredPort = process.env.PLAYWRIGHT_APP_PORT
   ? Number.parseInt(process.env.PLAYWRIGHT_APP_PORT, 10)
   : null
@@ -41,9 +59,8 @@ if (
 ) {
   throw new Error('PLAYWRIGHT_APP_PORT must be an integer from 1024 to 65535.')
 }
-const port =
-  configuredPort ?? (demoMode ? 43_000 + (process.pid % 1_000) : 4_173)
-const baseURL = `http://127.0.0.1:${port}`
+let port = configuredPort ?? (demoMode ? null : 4_173)
+let baseURL = port === null ? null : `http://127.0.0.1:${port}`
 
 if (
   ![
@@ -217,7 +234,6 @@ const appEnvironment = {
           ? 'https://pdf.example'
           : '',
   VITE_TURNSTILE_SITE_KEY: '',
-  PLAYWRIGHT_BASE_URL: baseURL,
   VITE_CACHE_DIR: fileURLToPath(
     new URL(`../../test-results/vite-cache-${mode}`, import.meta.url),
   ),
@@ -244,7 +260,9 @@ async function assertPortAvailable(targetPort, description) {
   })
 }
 
-await assertPortAvailable(port, 'Vite')
+if (port !== null) {
+  await assertPortAvailable(port, 'Vite')
+}
 if (presenterFixtureMode) {
   await assertPortAvailable(43_124, 'Presenter loopback fixture')
 }
@@ -253,6 +271,9 @@ let presenterFixtureProcess = null
 let presenterFixtureExited = true
 
 async function startPresenterFixture() {
+  if (!baseURL) {
+    throw new Error('Vite origin is unavailable for the Presenter fixture.')
+  }
   presenterFixtureExited = false
   presenterFixtureProcess = spawn(
     process.execPath,
@@ -320,8 +341,9 @@ async function stopPresenterFixture() {
   }
 }
 
-if (presenterFixtureMode) {
-  await startPresenterFixture()
+if (port === null) {
+  port = await allocateLoopbackPort()
+  baseURL = `http://127.0.0.1:${port}`
 }
 
 const viteProcess = spawn(
@@ -374,8 +396,10 @@ async function waitForServer() {
   while (Date.now() < deadline) {
     if (viteExited) throw new Error('Vite exited before E2E could start.')
     try {
-      const response = await fetch(baseURL)
-      if (viteReady && response.ok) return
+      if (baseURL) {
+        const response = await fetch(baseURL)
+        if (viteReady && response.ok) return
+      }
     } catch {
       // Startup races are expected until Vite begins listening.
     }
@@ -402,6 +426,16 @@ async function stopVite() {
 let exitCode = 1
 try {
   await waitForServer()
+  if (!baseURL) {
+    throw new Error('Vite did not report its loopback origin.')
+  }
+  if (presenterFixtureMode) {
+    await startPresenterFixture()
+  }
+  const playwrightEnvironment = {
+    ...appEnvironment,
+    PLAYWRIGHT_BASE_URL: baseURL,
+  }
   const config = localMode
     ? 'playwright.local.config.ts'
     : 'playwright.config.ts'
@@ -416,7 +450,7 @@ try {
     ],
     {
       cwd: root,
-      env: appEnvironment,
+      env: playwrightEnvironment,
       stdio: 'inherit',
       windowsHide: true,
     },
