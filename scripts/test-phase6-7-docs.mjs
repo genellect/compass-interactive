@@ -22,6 +22,7 @@ const requiredDocuments = [
   'docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md',
   'docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md',
   'docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
+  'docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
@@ -62,11 +63,14 @@ const contestPlan = read(
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
 )
 const googleAdminPlan = read('docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md')
+const adminAiUnlockRecord = read('docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md')
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
 const gateRouting = read('docs/GATE_ROUTING.md')
 const runbook = read('docs/RUNBOOK_INDEX.md')
 const agentsContract = read('AGENTS.md')
+const ciAndBrowser = read('docs/CI_AND_BROWSER_E2E.md')
+const databaseSchema = read('docs/database_schema.md')
 
 for (const requiredText of [
   `Application version: \`${packageJson.version}\``,
@@ -153,7 +157,7 @@ for (const requiredText of [
   'public.lecture_ai_master_authorizations',
   'provider_token',
   'provider_refresh_token',
-  'server-recorded recent step-up',
+  'TOTP AMR timestamp inside the five-minute boundary',
   'limited identity-migration release',
   'Five failed verifications in a rolling 15-minute window',
   'non-extractable WebCrypto private key',
@@ -164,15 +168,16 @@ for (const requiredText of [
   'caption-scope escalation',
   'No hardware/device-binding claim',
   '`auth.sessions.created_at + 8 hours`',
-  'Phase 7.30B2 implements the continuous-session',
-  'Phase 7.30C completes its unified verifier',
+  'Phase 7.30B2 now implements the default-OFF',
+  'B2 does not yet store or compare that authoritative fingerprint',
+  'still has to complete its unified verifier',
   'no email MFA',
-  'Role changes are enforced from current membership state',
+  'Role changes are enforced live',
   '`ADMIN_PIN` is removed after the Phase 7.30C authorization migration',
   'immutable Google-only application revision',
   'all_except_captions',
   'all_including_captions',
-  'AI Passkey is not part of the initial B2 implementation',
+  'AI Passkey is not part of the initial B2',
 ]) {
   assert.ok(
     googleAdminPlan.includes(requiredText),
@@ -196,42 +201,48 @@ assert.match(
 )
 assert.match(
   googleAdminPlan,
-  /A five-minute server-recorded TOTP\s+step-up nonce is used only for owner\/principal changes, role\/status changes,\s+verified TOTP factor-set changes, environment AI-policy changes and global\s+revocation/,
+  /A five-minute server-recorded TOTP\s+step-up is used only for owner\/principal changes, role\/status changes, verified\s+TOTP factor-set changes, environment AI-policy changes, global revocation and\s+AI PIN factor enrollment\/rotation\/reset/,
   'Fresh TOTP step-up must have the exact rare control-plane allowlist',
 )
 assert.match(
   googleAdminPlan,
-  /AI PIN enrollment\/use\/rotation\/reset\/\s*recovery,[\s\S]{0,160}never request this\s+five-minute step-up/,
-  'AI PIN enrollment, rotation, reset and recovery must not request the control-plane TOTP step-up',
+  /New factor enrollment, rotation and reset are rare\s+factor-control changes and require the five-minute boundary/,
+  'AI PIN enrollment, rotation and reset must use the rare five-minute boundary',
 )
 assert.match(
   googleAdminPlan,
-  /Enrollment, rotation, reset, recovery,[\s\S]{0,280}do not trigger a fresh TOTP prompt/,
-  'Normal AI PIN lifecycle operations must stay inside the valid AAL2 session without fresh TOTP',
+  /Login-time\s+initial enrollment uses the already-fresh TOTP event without another prompt/,
+  'Immediate post-login PIN enrollment must not add a second TOTP prompt',
+)
+assert.match(
+  googleAdminPlan,
+  /Once an actor\/session\/scope-bound request ID\s+commits, any retry with that same binding returns the committed result after the\s+window without re-reading or comparing PIN material/,
+  'Committed rare-mutation replay must not become a stale PIN oracle',
 )
 assert.doesNotMatch(
   googleAdminPlan,
-  /rotation or reset does\s+not clear[\s\S]{0,140}recent-AAL2 recovery event/i,
-  'AI PIN lock recovery must not use the stale recent-AAL2 recovery-event contract',
+  /Phase 7\.30B2 implements[\s\S]{0,700}verified TOTP factor-set change or the eight-hour cap/,
+  'Current B2 session claims must not include the deferred factor-set invalidation',
 )
 
-const currentAuthContracts = [
-  agentsContract,
-  readme,
-  roadmap,
-  agentRouting,
-  runbook,
-  security,
-  architecture,
-  dataPolicy,
-  googleAdminPlan,
-  contestPlan,
-].join('\n')
-assert.doesNotMatch(
-  currentAuthContracts,
-  /(?:AI[- ]?PIN\s+)?(?:enrollment|rotation|reset|recovery)[\s\S]{0,100}(?:requires?|must|needs?)[\s\S]{0,50}(?:fresh|recent)(?:-AAL2)?(?:\s+TOTP|\s+step-up|\s+recovery event)/i,
-  'No current contract may require fresh/recent TOTP for normal AI PIN enrollment, rotation, reset or recovery',
-)
+for (const [name, document] of [
+  ['AGENTS', agentsContract],
+  ['README', readme],
+  ['Roadmap', roadmap],
+  ['Agent routing', agentRouting],
+  ['Runbook', runbook],
+  ['Security', security],
+  ['Architecture', architecture],
+  ['Data policy', dataPolicy],
+  ['Google Admin', googleAdminPlan],
+  ['Contest plan', contestPlan],
+]) {
+  assert.match(
+    document,
+    /AI PIN factor(?:の)?\s*enrollment\/rotation\/reset/,
+    `${name} must route rare AI PIN factor mutations through the five-minute boundary`,
+  )
+}
 
 for (const [requiredPattern, label] of [
   [
@@ -307,6 +318,7 @@ for (const heading of [
 
 for (const requiredText of [
   'PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
+  'PHASE7_30B2_AI_UNLOCK_FOUNDATION.md',
   'PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'Roadmap and an approved detailed domain contract disagree',
 ]) {
@@ -315,24 +327,82 @@ for (const requiredText of [
     `Documentation precedence missing: ${requiredText}`,
   )
 }
+assert.doesNotMatch(
+  adminAiUnlockRecord,
+  /rotation\/revocation drains/,
+  'B2 record must not claim the deferred explicit factor-revoke drain API',
+)
 
 for (const requiredText of [
   '7.30B additive identity and AI-unlock foundation',
   '7.30C RBAC and all server authorization',
-  'mandatory TOTP before B2 adds AI PIN',
+  'B2 now has a default-OFF database source foundation',
   'personal four-digit AI PIN',
   'remembered-browser proof',
   'caption-scope/cost escalation requires a new AI proof',
-  '`ADMIN_PIN` is removed after the C migration',
+  'the C migration and `BILLING_PIN` after',
 ]) {
   assert.ok(
     agentRouting.includes(requiredText),
     `Agent routing contract missing: ${requiredText}`,
   )
 }
+
+for (const requiredText of [
+  'Status: Implemented, verification pending',
+  'database/source checkpoint is commit `9f1e0ec`',
+  'Exact-head CI still has to prove',
+  'nine RLS-enabled private tables',
+  'bcrypt cost-12 verifier',
+  'four concurrent attempts per environment',
+  'two per coarse-network bucket',
+  'RFC 7638 canonical thumbprint',
+  'Actual browser non-extractable `CryptoKey`',
+  'B2 does not yet issue a new lecture master',
+  'explicit AI PIN factor revoke/reset transition APIs',
+  'Hosted Supabase, real Google OAuth, Human MFA/browser evidence',
+]) {
+  assert.ok(
+    adminAiUnlockRecord.includes(requiredText),
+    `B2 implementation record missing: ${requiredText}`,
+  )
+}
+
+for (const table of [
+  'admin_ai_unlock_runtime_gate',
+  'admin_ai_policies',
+  'admin_ai_unlock_factors',
+  'admin_ai_unlock_rate_limits',
+  'admin_ai_unlock_attempt_receipts',
+  'admin_ai_pin_discovery_receipts',
+  'admin_ai_browser_enrollment_nonces',
+  'admin_ai_browser_credentials',
+  'admin_ai_browser_assertion_challenges',
+]) {
+  assert.ok(
+    adminAiUnlockRecord.includes(table),
+    `B2 implementation record missing table: ${table}`,
+  )
+  assert.ok(
+    databaseSchema.includes(table),
+    `Database responsibility map missing B2 table: ${table}`,
+  )
+}
+
+for (const [name, document] of [
+  ['README', readme],
+  ['CI contract', ciAndBrowser],
+  ['Gate routing', gateRouting],
+]) {
+  assert.match(
+    document,
+    /66 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(66 groups\)/,
+    `${name} must record the 66-group non-live suite`,
+  )
+}
 assert.match(
   agentRouting,
-  /`ADMIN_PIN` is removed after the C migration and `BILLING_PIN` after\s+personal-AI-PIN E2E/,
+  /`ADMIN_PIN` is removed after\s+the C migration and `BILLING_PIN` after\s+personal-AI-PIN E2E/,
   'Agent routing must remove both shared PIN paths before Production',
 )
 for (const gate of ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {

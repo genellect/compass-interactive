@@ -3,6 +3,32 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-10 - Phase 7.30B2 dormant Admin AI-unlock database foundation
+
+- Added nine default-OFF private tables for AI policy, versioned personal-PIN
+  factors, atomic membership/coarse-network/environment rate state, immutable
+  attempt/discovery receipts and remembered-browser enrollment, public
+  credential and one-time assertion challenge state.
+- Stored only bcrypt cost-12 of a versioned Edge-peppered 64-hex HMAC; no raw
+  four-digit PIN enters the database. Added nonblocking environment-four/
+  network-two bcrypt semaphores, atomic rate rechecks, exact positive/negative
+  replay and bounded convergent cleanup.
+- Migrated Google/TOTP application sessions to the backing
+  `auth.sessions.created_at + 8 hours` cap with no idle extension or periodic
+  TOTP prompt. New PIN factor enrollment/rotation requires the rare five-minute
+  boundary; immediate post-login enrollment uses the already-fresh login TOTP.
+  Ordinary PIN verification, browser proof and lecture AI work do not require
+  freshness.
+- Constrained remembered-browser database state to ES256/P-256 public JWKs and
+  RFC 7638 fingerprints, and added factor-rotation/policy/browser authority drains plus
+  nullable lecture-master provenance. Actual Edge raw-PIN/HMAC, browser
+  CryptoKey/signature verification, TOTP factor-set fingerprint, lecture
+  ownership and proof-to-master admission remain unimplemented.
+- Added service-role-only invoker wrappers, fixed-search-path private helpers,
+  generated types, pgTAP, real two-transaction concurrency and populated
+  upgrade coverage. Source commit `9f1e0ec` and non-Docker static evidence are
+  present; exact-head runtime DB CI, Hosted/Human and activation remain HOLD.
+
 ## 2026-08-09 - Phase 7.30A-B1 Google Admin identity local foundation
 
 - Added a separate PKCE Admin Supabase client and fixed callback route with a

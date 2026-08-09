@@ -1,8 +1,8 @@
 # COMPASS Interactive Security Contract
 
 Last reviewed: 2026-08-10
-Status: locally implemented controls through Phase 7.30A-B1; native, Hosted,
-Human and Production evidence remains separate
+Status: source-implemented controls through Phase 7.30A-B2; B2 runtime DB,
+native, Hosted, Human and Production evidence remains separate
 
 ## 1. Security objectives
 
@@ -99,24 +99,28 @@ Database constraints and distinct token scopes prevent `legacy_pin`/AAL1 and
 and Edge authorization gates default OFF; the separate frontend UI flag also
 defaults OFF, while legacy compatibility defaults ON.
 
-That idle limit and shared-PIN compatibility are transitional B1 source facts,
-not the approved Production contract. Phase 7.30B2 implements the
+That idle limit and shared-PIN compatibility are historical B1 source facts,
+not the current B2 session contract. Phase 7.30B2 now implements the default-OFF
 continuous-session lifetime/invalidation migration: it anchors the application
 session cap to `auth.sessions.created_at + 8 hours`, removes the idle expiry and
 never prompts for TOTP periodically during a lecture. Phase 7.30C completes its
-unified verifier across every operational Admin Edge/RPC path. Reauthentication
-is limited to explicit logout, backing `auth.sessions` removal, principal/
-environment/membership invalidation, verified TOTP factor-set change or the
-eight-hour cap. Role changes are enforced live without session termination;
-`can_use_ai=false` drains AI authority while preserving the Admin session.
+unified verifier across every operational Admin Edge/RPC path. The B2 database
+path rejects explicit logout, backing `auth.sessions` removal, principal/
+environment/membership invalidation or the eight-hour cap. The final
+C-integrated verifier also ends the session on a verified TOTP factor-set
+change; B2 does not yet implement that fingerprint/version comparison. Role
+changes are enforced live without session termination; `can_use_ai=false`
+drains AI authority while preserving the Admin session.
 
 Production v1 uses only Supabase Authenticator App TOTP (compatible with Google
 Authenticator) for MFA. No email MFA or custom MFA path is added. A five-minute
 fresh TOTP step-up is reserved for owner/principal, role/status, verified
-TOTP-factor-set, environment AI-policy and global-revoke control-plane changes.
-Normal lecture operation, emergency stop, personal-AI-PIN enrollment/use/
-rotation/reset/recovery, lecture-master activation or scope/cost escalation and
-child AI calls never prompt for it.
+TOTP-factor-set, environment AI-policy, global-revoke and AI PIN factor
+enrollment/rotation/reset control-plane changes. Initial PIN enrollment
+immediately after login uses the already-fresh login TOTP and adds no prompt.
+Normal lecture operation, emergency stop, personal-AI-PIN verification/use,
+remembered-browser proof, lecture-master activation or scope/cost escalation
+and child AI calls never prompt for it.
 
 The personal AI PIN is checked once per new lecture master or explicit
 scope/cost escalation and never per child call. Its rotation/revocation drains
@@ -412,7 +416,48 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
   Hosted Advisor evidence remain separate Hosted/Human gates.
 
 The status/touch idle check above describes the transitional B1 implementation.
-Phase 7.30B2 removes that idle branch, anchors absolute expiry to the backing
+Phase 7.30B2 now removes that idle branch in the default-OFF database source,
+anchors absolute expiry to the backing
 `auth.sessions.created_at + 8 hours`, and implements live role/AI-entitlement
 handling under the Section 5 session-continuity contract. Phase 7.30C completes
 the unified verifier across every operational Admin Edge/RPC path.
+
+## 18. Phase 7.30B2 Admin AI-unlock database controls
+
+- Nine private tables hold the runtime gate, policy, PIN factor, three atomic
+  rate tiers, immutable attempt/discovery receipts and remembered-browser
+  enrollment/credential/assertion state. They have RLS enabled and no direct
+  browser or service-role table grants.
+- Public wrappers are service-role-only `SECURITY INVOKER`. Minimum private
+  `SECURITY DEFINER` helpers fix an empty `search_path` and revalidate principal,
+  membership, Admin session and backing `auth.sessions` state.
+- The database accepts only a versioned 64-hex Edge-peppered HMAC and stores a
+  bcrypt cost-12 verifier. It never accepts or stores the raw four-digit PIN.
+  Edge validation/HMAC and raw-input clearing remain a later HOLD boundary.
+- Bcrypt admission uses nonblocking environment-four/network-two advisory
+  semaphores. Membership, pepper-hashed coarse-network and environment limits
+  are locked and updated atomically after verification; immutable receipts make
+  exact positive and negative retry converge without another count or bcrypt.
+- New PIN enrollment/rotation requires the five-minute rare-mutation boundary.
+  Once an actor/session/scope-bound request ID commits, any retry with that same
+  binding returns its committed result without comparing PIN material or
+  running bcrypt again. Initial post-login enrollment uses the already-fresh
+  login TOTP. Future reset follows the same boundary.
+- Browser state accepts only ES256/P-256 public JWKs, rejects private `d` and
+  JSON-null substitutions, verifies the RFC 7638 fingerprint, and binds nonce,
+  credential and one-time challenge state to exact identity, session, factor,
+  Origin, lecture, scope and policy provenance. Actual browser CryptoKey and
+  Edge signature verification remain HOLD.
+- Factor rotation, policy and browser transitions drain their derived AI
+  authority while preserving the Admin session where the contract requires.
+  An explicit factor revoke/reset transition API remains B2.2/C. Bounded
+  cleanup uses nonblocking membership serialization plus `SKIP LOCKED`, returns
+  `has_more` and permits only safe terminal child states.
+- Lecture-master provenance columns are additive and nullable. B2 does not yet
+  implement lecture ownership, the all-Admin verifier or atomic proof-to-master
+  issuance; those remain Phase 7.30C blockers.
+
+The B2 source/static gate is PASS. From-zero migration, populated upgrade, all
+pgTAP, real two-transaction concurrency, generated types and DB lint remain
+exact-head runtime CI requirements. All B2 runtime gates are OFF; Hosted/Human
+and activation evidence remains HOLD.

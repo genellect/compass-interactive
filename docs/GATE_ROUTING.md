@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: which gate answers for which change surface
-Last verified: 2026-08-09
+Last verified: 2026-08-10
 
 `AGENTS.md` is authoritative for the boundary. `docs/CLOUD_DEVELOPMENT.md` is authoritative for environments and safe execution levels. This file answers only one question: **I changed X, which gate is responsible?**
 
@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (63 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (66 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |
@@ -52,6 +52,7 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | `.devcontainer/`, `.node-version`, `.gitattributes`, `scripts/devcontainer.*` | `npm run dev:doctor` inside the container, plus the Dev Container Contract workflow                                                                                                                                                               | **No** — needs the Dev Container                                                          |
 | `.codex/`, `AGENTS.md`, `CLAUDE.md`, Cloud/Gate docs                          | `npm run cloud:doctor`, `cloud:check`, then the Dev Container Contract workflow because these paths define agent admission                                                                                                                        | Yes for cloud doctor; Dev Container job remains separate                                  |
 | Google OAuth, Supabase Auth provider, Admin identity/RBAC or MFA              | Cloud static gate, full local Supabase/RLS gate, then separate Hosted IAM, AAL2, two-Admin, recovery and Human gates                                                                                                                              | Partly; provider and MFA evidence are Hosted/Human                                        |
+| Phase 7.30B2 AI-unlock migration, policy/PIN/rate/receipt/browser DB state    | `test:phase7-30b2-static`, then from-zero migration/all pgTAP, `test:phase7-30b2-concurrency`, `test:phase7-30-upgrade`, generated types and DB lint; Edge/UI/browser cryptography remain B2.2/C and Hosted/Human gates                           | Static only; runtime database evidence needs Docker and exact-head CI                     |
 | GitHub rulesets, repository visibility, license or public artifacts           | Phase 7.31A/B supply-chain, full-history secret/PII/rights audit and a separate user approval immediately before visibility change                                                                                                                | Partly; current-plan inventory is read-only, enforcement and publication are Hosted/Human |
 | Contest reviewer identity, environment or paid-AI access                      | Phase 7.30 identity/TOTP AAL2, AI PIN/browser enrollment, atomic abuse-limit, scope-escalation and revoke-matrix gates plus Phase 7.31C lecture-master, dedicated R2, cross-principal/environment, budget/expiry/cleanup and Human reviewer gates | Partly; real OAuth, Supabase, R2 and AI require isolated Hosted evidence                  |
 | Tenant, commercial billing, retention/privacy, SLO or support operations      | Phase 7.32 DB/Edge/UI/load/accessibility/restore/incident gates, followed only by the unified Phase 7.33 Production Gate                                                                                                                          | Partly; commercial Hosted/Human/legal evidence cannot be proved by Cloud tests            |
@@ -75,11 +76,15 @@ npm run test:phase7-28b-lock-order      # Display issue versus Admin revoke
 npm run test:phase7-26-concurrency      # PDF publication
 npm run test:phase7-27-concurrency      # Journal Club
 npm run test:phase7-29-concurrency      # Presenter lifecycle and fencing
+npm run test:phase7-30b2-concurrency    # Admin AI unlock replay, rate and lock order
 npm run test:phase7-26-upgrade          # Phase 7.2 data through 7.26
 npm run test:phase7-27-upgrade          # Phase 7.26 data through 7.27
 npm run test:phase7-28-upgrade          # populated 7.27 data through 7.28
 npm run test:phase7-29-upgrade          # populated 7.28 data through 7.29
+npm run test:phase7-30-upgrade          # populated 7.29/B1 data through 7.30B2
 npm run test:production-local-edge      # local Auth, CORS, fail-closed paid features
+npm run test:phase7-30b1-local-edge     # real local TOTP AAL2 identity path
+npm run test:phase7-29c-local-edge      # Presenter proof path
 npm run test:e2e:phase7-27:local        # browser to Edge to database
 npm run test:e2e:phase7-28b:local       # cross-browser Display Realtime
 npm run test:e2e:phase7-28c:local       # lecture-wide AI authorization, browser
@@ -115,13 +120,13 @@ docs/GATE_ROUTING.md
 
 Note that `package.json` and `package-lock.json` are in that list. A dependency change fires both the CI workflow and this one.
 
-## 5. What the 94 `test:*` scripts actually divide into
+## 5. What the 103 `test:*` scripts actually divide into
 
 | Count | Kind                               | Where it runs                                                                                                                                                                                         |
 | ----: | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    63 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
-|    15 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 6 concurrency / lock-order suites, 4 `*-upgrade` suites, `test:production-local-edge`, and 4 local E2E entries                                         |
-|     7 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29 flag-ON and flag-OFF suites                                                                                                         |
+|    66 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
+|    19 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 7 concurrency / lock-order suites, 5 `*-upgrade` suites, 3 local Edge suites and 4 local E2E entries                                                   |
+|     9 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29/7.30 flag-ON and flag-OFF suites                                                                                                    |
 |     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                         |
 |     2 | **forbidden**                      | `test:phase5-openai-live`, `test:phase6-openai-live`. `scripts/test-pdf-sync-hosted.mjs` has no npm script and is forbidden for the same reason                                                       |
 |     6 | entrypoint variants and duplicates | `test:ci:nonlive` (the aggregator), `test:e2e:demo`, `test:e2e:demo:direct`, `test:e2e:local`, `test:e2e:local:direct`, and `test:phase6-6-operator-edge` (already invoked by `test:phase6-6-static`) |

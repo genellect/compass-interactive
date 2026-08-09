@@ -147,6 +147,40 @@ SELECT ok(
   'nonce completion provenance does not create a circular session foreign key'
 );
 
+INSERT INTO auth.users (
+  instance_id,
+  id,
+  aud,
+  role,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-4000-8000-000000000701'::uuid,
+  'authenticated',
+  'authenticated',
+  'phase730b1-owner@example.test',
+  '',
+  statement_timestamp() - interval '1 hour',
+  '{"provider":"google","providers":["google"]}'::jsonb,
+  '{}'::jsonb,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+VALUES (
+  '00000000-0000-4000-8000-000000000711'::uuid,
+  '00000000-0000-4000-8000-000000000701'::uuid,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
 SET ROLE service_role;
 SELECT lives_ok(
   $$

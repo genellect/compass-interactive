@@ -1,10 +1,10 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 98 documents in `docs/`
-Last verified: 2026-08-09
+Scope: entrypoint and status vocabulary for the 99 documents in `docs/`
+Last verified: 2026-08-10
 
-This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30A-B1 local implementation. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
+This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30A-B2 source implementation. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
 `docs/RUNBOOK_INDEX.md` remains the entrypoint for setup, verification, deployment, rollback and incident work. This file indexes the whole directory and assigns each document a status.
 
@@ -33,13 +33,13 @@ other.
 
 Every document in this directory falls into exactly one of these. New documents must declare theirs on the second line.
 
-| Status                              | Meaning                                                                                                                                                                |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Production`                        | Describes behavior currently live in Production, confirmed by a Production Gate record.                                                                                |
-| `Operationally verified`            | Describes the current implementation on `main` and is confirmed by an automated gate that runs in CI. Says nothing about Production rollout.                           |
-| `Implemented, verification pending` | The code exists on `main`, but the hosted, human or Production evidence named in the document has not been produced.                                                   |
-| `Planned`                           | Design or requirements only. No implementation is claimed.                                                                                                             |
-| `Historical`                        | A dated record of a past decision, gate run or handoff. Preserved as evidence. **Does not describe current state and must never be used to justify present behavior.** |
+| Status                              | Meaning                                                                                                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Production`                        | Describes behavior currently live in Production, confirmed by a Production Gate record.                                                                                                    |
+| `Operationally verified`            | Describes the current implementation on `main` and is confirmed by an automated gate that runs in CI. Says nothing about Production rollout.                                               |
+| `Implemented, verification pending` | The code exists in the current reviewed source candidate (and on `main` after merge), but the automated, hosted, human or Production evidence named in the document has not been produced. |
+| `Planned`                           | Design or requirements only. No implementation is claimed.                                                                                                                                 |
+| `Historical`                        | A dated record of a past decision, gate run or handoff. Preserved as evidence. **Does not describe current state and must never be used to justify present behavior.**                     |
 
 A document dated in the past is not automatically `Historical` — `architecture.md` is dated and current. Conversely, a `PHASE*_LOCAL_GATE_*` record was accurate on its date and is `Historical` regardless of how recent it is.
 
@@ -58,8 +58,9 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified            | Entrypoint for setup, verification, deployment, rollback, incidents                                |
 | [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                           | Future phases, cross-phase invariants, stop-the-line gates                                         |
 | [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                           | Reasoning budget and internal/external agent responsibility                                        |
-| [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Implemented, verification pending | A-B1 implementation checkpoint plus Google identity, AAL2, RBAC and rollout contract               |
+| [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Implemented, verification pending | A-B2 source checkpoint plus Google identity, AAL2, RBAC and rollout contract                       |
 | [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Implemented, verification pending | A-B1 source/local boundary, dormant gates, evidence scope and rollback                             |
+| [`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md)                                             | Implemented, verification pending | B2 default-OFF database foundation, source evidence and pending runtime/Hosted boundaries          |
 | [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | Planned                           | GitHub protection/publication, real reviewer environment, commercial readiness and Phase 7.33 gate |
 | [`CHANGELOG.md`](CHANGELOG.md)                                                                                           | Historical                        | Development trajectory. Not a substitute for Git history or gate evidence                          |
 

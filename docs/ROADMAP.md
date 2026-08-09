@@ -3,8 +3,9 @@
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
 Last reconciled: 2026-08-10
-Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B1
-source/local implemented; B2 onward and Hosted/Human gates remain HOLD
+Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B2
+source implemented; B2 exact-head runtime DB CI, Phase 7.30C onward and
+Hosted/Human gates remain HOLD
 
 ## 1. Numbering decision
 
@@ -116,9 +117,12 @@ Every future phase must preserve all of the following.
   downgrade/stop are free and factorless. AI-PIN rotation/revoke drains AI
   authority while preserving the Admin session.
 - Five-minute fresh TOTP is reserved for rare control-plane owner/principal,
-  role/status, verified TOTP-factor-set, environment AI-policy and global-revoke
-  changes. Normal lecture operation, emergency stop, master activation/
-  escalation and child calls never prompt for it.
+  role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
+  and AI PIN factor enrollment/rotation/reset changes. Initial PIN enrollment
+  immediately after login uses the already-fresh login TOTP without an extra
+  prompt. Normal lecture operation, emergency stop, PIN verification,
+  remembered-browser proof, master activation/escalation and child calls never
+  prompt for it.
 - `ADMIN_PIN` is removed after Phase 7.30C authorization migration and before
   Production. `BILLING_PIN` is removed after personal-AI-PIN E2E and before
   Production. Rollback uses a Google-only immutable revision and operator owner
@@ -638,8 +642,9 @@ AI-unlock factor, owner-managed policy and the existing lecture master
 authorization. Both shared PIN systems are removed before Production; rollback
 uses a Google-only immutable revision and operator owner recovery.
 
-**2026-08-09 checkpoint:** Phase 7.30A and the bounded B1 identity foundation
-are implemented in source for local verification. Database Google issuance and
+**2026-08-10 checkpoint:** Phase 7.30A, the bounded B1 identity foundation and
+the B2 default-OFF Admin AI-unlock database foundation are implemented in
+source. Database Google issuance and
 Edge admission are the two independently default-OFF authorization gates; the
 separately default-OFF frontend flag controls only UI exposure. Normal
 activation enables all three together, while legacy Admin PIN compatibility
@@ -647,18 +652,19 @@ remains default ON. B1 includes trusted Google-subject HMAC binding, a
 five-minute digest-only TOTP nonce whose exact same-caller/session/JWT retry is
 idempotent, fresh TOTP AMR timestamp verification, and an opaque AAL2
 application session with an eight-hour absolute and 30-minute inactivity
-limit. It does not grant operational Admin authority. Phase 7.30B2, C-F, real
-Google OAuth, Hosted/Human evidence and every Production activation remain
-HOLD. See
-`docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
+limit. It does not grant operational Admin authority. That lifetime remains a
+historical B1 fact. See `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
 
-The 30-minute inactivity limit above is the exact B1 source evidence, not the
-approved final teacher-session policy. Phase 7.30B2 implements the
-continuous-session lifetime/invalidation migration, removing that idle limit
-and anchoring the cap to `auth.sessions.created_at + 8 hours`; Phase 7.30C
-completes its unified verifier across every operational Admin Edge/RPC path.
-There is no periodic TOTP prompt. The final trigger and shared-PIN retirement
-contract is defined in the cross-phase invariants and the B2-E sections below.
+B2 now implements the source database migration that removes the idle limit,
+anchors the cap to `auth.sessions.created_at + 8 hours`, requires the backing
+Auth session, adds nine private AI-unlock/policy/rate/receipt/browser tables and
+expands lecture-master provenance. It is default OFF. Source/static evidence is
+PASS; clean/populated upgrade, pgTAP, real database concurrency, generated types
+and lint await exact-head CI. Phase 7.30C still has to complete the unified
+verifier across every operational Admin Edge/RPC path. Edge raw-PIN handling,
+real browser cryptography, TOTP factor-set fingerprinting, lecture ownership,
+proof-to-master admission, UI, AI Passkey, real OAuth and Hosted/Human evidence
+remain HOLD. See `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
 
 ### 7.30A - asset, IAM and threat inventory
 
@@ -674,9 +680,10 @@ contract is defined in the cross-phase invariants and the B2-E sections below.
 
 ### 7.30B - additive identity foundation
 
-Implementation is intentionally split. B1 is present locally as the dormant
-identity/session foundation described above. The AI-unlock, policy and
-master-provenance portion listed below is B2 and remains HOLD.
+Implementation is intentionally split. B1 is the dormant identity/session
+foundation described above. B2 now implements the default-OFF database source
+for AI unlock, policy, rate/receipt/browser state, session continuity and
+master provenance; its exact-head runtime DB gate remains pending.
 
 - Add private principal, environment membership, invitation, tracked session,
   append-only audit, AI-unlock factor, browser-profile credential, one-time
@@ -692,18 +699,21 @@ master-provenance portion listed below is B2 and remains HOLD.
   server-side Supabase Auth identity record while consuming bootstrap or a
   one-time invitation. Request body, `user_metadata` and later email comparison
   are not authorization sources.
-- Require TOTP AAL2 and a server-recorded short-lived recent-step-up nonce for
-  the rare control-plane actions only: owner/principal, role/status, verified
-  TOTP factor-set, environment AI-policy and global revoke. Supabase
+- Require TOTP AAL2 and a server-recorded five-minute step-up for the rare
+  control-plane actions only: owner/principal, role/status, verified TOTP
+  factor-set, environment AI-policy, global revoke and AI PIN factor enrollment/
+  rotation/reset. Initial PIN enrollment after login uses the already-fresh
+  login TOTP without another prompt. Supabase
   Authenticator App TOTP is compatible with Google Authenticator; no email or
   custom MFA is introduced. Supabase Passkeys are Beta/passwordless and remain
   a later option after custom-domain/RP-ID stability; they are not v1 AAL2.
-- Execute B in order: B1 must pass Google identity, tracked-session and mandatory
-  TOTP AAL2 gates before B2 adds the four-digit AI PIN, remembered-browser
-  credential, AI policy and master-provenance expansion and implements the
-  continuous-session lifetime/invalidation migration. Phase 7.30C then
-  completes the unified verifier across all operational Admin Edge/RPC paths.
-  Dedicated AI Passkey is deferred from the initial implementation.
+- Execute B in order: B1 established Google identity, tracked-session and
+  mandatory TOTP AAL2 before B2 added the four-digit AI PIN database factor,
+  remembered-browser state, AI policy, rate/receipt state, master-provenance
+  expansion and continuous-session migration. B2 source/static is implemented;
+  runtime DB exact-head CI is pending. Phase 7.30C then completes the unified
+  verifier across all operational Admin Edge/RPC paths. Dedicated AI Passkey is
+  deferred from the initial implementation.
 
 ### 7.30C - RBAC, ownership and all server authorization
 
@@ -753,11 +763,13 @@ master-provenance portion listed below is B2 and remains HOLD.
   surface keeps exactly two master choices, and optional trusted-browser memory
   is default OFF on shared devices and stores no raw PIN. It is described as
   browser-profile-bound, not hardware/device-bound, until the WebAuthn gate.
-- Owner/principal, role/status, verified TOTP-factor-set, environment AI-policy
-  and global-revoke actions name target/effect, require a five-minute TOTP
-  step-up and are idempotent/audited. Normal lecture controls, emergency stop,
-  AI master/escalation and child calls do not prompt. Infrastructure details
-  stay in the runbook.
+- Owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
+  global-revoke and AI PIN factor enrollment/rotation/reset actions name
+  target/effect, require a five-minute TOTP step-up and are idempotent/audited.
+  Login-time initial PIN enrollment uses the already-fresh event. Normal
+  lecture controls, emergency stop, PIN verification, browser proof, AI master/
+  escalation and child calls do not prompt. Infrastructure details stay in the
+  runbook.
 - Accessibility, mobile/desktop, Chromium/WebKit OAuth callback, storage
   sanitizer, expiry, recovery and ledger E2E are mandatory.
 

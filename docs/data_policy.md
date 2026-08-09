@@ -32,6 +32,9 @@ Supabase may store:
 - for an admitted Admin only, the normalized Google email, bounded display
   name, Supabase Auth user/session identifiers, peppered subject binding,
   environment membership and content-free identity/session audit metadata.
+- for Phase 7.30B2, content-free AI policy/factor/version/rate/receipt metadata,
+  bcrypt of an Edge-peppered HMAC, remembered-browser public JWK/fingerprint,
+  opaque credential digest, nonce/challenge digests and authority-drain state.
 
 An optional nickname is not a verified identity. The database default remains
 `NULL`; the UI renders `匿名の参加者` when it is absent. No profile table is
@@ -262,7 +265,9 @@ rollback.
   authorize use while waiting for cleanup. A future retention change must keep
   FK order and audit/privacy requirements explicit.
 
-## 14. Phase 7.30A-B1 Admin identity data
+## 14. Phase 7.30A-B2 Admin identity and AI-unlock data
+
+### B1 identity data
 
 The B1 identity foundation stores only the Admin data required for individual
 admission, revocation and audit: trusted Auth identifiers, normalized email,
@@ -284,6 +289,27 @@ schedule for real Google accounts. Hosted placement, privacy notice, operator
 export/deletion procedure and real-account retention evidence remain a later
 Hosted/Human Gate and must not be inferred from local fixtures.
 
+### B2 AI-unlock database data
+
+B2 stores no raw four-digit AI PIN. The database receives only a versioned
+64-hex HMAC from the later trusted Edge boundary and stores its bcrypt cost-12
+verifier, pepper version and factor lifecycle metadata. Attempt/discovery
+receipts and rate rows contain request, actor, session, factor, bucket, count,
+expiry and generic result metadata; they contain no PIN, raw IP, Auth token,
+prompt, lecture body or provider response.
+
+Remembered-browser tables store a public ES256/P-256 JWK, RFC 7638 fingerprint,
+opaque credential digest and digest-only nonce/challenge state bound to
+identity, Admin session, factor, Origin, lecture, scope, policy and expiry. They
+store neither the browser private key nor raw signature proof. Actual
+non-extractable CryptoKey creation/storage and Edge signature verification are
+not implemented by B2 and remain Hosted/Human boundaries.
+
+B2 cleanup is bounded and retention-cutoff-driven. Expired or superseded child
+state remains non-authorizing while awaiting deletion. The Hosted retention
+schedule, privacy notice, operator export/deletion procedure and real-account
+evidence remain unproven.
+
 ### Approved Phase 7.30 Production boundary
 
 - MFA uses only Supabase Authenticator App TOTP, compatible with Google
@@ -300,8 +326,11 @@ Hosted/Human Gate and must not be inferred from local fixtures.
   change or that cap requires login again. Role changes are applied live;
   `can_use_ai=false` drains AI authority without deleting the Admin session.
 - A five-minute TOTP step-up record exists only for rare owner/principal,
-  role/status, verified TOTP-factor-set, environment AI-policy and global-revoke
-  control-plane actions. It is content-free and never contains a TOTP code.
+  role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
+  and AI PIN factor enrollment/rotation/reset control-plane actions. It is
+  content-free and never contains a TOTP code. Initial PIN enrollment after
+  login uses the already-fresh login timestamp without another prompt; normal
+  PIN verification and lecture AI operations do not require freshness.
 - The personal AI PIN remains transient in the trusted form and bounded TLS
   request. Its verifier, factor version and content-free lifecycle metadata may
   be stored server-side. Rotation/revocation drains AI master, browser and

@@ -86,6 +86,8 @@
     "test:phase7-29-concurrency": "node scripts/test-phase7-29-concurrency.mjs",
     "test:phase7-29-upgrade": "node scripts/test-phase7-29-upgrade.mjs",
     "test:phase7-30-admin-identity": "node --experimental-strip-types scripts/test-phase7-30-admin-identity.ts",
+    "test:phase7-30b2-static": "node scripts/test-phase7-30b2-static.mjs",
+    "test:phase7-30b2-concurrency": "node scripts/test-phase7-30b2-concurrency.mjs",
     "test:phase7-30-upgrade": "node scripts/test-phase7-30-upgrade.mjs",
     "test:phase7-30b1-local-edge": "node scripts/test-phase7-30b1-local-edge.mjs",
     "test:production-gate:static": "node --experimental-strip-types scripts/test-production-gate-static.mjs",

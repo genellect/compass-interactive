@@ -1535,16 +1535,27 @@ export type Database = {
           actions: string[]
           actor_id: string
           admin_session_id: string
+          ai_policy_id: string | null
+          ai_policy_version: number | null
+          browser_credential_id: string | null
           expires_at: string
           id: string
           issued_at: string
+          issuing_admin_session_id: string | null
           last_used_at: string | null
           lecture_session_id: string
+          membership_id: string | null
+          principal_id: string | null
           revoke_reason: string | null
           revoked_at: string | null
           revoked_by_actor_id: string | null
           scope: string
           status: string
+          step_up_verified_at: string | null
+          unlock_factor_id: string | null
+          unlock_factor_version: number | null
+          unlock_method: string | null
+          unlock_verified_at: string | null
           updated_at: string
           version: number
         }
@@ -1552,16 +1563,27 @@ export type Database = {
           actions: string[]
           actor_id: string
           admin_session_id: string
+          ai_policy_id?: string | null
+          ai_policy_version?: number | null
+          browser_credential_id?: string | null
           expires_at: string
           id?: string
           issued_at?: string
+          issuing_admin_session_id?: string | null
           last_used_at?: string | null
           lecture_session_id: string
+          membership_id?: string | null
+          principal_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           revoked_by_actor_id?: string | null
           scope: string
           status?: string
+          step_up_verified_at?: string | null
+          unlock_factor_id?: string | null
+          unlock_factor_version?: number | null
+          unlock_method?: string | null
+          unlock_verified_at?: string | null
           updated_at?: string
           version?: number
         }
@@ -1569,16 +1591,27 @@ export type Database = {
           actions?: string[]
           actor_id?: string
           admin_session_id?: string
+          ai_policy_id?: string | null
+          ai_policy_version?: number | null
+          browser_credential_id?: string | null
           expires_at?: string
           id?: string
           issued_at?: string
+          issuing_admin_session_id?: string | null
           last_used_at?: string | null
           lecture_session_id?: string
+          membership_id?: string | null
+          principal_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           revoked_by_actor_id?: string | null
           scope?: string
           status?: string
+          step_up_verified_at?: string | null
+          unlock_factor_id?: string | null
+          unlock_factor_version?: number | null
+          unlock_method?: string | null
+          unlock_verified_at?: string | null
           updated_at?: string
           version?: number
         }
@@ -1586,6 +1619,13 @@ export type Database = {
           {
             foreignKeyName: "lecture_ai_master_authorizations_admin_session_id_fkey"
             columns: ["admin_session_id"]
+            isOneToOne: false
+            referencedRelation: "admin_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lecture_ai_master_authorizations_issuing_admin_session_id_fkey"
+            columns: ["issuing_admin_session_id"]
             isOneToOne: false
             referencedRelation: "admin_sessions"
             referencedColumns: ["id"]
@@ -4564,6 +4604,38 @@ export type Database = {
         }
         Returns: Json
       }
+      begin_admin_ai_browser_assertion_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_challenge_hash: string
+          target_credential_hash: string
+          target_expires_at: string
+          target_lecture_session_id: string
+          target_origin: string
+          target_policy_id: string
+          target_policy_version: number
+          target_request_id: string
+          target_requested_scope: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      begin_admin_ai_browser_enrollment_v1: {
+        Args: {
+          target_absolute_expires_at: string
+          target_auth_user_id: string
+          target_credential_hash: string
+          target_nonce_hash: string
+          target_origin: string
+          target_public_key_fingerprint: string
+          target_request_id: string
+          target_reserved_browser_credential_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       begin_admin_totp_step_up_v1: {
         Args: {
           target_auth_user_id: string
@@ -4673,6 +4745,10 @@ export type Database = {
           provider_call_id: string
         }[]
       }
+      cleanup_admin_ai_ephemera_v1: {
+        Args: { target_request_id: string; target_retention_before: string }
+        Returns: Json
+      }
       cleanup_display_realtime_sessions_v1: { Args: never; Returns: number }
       cleanup_presenter_connections_v1: {
         Args: { target_limit?: number }
@@ -4680,6 +4756,34 @@ export type Database = {
       }
       cleanup_presenter_security_v2: {
         Args: { target_limit?: number }
+        Returns: Json
+      }
+      complete_admin_ai_browser_assertion_v1: {
+        Args: {
+          target_assertion_payload_hash: string
+          target_auth_user_id: string
+          target_challenge_hash: string
+          target_credential_hash: string
+          target_origin: string
+          target_request_id: string
+          target_signature_verified: boolean
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      complete_admin_ai_browser_enrollment_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_network_hmac: string
+          target_nonce_hash: string
+          target_peppered_pin_hmac: string
+          target_pin_pepper_version: number
+          target_public_key_jwk: Json
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
         Returns: Json
       }
       complete_admin_totp_step_up_v1: {
@@ -4764,6 +4868,17 @@ export type Database = {
         }
         Returns: Json
       }
+      enroll_admin_ai_pin_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_peppered_pin_hmac: string
+          target_pin_pepper_version: number
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       finish_daily_operations_digest_job: {
         Args: {
           target_error_message?: string
@@ -4791,6 +4906,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      get_admin_ai_pin_factor_metadata_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_intent_digest: string
+          target_network_hmac: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      get_admin_ai_unlock_runtime_gate_v1: { Args: never; Returns: Json }
       get_admin_identity_environment_v1: {
         Args: { target_environment_id: string }
         Returns: Json
@@ -5117,6 +5244,16 @@ export type Database = {
         Args: { network_bucket_hash?: string; user_bucket_hash: string }
         Returns: undefined
       }
+      revoke_admin_ai_browser_credential_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_browser_credential_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: boolean
+      }
       revoke_own_google_admin_session_v1: {
         Args: {
           target_auth_user_id: string
@@ -5140,12 +5277,50 @@ export type Database = {
         Args: { target_reason?: string }
         Returns: Json
       }
+      set_admin_ai_policy_v1: {
+        Args: {
+          target_allowed_actions: string[]
+          target_allowed_models: string[]
+          target_auth_user_id: string
+          target_max_calls_per_day: number
+          target_max_calls_per_lecture: number
+          target_max_concurrency: number
+          target_max_cost_microusd_per_day: number
+          target_max_cost_microusd_per_lecture: number
+          target_max_input_tokens_per_day: number
+          target_max_input_tokens_per_lecture: number
+          target_max_output_tokens_per_day: number
+          target_max_output_tokens_per_lecture: number
+          target_max_realtime_minutes_per_day: number
+          target_max_realtime_minutes_per_lecture: number
+          target_membership_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_valid_from: string
+          target_valid_until: string
+        }
+        Returns: Json
+      }
       set_display_realtime_runtime_v1: {
         Args: { target_enabled: boolean }
         Returns: number
       }
       set_presenter_runtime_v1: {
         Args: { target_enabled: boolean }
+        Returns: Json
+      }
+      verify_admin_ai_pin_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_intent_digest: string
+          target_network_hmac: string
+          target_peppered_pin_hmac: string
+          target_pin_pepper_version: number
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
         Returns: Json
       }
       verify_and_touch_admin_session: {
