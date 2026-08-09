@@ -39,6 +39,7 @@ secret change and paid call still require an explicit task.
 | Phase 7.28 local evidence      | `docs/PHASE7_28_LOCAL_GATE_2026-07-31.md`                        |
 | Phase 7.29 Presenter design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`                  |
 | Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
+| Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
 | Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
@@ -188,8 +189,11 @@ Local writer while browser mode is active.
 
 - The authoritative contract is
   `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`.
-- GitHub Education branch protection is a future gate. Until it is configured
-  and tested, PR-only integration remains procedural rather than enforced.
+- GitHub Education is active. Main ruleset `20600565` enforces Pull Requests,
+  the five configured exact-head CI contexts, conversation resolution and
+  force-push/deletion denial. Required approving reviews remain zero for
+  solo-owner continuity, and manual Copilot review is advisory. Phase 7.31A
+  still requires the remaining supply-chain and protected-environment gates.
 - A reviewer is the existing `[2] AI-capable Admin`: an invited personal Google
   identity with TOTP AAL2, `role=instructor`, and `can_use_ai=true` in an
   isolated real contest environment. It is not a new role, owner account,
@@ -247,10 +251,10 @@ JWT-protected `manage-presenter-connection` and compatible
 `update-display-state` by explicit function name with runtime/admission OFF.
 Leave `presenter-bridge-session`, its dedicated secret and the native Bridge
 undeployed. Unscoped all-function deployment is prohibited. After the separate
-7.29C rate, proof-of-possession, real loopback, signed-native and PowerPoint
-gates pass, the machine endpoint can enter a separately authorized activation
-sequence. The student five-second snapshot is never changed as part of this
-rollout.
+7.29C Gateway, rate, proof-of-possession, signed-native, bounded automatic and
+manual recovery credentials, real loopback and PowerPoint gates pass, the
+machine endpoint can enter a separately authorized activation sequence. The
+student five-second snapshot is never changed as part of this rollout.
 
 Do not drop schema on rollback. Disable the feature and restore the previous
 application/server version first.

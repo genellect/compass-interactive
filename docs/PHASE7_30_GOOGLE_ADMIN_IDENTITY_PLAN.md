@@ -592,9 +592,11 @@ down migration or principal deletion is performed.
   rollback state and is removed after the compatibility deadline.
 - Student anonymous Auth and the Admin Supabase client remain physically and
   logically separated.
-- GitHub technical branch protection is deferred until GitHub Education makes
-  the required private-repository controls available. Until then, PR-only and
-  exact-head green CI remain mandatory procedural controls.
+- GitHub Education is active and main ruleset `20600565` enforces Pull Requests,
+  five required CI contexts, conversation resolution and force-push/deletion
+  denial. Required approving reviews remain zero for solo-owner continuity;
+  manual Copilot review is advisory. Remaining Phase 7.31A supply-chain and
+  protected-environment work is still separate.
 - Contest reviewers reuse the normal `instructor + can_use_ai` authorization
   path in a separate real environment. No `judge` role, shared Google account,
   secret viewer, mock authorization path, or Production-data access is added.

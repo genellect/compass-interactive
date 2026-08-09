@@ -309,9 +309,26 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
   `PRESENTER_BRIDGE_TOKEN_SECRET` of at least 32 bytes. A pairing token is
   Origin/audience/scope bound, lives at most 60 seconds and is atomically
   single-use. The active capability is a short-lived bearer credential bound
-  to connection, lecture, declared installation metadata and hard stop. The
-  installation digest is not proof of possession; asymmetric per-install
-  request signing remains an activation requirement.
+  to connection, lecture, installation key and hard stop. Phase 7.29B's
+  dormant bearer-plus-declared-installation boundary remains historical; the
+  7.29C source adds a user-scoped, non-exportable CNG P-256 key and signs the
+  method, fixed path, timestamp, nonce and exact raw-body digest on every
+  machine request. Edge verifies proof of possession and, in the same database
+  transaction as the lifecycle decision, atomically consumes the nonce and
+  completes its bounded positive or negative receipt.
+- The automatic ticket is issued for 55 seconds and may never exceed 60
+  seconds. The separately rate-limited manual recovery code may live for at
+  most five minutes. Only its domain-separated HMAC and expiry are stored; the
+  raw value is never stored in browser persistence, the database, a URL,
+  command line, log or telemetry. Exact retries reuse the signed receipt,
+  while body substitution or nonce reuse is rejected.
+- A dedicated Cloudflare Presenter Gateway preserves exact request bytes,
+  injects a separate server-only gateway secret and forwards to one fixed Edge
+  upstream. Browser traffic, redirects, encoded/oversized bodies, missing
+  Cloudflare network identity and unavailable rate bindings fail closed. The
+  Worker retains `workers_dev=false`, preview disabled and no route until an
+  owner approves the exact FQDN; 7.29C activation remains Hosted/Device/Human
+  HOLD.
 - Database RPCs are service-role only, `SECURITY INVOKER`, execute with server
   time and recheck the runtime gate, tracked Admin session, lecture lifecycle,
   PDF/deck binding, sequence, rate and capability on every write or heartbeat.

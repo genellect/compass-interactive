@@ -130,16 +130,25 @@ least 500 real next/back/jump transitions, restart/COM-release behavior,
 Edge/Chrome production HTTPS-to-loopback/PNA, hostile-origin rejection, usable
 manual recovery, venue Extend display and teacher UX approval are recorded.
 
-The same HOLD also requires asymmetric per-install proof of possession,
-application/WAF rate protection for the machine Edge endpoint, least-privilege
-cleanup Cron with monitoring, and enabled-handler integration tests against a
-real local database.
+The 7.29C source adds asymmetric per-install proof of possession, a dedicated
+fixed-upstream Cloudflare Gateway, application/database rate protection,
+bounded cleanup and native recovery input. These controls remain unaccepted
+until the final candidate passes local integration plus Hosted, Device and
+Human evidence; source implementation does not clear the HOLD.
 
 The `presenter-bridge-session` machine endpoint remains undeployed throughout
 7.29B. It can enter Hosted scope only as part of the separately authorized
 7.29C activation sequence after the rate, proof-of-possession and abuse gates
 above are satisfied.
 
-The current recovery-code copy does not have a native input surface. It must be
-completed or removed before 7.29C; dormant placement is safe because the UI and
-server admission remain OFF.
+Native tray recovery input is now present in the 7.29C source. The automatic
+ticket remains 55 seconds (at most 60 seconds), while the separately
+rate-limited manual recovery code is bounded to five minutes. Positive and
+negative signed requests use one-time database receipts and only the
+domain-separated code HMAC is stored. Signed-device behavior remains
+Device/Human HOLD. Dormant placement stays safe because the release endpoint is the
+fail-closed `.invalid` placeholder, the Gateway has no route, and UI/server/DB
+admission remains OFF.
+
+The authoritative activation details and owner decisions are recorded in
+[`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).

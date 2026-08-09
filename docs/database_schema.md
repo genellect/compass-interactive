@@ -149,7 +149,7 @@ documented query.
 ## 9. Migration and generated types
 
 Current migrations are ordered from the remote baseline through the default-OFF
-Phase 7.29 candidate.
+Phase 7.29C candidate.
 The accepted workflow is:
 
 1. create an additive migration with the pinned Supabase CLI;
@@ -231,3 +231,30 @@ not increment live-state versions. The fixed lock order is runtime gate,
 tracked Admin session, lecture, live/PDF row, then Presenter row. The migration
 is expand-only; rollback disables the runtime gate and leaves the schema in
 place until a later FK-ordered contract cleanup.
+
+Phase 7.29C extends `presenter_connections` with the P-256 proof-key identifier
+and public SPKI; the non-exportable private key remains in the Windows user
+store. The private schema adds:
+
+- `presenter_request_receipts` for atomic proof-key/nonce admission and bounded
+  cached positive or negative results;
+- `presenter_machine_rate_limits` for proof-key, coarse-network and global
+  request buckets;
+- `presenter_cleanup_health` for bounded cleanup counts, backlog age and last
+  successful execution.
+
+All three private tables have RLS enabled, no `PUBLIC`, `anon` or
+`authenticated` access, and only the minimum service-role grants. The raw
+manual recovery code, pairing ticket, active capability and private proof key
+are never stored; only bounded HMAC/SHA-256 receipts and public-key material
+enter the database.
+
+Seven service-role-only, `SECURITY INVOKER` v2 RPCs form the signed machine
+surface: `issue_presenter_connection_v2`, `inspect_presenter_connection_v2`,
+`claim_presenter_connection_v2`, `apply_presenter_page_v2`,
+`heartbeat_presenter_connection_v2`, `disconnect_presenter_connection_v2` and
+`cleanup_presenter_security_v2`. Execution remains revoked from `PUBLIC`,
+`anon` and `authenticated`. The business RPC wrappers use a three-second
+`statement_timeout` (750 ms `lock_timeout` where locking occurs), followed by
+the Edge 3.5-second abort, Gateway 4.25-second abort and native five-second
+timeout.

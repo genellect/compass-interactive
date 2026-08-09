@@ -19,7 +19,7 @@ non-local Supabase URL for the live E2E suite.
 
 ## GitHub Actions jobs
 
-`.github/workflows/ci.yml` contains four mandatory gates plus conditional
+`.github/workflows/ci.yml` contains five mandatory gates plus conditional
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
@@ -34,10 +34,12 @@ Dependency Review and CodeQL jobs:
    DB lint, serves Edge Functions with synthetic secrets, checks
    Auth/CORS/paid-feature fail-closed behavior, then drives a teacher and a
     student through create, start, join, comment and close lifecycle operations.
-4. **Presenter Bridge Windows build and deterministic tests** restores and
-   builds the .NET solution for x64 and x86, then runs Core/loopback tests on
-   x64. It uploads no unsigned executable. It does not claim real PowerPoint,
-   installer, SmartScreen, browser PNA or venue acceptance.
+4. **Presenter Bridge Windows x64 build and tests** restores and builds the .NET
+   solution for x64, then runs the Core/loopback/security tests.
+5. **Presenter Bridge Windows x86 build and tests** repeats the locked restore,
+   build and deterministic test suite with the x86 runtime. Neither job uploads
+   an unsigned executable. They do not claim real PowerPoint, installer,
+   SmartScreen, browser PNA or venue acceptance.
 
 Both browser suites block every non-local HTTP(S) request. Browser console
 errors, uncaught page errors and horizontal overflow fail the suite. On
@@ -140,12 +142,11 @@ the workflow for production migration, deployment and paid-live commands.
 
 ## Repository setup after push
 
-No repository secret is required by this workflow. After the workflow has run
-successfully on GitHub, make the four mandatory job results required status
-checks for `main` in the repository ruleset. Keep workflow permissions read-only
-and do not add production credentials to this workflow.
-
-As of 2026-08-08 the private user-owned repository plan cannot enforce branch
-protection without GitHub Pro. Until that governance subgate is approved,
-PR-only integration remains mandatory process policy and must not be described
-as technically enforced.
+No repository secret is required by this workflow. Main ruleset `20600565` is
+active and requires the five job results above, a Pull Request and resolved
+review conversations; force-push and branch deletion are blocked. Required
+approvals remain zero for the solo owner, no administrator bypass is configured,
+and `strict_required_status_checks_policy=false` avoids forcing every open PR to
+update and repeat the full matrix after an unrelated `main` change. The five
+checks still must pass for the candidate PR head. Keep workflow permissions
+read-only and do not add production credentials to this workflow.
