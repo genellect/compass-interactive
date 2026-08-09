@@ -1,6 +1,6 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 Applies to: repository implementation candidate through Phase 7.30A-B1;
 later native, Human, Hosted and Production gates remain separately authoritative
 
@@ -25,7 +25,7 @@ The architecture is designed around these invariants:
 ```mermaid
 flowchart LR
   Student["Student browser"] -->|"anonymous Auth + versioned RPC"| Supabase["Supabase Auth / Postgres"]
-  Teacher["Teacher browser"] -->|"Admin and API-use controls"| Edge["Supabase Edge Functions"]
+  Teacher["Teacher browser"] -->|"Admin identity and paid-intent controls"| Edge["Supabase Edge Functions"]
   Display["Classroom display"] -->|"scoped display session"| Edge
   Edge -->|"authorized RPC"| Supabase
 
@@ -142,7 +142,7 @@ does not redeploy the main Pages application.
 
 ### 7.1 Admission
 
-Paid work requires all of the following:
+The current legacy source admits paid work with all of the following:
 
 - an explicit teacher action;
 - a valid API-use PIN grant, separate from the Admin PIN;
@@ -153,6 +153,28 @@ Paid work requires all of the following:
 - a unique idempotent operation identity.
 
 Stop is intentionally easier than start and does not require the API-use PIN.
+
+Phase 7.30B2 implements the continuous-session lifetime/invalidation migration;
+Phase 7.30C completes its unified verifier across every operational Admin
+Edge/RPC path. Admin identity uses Google plus Supabase Authenticator App TOTP
+AAL2, compatible with Google Authenticator; there is no email MFA or custom MFA.
+The application session has no idle timeout or periodic TOTP prompt and is
+capped at the backing `auth.sessions.created_at + 8 hours`. It is recreated only
+after logout, backing-session removal, principal/environment/membership
+invalidation, verified TOTP factor-set change or that cap. Role changes apply
+live; `can_use_ai=false` drains AI authority without logging the teacher out.
+
+Paid intent becomes a personal AI PIN (or valid remembered-browser/future AI
+Passkey proof) checked once per new lecture master or explicit scope/cost
+escalation. Child starts do not re-prompt and still recheck lecture lifecycle,
+scope, policy, budget, concurrency and idempotency. AI-PIN rotation/revoke drains
+AI authority but preserves the Admin session. Five-minute fresh TOTP is limited
+to owner/principal, role/status, verified TOTP-factor-set, environment AI-policy
+and global-revoke control-plane changes; ordinary lecture controls, emergency
+stop, AI master/escalation and child starts never prompt. `ADMIN_PIN` is removed
+after the C migration and `BILLING_PIN` after personal-AI-PIN E2E, both before
+Production. Rollback is a Google-only immutable revision plus operator owner
+recovery.
 
 ### 7.2 Realtime transcription
 
@@ -232,13 +254,13 @@ available to the browser or database client.
 
 ## 10. Trust zones and secret placement
 
-| Zone                        | May contain                                                               | Must not contain                                            |
-| --------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL       | service role, OpenAI key, PINs, R2 secret, Turnstile secret |
-| Supabase Edge secrets       | OpenAI key, Admin/API-use PIN material, service role, trigger secrets     | values returned to browser or committed to Git              |
-| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material            | values in frontend variables or simultaneous browser mode   |
-| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings | plaintext lecture codes or Supabase service role            |
-| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                             | PDF/audio bytes, raw local transcript, plaintext secrets    |
+| Zone                        | May contain                                                                                             | Must not contain                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL; transient user-entered AI PIN form | service role, OpenAI key, persisted PINs, R2 secret, Turnstile secret |
+| Supabase Edge secrets       | OpenAI key, current legacy PIN material until Phase 7.30 removal, service role, trigger secrets         | values returned to browser or committed to Git                        |
+| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material                                          | values in frontend variables or simultaneous browser mode             |
+| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings                               | plaintext lecture codes or Supabase service role                      |
+| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                                                           | PDF/audio bytes, raw local transcript, plaintext secrets              |
 
 See `docs/SECURITY.md` for the enforceable security contract and remaining
 hosted/human Phase 6.8 evidence.
@@ -364,3 +386,10 @@ default OFF. Legacy PIN compatibility remains default ON. The B1 Google
 session is identity-only and cannot invoke the existing lecture, PDF, AI,
 Display or Presenter Admin operations. That capability migration belongs to
 Phase 7.30C, while real Google OAuth and Hosted/Human evidence remain HOLD.
+
+Phase 7.30B2 migrates that B1 identity-only session to the continuous
+teacher-session contract described in Section 7.1: no 30-minute idle expiry and
+no periodic TOTP. Phase 7.30C completes the unified verifier across every
+operational Admin Edge/RPC path. The later cutover makes Production authority
+Google-only and removes the shared `ADMIN_PIN`/`BILLING_PIN` paths before
+Production.

@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 
 ## 1. Purpose
 
@@ -50,7 +50,9 @@ The Interactive application does not intentionally collect:
 - complete raw microphone streams;
 - PDF bytes or image OCR output in Supabase;
 - complete local transcript files in Supabase;
-- plaintext Admin PIN, API-use PIN or lecture-code hash material in client data;
+- plaintext current-legacy Admin/API-use PIN or lecture-code hash material in
+  client data; both shared PIN systems are removed before Production by the
+  Phase 7.30 contract;
 - OpenAI, Supabase service-role, R2, Turnstile or email-provider secrets in the
   browser.
 - raw Google subject in COMPASS application tables; Supabase Auth remains the
@@ -193,7 +195,9 @@ Realtime subscription is introduced.
   additionally verify participant ownership.
 - Students cannot list participant records or raw Poll responses.
 - Display credentials have a narrower scope than Admin credentials.
-- Admin access does not grant paid API use; the API-use PIN is separate.
+- Admin access does not grant paid API use. The current source has a separate
+  API-use PIN; Phase 7.30 replaces it before Production with a personal AI PIN
+  verified once per new lecture master or explicit scope/cost escalation.
 - Service-role access is restricted to trusted Edge Functions.
 - Archive and PDF access are short-lived and scoped.
 
@@ -279,3 +283,31 @@ This source/local Gate does not establish a Hosted retention or deletion
 schedule for real Google accounts. Hosted placement, privacy notice, operator
 export/deletion procedure and real-account retention evidence remain a later
 Hosted/Human Gate and must not be inferred from local fixtures.
+
+### Approved Phase 7.30 Production boundary
+
+- MFA uses only Supabase Authenticator App TOTP, compatible with Google
+  Authenticator, and configures no email MFA or custom MFA path. Supabase Auth
+  exclusively manages persistent factor material. COMPASS application tables,
+  application logs and browser persistence store no TOTP secret, enrollment QR
+  or challenge code. During enrollment, the Supabase Auth client receives the
+  secret/QR only ephemerally for display, scan and verification; the UI clears
+  it on completion or cancellation and never sends it to COMPASS logs,
+  analytics or application storage.
+- The Admin application session has no idle timeout or periodic TOTP prompt. Its
+  cap is `auth.sessions.created_at + 8 hours`; logout, backing-session removal,
+  principal/environment/membership invalidation, verified TOTP factor-set
+  change or that cap requires login again. Role changes are applied live;
+  `can_use_ai=false` drains AI authority without deleting the Admin session.
+- A five-minute TOTP step-up record exists only for rare owner/principal,
+  role/status, verified TOTP-factor-set, environment AI-policy and global-revoke
+  control-plane actions. It is content-free and never contains a TOTP code.
+- The personal AI PIN remains transient in the trusted form and bounded TLS
+  request. Its verifier, factor version and content-free lifecycle metadata may
+  be stored server-side. Rotation/revocation drains AI master, browser and
+  pending-child authority while preserving the Admin session.
+- `ADMIN_PIN` is removed after the Phase 7.30C authorization migration;
+  `BILLING_PIN` and its compatibility RPC are removed after personal-AI-PIN E2E.
+  Both removals occur before Production. Revoked historical session rows may
+  remain only for foreign-key and audit integrity. Rollback restores no shared
+  secret and uses a Google-only immutable revision plus operator owner recovery.

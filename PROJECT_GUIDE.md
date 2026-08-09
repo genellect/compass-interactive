@@ -5,6 +5,9 @@
 - 対象範囲: Phase 0〜6.6の実装判断とDevelopment Production Reviewの履歴
 - 状態: Phase 0〜6.6実装済み。現在の進捗・運用入口・Phase 6.7〜9はREADMEおよび`docs/ROADMAP.md`を正本とする
 
+> [!IMPORTANT]
+> 本書の`ADMIN_PIN`、`BILLING_PIN`、API利用PINに関するPhase 0〜6の記述は、当時の実装判断を保存するhistorical contractである。承認済みのPhase 7.30最終契約が優先し、MFAはGoogle Authenticator互換のSupabase標準TOTPだけを用いる。Phase 7.30Cの認可移行後は`ADMIN_PIN`を、personal AI PINのE2E完了後は`BILLING_PIN`と互換RPCを、いずれもProduction前に完全撤去する。共有PINをrollback経路として温存せず、Google-only immutable revisionとoperator owner recoveryを使う。詳細は`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`と`docs/ROADMAP.md`を正本とする。
+
 ## 1. このガイドの位置付け
 
 この文書は、現行コードとSupabaseの監査、OpenAI API実装計画、添付GPTレビュー、PDFアップロード／ダウンロード、AI Poll提案、5分要約、任意ニックネーム要件を統合したPhase 0〜6の詳細設計記録である。現在のリポジトリ入口は`README.md`、現行構成は`docs/architecture.md`、セキュリティ契約は`docs/SECURITY.md`、Phase 6.7以降の正本は`docs/ROADMAP.md`とする。
@@ -609,6 +612,9 @@ object作成日だけに基づくLifecycleでは講義終了日とずれるた�
 - メインWebアプリがPDF追加操作で再デプロイされない。
 
 ## 10. Phase 4: 課金制御とRealtime字幕
+
+> [!NOTE]
+> この節以下の`BILLING_PIN`/課金PINはPhase 4当時の実装記録である。Phase 7.30C以降の通常経路では、Google＋Supabase TOTP AAL2の継続Admin session内でpersonal AI PINを講義masterごとに一度だけ確認する。個別AI callでは再入力せず、5分fresh TOTPも要求しない。新しい講義または明示的なscope/cost拡張だけが新しいAI-unlock proofを必要とし、stopと緊急停止は無償・factor不要である。
 
 ### 10.1 目的
 

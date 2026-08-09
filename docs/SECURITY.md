@@ -1,6 +1,6 @@
 # COMPASS Interactive Security Contract
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 Status: locally implemented controls through Phase 7.30A-B1; native, Hosted,
 Human and Production evidence remains separate
 
@@ -65,7 +65,8 @@ lecture tests plus clean/upgrade migration verification.
 
 ## 5. Admin and paid-operation separation
 
-The Admin PIN and API-use PIN are separate credentials with different purposes.
+In the current legacy source, the Admin PIN and API-use PIN are separate
+credentials with different purposes.
 
 - Admin PIN: creates a bounded teacher management session.
 - API-use PIN: grants a bounded, one-time paid-operation start authorization.
@@ -97,6 +98,34 @@ Database constraints and distinct token scopes prevent `legacy_pin`/AAL1 and
 `google_totp`/AAL2 sessions from being interpreted interchangeably. Database
 and Edge authorization gates default OFF; the separate frontend UI flag also
 defaults OFF, while legacy compatibility defaults ON.
+
+That idle limit and shared-PIN compatibility are transitional B1 source facts,
+not the approved Production contract. Phase 7.30B2 implements the
+continuous-session lifetime/invalidation migration: it anchors the application
+session cap to `auth.sessions.created_at + 8 hours`, removes the idle expiry and
+never prompts for TOTP periodically during a lecture. Phase 7.30C completes its
+unified verifier across every operational Admin Edge/RPC path. Reauthentication
+is limited to explicit logout, backing `auth.sessions` removal, principal/
+environment/membership invalidation, verified TOTP factor-set change or the
+eight-hour cap. Role changes are enforced live without session termination;
+`can_use_ai=false` drains AI authority while preserving the Admin session.
+
+Production v1 uses only Supabase Authenticator App TOTP (compatible with Google
+Authenticator) for MFA. No email MFA or custom MFA path is added. A five-minute
+fresh TOTP step-up is reserved for owner/principal, role/status, verified
+TOTP-factor-set, environment AI-policy and global-revoke control-plane changes.
+Normal lecture operation, emergency stop, personal-AI-PIN enrollment/use/
+rotation/reset/recovery, lecture-master activation or scope/cost escalation and
+child AI calls never prompt for it.
+
+The personal AI PIN is checked once per new lecture master or explicit
+scope/cost escalation and never per child call. Its rotation/revocation drains
+AI master, browser and pending-child authority but preserves the Admin session.
+After the Phase 7.30C migration, `ADMIN_PIN` is removed before Production; after
+personal-AI-PIN E2E, `BILLING_PIN` and its compatibility RPC are removed before
+Production. Revoked historical session rows may remain for FK/audit integrity.
+Rollback uses an immutable Google-only revision and operator owner recovery,
+never a shared PIN.
 
 ## 6. AI and provider safety
 
@@ -158,7 +187,8 @@ These values are visible to every user and must not be treated as secrets.
 
 - Supabase service-role/secret key and database credentials;
 - OpenAI API key;
-- Admin PIN, API-use PIN and session-signing material;
+- current legacy Admin/API-use PIN material (removed by the Phase 7.30
+  Production contract) and session-signing material;
 - Turnstile secret;
 - R2 access/secret keys;
 - Publisher signing/private key material;
@@ -380,3 +410,9 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
   Phase 7.30C.
 - Real Google OAuth, Hosted provider configuration, real-account recovery and
   Hosted Advisor evidence remain separate Hosted/Human gates.
+
+The status/touch idle check above describes the transitional B1 implementation.
+Phase 7.30B2 removes that idle branch, anchors absolute expiry to the backing
+`auth.sessions.created_at + 8 hours`, and implements live role/AI-entitlement
+handling under the Section 5 session-continuity contract. Phase 7.30C completes
+the unified verifier across every operational Admin Edge/RPC path.
