@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-10
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -178,28 +178,50 @@ Local writer while browser mode is active.
   five minutes, verifies a fresh TOTP AMR timestamp, and only then creates one
   opaque AAL2 application session with eight-hour absolute and 30-minute idle
   expiry. An exact same-caller/session/JWT retry returns that same session;
-  other nonce reuse is rejected. B1 does not grant lecture-workspace authority.
+  other nonce reuse is rejected. This is the exact transitional B1 source
+  behavior; B1 does not grant lecture-workspace authority.
+- The approved Phase 7.30B2/C session migration removes the idle expiry and
+  anchors the application cap to `auth.sessions.created_at + 8 hours`. B2
+  implements the continuous-session lifetime/invalidation behavior; C completes
+  its unified verifier across every operational Admin Edge/RPC path. It never
+  prompts for TOTP periodically during a lecture. Logout, backing
+  `auth.sessions` removal, principal/environment/membership invalidation,
+  verified TOTP factor-set change or the cap requires login again. Role changes
+  take effect live; `can_use_ai=false` drains AI authority without ending the
+  Admin session.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
   OAuth clients, callbacks/origins, Supabase provider secret, service identities
   and rollback; never copy secrets or deployment state.
 - Google social login establishes AAL1. Privileged Admin access requires the
-  separately verified Supabase TOTP AAL2 session in the initial implementation.
+  separately verified Supabase Authenticator App TOTP AAL2 session in the
+  initial implementation. The standard flow supports Google Authenticator;
+  COMPASS configures no email MFA or custom MFA.
 - No real Google/Supabase Hosted mutation or Human MFA evidence was executed in
   A-B1. Phase 7.30B2/C-F and Production activation remain HOLD.
 - The planned B2/C migration also retires repeated API-use PIN entry from the
   normal paid-AI UX. The initial path requires Google plus TOTP AAL2, active
   `can_use_ai`, an owner-managed server policy, a personal four-digit AI PIN (or
-  its valid remembered-browser proof) and one lecture master CTA; every provider
-  start still rechecks scope, budget, concurrency, idempotency and lifecycle.
+  its valid remembered-browser proof) and one lecture master CTA. The AI PIN is
+  confirmed once for each new lecture master or explicit scope/cost escalation,
+  never for each provider call; every provider start still rechecks scope,
+  budget, concurrency, idempotency and lifecycle.
   The four-digit factor is server-verified only inside AAL2 with atomic rate
   limiting, and a remembered browser stores only a revocable
   browser-profile-bound credential backed by a non-extractable key. Dedicated
   AI Passkey and hardware-bound claims follow its separate gate. Browser
-  enrollment uses a short-lived identity/session/TOTP/Origin/key-bound nonce;
-  caption-scope escalation rechecks AI proof and TOTP freshness while downgrade
-  and stop are free. `ADMIN_PIN`, `BILLING_PIN` and personal `AI PIN` mean legacy
-  login, default-OFF verified-owner paid rollback and normal intent factor; they
-  are never interchangeable or browser-persisted as raw values.
+  enrollment uses a short-lived identity/session/TOTP-factor-set/Origin/key-bound
+  nonce without another TOTP prompt. Caption-scope escalation rechecks only the
+  AI proof inside the valid AAL2 session; downgrade and stop are free. AI-PIN
+  rotation/revoke drains AI authority but preserves the Admin session.
+- Five-minute fresh TOTP is used only for owner/principal, role/status, verified
+  TOTP-factor-set, environment AI-policy and global-revoke control-plane
+  changes. Normal lecture operation, emergency stop, AI master/escalation and
+  child calls never prompt.
+- After the Phase 7.30C authorization migration, remove `ADMIN_PIN` completely
+  before Production; revoked historical rows may remain only for FK/audit.
+  After personal-AI-PIN E2E, remove `BILLING_PIN` and its compatibility RPC
+  before Production. Rollback is an immutable Google-only revision plus
+  operator owner recovery, never a shared PIN.
 
 ## 7. Contest publication and commercial readiness (planned)
 
