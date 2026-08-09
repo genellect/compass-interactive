@@ -3344,6 +3344,8 @@ export type Database = {
           pdf_manifest_version: number
           pdf_page_count: number
           pptx_file_sha256: string | null
+          proof_key_id: string | null
+          proof_public_key_spki: string | null
           revoke_reason: string | null
           revoked_at: string | null
           slide_count: number | null
@@ -3382,6 +3384,8 @@ export type Database = {
           pdf_manifest_version: number
           pdf_page_count: number
           pptx_file_sha256?: string | null
+          proof_key_id?: string | null
+          proof_public_key_spki?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           slide_count?: number | null
@@ -3420,6 +3424,8 @@ export type Database = {
           pdf_manifest_version?: number
           pdf_page_count?: number
           pptx_file_sha256?: string | null
+          proof_key_id?: string | null
+          proof_public_key_spki?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
           slide_count?: number | null
@@ -4511,6 +4517,29 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_presenter_page_v2: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_event_id: string
+          target_global_bucket_hash: string
+          target_installation_hash: string
+          target_network_bucket_hash: string
+          target_nonce_hash: string
+          target_pdf_page: number
+          target_pptx_file_sha256: string
+          target_proof_key_bucket_hash: string
+          target_proof_key_id: string
+          target_proof_public_key_spki: string
+          target_request_body_sha256: string
+          target_request_issued_at: string
+          target_sequence: number
+          target_slide_id: number
+          target_slide_id_order_sha256: string
+          target_slide_index: number
+        }
+        Returns: Json
+      }
       claim_daily_operations_digest_jobs: {
         Args: { job_limit: number; target_recipient: string }
         Returns: {
@@ -4564,6 +4593,24 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_presenter_connection_v2: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_credential_hash: string
+          target_credential_kind: string
+          target_global_bucket_hash: string
+          target_installation_hash: string
+          target_network_bucket_hash: string
+          target_nonce_hash: string
+          target_proof_key_bucket_hash: string
+          target_proof_key_id: string
+          target_proof_public_key_spki: string
+          target_request_body_sha256: string
+          target_request_issued_at: string
+        }
+        Returns: Json
+      }
       claim_realtime_provider_hangups: {
         Args: {
           job_limit?: number
@@ -4581,6 +4628,10 @@ export type Database = {
       cleanup_presenter_connections_v1: {
         Args: { target_limit?: number }
         Returns: number
+      }
+      cleanup_presenter_security_v2: {
+        Args: { target_limit?: number }
+        Returns: Json
       }
       complete_pdf_publication_cleanup_v1: {
         Args: {
@@ -4613,6 +4664,22 @@ export type Database = {
           target_capability_jti_hash: string
           target_connection_id: string
           target_installation_hash: string
+        }
+        Returns: Json
+      }
+      disconnect_presenter_connection_v2: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_global_bucket_hash: string
+          target_installation_hash: string
+          target_network_bucket_hash: string
+          target_nonce_hash: string
+          target_proof_key_bucket_hash: string
+          target_proof_key_id: string
+          target_proof_public_key_spki: string
+          target_request_body_sha256: string
+          target_request_issued_at: string
         }
         Returns: Json
       }
@@ -4822,6 +4889,24 @@ export type Database = {
         }
         Returns: Json
       }
+      heartbeat_presenter_connection_v2: {
+        Args: {
+          target_capability_jti_hash: string
+          target_connection_id: string
+          target_global_bucket_hash: string
+          target_installation_hash: string
+          target_network_bucket_hash: string
+          target_nonce_hash: string
+          target_pptx_file_sha256: string
+          target_proof_key_bucket_hash: string
+          target_proof_key_id: string
+          target_proof_public_key_spki: string
+          target_request_body_sha256: string
+          target_request_issued_at: string
+          target_slide_id_order_sha256: string
+        }
+        Returns: Json
+      }
       inspect_presenter_connection_v1: {
         Args: {
           target_connection_id: string
@@ -4831,6 +4916,28 @@ export type Database = {
           target_hidden_slide_count: number
           target_installation_hash: string
           target_pptx_file_sha256: string
+          target_slide_count: number
+          target_slide_id_order_sha256: string
+        }
+        Returns: Json
+      }
+      inspect_presenter_connection_v2: {
+        Args: {
+          target_connection_id: string
+          target_credential_hash: string
+          target_credential_kind: string
+          target_custom_show_active: boolean
+          target_global_bucket_hash: string
+          target_hidden_slide_count: number
+          target_installation_hash: string
+          target_network_bucket_hash: string
+          target_nonce_hash: string
+          target_pptx_file_sha256: string
+          target_proof_key_bucket_hash: string
+          target_proof_key_id: string
+          target_proof_public_key_spki: string
+          target_request_body_sha256: string
+          target_request_issued_at: string
           target_slide_count: number
           target_slide_id_order_sha256: string
         }
@@ -4848,6 +4955,18 @@ export type Database = {
           target_lecture_session_id: string
           target_manual_code_hmac: string
           target_ticket_expires_at: string
+          target_ticket_jti_hash: string
+        }
+        Returns: Json
+      }
+      issue_presenter_connection_v2: {
+        Args: {
+          target_admin_auth_user_id: string
+          target_admin_session_id: string
+          target_lecture_session_id: string
+          target_manual_code_expires_at: string
+          target_manual_code_hmac: string
+          target_pairing_ticket_expires_at: string
           target_ticket_jti_hash: string
         }
         Returns: Json

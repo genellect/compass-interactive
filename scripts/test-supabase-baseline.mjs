@@ -58,6 +58,8 @@ const phase728AiMasterAuthorizationMigrationName =
   '20260731110753_phase7_28_ai_master_authorization.sql'
 const phase729PowerPointPresenterBridgeMigrationName =
   '20260801075917_phase7_29_powerpoint_presenter_bridge.sql'
+const phase729cPresenterProofMigrationName =
+  '20260809133000_phase7_29c_presenter_proof_and_cleanup.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -98,6 +100,7 @@ assert.deepEqual(
     phase728DisplayRealtimeMigrationName,
     phase728AiMasterAuthorizationMigrationName,
     phase729PowerPointPresenterBridgeMigrationName,
+    phase729cPresenterProofMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

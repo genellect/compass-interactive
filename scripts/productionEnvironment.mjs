@@ -272,6 +272,24 @@ export function validateProductionServerEnvironment(environment) {
         'PRESENTER_BRIDGE_TOKEN_SECRET must contain at least 32 bytes when Phase 7.29 is enabled.',
       )
     }
+    if (
+      new TextEncoder().encode(
+        value(environment, 'PRESENTER_BRIDGE_GATEWAY_SECRET'),
+      ).byteLength < 32
+    ) {
+      errors.push(
+        'PRESENTER_BRIDGE_GATEWAY_SECRET must contain at least 32 bytes when Phase 7.29 is enabled.',
+      )
+    }
+    if (
+      value(environment, 'PRESENTER_BRIDGE_TOKEN_SECRET') &&
+      value(environment, 'PRESENTER_BRIDGE_TOKEN_SECRET') ===
+        value(environment, 'PRESENTER_BRIDGE_GATEWAY_SECRET')
+    ) {
+      errors.push(
+        'PRESENTER_BRIDGE_TOKEN_SECRET and PRESENTER_BRIDGE_GATEWAY_SECRET must be distinct trust-boundary secrets.',
+      )
+    }
   }
   return errors
 }

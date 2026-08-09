@@ -37,10 +37,27 @@ type ResponseParser<T> = (value: unknown) => T | null
 
 const safeErrorMessages: Readonly<Record<string, string>> = {
   bridge_unavailable: 'Presenter Bridge is not available.',
+  connector_conflict: 'Another PowerPoint presentation is already connected.',
+  current_slide_order_mismatch:
+    'The current PowerPoint slide order is not supported.',
+  custom_or_partial_show_unsupported:
+    'Custom or partial PowerPoint shows are not supported.',
+  hidden_slides_unsupported: 'Hidden PowerPoint slides are not supported.',
   invalid_request: 'Presenter Bridge rejected the request.',
   invalid_session: 'Presenter Bridge session is no longer valid.',
+  multiple_slide_shows: 'Close the other PowerPoint slide show and try again.',
   origin_not_allowed: 'This site is not allowed to use Presenter Bridge.',
+  page_count_mismatch:
+    'The PowerPoint slide count does not match the lecture material.',
+  pairing_rate_limited: 'Wait briefly before trying to connect again.',
+  powerpoint_not_running: 'Start the PowerPoint slide show and try again.',
+  presenter_view_must_be_disabled: 'Turn off Presenter View before connecting.',
   presentation_changed: 'The PowerPoint presentation changed.',
+  request_timeout: 'Presenter Bridge did not respond in time.',
+  slide_id_order_invalid: 'The PowerPoint slide order is not supported.',
+  ticket_invalid: 'The connection request expired. Start again.',
+  windowed_slide_show_required:
+    'Use a windowed PowerPoint slide show before connecting.',
 }
 
 export class PresenterBridgeClientError extends Error {

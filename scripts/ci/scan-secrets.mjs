@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..', '..')
@@ -24,6 +24,11 @@ const findings = []
 
 for (const relative of scannedFiles) {
   const path = resolve(root, relative)
+  // `git ls-files --cached` still reports a tracked file while it is staged or
+  // pending deletion in the working tree. There is no content to scan in that
+  // state, and the path will disappear from the index once the deletion is
+  // committed.
+  if (!existsSync(path)) continue
   if (statSync(path).size > 1_000_000) continue
   const buffer = readFileSync(path)
   if (buffer.includes(0)) continue

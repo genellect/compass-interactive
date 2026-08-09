@@ -84,6 +84,8 @@ assert.match(
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET: 'short',
+    PRESENTER_BRIDGE_GATEWAY_SECRET:
+      'test-only-presenter-gateway-secret-at-least-thirty-two-bytes',
   }).join('\n'),
   /PRESENTER_BRIDGE_TOKEN_SECRET must contain at least 32 bytes/,
 )
@@ -94,8 +96,33 @@ assert.deepEqual(
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET:
       'test-only-presenter-secret-at-least-thirty-two-bytes',
+    PRESENTER_BRIDGE_GATEWAY_SECRET:
+      'test-only-presenter-gateway-secret-at-least-thirty-two-bytes',
   }),
   [],
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
+    PRESENTER_BRIDGE_TOKEN_SECRET:
+      'test-only-shared-presenter-secret-at-least-thirty-two-bytes',
+    PRESENTER_BRIDGE_GATEWAY_SECRET:
+      'test-only-shared-presenter-secret-at-least-thirty-two-bytes',
+  }).join('\n'),
+  /must be distinct trust-boundary secrets/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
+    PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
+    PRESENTER_BRIDGE_TOKEN_SECRET:
+      'test-only-presenter-secret-at-least-thirty-two-bytes',
+    PRESENTER_BRIDGE_GATEWAY_SECRET: 'short',
+  }).join('\n'),
+  /PRESENTER_BRIDGE_GATEWAY_SECRET must contain at least 32 bytes/,
 )
 assert.match(
   validateProductionServerEnvironment({

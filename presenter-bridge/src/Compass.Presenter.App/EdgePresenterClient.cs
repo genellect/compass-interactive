@@ -18,14 +18,59 @@ internal sealed class EdgePresenterClient : IDisposable
         PropertyNameCaseInsensitive = false,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
+    private static readonly HashSet<string> TrustedRemoteErrorCodes =
+    [
+        "browser_forbidden",
+        "confirmation_pending",
+        "credential_invalid",
+        "feature_disabled",
+        "gateway_required",
+        "method_not_allowed",
+        "operation_rejected",
+        "proof_binding_rejected",
+        "proof_invalid",
+        "proof_stale",
+        "rate_limited",
+        "replay_rejected",
+        "request_invalid",
+        "service_unavailable",
+        "connection_expired",
+        "connection_revoked",
+    ];
+    private static readonly HashSet<string> RetryableRemoteErrorCodes =
+    [
+        "rate_limited",
+        "service_unavailable",
+    ];
 
     private readonly Uri endpoint;
     private readonly HttpClient httpClient;
+    private readonly IPresenterRequestSigner requestSigner;
 
-    public EdgePresenterClient(Uri endpoint)
+    public EdgePresenterClient(
+        Uri endpoint,
+        IPresenterRequestSigner requestSigner)
+        : this(endpoint, requestSigner, CreateDefaultHandler())
+    {
+    }
+
+    internal EdgePresenterClient(
+        Uri endpoint,
+        IPresenterRequestSigner requestSigner,
+        HttpMessageHandler handler)
     {
         this.endpoint = endpoint;
-        var handler = new SocketsHttpHandler
+        this.requestSigner = requestSigner;
+        httpClient = new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "COMPASS-PresenterBridge/1");
+    }
+
+    private static HttpMessageHandler CreateDefaultHandler() =>
+        new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.None,
@@ -33,13 +78,6 @@ internal sealed class EdgePresenterClient : IDisposable
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
             UseCookies = false,
         };
-        httpClient = new HttpClient(handler)
-        {
-            Timeout = Timeout.InfiniteTimeSpan,
-        };
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "COMPASS-PresenterBridge/1");
-    }
 
     public async ValueTask<PairingTicketClaims?> InspectPairingAsync(
         string ticket,
@@ -97,6 +135,63 @@ internal sealed class EdgePresenterClient : IDisposable
         };
     }
 
+    public async ValueTask<PairingTicketClaims?> InspectManualCodeAsync(
+        string manualCode,
+        string installationHash,
+        PresentationObservation observation,
+        CancellationToken cancellationToken)
+    {
+        var normalizedCode = manualCode.Trim().ToUpperInvariant();
+        if (normalizedCode.Length != 8 ||
+            normalizedCode.Any(character =>
+                character is '0' or '1' or 'I' or 'O' ||
+                !(char.IsAsciiLetterUpper(character) ||
+                  character is >= '2' and <= '9')))
+        {
+            return null;
+        }
+
+        var response = await PostAsync<InspectResponse>(
+            new
+            {
+                action = "inspect",
+                manualCode = normalizedCode,
+                installationHash,
+                pptxFileSha256 = observation.PptxFileSha256,
+                slideIdOrderSha256 = observation.SlideIdOrderSha256,
+                slideCount = observation.SlideCount,
+                hiddenSlideCount = observation.HiddenSlideCount,
+                customShowActive =
+                    observation.RangeMode != PresentationRangeMode.AllSlides,
+            },
+            cancellationToken).ConfigureAwait(false);
+        if (!response.Ok ||
+            response.ConnectionId == Guid.Empty ||
+            response.LectureSessionId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(response.PdfDocumentId) ||
+            string.IsNullOrWhiteSpace(response.PdfDocumentVersion) ||
+            response.PdfPageCount is < 1 or > 75 ||
+            response.State is not ("inspected" or "confirmed") ||
+            response.TicketExpiresAt <= DateTimeOffset.UtcNow ||
+            response.HardStopAt <= DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        return new PairingTicketClaims(
+            response.LectureSessionId,
+            response.PdfDocumentId,
+            response.PdfDocumentVersion,
+            response.PdfPageCount,
+            response.TicketExpiresAt)
+        {
+            ConnectionId = response.ConnectionId,
+            HardStopAt = response.HardStopAt,
+            PairingCredential = normalizedCode,
+            UsesManualCode = true,
+        };
+    }
+
     public async ValueTask<PresenterCapability> ClaimAsync(
         PairingTicketClaims claims,
         string installationHash,
@@ -108,13 +203,17 @@ internal sealed class EdgePresenterClient : IDisposable
             throw new PresenterRemoteException("pairing_credential_unavailable");
         }
 
+        var claimBody = new Dictionary<string, object?>
+        {
+            ["action"] = "claim",
+            ["connectionId"] = claims.ConnectionId,
+            ["installationHash"] = installationHash,
+        };
+        claimBody[
+            claims.UsesManualCode ? "manualCode" : "pairingTicket"
+        ] = claims.PairingCredential;
         var response = await PostAsync<ClaimResponse>(
-            new
-            {
-                action = "claim",
-                pairingTicket = claims.PairingCredential,
-                installationHash,
-            },
+            claimBody,
             cancellationToken).ConfigureAwait(false);
         if (!response.Ok ||
             response.ConnectionId != claims.ConnectionId ||
@@ -165,7 +264,7 @@ internal sealed class EdgePresenterClient : IDisposable
         {
             throw new PresenterRemoteException(
                 NormalizeRemoteReason(response.Reason),
-                response.Reason == "rate_limited");
+                transient: response.Reason == "rate_limited");
         }
         return new PageCommitResult(
             response.Changed ?? false,
@@ -217,74 +316,115 @@ internal sealed class EdgePresenterClient : IDisposable
         object body,
         CancellationToken cancellationToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
         var payload = JsonSerializer.SerializeToUtf8Bytes(body, JsonOptions);
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            var proof = requestSigner.Sign(payload);
+            for (var attempt = 0; attempt < 2; attempt++)
             {
-                Content = new ByteArrayContent(payload),
-            };
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue(
-                "application/json")
-            {
-                CharSet = "utf-8",
-            };
-            request.Headers.CacheControl = new CacheControlHeaderValue
-            {
-                NoCache = true,
-                NoStore = true,
-            };
-            using var response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                timeout.Token).ConfigureAwait(false);
-            if ((int)response.StatusCode is >= 300 and < 400)
-            {
-                throw new PresenterRemoteException("redirect_rejected");
-            }
-            if (!response.IsSuccessStatusCode)
-            {
-                var transient = response.StatusCode is
-                    HttpStatusCode.RequestTimeout or
-                    HttpStatusCode.TooManyRequests or
-                    HttpStatusCode.BadGateway or
-                    HttpStatusCode.ServiceUnavailable or
-                    HttpStatusCode.GatewayTimeout;
-                throw new PresenterRemoteException(
-                    "remote_request_rejected",
-                    transient);
-            }
-            if (response.Content.Headers.ContentType?.MediaType !=
-                    "application/json" ||
-                response.Headers.CacheControl?.NoStore != true ||
-                response.Content.Headers.ContentLength is > MaximumResponseBytes)
-            {
-                throw new PresenterRemoteException("remote_response_invalid");
-            }
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(5));
+                using var request = CreateSignedRequest(payload, proof);
+                try
+                {
+                    using var response = await httpClient.SendAsync(
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        timeout.Token).ConfigureAwait(false);
+                    if ((int)response.StatusCode is >= 300 and < 400)
+                    {
+                        throw new PresenterRemoteException(
+                            "redirect_rejected",
+                            response.StatusCode);
+                    }
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var remoteError = await ReadRemoteErrorAsync(
+                            response,
+                            timeout.Token).ConfigureAwait(false);
+                        var retryAfter = GetRetryAfter(response);
+                        var transientStatus = response.StatusCode is
+                            HttpStatusCode.RequestTimeout or
+                            HttpStatusCode.TooManyRequests or
+                            HttpStatusCode.BadGateway or
+                            HttpStatusCode.ServiceUnavailable or
+                            HttpStatusCode.GatewayTimeout;
+                        var transient = transientStatus &&
+                            (remoteError is null ||
+                             RetryableRemoteErrorCodes.Contains(remoteError.Code));
+                        if (transient && retryAfter is null && attempt == 0)
+                        {
+                            await Task.Delay(
+                                TimeSpan.FromMilliseconds(250),
+                                cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
+                        throw new PresenterRemoteException(
+                            remoteError?.Code ?? StatusCodeError(response.StatusCode),
+                            response.StatusCode,
+                            transient,
+                            retryAfter);
+                    }
+                    if (response.Content.Headers.ContentType?.MediaType !=
+                            "application/json" ||
+                        response.Headers.CacheControl?.NoStore != true ||
+                        response.Content.Headers.ContentLength is >
+                            MaximumResponseBytes)
+                    {
+                        throw new PresenterRemoteException(
+                            "remote_response_invalid",
+                            response.StatusCode);
+                    }
 
-            var bytes = await ReadBoundedAsync(
-                response.Content,
-                timeout.Token).ConfigureAwait(false);
-            try
-            {
-                return JsonSerializer.Deserialize<T>(bytes, JsonOptions) ??
-                    throw new PresenterRemoteException("remote_response_invalid");
+                    var bytes = await ReadBoundedAsync(
+                        response.Content,
+                        timeout.Token).ConfigureAwait(false);
+                    try
+                    {
+                        return JsonSerializer.Deserialize<T>(bytes, JsonOptions) ??
+                            throw new PresenterRemoteException(
+                                "remote_response_invalid",
+                                response.StatusCode);
+                    }
+                    catch (JsonException)
+                    {
+                        throw new PresenterRemoteException(
+                            "remote_response_invalid",
+                            response.StatusCode);
+                    }
+                }
+                catch (OperationCanceledException)
+                    when (!cancellationToken.IsCancellationRequested)
+                {
+                    if (attempt == 0)
+                    {
+                        continue;
+                    }
+                    throw new PresenterRemoteException(
+                        "remote_timeout",
+                        HttpStatusCode.GatewayTimeout,
+                        transient: true);
+                }
+                catch (HttpRequestException)
+                {
+                    if (attempt == 0)
+                    {
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(250),
+                            cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+                    throw new PresenterRemoteException(
+                        "remote_unavailable",
+                        statusCode: null,
+                        transient: true);
+                }
             }
-            catch (JsonException)
-            {
-                throw new PresenterRemoteException("remote_response_invalid");
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new PresenterRemoteException("remote_timeout", transient: true);
-        }
-        catch (HttpRequestException)
-        {
-            throw new PresenterRemoteException("remote_unavailable", transient: true);
+            throw new PresenterRemoteException(
+                "remote_unavailable",
+                statusCode: null,
+                transient: true);
         }
         finally
         {
@@ -292,9 +432,96 @@ internal sealed class EdgePresenterClient : IDisposable
         }
     }
 
+    private HttpRequestMessage CreateSignedRequest(
+        byte[] payload,
+        PresenterRequestProofHeaders proof)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = new ByteArrayContent(payload),
+        };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(
+            "application/json")
+        {
+            CharSet = "utf-8",
+        };
+        request.Headers.CacheControl = new CacheControlHeaderValue
+        {
+            NoCache = true,
+            NoStore = true,
+        };
+        request.Headers.TryAddWithoutValidation(
+            "X-Compass-Presenter-Key-Id", proof.KeyId);
+        request.Headers.TryAddWithoutValidation(
+            "X-Compass-Presenter-Public-Key", proof.PublicKeySpki);
+        request.Headers.TryAddWithoutValidation(
+            "X-Compass-Presenter-Timestamp", proof.Timestamp);
+        request.Headers.TryAddWithoutValidation(
+            "X-Compass-Presenter-Nonce", proof.Nonce);
+        request.Headers.TryAddWithoutValidation(
+            "X-Compass-Presenter-Signature", proof.Signature);
+        return request;
+    }
+
+    private static async Task<RemoteErrorResponse?> ReadRemoteErrorAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.Content.Headers.ContentType?.MediaType != "application/json" ||
+            response.Headers.CacheControl?.NoStore != true ||
+            response.Content.Headers.ContentLength is > 4 * 1024)
+        {
+            return null;
+        }
+        try
+        {
+            var bytes = await ReadBoundedAsync(
+                response.Content,
+                cancellationToken,
+                4 * 1024).ConfigureAwait(false);
+            var parsed = JsonSerializer.Deserialize<RemoteErrorResponse>(
+                bytes,
+                JsonOptions);
+            return parsed?.Ok == false &&
+                TrustedRemoteErrorCodes.Contains(parsed.Code)
+                ? parsed
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (PresenterRemoteException)
+        {
+            return null;
+        }
+    }
+
+    private static string StatusCodeError(HttpStatusCode statusCode) =>
+        statusCode switch
+        {
+            HttpStatusCode.Unauthorized => "remote_unauthorized",
+            HttpStatusCode.Forbidden => "remote_forbidden",
+            HttpStatusCode.NotFound => "remote_not_found",
+            HttpStatusCode.Gone => "remote_gone",
+            HttpStatusCode.TooManyRequests => "rate_limited",
+            _ => "remote_request_rejected",
+        };
+
+    private static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        var retry = response.Headers.RetryAfter;
+        var delay = retry?.Delta ??
+            (retry?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (delay is null) return null;
+        return TimeSpan.FromSeconds(
+            Math.Clamp(delay.Value.TotalSeconds, 1, 120));
+    }
+
     private static async Task<byte[]> ReadBoundedAsync(
         HttpContent content,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maximumBytes = MaximumResponseBytes)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -311,7 +538,7 @@ internal sealed class EdgePresenterClient : IDisposable
                 {
                     return writer.WrittenSpan.ToArray();
                 }
-                if (writer.WrittenCount + read > MaximumResponseBytes)
+                if (writer.WrittenCount + read > maximumBytes)
                 {
                     throw new PresenterRemoteException("remote_response_too_large");
                 }
@@ -433,6 +660,13 @@ internal sealed class EdgePresenterClient : IDisposable
         [JsonPropertyName("revoked_at")]
         public DateTimeOffset? RevokedAt { get; init; }
     }
+
+    private sealed record RemoteErrorResponse
+    {
+        public string Code { get; init; } = string.Empty;
+        public string Message { get; init; } = string.Empty;
+        public bool Ok { get; init; }
+    }
 }
 
 internal sealed record PresenterCapability(
@@ -451,14 +685,24 @@ internal sealed record HeartbeatResult(bool Active, string? Reason);
 
 internal sealed class PresenterRemoteException : Exception
 {
-    public PresenterRemoteException(string code, bool transient = false)
+    public PresenterRemoteException(
+        string code,
+        HttpStatusCode? statusCode = null,
+        bool transient = false,
+        TimeSpan? retryAfter = null)
         : base("Presenter service request failed.")
     {
         Code = code;
+        StatusCode = statusCode;
         Transient = transient;
+        RetryAfter = retryAfter;
     }
 
     public string Code { get; }
+
+    public TimeSpan? RetryAfter { get; }
+
+    public HttpStatusCode? StatusCode { get; }
 
     public bool Transient { get; }
 }

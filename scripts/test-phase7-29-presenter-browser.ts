@@ -44,7 +44,7 @@ function jsonResponse(value: unknown, status = 200) {
 test('loopback bridge contract fixes the port and bounded timeouts', () => {
   assert.equal(PRESENTER_BRIDGE_BASE_URL, 'http://127.0.0.1:43124')
   assert.equal(PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS, 1_500)
-  assert.equal(PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS, 5_000)
+  assert.equal(PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS, 12_000)
 })
 
 test('strict presentation validators reject unknown fields and inconsistent eligibility', () => {
@@ -163,6 +163,39 @@ test('remote error text is not reflected into browser errors', async () => {
       assert.ok(error instanceof PresenterBridgeClientError)
       assert.equal(error.code, 'invalid_request')
       assert.equal(error.message.includes(ticket), false)
+      return true
+    },
+  )
+})
+
+test('known PowerPoint errors provide bounded actionable text', async () => {
+  const client = new PresenterBridgeClient(async () =>
+    jsonResponse(
+      {
+        code: 'powerpoint_not_running',
+        message: 'untrusted-local-detail',
+        ok: false,
+      },
+      409,
+    ),
+  )
+
+  await assert.rejects(
+    client.connect({
+      lectureSessionId: uuid,
+      pdfDocumentId: 'journal-club-v1',
+      pdfDocumentVersion: documentVersion,
+      pdfPageCount: 20,
+      ticket,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof PresenterBridgeClientError)
+      assert.equal(error.code, 'powerpoint_not_running')
+      assert.equal(
+        error.message,
+        'Start the PowerPoint slide show and try again.',
+      )
+      assert.equal(error.message.includes('untrusted-local-detail'), false)
       return true
     },
   )

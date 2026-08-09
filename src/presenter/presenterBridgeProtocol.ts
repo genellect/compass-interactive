@@ -1,7 +1,7 @@
 export const PRESENTER_BRIDGE_BASE_URL = 'http://127.0.0.1:43124' as const
 export const PRESENTER_BRIDGE_PROTOCOL_VERSION = 1 as const
 export const PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS = 1_500 as const
-export const PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 5_000 as const
+export const PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 12_000 as const
 export const PRESENTER_BRIDGE_MAX_RESPONSE_BYTES = 65_536 as const
 export const PRESENTER_BRIDGE_SESSION_HEADER =
   'X-Compass-Presenter-Session' as const

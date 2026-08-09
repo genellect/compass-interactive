@@ -63,6 +63,7 @@ const safeTestScripts = [
   'test:phase7-28c-ai-master',
   'test:phase7-28-load',
   'test:phase7-29-edge',
+  'test:phase7-29-gateway',
   'test:phase7-29-presenter-browser',
   'test:phase7-29-presenter-browser-static',
   'test:phase7-29-static',

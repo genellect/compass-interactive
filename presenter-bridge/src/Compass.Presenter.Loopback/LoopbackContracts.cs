@@ -77,6 +77,9 @@ public sealed record PairingTicketClaims(
     [JsonIgnore]
     public string? PairingCredential { get; init; }
 
+    [JsonIgnore]
+    public bool UsesManualCode { get; init; }
+
     public override string ToString() =>
         "PairingTicketClaims { PairingCredential = [redacted] }";
 }

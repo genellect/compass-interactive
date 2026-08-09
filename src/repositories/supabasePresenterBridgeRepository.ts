@@ -30,6 +30,7 @@ export type IssuedPresenterConnection = {
   connectionId: string
   hardStopAt: string
   manualCode: string
+  pairingTicketExpiresAt: string
   pairingTicket: string
   pdf: PresenterPdfBinding
   ticketExpiresAt: string
@@ -39,6 +40,7 @@ export type PresenterConnectionStatus = {
   capabilityExpiresAt: string | null
   confirmedAt: string | null
   connectionId: string
+  customShowActive: boolean | null
   hardStopAt: string
   hiddenSlideCount: number | null
   lastCommittedPdfPage: number | null
@@ -194,6 +196,7 @@ function parseIssueResponse(value: unknown): IssueResponse | null {
       'hardStopAt',
       'manualCode',
       'ok',
+      'pairingTicketExpiresAt',
       'pairingTicket',
       'pdf',
       'ticketExpiresAt',
@@ -203,9 +206,12 @@ function parseIssueResponse(value: unknown): IssueResponse | null {
     !isIsoTimestamp(value.hardStopAt) ||
     typeof value.manualCode !== 'string' ||
     !MANUAL_CODE_PATTERN.test(value.manualCode) ||
+    !isIsoTimestamp(value.pairingTicketExpiresAt) ||
     !isPresenterPairingTicket(value.pairingTicket) ||
     !parsePdfBinding(value.pdf) ||
     !isIsoTimestamp(value.ticketExpiresAt) ||
+    Date.parse(value.pairingTicketExpiresAt) >
+      Date.parse(value.ticketExpiresAt) ||
     Date.parse(value.ticketExpiresAt) > Date.parse(value.hardStopAt)
   ) {
     return null
@@ -238,6 +244,7 @@ function parseConnectionStatus(
       'capabilityExpiresAt',
       'confirmedAt',
       'connectionId',
+      'customShowActive',
       'hardStopAt',
       'hiddenSlideCount',
       'lastCommittedPdfPage',
@@ -257,6 +264,10 @@ function parseConnectionStatus(
     !isNullableIsoTimestamp(value.capabilityExpiresAt) ||
     !isNullableIsoTimestamp(value.confirmedAt) ||
     !isUuid(value.connectionId) ||
+    !(
+      value.customShowActive === null ||
+      typeof value.customShowActive === 'boolean'
+    ) ||
     !isIsoTimestamp(value.hardStopAt) ||
     !(
       value.hiddenSlideCount === null ||
@@ -295,9 +306,13 @@ function parseConnectionStatus(
   if (
     (value.state === 'revoked') !== (value.revokedAt !== null) ||
     (value.state === 'pairing' &&
-      (value.slideCount !== null || value.pptxFileSha256 !== null)) ||
+      (value.slideCount !== null ||
+        value.pptxFileSha256 !== null ||
+        value.customShowActive !== null)) ||
     (['inspected', 'confirmed', 'active'].includes(String(value.state)) &&
-      (value.slideCount === null || value.pptxFileSha256 === null))
+      (value.slideCount === null ||
+        value.pptxFileSha256 === null ||
+        value.customShowActive === null))
   ) {
     return null
   }

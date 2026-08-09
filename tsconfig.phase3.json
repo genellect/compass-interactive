@@ -18,6 +18,8 @@
     "publisher/src/**/*.ts",
     "publisher/tests/**/*.ts",
     "cloudflare/asset-worker/src/**/*.ts",
-    "cloudflare/asset-worker/tests/**/*.ts"
+    "cloudflare/asset-worker/tests/**/*.ts",
+    "cloudflare/presenter-gateway/src/**/*.ts",
+    "cloudflare/presenter-gateway/tests/**/*.ts"
   ]
 }

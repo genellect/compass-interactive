@@ -4,6 +4,21 @@ using Compass.Presenter.Loopback;
 
 namespace Compass.Presenter.App;
 
+internal enum PresenterSessionState
+{
+    Idle,
+    Active,
+    Faulted,
+}
+
+internal sealed class PresenterSessionStateChangedEventArgs : EventArgs
+{
+    public PresenterSessionStateChangedEventArgs(PresenterSessionState state) =>
+        State = state;
+
+    public PresenterSessionState State { get; }
+}
+
 internal sealed class PresenterSessionCoordinator :
     IPresenterSessionActivationHandler,
     IPresenterSessionFaultSource,
@@ -15,8 +30,14 @@ internal sealed class PresenterSessionCoordinator :
     private readonly SemaphoreSlim gate = new(1, 1);
     private ActiveSession? activeSession;
     private bool disposed;
+    private int sessionState;
 
     public event EventHandler<PresenterSessionFaultedEventArgs>? SessionFaulted;
+    public event EventHandler<PresenterSessionStateChangedEventArgs>?
+        SessionStateChanged;
+
+    public PresenterSessionState SessionState =>
+        (PresenterSessionState)Volatile.Read(ref sessionState);
 
     public PresenterSessionCoordinator(
         EdgePresenterClient client,
@@ -101,6 +122,7 @@ internal sealed class PresenterSessionCoordinator :
                 session.HeartbeatTask = Task.Run(
                     () => RunHeartbeatAsync(session),
                     CancellationToken.None);
+                PublishSessionState(PresenterSessionState.Active);
                 return new PresenterSessionActivationResult(
                     capability.ExpiresAt);
             }
@@ -139,7 +161,8 @@ internal sealed class PresenterSessionCoordinator :
             }
             await StopActiveSessionAsync(
                 disconnectRemote: true,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                PresenterSessionState.Idle).ConfigureAwait(false);
         }
         finally
         {
@@ -159,7 +182,8 @@ internal sealed class PresenterSessionCoordinator :
         {
             await StopActiveSessionAsync(
                 disconnectRemote: true,
-                CancellationToken.None).ConfigureAwait(false);
+                CancellationToken.None,
+                PresenterSessionState.Idle).ConfigureAwait(false);
         }
         finally
         {
@@ -227,6 +251,7 @@ internal sealed class PresenterSessionCoordinator :
     {
         try
         {
+            PublishSessionState(PresenterSessionState.Faulted);
             SessionFaulted?.Invoke(
                 this,
                 new PresenterSessionFaultedEventArgs(
@@ -242,8 +267,7 @@ internal sealed class PresenterSessionCoordinator :
         {
             try
             {
-                await DisconnectAsync(connectionId, CancellationToken.None)
-                    .ConfigureAwait(false);
+                await FaultStopAsync(connectionId).ConfigureAwait(false);
             }
             catch
             {
@@ -253,7 +277,8 @@ internal sealed class PresenterSessionCoordinator :
 
     private async ValueTask StopActiveSessionAsync(
         bool disconnectRemote,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        PresenterSessionState finalState)
     {
         var session = activeSession;
         activeSession = null;
@@ -292,6 +317,49 @@ internal sealed class PresenterSessionCoordinator :
             {
                 // Hosted expiry and the Admin handover fence remain authoritative.
             }
+        }
+        PublishSessionState(finalState);
+    }
+
+    private async Task FaultStopAsync(Guid connectionId)
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (activeSession is null ||
+                activeSession.Capability.ConnectionId != connectionId)
+            {
+                return;
+            }
+            await StopActiveSessionAsync(
+                disconnectRemote: true,
+                CancellationToken.None,
+                PresenterSessionState.Faulted).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private void PublishSessionState(PresenterSessionState state)
+    {
+        var previous = (PresenterSessionState)Interlocked.Exchange(
+            ref sessionState,
+            (int)state);
+        if (previous == state)
+        {
+            return;
+        }
+        try
+        {
+            SessionStateChanged?.Invoke(
+                this,
+                new PresenterSessionStateChangedEventArgs(state));
+        }
+        catch
+        {
+            // Local UI state must never alter the synchronization fence.
         }
     }
 
@@ -373,6 +441,12 @@ internal sealed class RemotePageUpdateSink : IPageUpdateSink
         catch (PresenterRemoteException error) when (!error.Transient)
         {
             TerminalRejected?.Invoke(this, EventArgs.Empty);
+            throw;
+        }
+        catch (PresenterRemoteException error)
+            when (error.Transient && error.RetryAfter is { } retryAfter)
+        {
+            await Task.Delay(retryAfter, cancellationToken).ConfigureAwait(false);
             throw;
         }
     }

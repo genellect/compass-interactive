@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "Velopack": {
+        "type": "Transitive",
+        "resolved": "1.2.0",
+        "contentHash": "Rz67gJL619fSBS6omaSINUxyDuwhIxkm5mmubf7uLd5Qgi6LLKaKCha+QFP6n+Bw/UjA0vutnH4JQfYzn6ANtw=="
+      },
+      "compass.presenter.contracts": {
+        "type": "Project"
+      },
+      "compass.presenter.core": {
+        "type": "Project",
+        "dependencies": {
+          "Compass.Presenter.Contracts": "[1.0.0, )"
+        }
+      },
+      "compass.presenter.loopback": {
+        "type": "Project",
+        "dependencies": {
+          "Compass.Presenter.Contracts": "[1.0.0, )",
+          "Compass.Presenter.Core": "[1.0.0, )"
+        }
+      },
+      "compass.presenter.powerpoint.external": {
+        "type": "Project",
+        "dependencies": {
+          "Compass.Presenter.Contracts": "[1.0.0, )"
+        }
+      },
+      "COMPASS.PresenterBridge": {
+        "type": "Project",
+        "dependencies": {
+          "Compass.Presenter.Contracts": "[1.0.0, )",
+          "Compass.Presenter.Core": "[1.0.0, )",
+          "Compass.Presenter.Loopback": "[1.0.0, )",
+          "Compass.Presenter.PowerPoint.External": "[1.0.0, )",
+          "Velopack": "[1.2.0, 1.2.0]"
+        }
+      }
+    }
+  }
+}
