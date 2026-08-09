@@ -247,7 +247,7 @@ test('rejects upstream redirects and overlarge responses', async () => {
   )
 })
 
-test('rejects query, OPTIONS, content encoding, empty bodies and invalid proof', async () => {
+test('rejects query, OPTIONS, content encoding, malformed bodies and invalid proof', async () => {
   const worker = createPresenterGateway(async () => {
     throw new Error('must not fetch')
   })
@@ -274,6 +274,19 @@ test('rejects query, OPTIONS, content encoding, empty bodies and invalid proof',
     (
       await worker.fetch(
         machineRequest({ body: new Uint8Array() }),
+        environment(),
+      )
+    ).status,
+    400,
+  )
+  assert.equal(
+    (await worker.fetch(machineRequest({ body: '{' }), environment())).status,
+    400,
+  )
+  assert.equal(
+    (
+      await worker.fetch(
+        machineRequest({ body: new Uint8Array([0xc3, 0x28]) }),
         environment(),
       )
     ).status,

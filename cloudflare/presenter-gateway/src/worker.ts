@@ -254,6 +254,13 @@ export function createPresenterGateway(fetcher: typeof fetch = fetch) {
       if (requestBytes.byteLength === 0) {
         return jsonError('request_invalid', 'Request body is empty.', 400)
       }
+      try {
+        JSON.parse(
+          new TextDecoder('utf-8', { fatal: true }).decode(requestBytes),
+        )
+      } catch {
+        return jsonError('request_invalid', 'Request body is invalid.', 400)
+      }
 
       const headers = new Headers({
         'Cache-Control': 'no-store',
