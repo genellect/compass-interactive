@@ -406,49 +406,73 @@ export type Database = {
       }
       admin_sessions: {
         Row: {
+          aal: number
           auth_user_id: string
+          authentication_method: string
           created_at: string
+          environment_id: string | null
           expires_at: string
           id: string
           idle_expires_at: string
           issued_at: string
           last_seen_at: string
+          membership_id: string | null
           network_hash: string | null
-          pin_version_hash: string
+          pin_version_hash: string | null
+          principal_id: string | null
           revoke_reason: string | null
           revoked_at: string | null
+          step_up_nonce_id: string | null
+          step_up_verified_at: string | null
+          supabase_auth_session_id: string | null
           token_hash: string
           updated_at: string
           user_agent_hash: string | null
         }
         Insert: {
+          aal?: number
           auth_user_id: string
+          authentication_method?: string
           created_at?: string
+          environment_id?: string | null
           expires_at: string
           id: string
           idle_expires_at: string
           issued_at?: string
           last_seen_at?: string
+          membership_id?: string | null
           network_hash?: string | null
-          pin_version_hash: string
+          pin_version_hash?: string | null
+          principal_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          step_up_nonce_id?: string | null
+          step_up_verified_at?: string | null
+          supabase_auth_session_id?: string | null
           token_hash: string
           updated_at?: string
           user_agent_hash?: string | null
         }
         Update: {
+          aal?: number
           auth_user_id?: string
+          authentication_method?: string
           created_at?: string
+          environment_id?: string | null
           expires_at?: string
           id?: string
           idle_expires_at?: string
           issued_at?: string
           last_seen_at?: string
+          membership_id?: string | null
           network_hash?: string | null
-          pin_version_hash?: string
+          pin_version_hash?: string | null
+          principal_id?: string | null
           revoke_reason?: string | null
           revoked_at?: string | null
+          step_up_nonce_id?: string | null
+          step_up_verified_at?: string | null
+          supabase_auth_session_id?: string | null
           token_hash?: string
           updated_at?: string
           user_agent_hash?: string | null
@@ -4540,6 +4564,31 @@ export type Database = {
         }
         Returns: Json
       }
+      begin_admin_totp_step_up_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_environment_id: string
+          target_nonce_hash: string
+          target_prechallenge_jwt_hash: string
+          target_request_id: string
+          target_reserved_admin_session_id: string
+          target_supabase_auth_session_id: string
+        }
+        Returns: Json
+      }
+      bootstrap_admin_environment_v1: {
+        Args: {
+          target_audience: string
+          target_bootstrap_expires_at: string
+          target_canonical_admin_origin: string
+          target_environment_id: string
+          target_environment_kind: string
+          target_owner_email_hashes: string[]
+          target_request_id: string
+          target_supabase_issuer: string
+        }
+        Returns: Json
+      }
       claim_daily_operations_digest_jobs: {
         Args: { job_limit: number; target_recipient: string }
         Returns: {
@@ -4633,6 +4682,23 @@ export type Database = {
         Args: { target_limit?: number }
         Returns: Json
       }
+      complete_admin_totp_step_up_v1: {
+        Args: {
+          target_aal: number
+          target_auth_user_id: string
+          target_current_jwt_hash: string
+          target_current_jwt_iat: string
+          target_network_hash: string
+          target_nonce_hash: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_totp_amr_at: string
+          target_totp_amr_method: string
+          target_user_agent_hash: string
+        }
+        Returns: Json
+      }
       complete_pdf_publication_cleanup_v1: {
         Args: {
           target_cleanup_claim_id: string
@@ -4648,6 +4714,21 @@ export type Database = {
           target_admin_auth_user_id: string
           target_admin_session_id: string
           target_connection_id: string
+        }
+        Returns: Json
+      }
+      consume_admin_identity_admission_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_display_name: string
+          target_email_digest: string
+          target_environment_id: string
+          target_google_issuer: string
+          target_invitation_token_hash?: string
+          target_normalized_email: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
         }
         Returns: Json
       }
@@ -4710,6 +4791,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      get_admin_identity_environment_v1: {
+        Args: { target_environment_id: string }
+        Returns: Json
+      }
+      get_admin_identity_runtime_gate_v1: { Args: never; Returns: Json }
       get_lecture_archive_v2: {
         Args: { target_lecture_session_id: string }
         Returns: Json
@@ -5031,6 +5117,15 @@ export type Database = {
         Args: { network_bucket_hash?: string; user_bucket_hash: string }
         Returns: undefined
       }
+      revoke_own_google_admin_session_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: boolean
+      }
       revoke_presenter_connection_v1: {
         Args: {
           target_admin_auth_user_id: string
@@ -5057,6 +5152,14 @@ export type Database = {
         Args: {
           target_pin_version_hash: string
           target_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      verify_and_touch_google_admin_session_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_supabase_auth_session_id: string
           target_token_hash: string
         }
         Returns: Json

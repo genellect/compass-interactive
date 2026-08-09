@@ -22,4 +22,11 @@ export function assertSupabaseConfigured() {
 export const supabase = createClient<Database>(
   supabaseUrl || fallbackSupabaseUrl,
   supabasePublishableKey || fallbackSupabasePublishableKey,
+  {
+    auth: {
+      // The student client owns only anonymous sessions. OAuth callback codes
+      // are exchanged exclusively by the lazy Admin client.
+      detectSessionInUrl: false,
+    },
+  },
 )

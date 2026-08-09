@@ -1,4 +1,3 @@
-import { EOL } from 'node:os'
 import { expect, test } from '@playwright/test'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
@@ -54,9 +53,7 @@ test('lecture layout matches the deterministic visual contract', async ({
     }
   })
 
-  const serializedContract = `${JSON.stringify(contract, null, 2).replace(/\n/g, EOL)}${EOL}`
-  expect(serializedContract).toMatchSnapshot(
-    'lecture-layout.json',
-  )
+  const serializedContract = `${JSON.stringify(contract, null, 2)}\n`
+  expect(serializedContract).toMatchSnapshot('lecture-layout.json')
   await safety.assertClean()
 })

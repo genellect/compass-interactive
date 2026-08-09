@@ -298,3 +298,45 @@
     width: 100%;
   }
 }
+.admin-identity-card {
+  gap: 1rem;
+  max-width: 34rem;
+}
+
+.admin-identity-card .primary-button,
+.admin-identity-card .secondary-button {
+  width: 100%;
+}
+
+.admin-totp-qr {
+  align-self: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  display: block;
+  height: 13rem;
+  padding: 0.75rem;
+  width: 13rem;
+}
+
+.admin-totp-secret {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.admin-identity-summary {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.admin-identity-summary div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.admin-identity-summary dt,
+.admin-identity-summary dd {
+  margin: 0;
+}

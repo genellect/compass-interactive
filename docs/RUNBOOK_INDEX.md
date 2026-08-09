@@ -41,6 +41,7 @@ secret change and paid call still require an explicit task.
 | Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
 | Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
+| Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
 | Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
 | Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
 | Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`                   |
@@ -159,19 +160,34 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (planned)
+## 6. Google Admin identity and MFA (A-B1 local; activation HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
+- Implemented source/local boundary, dormant controls, evidence scope and
+  rollback: `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
+- Google session issuance is authorized only when the database runtime control
+  and `PHASE730_ADMIN_IDENTITY_ENABLED` are both enabled. The separate
+  `VITE_PHASE7_30_ADMIN_IDENTITY` flag controls UI exposure, not authorization;
+  normal activation still enables all three together. Legacy Admin PIN
+  compatibility remains default ON. Do not enable any Google control as
+  evidence that the others pass.
+- B1 HMAC-binds the trusted Google subject, consumes a digest-only nonce within
+  five minutes, verifies a fresh TOTP AMR timestamp, and only then creates one
+  opaque AAL2 application session with eight-hour absolute and 30-minute idle
+  expiry. An exact same-caller/session/JWT retry returns that same session;
+  other nonce reuse is rejected. B1 does not grant lecture-workspace authority.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
   OAuth clients, callbacks/origins, Supabase provider secret, service identities
   and rollback; never copy secrets or deployment state.
 - Google social login establishes AAL1. Privileged Admin access requires the
   separately verified Supabase TOTP AAL2 session in the initial implementation.
-- Admin login migration also retires repeated API-use PIN entry from the normal
-  paid-AI UX. The initial path requires Google plus TOTP AAL2, active
+- No real Google/Supabase Hosted mutation or Human MFA evidence was executed in
+  A-B1. Phase 7.30B2/C-F and Production activation remain HOLD.
+- The planned B2/C migration also retires repeated API-use PIN entry from the
+  normal paid-AI UX. The initial path requires Google plus TOTP AAL2, active
   `can_use_ai`, an owner-managed server policy, a personal four-digit AI PIN (or
   its valid remembered-browser proof) and one lecture master CTA; every provider
   start still rechecks scope, budget, concurrency, idempotency and lifecycle.

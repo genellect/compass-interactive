@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: GitHub Actions, browser E2E and non-live/hosted gate separation
-Last verified: 2026-08-08
+Last verified: 2026-08-09
 
 ## Purpose and safety boundary
 
@@ -23,17 +23,26 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of existing non-live Phase 0-6.7 tests, documentation
+   explicit allowlist of 65 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
-   Supabase-independent `/demo` flow. It covers route entry, content order,
-   comments, anonymous-by-default behavior, the 10-character nickname limit,
-   polling, comment history and exit/re-entry behavior.
+   Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
+   in desktop Chromium and WebKit with the Google path both OFF and ON. The
+   Admin identity run verifies PKCE callback isolation, production UI TOTP
+   enrollment/challenge handling against deterministic mocked Auth responses,
+   provider-token non-persistence, separate
+   student anonymous state, tracked-session completion and logout behavior.
 3. **Local Supabase, pgTAP and live browser E2E** applies every migration from
-   zero, runs every pgTAP file plus the real-DB AI concurrency race test, runs
-   DB lint, serves Edge Functions with synthetic secrets, checks
-   Auth/CORS/paid-feature fail-closed behavior, then drives a teacher and a
-    student through create, start, join, comment and close lifecycle operations.
+   zero, verifies generated types, runs every pgTAP file plus the real-DB
+   concurrency suites, proves a populated Phase 7.29C Admin session upgrades
+   through Phase 7.30B1, and runs DB lint. It then serves Edge Functions with
+   synthetic secrets, checks Auth/CORS/paid-feature fail-closed behavior, and
+   drives the browser integrations. Its Phase 7.30 step enables only the local
+   identity gates, performs real local GoTrue TOTP enrollment and
+   `challengeAndVerify`, binds the resulting AAL2/TOTP AMR into the signed
+   local Google-identity fixture, exercises Edge plus database tracked-session
+   admission/status/logout, and restores the identity gates to OFF before the
+   existing teacher/student lifecycle run.
 4. **Presenter Bridge Windows x64 build and tests** restores and builds the .NET
    solution for x64, then runs the Core/loopback/security tests.
 5. **Presenter Bridge Windows x86 build and tests** repeats the locked restore,
@@ -72,6 +81,8 @@ npm run lint
 npm run test:phase6-7-docs
 npm run test:ci:nonlive
 npm run build
+npm run test:e2e:phase7-30
+npm run test:e2e:phase7-30:flag-off
 git diff --check
 ```
 

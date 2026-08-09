@@ -3,6 +3,27 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-09 - Phase 7.30A-B1 Google Admin identity local foundation
+
+- Added a separate PKCE Admin Supabase client and fixed callback route with a
+  persistence adapter that strips Google provider tokens, while preserving the
+  anonymous Student client/session boundary.
+- Added additive private environment, principal, membership, invitation,
+  append-only audit and five-minute digest-only TOTP nonce state. Trusted
+  Google issuer/subject binding uses a server-only, domain-separated HMAC.
+- Required a fresh TOTP AMR timestamp and AAL2 before atomically consuming the
+  nonce and creating an opaque application Admin session with an eight-hour
+  absolute and 30-minute inactivity limit.
+- Kept Google issuance dormant behind independent database, Edge and frontend
+  default-OFF controls. Legacy Admin PIN compatibility remains default ON, and
+  credential-mode constraints prevent legacy AAL1 and Google/TOTP AAL2 sessions
+  from being interpreted interchangeably.
+- Added source/local verification coverage and a dedicated implementation
+  record. No real Google OAuth, Supabase Hosted database/Edge/provider setting,
+  secret, account or Production state was changed. Hosted/Human evidence,
+  Phase 7.30B2/C-F and the Phase 7.33 Production Gate remain HOLD. The local
+  implementation introduces no recurring fixed-cost dependency.
+
 ## 2026-08-09 - Phase 7.29C local activation hardening
 
 - Added a dedicated, fixed-upstream Cloudflare Presenter Gateway contract that

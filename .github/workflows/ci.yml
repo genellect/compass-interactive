@@ -62,6 +62,8 @@ jobs:
           VITE_PHASE7_28_DISPLAY_REALTIME: 'false'
           VITE_PHASE7_28_AI_MASTER_AUTH: 'false'
           VITE_PHASE7_29_POWERPOINT_SYNC: 'false'
+          VITE_PHASE7_30_ADMIN_IDENTITY: 'false'
+          VITE_PHASE7_30_LEGACY_ADMIN_PIN: 'true'
         run: npm run build
       - run: npm run test:phase6-9-bundle
       - name: Generate CycloneDX SBOM
@@ -98,6 +100,8 @@ jobs:
       - run: npm run test:e2e:phase7-27:flag-off
       - run: npm run test:e2e:phase7-29:flag-off
       - run: npm run test:e2e:phase7-29
+      - run: npm run test:e2e:phase7-30:flag-off
+      - run: npm run test:e2e:phase7-30
       - name: Upload demo E2E evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -119,6 +123,7 @@ jobs:
       TEST_ADMIN_SESSION_SECRET: compass-ci-only-admin-session-secret-2026-at-least-32-bytes
       TEST_BILLING_PIN: '135790'
       TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
+      TEST_ADMIN_IDENTITY_PEPPER: compass-ci-only-admin-identity-pepper-at-least-32-bytes
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -171,6 +176,9 @@ jobs:
       - name: Verify populated Phase 7.28 upgrade through Phase 7.29
         run: npm run test:phase7-29-upgrade
 
+      - name: Verify populated Phase 7.29 Admin sessions through Phase 7.30 B1
+        run: npm run test:phase7-30-upgrade
+
       - name: Lint the local database
         run: npx supabase db lint --local --fail-on error
 
@@ -214,10 +222,15 @@ jobs:
           PHASE728_DISPLAY_REALTIME_ENABLED=true
           PHASE7_28_AI_MASTER_AUTH_ENABLED=true
           PHASE729_POWERPOINT_SYNC_ENABLED=false
+          PHASE730_ADMIN_IDENTITY_ENABLED=false
+          PHASE730_LEGACY_ADMIN_PIN_ENABLED=true
+          PHASE730_ADMIN_ENVIRONMENT_ID=00000000-0000-4000-8000-000000000730
+          ADMIN_IDENTITY_PEPPER_VERSION=1
           PRESENTER_BRIDGE_TOKEN_SECRET=compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
           PRESENTER_BRIDGE_GATEWAY_SECRET=compass-ci-only-presenter-gateway-secret-at-least-32-bytes
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
+          printf 'ADMIN_IDENTITY_PEPPER=%s\n' "$TEST_ADMIN_IDENTITY_PEPPER" >> "$edge_env"
           node --input-type=module -e "const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']); console.log('PDF_ACCESS_PRIVATE_JWK=' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)))" >> "$edge_env"
           node scripts/ci/manage-local-edge.mjs start
 
@@ -226,6 +239,27 @@ jobs:
 
       - name: Verify local Auth, CORS and fail-closed paid features
         run: npm run test:production-local-edge
+
+      - name: Restart local Edge Functions with Admin identity enabled
+        run: |
+          node scripts/ci/manage-local-edge.mjs stop
+          node scripts/ci/set-local-admin-identity-edge.mjs on
+          node scripts/ci/manage-local-edge.mjs start
+
+      - name: Wait for Admin-identity-enabled local Edge Functions
+        run: node scripts/ci/wait-for-local-edge.mjs
+
+      - name: Run local GoTrue TOTP and signed Google identity through Edge and database
+        run: npm run test:phase7-30b1-local-edge
+
+      - name: Restore dormant Admin identity configuration
+        run: |
+          node scripts/ci/manage-local-edge.mjs stop
+          node scripts/ci/set-local-admin-identity-edge.mjs off
+          node scripts/ci/manage-local-edge.mjs start
+
+      - name: Wait for dormant Admin identity configuration
+        run: node scripts/ci/wait-for-local-edge.mjs
 
       - name: Restart local Edge Functions with Presenter proof enabled
         run: |

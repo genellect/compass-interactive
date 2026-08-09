@@ -1,10 +1,10 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 96 documents in `docs/`
+Scope: entrypoint and status vocabulary for the 98 documents in `docs/`
 Last verified: 2026-08-09
 
-This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through Phase 7.29. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
+This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30A-B1 local implementation. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
 `docs/RUNBOOK_INDEX.md` remains the entrypoint for setup, verification, deployment, rollback and incident work. This file indexes the whole directory and assigns each document a status.
 
@@ -45,22 +45,23 @@ A document dated in the past is not automatically `Historical` — `architecture
 
 ## Canonical documents
 
-| Document                                                                                                                 | Status                 | Responsibility                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------- |
-| [`architecture.md`](architecture.md)                                                                                     | Operationally verified | Component and data flow, architectural invariants                                                  |
-| [`SECURITY.md`](SECURITY.md)                                                                                             | Operationally verified | Security controls, known gaps                                                                      |
-| [`data_policy.md`](data_policy.md)                                                                                       | Operationally verified | Data collection, retention, deletion                                                               |
-| [`database_schema.md`](database_schema.md)                                                                               | Operationally verified | Table and policy responsibility map                                                                |
-| [`CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md)                                                                           | Operationally verified | Environments, safe execution levels, isolation, completion criteria                                |
-| [`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md)                                                       | Operationally verified | GitHub source admission and recovery-import contract                                               |
-| [`GATE_ROUTING.md`](GATE_ROUTING.md)                                                                                     | Operationally verified | Change surface to responsible gate                                                                 |
-| [`CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md)                                                                         | Operationally verified | CI composition and browser E2E                                                                     |
-| [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified | Entrypoint for setup, verification, deployment, rollback, incidents                                |
-| [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                | Future phases, cross-phase invariants, stop-the-line gates                                         |
-| [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                | Reasoning budget and internal/external agent responsibility                                        |
-| [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Planned                | Google identity, AAL2, RBAC, COMPASS reuse and rollout contract                                    |
-| [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | Planned                | GitHub protection/publication, real reviewer environment, commercial readiness and Phase 7.33 gate |
-| [`CHANGELOG.md`](CHANGELOG.md)                                                                                           | Historical             | Development trajectory. Not a substitute for Git history or gate evidence                          |
+| Document                                                                                                                 | Status                            | Responsibility                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [`architecture.md`](architecture.md)                                                                                     | Operationally verified            | Component and data flow, architectural invariants                                                  |
+| [`SECURITY.md`](SECURITY.md)                                                                                             | Operationally verified            | Security controls, known gaps                                                                      |
+| [`data_policy.md`](data_policy.md)                                                                                       | Operationally verified            | Data collection, retention, deletion                                                               |
+| [`database_schema.md`](database_schema.md)                                                                               | Operationally verified            | Table and policy responsibility map                                                                |
+| [`CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md)                                                                           | Operationally verified            | Environments, safe execution levels, isolation, completion criteria                                |
+| [`CLOUD_CANONICALIZATION_GATE.md`](CLOUD_CANONICALIZATION_GATE.md)                                                       | Operationally verified            | GitHub source admission and recovery-import contract                                               |
+| [`GATE_ROUTING.md`](GATE_ROUTING.md)                                                                                     | Operationally verified            | Change surface to responsible gate                                                                 |
+| [`CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md)                                                                         | Operationally verified            | CI composition and browser E2E                                                                     |
+| [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified            | Entrypoint for setup, verification, deployment, rollback, incidents                                |
+| [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                           | Future phases, cross-phase invariants, stop-the-line gates                                         |
+| [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                           | Reasoning budget and internal/external agent responsibility                                        |
+| [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Implemented, verification pending | A-B1 implementation checkpoint plus Google identity, AAL2, RBAC and rollout contract               |
+| [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Implemented, verification pending | A-B1 source/local boundary, dormant gates, evidence scope and rollback                             |
+| [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | Planned                           | GitHub protection/publication, real reviewer environment, commercial readiness and Phase 7.33 gate |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                                                           | Historical                        | Development trajectory. Not a substitute for Git history or gate evidence                          |
 
 ## Setup and deployment
 
@@ -72,7 +73,7 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5                 |
 | [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6                 |
 | [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Production                        | PPT rescue, dormant deploy and rollback           |
-| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)         | Local source; activation HOLD      | Gateway, signed delivery and activation contract  |
+| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)         | Local source; activation HOLD     | Gateway, signed delivery and activation contract  |
 | [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)   | Historical                        | Dated Hosted evidence for the default-OFF release |
 
 A runbook records the contract in source and the operational procedure. External state — Cloudflare dashboard, hosted secrets, real mail delivery — is not proven current by the document's date. The operator confirms it.

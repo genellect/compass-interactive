@@ -1,9 +1,38 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
-Status: Planned
-Approval: requirements approved; implementation not started
+Status: Implemented, verification pending
+Gate state: Phase 7.30A-B1 Local Gate PASS; exact-head CI pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-B1 source/local; Phase 7.30B2-F HOLD
+Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-09
+
+Implementation record:
+[`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md).
+
+## Implementation checkpoint
+
+Phase 7.30A and the bounded B1 identity foundation now exist in source for
+local verification. Google issuance is protected by two independent,
+default-OFF server controls: the database runtime gate and
+`PHASE730_ADMIN_IDENTITY_ENABLED` at Edge. The separate
+`VITE_PHASE7_30_ADMIN_IDENTITY` flag exposes the frontend UI but is not an
+authorization boundary; normal activation requires all three to be enabled
+together. The legacy shared Admin PIN path remains default ON at the
+corresponding database, Edge and frontend compatibility controls.
+
+B1 binds the trusted Google issuer/subject with a server-only HMAC, uses a
+five-minute digest-only nonce, verifies a fresh TOTP AMR timestamp, and creates
+an opaque application Admin session only after AAL2. That session has an
+eight-hour absolute lifetime and a sliding 30-minute inactivity limit. It does
+not grant the existing operational Admin workspace authority; that migration
+belongs to Phase 7.30C.
+
+No Google Cloud OAuth client, Supabase Hosted provider/database/Edge setting,
+callback allowlist, secret, or real account was created or changed. Real Google
+OAuth, Hosted and Human evidence is not executed and remains HOLD. Phase 7.30B2
+(AI PIN and remembered browser), C (full RBAC/ownership), D-E and F are also
+HOLD. The local implementation adds no recurring fixed-cost dependency.
 
 ## Outcome
 
@@ -270,12 +299,15 @@ checking it only in React is insufficient.
 
 JWT `aal2` proves factor assurance but does not by itself prove a recent
 challenge. For login and dangerous actions, the server first issues a
-single-use, short-lived step-up nonce bound to `auth.uid()`, membership, Admin
-session and intended action. After TOTP verification it accepts only a newly
-minted AAL2 JWT whose server-validated `iat` is not older than the challenge,
-atomically consumes the nonce, and records server time in
-`admin_sessions.step_up_verified_at`. Client time and an old AAL2 JWT never
-satisfy recency.
+short-lived step-up nonce bound to `auth.uid()`, membership, Admin session and
+intended action. After TOTP verification it accepts only a newly minted AAL2
+JWT with a server-validated TOTP AMR timestamp at the nonce issuance boundary
+(with at most one second of JWT timestamp precision tolerance), atomically
+consumes the nonce, and records server time in
+`admin_sessions.step_up_verified_at`. The first success creates one session;
+an exact same-caller/Auth-session/JWT/nonce retry within the nonce lifetime
+returns the same token/session and never creates a second one. Client time and
+an old AAL2 JWT never satisfy recency.
 
 The successful TOTP challenge performed during Google login is the initial
 server-recorded step-up event. While that event remains inside the applicable
@@ -493,8 +525,14 @@ redacted evidence, never Production secrets or mutation authority.
 
 ## Local and Hosted acceptance
 
-- Clean and populated upgrade migrations, generated DB types, full pgTAP,
-  lint, Advisor and Phase 0-7.29 regression pass.
+- The source/local gate requires clean and populated upgrade migrations,
+  generated DB types, full pgTAP, local DB lint and Phase 0-7.29 regression to
+  pass without contacting or mutating Hosted services.
+- After the reviewed migration is separately authorized and placed in an
+  isolated Hosted environment, the Supabase Security and Performance Advisors
+  must be recorded with no new unresolved finding. Local DB lint is not
+  represented as Hosted Advisor evidence, and the Advisor requirement does not
+  authorize a Hosted migration by itself.
 - Unauthorized Google users and AAL1 Admins receive no privileged data.
 - Two owners remain separate principals; instructor cross-principal and
   cross-lecture access is denied.

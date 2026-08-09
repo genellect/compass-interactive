@@ -84,3 +84,13 @@ export const isPhase729PowerPointSyncEnabled =
   isPhase3PrivatePdfEnabled &&
   isPhase728DisplayRealtimeEnabled &&
   import.meta.env.VITE_PHASE7_29_POWERPOINT_SYNC === 'true'
+
+// Phase 7.30 B1 is an identity-only, default-OFF preview. It does not grant
+// lecture, PDF, AI, Display or Presenter authority before Phase 7.30 C.
+export const isPhase730AdminIdentityEnabled =
+  import.meta.env.VITE_PHASE7_30_ADMIN_IDENTITY === 'true'
+
+// Expand-first rollback stays available unless explicitly disabled. The Edge
+// and database gates remain authoritative even when this UI branch is shown.
+export const isLegacyAdminPinLoginEnabled =
+  import.meta.env.VITE_PHASE7_30_LEGACY_ADMIN_PIN !== 'false'

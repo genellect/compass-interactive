@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-08-01
+Last reviewed: 2026-08-09
 
 ## 1. Purpose
 
@@ -29,6 +29,9 @@ Supabase may store:
 - approximate presence timestamps and cached aggregate metrics;
 - sanitized archive-export state and content-free operations-digest state.
 - bounded Journal Club run kind, preset version and ordered Poll-slot metadata.
+- for an admitted Admin only, the normalized Google email, bounded display
+  name, Supabase Auth user/session identifiers, peppered subject binding,
+  environment membership and content-free identity/session audit metadata.
 
 An optional nickname is not a verified identity. The database default remains
 `NULL`; the UI renders `匿名の参加者` when it is absent. No profile table is
@@ -50,6 +53,11 @@ The Interactive application does not intentionally collect:
 - plaintext Admin PIN, API-use PIN or lecture-code hash material in client data;
 - OpenAI, Supabase service-role, R2, Turnstile or email-provider secrets in the
   browser.
+- raw Google subject in COMPASS application tables; Supabase Auth remains the
+  trusted linked-provider identity store;
+- Google `provider_token`/`provider_refresh_token`, TOTP secret, raw step-up
+  nonce, invitation token or application Admin session token in COMPASS
+  application tables.
 
 Students must be told not to put personal or patient-identifying information in
 comments or nicknames. Moderation and deletion procedures must handle accidental
@@ -249,3 +257,25 @@ rollback.
   eligible for bounded, idempotent cleanup after 30 days. Expired rows never
   authorize use while waiting for cleanup. A future retention change must keep
   FK order and audit/privacy requirements explicit.
+
+## 14. Phase 7.30A-B1 Admin identity data
+
+The B1 identity foundation stores only the Admin data required for individual
+admission, revocation and audit: trusted Auth identifiers, normalized email,
+bounded display name, a versioned HMAC of the Google subject, environment role
+and status, digest-only invitation/nonce/session material and bounded
+content-free events. Supabase Auth separately remains the trusted store for the
+linked provider identity. Normalized email remains personal data even though it
+is used only for admission; it must never be exposed to Student, Display,
+archive or public browser paths.
+
+The separate Admin browser client may persist the Supabase Auth session needed
+for PKCE refresh, but strips Google provider tokens before SDK persistence or
+cross-tab broadcast. TOTP enrollment secret/QR and challenge codes are
+memory-only and cleared after the flow. The application Admin token is opaque
+and held only in `sessionStorage`; only its digest is stored in Postgres.
+
+This source/local Gate does not establish a Hosted retention or deletion
+schedule for real Google accounts. Hosted placement, privacy notice, operator
+export/deletion procedure and real-account retention evidence remain a later
+Hosted/Human Gate and must not be inferred from local fixtures.
