@@ -1,11 +1,11 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Implemented, verification pending
-Gate state: Phase 7.30A-B1 Local Gate PASS; exact-head CI pending; Hosted/Human HOLD
+Gate state: Phase 7.30A-B1 source exact-head and post-merge CI PASS; Hosted/Human HOLD
 Implementation scope: Phase 7.30A-B1 source/local; Phase 7.30B2-F HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
-Last verified: 2026-08-09
+Last verified: 2026-08-10
 
 Implementation record:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md).

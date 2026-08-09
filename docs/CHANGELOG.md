@@ -23,6 +23,11 @@ gate evidence. Commit IDs identify the main implementation landmarks.
   secret, account or Production state was changed. Hosted/Human evidence,
   Phase 7.30B2/C-F and the Phase 7.33 Production Gate remain HOLD. The local
   implementation introduces no recurring fixed-cost dependency.
+- Merged PR #32 as `3b6b68a36c8ec4d1c8811181e53661716bdd24bc`
+  after exact-head required CI, Dev Container and Copilot Review passed. The
+  post-merge main CI and Dev Container runs also passed on their first attempt
+  with no test retry, flaky failure, external deployment check or Hosted
+  mutation.
 
 ## 2026-08-09 - Phase 7.29C local activation hardening
 

@@ -1,9 +1,9 @@
 # Phase 7.30A-B1 Google Admin Identity Local Implementation
 
 Status: Implemented, verification pending
-Gate state: Local Gate PASS; exact-head CI pending; Hosted/Human activation HOLD
+Gate state: source exact-head and post-merge CI PASS; Hosted/Human activation HOLD
 Scope: source and local contracts for individual Google Admin identity and mandatory TOTP AAL2
-Last verified: 2026-08-09
+Last verified: 2026-08-10
 
 ## Outcome
 
@@ -136,6 +136,29 @@ identity fixture so that no Google Cloud OAuth client or Hosted state is
 required. One real Google-plus-TOTP JWT, Hosted provider configuration and the
 Hosted Supabase Security and Performance Advisor reports remain separate
 Hosted/Human evidence and are not implied by this PASS.
+
+## Reviewed source and merge evidence
+
+- PR [#32](https://github.com/genellect/compass-interactive/pull/32) fixed the
+  source candidate at `bc51eb196088fb4278cd2fb94d29de2115a867b9`.
+- Exact-head CI run
+  [`31318438382`](https://github.com/genellect/compass-interactive/actions/runs/31318438382)
+  passed all five required jobs on attempt 1. Dev Container run
+  [`31318438360`](https://github.com/genellect/compass-interactive/actions/runs/31318438360)
+  also passed on attempt 1. Copilot reviewed all 47 changed files on that head;
+  its one conversation was answered and resolved without changing the
+  candidate.
+- PR #32 merged as `3b6b68a36c8ec4d1c8811181e53661716bdd24bc`.
+  Post-merge CI run
+  [`31319784479`](https://github.com/genellect/compass-interactive/actions/runs/31319784479)
+  passed all five required jobs on attempt 1, and Dev Container run
+  [`31319784460`](https://github.com/genellect/compass-interactive/actions/runs/31319784460)
+  passed on attempt 1. The Demo job recorded 220 passed, 296 expected skipped
+  and zero failed tests; the Local job recorded 1,458 pgTAP tests, 71 upgrade
+  assertions and 16 browser integrations; Presenter x64 and x86 each passed
+  19 tests.
+- No workflow rerun, test retry or flaky failure was used. No Cloudflare or
+  other external deployment check ran, and no Hosted state changed.
 
 ## Explicit HOLD after B1
 
