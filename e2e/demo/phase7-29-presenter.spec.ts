@@ -18,31 +18,33 @@ const workerAccessToken = `eyJhbGciOiJIUzI1NiJ9.${'c'.repeat(43)}`
 type PresenterAction = 'confirm' | 'issue' | 'revoke' | 'status'
 
 type MockState = {
+  completeManualClaim: () => void
+  completeManualInspect: () => void
+  completeServerActivation: () => void
+  completeServerTermination: () => void
   confirmed: boolean
   connectionIssued: boolean
-  delayedStatusDelivered: Promise<void>
-  delayedStatusRequested: Promise<void>
   localActivationFailure: boolean
+  manualClaimed: boolean
+  manualInspected: boolean
   manualRecovery: boolean
-  manualStatusPollsBeforeInspect: number
-  manualStatusPollsAfterConfirm: number
   presenterActions: PresenterAction[]
   presenterActive: boolean
-  releaseDelayedStatus: () => void
+  presenterLastSeenAt: string
   revoked: boolean
 }
 
 type NetworkMockOptions = {
-  delayFirstStatus?: boolean
   expiredAutomaticTicket?: boolean
   localActivationFailure?: boolean
   manualRecovery?: boolean
+  staleInspectedAfterConfirm?: boolean
 }
 
 function createDeferred() {
   let resolve!: () => void
   const promise = new Promise<void>((done) => {
-    resolve = () => done()
+    resolve = done
   })
   return { promise, resolve }
 }
@@ -167,6 +169,7 @@ function operatorSnapshot() {
 
 function presenterStatus(
   state: 'active' | 'confirmed' | 'inspected' | 'pairing' = 'active',
+  lastSeenAt = new Date().toISOString(),
 ) {
   const now = Date.now()
   return {
@@ -181,7 +184,7 @@ function presenterStatus(
     hardStopAt: new Date(now + 60 * 60_000).toISOString(),
     hiddenSlideCount: state === 'pairing' ? null : 0,
     lastCommittedPdfPage: state === 'active' ? 1 : null,
-    lastSeenAt: new Date(now).toISOString(),
+    lastSeenAt,
     lastSequence: 0,
     pdfDocumentId: documentId,
     pdfDocumentVersion: documentVersion,
@@ -237,22 +240,30 @@ async function installNetworkMocks(
   page: Page,
   options: NetworkMockOptions = {},
 ) {
-  const delayedStatusRequest = createDeferred()
-  const delayedStatusRelease = createDeferred()
-  const delayedStatusDelivery = createDeferred()
-  let delayedStatusHeld = false
   const state: MockState = {
+    completeManualClaim: () => {
+      state.manualClaimed = true
+    },
+    completeManualInspect: () => {
+      if (state.manualInspected) return
+      state.manualInspected = true
+    },
+    completeServerActivation: () => {
+      state.presenterActive = true
+    },
+    completeServerTermination: () => {
+      state.presenterActive = false
+      state.revoked = true
+    },
     confirmed: false,
     connectionIssued: false,
-    delayedStatusDelivered: delayedStatusDelivery.promise,
-    delayedStatusRequested: delayedStatusRequest.promise,
     localActivationFailure: options.localActivationFailure ?? false,
+    manualClaimed: false,
+    manualInspected: false,
     manualRecovery: options.manualRecovery ?? false,
-    manualStatusPollsBeforeInspect: 0,
-    manualStatusPollsAfterConfirm: 0,
     presenterActions: [],
     presenterActive: false,
-    releaseDelayedStatus: delayedStatusRelease.resolve,
+    presenterLastSeenAt: new Date().toISOString(),
     revoked: false,
   }
   const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
@@ -390,43 +401,41 @@ async function installNetworkMocks(
         let connection = null
         if (state.connectionIssued && !state.revoked) {
           if (state.manualRecovery && !state.confirmed) {
-            state.manualStatusPollsBeforeInspect += 1
             connection = presenterStatus(
-              state.manualStatusPollsBeforeInspect >= 2
-                ? 'inspected'
-                : 'pairing',
+              state.manualInspected ? 'inspected' : 'pairing',
+              state.presenterLastSeenAt,
             )
           } else if (state.manualRecovery && state.confirmed) {
-            state.manualStatusPollsAfterConfirm += 1
-            if (state.manualStatusPollsAfterConfirm >= 3) {
+            if (state.manualClaimed) {
               state.presenterActive = true
             }
             connection = presenterStatus(
               state.presenterActive ? 'active' : 'confirmed',
+              state.presenterLastSeenAt,
             )
           } else if (state.presenterActive) {
-            connection = presenterStatus()
+            connection = presenterStatus('active', state.presenterLastSeenAt)
           } else if (state.localActivationFailure && state.confirmed) {
-            connection = presenterStatus('confirmed')
+            if (state.manualClaimed) {
+              state.presenterActive = true
+            }
+            connection = presenterStatus(
+              state.presenterActive
+                ? 'active'
+                : options.staleInspectedAfterConfirm
+                  ? 'inspected'
+                  : 'confirmed',
+              state.presenterLastSeenAt,
+            )
           } else {
-            connection = presenterStatus('inspected')
+            connection = presenterStatus('inspected', state.presenterLastSeenAt)
           }
-        }
-        const shouldDelayStatus =
-          options.delayFirstStatus === true && !delayedStatusHeld
-        if (shouldDelayStatus) {
-          delayedStatusHeld = true
-          delayedStatusRequest.resolve()
-          await delayedStatusRelease.promise
         }
         await fulfillJson(route, {
           connection,
           ok: true,
           runtimeEnabled: true,
         })
-        if (shouldDelayStatus) {
-          delayedStatusDelivery.resolve()
-        }
         return
       }
       if (action === 'revoke') {
@@ -447,6 +456,118 @@ async function installNetworkMocks(
   })
 
   return state
+}
+
+async function installLocalActivationFailure(page: Page, hold = false) {
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
+  const started = createDeferred()
+  const release = createDeferred()
+  const completed = createDeferred()
+  await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
+    const body = route.request().postDataJSON() as Record<
+      string,
+      unknown
+    > | null
+    if (body?.action !== 'activate') {
+      await route.continue()
+      return
+    }
+    started.resolve()
+    if (hold) await release.promise
+    await route.fulfill({
+      body: JSON.stringify({
+        code: 'invalid_session',
+        message: 'Request rejected.',
+        ok: false,
+      }),
+      contentType: 'application/json',
+      headers: {
+        'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+        'Cache-Control': 'no-store',
+        Vary: 'Origin',
+      },
+      status: 401,
+    })
+    completed.resolve()
+  })
+  return {
+    completed: completed.promise,
+    release: release.resolve,
+    started: started.promise,
+  }
+}
+
+async function holdLoopbackDisconnect(page: Page) {
+  const started = createDeferred()
+  const release = createDeferred()
+  const completed = createDeferred()
+  await page.route('http://127.0.0.1:43124/v1/disconnect', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    started.resolve()
+    await release.promise
+    const response = await route.fetch()
+    await route.fulfill({ response })
+    completed.resolve()
+  })
+  return {
+    completed: completed.promise,
+    release: release.resolve,
+    started: started.promise,
+  }
+}
+
+async function startRecoveryPanelObserver(page: Page) {
+  await page.evaluate(() => {
+    document.documentElement.dataset.presenterRecoveryReappeared = 'false'
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('.admin-presenter-recovery-panel')) {
+        document.documentElement.dataset.presenterRecoveryReappeared = 'true'
+      }
+    })
+    observer.observe(document.body, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    })
+  })
+}
+
+async function recoveryPanelReappeared(page: Page) {
+  return page.evaluate(
+    () =>
+      document.documentElement.dataset.presenterRecoveryReappeared === 'true',
+  )
+}
+
+async function waitForAnimationFrames(page: Page, count: number) {
+  await page.evaluate(
+    (frameCount) =>
+      new Promise<void>((resolve) => {
+        let remainingFrames = frameCount
+        const advance = () => {
+          remainingFrames -= 1
+          if (remainingFrames === 0) resolve()
+          else requestAnimationFrame(advance)
+        }
+        requestAnimationFrame(advance)
+      }),
+    count,
+  )
+}
+
+async function startAutomaticPresenterReview(page: Page) {
+  await page.goto('/admin')
+  await page
+    .getByTestId('powerpoint-sync-control')
+    .getByRole('button', { name: 'PowerPointと同期' })
+    .click()
+  const review = page.locator('.admin-presenter-review')
+  await expect(review).toBeVisible()
+  return review
 }
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
@@ -513,6 +634,7 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
   await expect(review).toContainText('3スライド')
   await expect(review).toContainText('Phase 7.29 lecture.pdf')
   await expect(review).toContainText('3ページ')
+  await expect(review.locator('.admin-presenter-recovery-code')).toHaveCount(0)
   await expect(
     review.getByRole('button', {
       name: 'このPowerPointと講義資料を同期',
@@ -581,7 +703,11 @@ test('recovers without localhost access, confirms once, and reaches active sync'
   expect(loopbackRequests).toEqual(['/v1/health'])
 
   const review = page.locator('.admin-presenter-review')
+  state.completeManualInspect()
   await expect(review).toBeVisible()
+  await expect(review.locator('.admin-presenter-recovery-code')).toHaveText(
+    'ABCD2345',
+  )
   await expect(review).toContainText('接続中のPowerPoint')
   await expect(review).toContainText('3スライド')
   await expect(review).toContainText('Phase 7.29 lecture.pdf')
@@ -598,9 +724,13 @@ test('recovers without localhost access, confirms once, and reaches active sync'
   await expect(page.locator('.admin-presenter-recovery-panel')).toContainText(
     'Presenter Bridgeの接続待ち',
   )
+  const recoveryCode = page.locator('.admin-presenter-recovery-code')
+  await expect(recoveryCode).toHaveText('ABCD2345')
+  state.completeManualClaim()
 
   const active = page.locator('.admin-presenter-active')
   await expect(active).toContainText('PowerPoint同期中')
+  await expect(recoveryCode).toHaveCount(0)
   await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeDisabled()
   expect(
     state.presenterActions.filter((action) => action === 'issue'),
@@ -620,18 +750,24 @@ test('moves an expired automatic ticket to the five-minute recovery path without
     expiredAutomaticTicket: true,
   })
 
-  await page.goto('/admin')
-  const presenter = page.getByTestId('powerpoint-sync-control')
-  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
-  const review = page.locator('.admin-presenter-review')
-  await expect(review).toBeVisible()
+  const review = await startAutomaticPresenterReview(page)
   await review
     .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
     .click()
 
-  const recovery = page.locator('.admin-presenter-recovery-panel')
-  await expect(recovery).toBeVisible()
-  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
+  const recoveryCode = page.locator('.admin-presenter-recovery-code')
+  await expect(recoveryCode).toHaveText('ABCD2345')
+  const statusCountAfterRecovery = state.presenterActions.filter(
+    (action) => action === 'status',
+  ).length
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThan(statusCountAfterRecovery)
+  await expect(review).toBeVisible()
+  await expect(review.locator('.admin-presenter-recovery-code')).toHaveText(
     'ABCD2345',
   )
   expect(
@@ -642,66 +778,132 @@ test('moves an expired automatic ticket to the five-minute recovery path without
 test('keeps the recovery code available when local activation fails after confirmation', async ({
   page,
 }) => {
-  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
-  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
-  await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
-    const body = route.request().postDataJSON() as Record<
-      string,
-      unknown
-    > | null
-    if (body?.action !== 'activate') {
-      await route.continue()
-      return
-    }
-    await route.fulfill({
-      body: JSON.stringify({
-        code: 'invalid_session',
-        message: 'Request rejected.',
-        ok: false,
-      }),
-      contentType: 'application/json',
-      headers: {
-        'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
-        'Cache-Control': 'no-store',
-        Vary: 'Origin',
-      },
-      status: 401,
-    })
-  })
+  await installLocalActivationFailure(page)
   await installAdminState(page)
   const state = await installNetworkMocks(page, {
-    delayFirstStatus: true,
     localActivationFailure: true,
+    staleInspectedAfterConfirm: true,
   })
 
-  await page.goto('/admin')
-  const presenter = page.getByTestId('powerpoint-sync-control')
-  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
-  const review = page.locator('.admin-presenter-review')
-  await expect(review).toBeVisible()
-  await state.delayedStatusRequested
+  const review = await startAutomaticPresenterReview(page)
   await review
     .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
     .click()
 
+  const recoveryCode = page.locator('.admin-presenter-recovery-code')
+  await expect(recoveryCode).toHaveText('ABCD2345')
+  const statusCountAfterRecovery = state.presenterActions.filter(
+    (action) => action === 'status',
+  ).length
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThan(statusCountAfterRecovery)
   const recovery = page.locator('.admin-presenter-recovery-panel')
-  await expect(recovery).toBeVisible({ timeout: 17_000 })
-  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
-    'ABCD2345',
-  )
-  state.releaseDelayedStatus()
-  await state.delayedStatusDelivered
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-      }),
-  )
   await expect(recovery).toBeVisible()
   await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
     'ABCD2345',
   )
   await expect(review).toBeHidden()
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(1)
+
+  state.completeManualInspect()
+  state.completeManualClaim()
+  const active = page.locator('.admin-presenter-active')
+  await expect(active).toContainText('PowerPoint同期中')
+  await expect(recoveryCode).toHaveCount(0)
+})
+
+for (const outcome of ['active', 'terminal'] as const) {
+  test(`does not revive recovery after ${outcome} wins during a delayed disconnect`, async ({
+    page,
+  }) => {
+    await installLocalActivationFailure(page)
+    const disconnect = await holdLoopbackDisconnect(page)
+    await installAdminState(page)
+    const state = await installNetworkMocks(page, {
+      localActivationFailure: true,
+      staleInspectedAfterConfirm: true,
+    })
+
+    const review = await startAutomaticPresenterReview(page)
+    await review
+      .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
+      .click()
+
+    await disconnect.started
+    const recoveryCode = page.locator('.admin-presenter-recovery-code')
+    await expect(recoveryCode).toHaveCount(0)
+    if (outcome === 'active') {
+      state.completeServerActivation()
+      await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    } else {
+      state.completeServerTermination()
+      await expect(page.getByTestId('powerpoint-sync-control')).toBeVisible()
+    }
+    await expect(recoveryCode).toHaveCount(0)
+    await startRecoveryPanelObserver(page)
+
+    disconnect.release()
+    await disconnect.completed
+    await waitForAnimationFrames(page, 4)
+
+    expect(await recoveryPanelReappeared(page)).toBe(false)
+    await expect(page.locator('.admin-presenter-recovery-panel')).toBeHidden()
+    await expect(recoveryCode).toHaveCount(0)
+    if (outcome === 'active') {
+      await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    } else {
+      await expect(page.getByTestId('powerpoint-sync-control')).toBeVisible()
+    }
+    expect(
+      state.presenterActions.filter((action) => action === 'confirm'),
+    ).toHaveLength(1)
+  })
+}
+
+test('keeps active when a delayed local activation fails after server activation', async ({
+  page,
+}) => {
+  const activation = await installLocalActivationFailure(page, true)
+  const disconnectRequests: string[] = []
+  await page.route('http://127.0.0.1:43124/v1/disconnect', async (route) => {
+    if (route.request().method() === 'POST') {
+      disconnectRequests.push(route.request().url())
+    }
+    await route.continue()
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    localActivationFailure: true,
+    staleInspectedAfterConfirm: true,
+  })
+
+  const review = await startAutomaticPresenterReview(page)
+  await review
+    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
+    .click()
+
+  await activation.started
+  state.completeServerActivation()
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  const recoveryCode = page.locator('.admin-presenter-recovery-code')
+  await expect(recoveryCode).toHaveCount(0)
+  await startRecoveryPanelObserver(page)
+
+  activation.release()
+  await activation.completed
+  await waitForAnimationFrames(page, 2)
+
+  expect(await recoveryPanelReappeared(page)).toBe(false)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(page.locator('.admin-presenter-recovery-panel')).toBeHidden()
+  await expect(recoveryCode).toHaveCount(0)
+  expect(disconnectRequests).toEqual([])
   expect(
     state.presenterActions.filter((action) => action === 'confirm'),
   ).toHaveLength(1)
