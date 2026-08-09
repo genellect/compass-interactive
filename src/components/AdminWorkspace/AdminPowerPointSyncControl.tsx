@@ -53,7 +53,9 @@ export function AdminPowerPointSyncControl({
         <div>
           <strong>PowerPointと同期</strong>
           {sync.message ? <p className="note">{sync.message}</p> : null}
-          {sync.manualCode ? <RecoveryCode code={sync.manualCode} /> : null}
+          {sync.manualRecoveryRequired && sync.manualCode ? (
+            <RecoveryCode code={sync.manualCode} />
+          ) : null}
         </div>
         <button className="secondary-button" onClick={sync.start} type="button">
           PowerPointと同期
@@ -83,7 +85,9 @@ export function AdminPowerPointSyncControl({
               : 'Presenter Bridgeの接続待ち'}
           </strong>
           {sync.message ? <p className="note">{sync.message}</p> : null}
-          {sync.manualCode ? <RecoveryCode code={sync.manualCode} /> : null}
+          {sync.manualRecoveryRequired && sync.manualCode ? (
+            <RecoveryCode code={sync.manualCode} />
+          ) : null}
         </div>
         <button className="secondary-button" onClick={sync.stop} type="button">
           やめる
@@ -108,6 +112,9 @@ export function AdminPowerPointSyncControl({
             <small>{pdfPageCount ?? '—'}ページ</small>
           </div>
         </div>
+        {sync.manualRecoveryRequired && sync.manualCode ? (
+          <RecoveryCode code={sync.manualCode} />
+        ) : null}
         {pdfPreview}
         {sync.presentation.issues.length ? (
           <ul className="error-note">
@@ -117,9 +124,6 @@ export function AdminPowerPointSyncControl({
           </ul>
         ) : null}
         {sync.message ? <p className="note">{sync.message}</p> : null}
-        {sync.manualCode && !sync.presentation.bindingDigest ? (
-          <RecoveryCode code={sync.manualCode} />
-        ) : null}
         <div className="admin-presenter-actions">
           <button
             className="primary-button"

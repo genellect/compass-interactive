@@ -40,6 +40,7 @@ type UseAdminPowerPointSyncInput = {
 
 const ACTIVE_STATUS_INTERVAL_MS = 5_000
 const PAIRING_STATUS_INTERVAL_MS = 1_000
+type PresenterConnectionStage = 'active' | 'pending' | 'terminal'
 const bridgeErrorMessages: Readonly<Record<string, string>> = {
   bridge_unavailable:
     'Presenter Bridgeへ直接接続できません。復旧コードで接続できます。',
@@ -126,6 +127,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const [phase, setPhase] = useState<PowerPointSyncPhase>('idle')
   const [message, setMessage] = useState('')
   const [manualCode, setManualCode] = useState('')
+  const [manualRecoveryRequired, setManualRecoveryRequired] = useState(false)
   const [presentation, setPresentation] =
     useState<PowerPointReviewPresentation | null>(null)
   const [serverConnection, setServerConnection] =
@@ -133,7 +135,10 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const connectionIdRef = useRef<string | null>(null)
   const localSessionRef = useRef<string | null>(null)
   const pairingTicketExpiresAtRef = useRef<string | null>(null)
-  const recoveryAfterConfirmationRef = useRef(false)
+  const manualRecoveryModeRef = useRef(false)
+  const manualRecoveryReadyRef = useRef(false)
+  const teacherConfirmedRef = useRef(false)
+  const connectionStageRef = useRef<PresenterConnectionStage>('pending')
   const epochRef = useRef(0)
   const lastCommittedPageRef = useRef<number | null>(null)
 
@@ -141,7 +146,11 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     connectionIdRef.current = null
     localSessionRef.current = null
     pairingTicketExpiresAtRef.current = null
-    recoveryAfterConfirmationRef.current = false
+    manualRecoveryModeRef.current = false
+    manualRecoveryReadyRef.current = false
+    teacherConfirmedRef.current = false
+    connectionStageRef.current = 'pending'
+    setManualRecoveryRequired(false)
     lastCommittedPageRef.current = null
     setManualCode('')
     setPresentation(null)
@@ -161,7 +170,10 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       connectionIdRef.current = null
       localSessionRef.current = null
       pairingTicketExpiresAtRef.current = null
-      recoveryAfterConfirmationRef.current = false
+      manualRecoveryModeRef.current = false
+      manualRecoveryReadyRef.current = false
+      teacherConfirmedRef.current = false
+      connectionStageRef.current = 'pending'
       lastCommittedPageRef.current = null
 
       if (localSession) {
@@ -192,14 +204,20 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       lectureSessionId: activeLectureSessionId,
     })
     if (epoch !== epochRef.current) return
+    if (connectionStageRef.current === 'terminal') return
 
     const connection = result.connection
-    setServerConnection(connection)
     if (
       !result.runtimeEnabled ||
       !connection ||
       connection.state === 'revoked'
     ) {
+      connectionStageRef.current = 'terminal'
+      setServerConnection(connection)
+      manualRecoveryModeRef.current = false
+      manualRecoveryReadyRef.current = false
+      teacherConfirmedRef.current = false
+      setManualRecoveryRequired(false)
       setManualCode('')
       setPhase('error')
       setMessage(
@@ -208,18 +226,63 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       return
     }
 
-    if (
-      connection.state !== 'active' &&
-      Date.parse(connection.ticketExpiresAt) <= Date.now()
-    ) {
+    if (connection.state === 'active') {
+      connectionStageRef.current = 'active'
+      setServerConnection(connection)
+      manualRecoveryModeRef.current = false
+      manualRecoveryReadyRef.current = false
+      teacherConfirmedRef.current = false
+      setManualRecoveryRequired(false)
+      setManualCode('')
+      setPhase('active')
+      setMessage('')
+      if (
+        connection.lastCommittedPdfPage !== null &&
+        connection.lastCommittedPdfPage !== lastCommittedPageRef.current
+      ) {
+        lastCommittedPageRef.current = connection.lastCommittedPdfPage
+        onCommittedPage()
+      }
+      return
+    }
+
+    if (connectionStageRef.current === 'active') return
+
+    if (Date.parse(connection.ticketExpiresAt) <= Date.now()) {
+      connectionStageRef.current = 'terminal'
+      setServerConnection(connection)
+      manualRecoveryModeRef.current = false
+      manualRecoveryReadyRef.current = false
+      teacherConfirmedRef.current = false
+      setManualRecoveryRequired(false)
       setManualCode('')
       setPhase('error')
       setMessage('復旧コードの有効期限が切れました。もう一度接続してください。')
       return
     }
 
-    if (recoveryAfterConfirmationRef.current && connection.state !== 'active') {
-      setPhase('recovery')
+    setServerConnection(connection)
+
+    if (manualRecoveryModeRef.current) {
+      if (!manualRecoveryReadyRef.current) return
+      const manualReview = manualReviewFromStatus(connection)
+      if (manualReview) {
+        setPresentation(manualReview)
+      }
+      if (teacherConfirmedRef.current || connection.state === 'confirmed') {
+        teacherConfirmedRef.current = true
+        setPhase('activating')
+        setMessage(
+          'Presenter Bridgeで復旧コードを入力してください。接続完了を待っています…',
+        )
+      } else if (connection.state === 'inspected' && manualReview) {
+        setPhase('review')
+        setMessage(
+          '復旧コードをPresenter Bridgeへ入力し、PowerPointと講義資料を確認してください。',
+        )
+      } else {
+        setPhase('recovery')
+      }
       return
     }
 
@@ -234,20 +297,6 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           setPhase('activating')
           setMessage('Presenter Bridgeの接続完了を待っています…')
         }
-      }
-    }
-
-    if (connection.state === 'active') {
-      recoveryAfterConfirmationRef.current = false
-      setManualCode('')
-      setPhase('active')
-      setMessage('')
-      if (
-        connection.lastCommittedPdfPage !== null &&
-        connection.lastCommittedPdfPage !== lastCommittedPageRef.current
-      ) {
-        lastCommittedPageRef.current = connection.lastCommittedPdfPage
-        onCommittedPage()
       }
     }
   }, [activeLectureSessionId, adminToken, enabled, onCommittedPage])
@@ -342,6 +391,10 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         )
       } catch (bridgeError) {
         if (epoch !== epochRef.current) return
+        manualRecoveryModeRef.current = true
+        manualRecoveryReadyRef.current = true
+        teacherConfirmedRef.current = false
+        setManualRecoveryRequired(true)
         setPhase('recovery')
         setMessage(friendlyBridgeError(bridgeError))
       }
@@ -361,22 +414,46 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
 
   const confirm = useCallback(async () => {
     const connectionId = connectionIdRef.current
-    if (!connectionId || !presentation?.eligible) return
+    if (
+      !connectionId ||
+      !presentation?.eligible ||
+      connectionStageRef.current !== 'pending'
+    ) {
+      return
+    }
     const epoch = epochRef.current
     const localSession = localSessionRef.current
     const pairingTicketExpiresAt = pairingTicketExpiresAtRef.current
 
-    const transitionAutomaticPairingToRecovery = async (
-      preserveUntilActive: boolean,
-    ) => {
-      recoveryAfterConfirmationRef.current = preserveUntilActive
+    const transitionAutomaticPairingToRecovery = async () => {
+      if (connectionStageRef.current !== 'pending') return
+      manualRecoveryModeRef.current = true
+      manualRecoveryReadyRef.current = false
+      setManualRecoveryRequired(false)
+      setPhase('activating')
+      setMessage(
+        'Presenter Bridgeを安全に手動復旧へ切り替えています…',
+      )
       if (localSession) {
         await presenterBridgeClient
           .disconnect(localSession)
           .catch(() => undefined)
       }
-      if (epoch !== epochRef.current) return
-      localSessionRef.current = null
+      if (
+        epoch === epochRef.current &&
+        localSessionRef.current === localSession
+      ) {
+        localSessionRef.current = null
+      }
+      if (
+        epoch !== epochRef.current ||
+        connectionStageRef.current !== 'pending' ||
+        !manualRecoveryModeRef.current
+      ) {
+        return
+      }
+      manualRecoveryReadyRef.current = true
+      setManualRecoveryRequired(true)
       pairingTicketExpiresAtRef.current = null
       setPhase('recovery')
       setMessage(
@@ -389,7 +466,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       (!pairingTicketExpiresAt ||
         Date.parse(pairingTicketExpiresAt) <= Date.now())
     ) {
-      await transitionAutomaticPairingToRecovery(false)
+      await transitionAutomaticPairingToRecovery()
       return
     }
 
@@ -399,8 +476,20 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         adminToken,
         connectionId,
       })
+      if (
+        epoch !== epochRef.current ||
+        connectionStageRef.current !== 'pending'
+      ) {
+        return
+      }
+      teacherConfirmedRef.current = true
     } catch (error) {
-      if (epoch !== epochRef.current) return
+      if (
+        epoch !== epochRef.current ||
+        connectionStageRef.current !== 'pending'
+      ) {
+        return
+      }
       setPhase('review')
       setMessage(friendlyBridgeError(error))
       return
@@ -411,7 +500,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         !pairingTicketExpiresAt ||
         Date.parse(pairingTicketExpiresAt) <= Date.now()
       ) {
-        await transitionAutomaticPairingToRecovery(true)
+        await transitionAutomaticPairingToRecovery()
         return
       }
       try {
@@ -419,14 +508,29 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           localSession,
           presentation.bindingDigest,
         )
-        if (epoch !== epochRef.current) return
+        if (
+          epoch !== epochRef.current ||
+          connectionStageRef.current !== 'pending'
+        ) {
+          return
+        }
+        connectionStageRef.current = 'active'
         setPresentation(active.presentation)
+        manualRecoveryModeRef.current = false
+        manualRecoveryReadyRef.current = false
+        teacherConfirmedRef.current = false
+        setManualRecoveryRequired(false)
         setManualCode('')
         setPhase('active')
         setMessage('')
       } catch {
-        if (epoch !== epochRef.current) return
-        await transitionAutomaticPairingToRecovery(true)
+        if (
+          epoch !== epochRef.current ||
+          connectionStageRef.current !== 'pending'
+        ) {
+          return
+        }
+        await transitionAutomaticPairingToRecovery()
         return
       }
     } else {
@@ -472,6 +576,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   return {
     confirm,
     manualCode,
+    manualRecoveryRequired,
     manualNavigationLocked,
     message,
     phase,
