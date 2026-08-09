@@ -56,6 +56,7 @@ const readme = read('README.md')
 const roadmap = read('docs/ROADMAP.md')
 const architecture = read('docs/architecture.md')
 const security = read('docs/SECURITY.md')
+const dataPolicy = read('docs/data_policy.md')
 const changelog = read('docs/CHANGELOG.md')
 const contestPlan = read(
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
@@ -126,6 +127,9 @@ for (const requiredText of [
   '短命一回限りnonce',
   'hardware/device bindingを主張しない',
   '`all_except_captions`から`all_including_captions`',
+  'fresh TOTPは要求しない',
+  '30分idleや周期的TOTP promptが発生しない',
+  '`ADMIN_PIN`/`BILLING_PIN`完全撤去',
   '`講義資料`',
   'R2 bucket、binding、credential、namespace',
 ]) {
@@ -159,9 +163,13 @@ for (const requiredText of [
   'full-browser-profile copying',
   'caption-scope escalation',
   'No hardware/device-binding claim',
-  '`ADMIN_PIN` is the legacy shared Admin-login path',
-  '`BILLING_PIN` is the legacy paid-cost path',
-  'personal four-digit `AI PIN` is the normal low-entropy intent factor',
+  '`auth.sessions.created_at + 8 hours`',
+  'Phase 7.30B2 implements the continuous-session',
+  'Phase 7.30C completes its unified verifier',
+  'no email MFA',
+  'Role changes are enforced from current membership state',
+  '`ADMIN_PIN` is removed after the Phase 7.30C authorization migration',
+  'immutable Google-only application revision',
   'all_except_captions',
   'all_including_captions',
   'AI Passkey is not part of the initial B2 implementation',
@@ -169,6 +177,80 @@ for (const requiredText of [
   assert.ok(
     googleAdminPlan.includes(requiredText),
     `Google Admin contract missing: ${requiredText}`,
+  )
+}
+assert.match(
+  googleAdminPlan,
+  /there is no 30-minute\s+inactivity expiry/,
+  'Google Admin contract must remove the transitional B1 idle expiry in B2',
+)
+assert.match(
+  googleAdminPlan,
+  /`BILLING_PIN` and its\s+compatibility RPC are removed after personal-AI-PIN E2E/,
+  'Google Admin contract must remove BILLING_PIN and its RPC after personal AI PIN E2E',
+)
+assert.match(
+  googleAdminPlan,
+  /Normal\s+lecture operations, emergency stop,[\s\S]{0,180}never request this\s+five-minute step-up/,
+  'Normal lecture and emergency-stop flows must not prompt for fresh TOTP',
+)
+assert.match(
+  googleAdminPlan,
+  /A five-minute server-recorded TOTP\s+step-up nonce is used only for owner\/principal changes, role\/status changes,\s+verified TOTP factor-set changes, environment AI-policy changes and global\s+revocation/,
+  'Fresh TOTP step-up must have the exact rare control-plane allowlist',
+)
+assert.match(
+  googleAdminPlan,
+  /AI PIN enrollment\/use\/rotation\/reset\/\s*recovery,[\s\S]{0,160}never request this\s+five-minute step-up/,
+  'AI PIN enrollment, rotation, reset and recovery must not request the control-plane TOTP step-up',
+)
+assert.match(
+  googleAdminPlan,
+  /Enrollment, rotation, reset, recovery,[\s\S]{0,280}do not trigger a fresh TOTP prompt/,
+  'Normal AI PIN lifecycle operations must stay inside the valid AAL2 session without fresh TOTP',
+)
+assert.doesNotMatch(
+  googleAdminPlan,
+  /rotation or reset does\s+not clear[\s\S]{0,140}recent-AAL2 recovery event/i,
+  'AI PIN lock recovery must not use the stale recent-AAL2 recovery-event contract',
+)
+
+const currentAuthContracts = [
+  agentsContract,
+  readme,
+  roadmap,
+  agentRouting,
+  runbook,
+  security,
+  architecture,
+  dataPolicy,
+  googleAdminPlan,
+  contestPlan,
+].join('\n')
+assert.doesNotMatch(
+  currentAuthContracts,
+  /(?:AI[- ]?PIN\s+)?(?:enrollment|rotation|reset|recovery)[\s\S]{0,100}(?:requires?|must|needs?)[\s\S]{0,50}(?:fresh|recent)(?:-AAL2)?(?:\s+TOTP|\s+step-up|\s+recovery event)/i,
+  'No current contract may require fresh/recent TOTP for normal AI PIN enrollment, rotation, reset or recovery',
+)
+
+for (const [requiredPattern, label] of [
+  [
+    /Supabase Auth\s+exclusively manages persistent factor material/,
+    'Supabase Auth factor custody',
+  ],
+  [
+    /application logs and browser persistence store no TOTP secret/,
+    'no application persistence',
+  ],
+  [
+    /secret\/QR only ephemerally for display, scan and verification/,
+    'ephemeral client enrollment material',
+  ],
+]) {
+  assert.match(
+    dataPolicy,
+    requiredPattern,
+    `Data policy missing Supabase TOTP custody boundary: ${label}`,
   )
 }
 
@@ -197,6 +279,16 @@ for (const [name, document] of [
     /no raw PIN appears in (?:storage or )?network/i,
     `${name} must allow only the bounded TLS verification body, not promise zero network transit`,
   )
+  assert.doesNotMatch(
+    document,
+    /caption-scope escalation requires a new AI-unlock proof plus a still-fresh|escalation requires a new AI proof and recent TOTP|proof-plus-recent-AAL2 caption-scope/i,
+    `${name} must not require a fresh TOTP prompt for ordinary AI scope escalation`,
+  )
+  assert.doesNotMatch(
+    document,
+    /`BILLING_PIN` is only a default-OFF|`BILLING_PIN` is the legacy paid-cost path/i,
+    `${name} must not retain BILLING_PIN as a Production rollback path`,
+  )
 }
 
 for (const heading of [
@@ -204,7 +296,7 @@ for (const heading of [
   '### 7.30B - additive identity foundation',
   '### 7.30C - RBAC, ownership and all server authorization',
   '### 7.30D - Google, MFA and Admin-ledger UX',
-  '### 7.30E - dual-read compatibility and full regression',
+  '### 7.30E - Google-only cutover and full regression',
   '### 7.30F - Hosted/Human identity migration gate',
 ]) {
   assert.ok(
@@ -230,14 +322,19 @@ for (const requiredText of [
   'mandatory TOTP before B2 adds AI PIN',
   'personal four-digit AI PIN',
   'remembered-browser proof',
-  'escalation requires a new AI proof',
-  '`ADMIN_PIN`, `BILLING_PIN` and personal `AI PIN`',
+  'caption-scope/cost escalation requires a new AI proof',
+  '`ADMIN_PIN` is removed after the C migration',
 ]) {
   assert.ok(
     agentRouting.includes(requiredText),
     `Agent routing contract missing: ${requiredText}`,
   )
 }
+assert.match(
+  agentRouting,
+  /`ADMIN_PIN` is removed after the C migration and `BILLING_PIN` after\s+personal-AI-PIN E2E/,
+  'Agent routing must remove both shared PIN paths before Production',
+)
 for (const gate of ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {
   assert.ok(roadmap.includes(gate), `Roadmap missing ${gate}`)
 }

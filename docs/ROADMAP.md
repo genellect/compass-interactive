@@ -2,7 +2,7 @@
 
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
-Last reconciled: 2026-08-09
+Last reconciled: 2026-08-10
 Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B1
 source/local implemented; B2 onward and Hosted/Human gates remain HOLD
 
@@ -56,11 +56,20 @@ Every future phase must preserve all of the following.
   protected by a server-only pepper, and the raw value is never bundled,
   persisted or logged. Browser remembering uses a non-extractable
   browser-profile key and revocable server credential, never the PIN; hardware
-  binding is not claimed before WebAuthn. The legacy `BILLING_PIN` follows the
-  same no-persistence rule until retirement.
+  binding is not claimed before WebAuthn. The current legacy `BILLING_PIN` is a
+  pre-migration source artifact only and is removed with its compatibility RPC
+  after personal-AI-PIN E2E and before Production.
 - Privileged Admin mutations require a verified internal principal bound to
   `auth.uid()` and an AAL2 session after the Google migration; email or role
   strings alone never authorize a row.
+- Production v1 uses Supabase Authenticator App TOTP, compatible with Google
+  Authenticator. No email MFA or custom MFA path is added.
+- The Admin application session has no 30-minute idle limit or periodic TOTP
+  prompt. It expires only on explicit logout, backing `auth.sessions` removal,
+  principal/environment/membership invalidation, a verified TOTP factor-set
+  change, or `auth.sessions.created_at + 8 hours`. Role changes take effect live
+  without logout; `can_use_ai=false` drains AI authority while keeping the
+  Admin session.
 
 ### Lifecycle
 
@@ -100,17 +109,26 @@ Every future phase must preserve all of the following.
 - Realtime transcription is never started by another AI feature.
 - A master-authorized child start never asks for the AI PIN again but still
   receives a fresh single-use internal grant after all server checks.
-- Escalating from `all_except_captions` to `all_including_captions` requires a
-  fresh AI-unlock proof and server-recorded recent TOTP step-up; same-scope retry
-  is idempotent and downgrade/stop are free and factorless.
-- `BILLING_PIN` is removed from the normal Google/AAL2 path and retained only as
-  a default-OFF, owner-only, audited and time-bounded migration rollback. It is
-  deleted after the rollback deadline.
+- A personal AI PIN is verified once for each new lecture master, not per child
+  call. Escalating from `all_except_captions` to
+  `all_including_captions` requires a fresh AI-unlock proof inside the valid
+  AAL2 session, but no new TOTP prompt; same-scope retry is idempotent and
+  downgrade/stop are free and factorless. AI-PIN rotation/revoke drains AI
+  authority while preserving the Admin session.
+- Five-minute fresh TOTP is reserved for rare control-plane owner/principal,
+  role/status, verified TOTP-factor-set, environment AI-policy and global-revoke
+  changes. Normal lecture operation, emergency stop, master activation/
+  escalation and child calls never prompt for it.
+- `ADMIN_PIN` is removed after Phase 7.30C authorization migration and before
+  Production. `BILLING_PIN` is removed after personal-AI-PIN E2E and before
+  Production. Rollback uses a Google-only immutable revision and operator owner
+  recovery, never a shared PIN.
 
 ### Compatibility
 
 - Expand-first migration and default-OFF flags.
-- Old RPC/client compatibility until the contract-removal gate.
+- Old RPC/client compatibility only until the named contract-removal gate; it
+  is never a reason to retain shared PIN issue paths in Production.
 - Clean database and previous-Phase upgrade verification.
 - Rollback by flag/version before any destructive schema action.
 
@@ -617,7 +635,8 @@ compatibility gate. Student anonymous Auth, participant ownership and lecture
 lifecycle remain unchanged. Repeated `BILLING_PIN` entry and owner-issued
 per-lecture delegation are replaced in the normal path by an individual
 AI-unlock factor, owner-managed policy and the existing lecture master
-authorization; the old PIN survives only as a bounded rollback control.
+authorization. Both shared PIN systems are removed before Production; rollback
+uses a Google-only immutable revision and operator owner recovery.
 
 **2026-08-09 checkpoint:** Phase 7.30A and the bounded B1 identity foundation
 are implemented in source for local verification. Database Google issuance and
@@ -632,6 +651,14 @@ limit. It does not grant operational Admin authority. Phase 7.30B2, C-F, real
 Google OAuth, Hosted/Human evidence and every Production activation remain
 HOLD. See
 `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
+
+The 30-minute inactivity limit above is the exact B1 source evidence, not the
+approved final teacher-session policy. Phase 7.30B2 implements the
+continuous-session lifetime/invalidation migration, removing that idle limit
+and anchoring the cap to `auth.sessions.created_at + 8 hours`; Phase 7.30C
+completes its unified verifier across every operational Admin Edge/RPC path.
+There is no periodic TOTP prompt. The final trigger and shared-PIN retirement
+contract is defined in the cross-phase invariants and the B2-E sections below.
 
 ### 7.30A - asset, IAM and threat inventory
 
@@ -666,12 +693,17 @@ master-provenance portion listed below is B2 and remains HOLD.
   one-time invitation. Request body, `user_metadata` and later email comparison
   are not authorization sources.
 - Require TOTP AAL2 and a server-recorded short-lived recent-step-up nonce for
-  sensitive actions. Supabase Passkeys are Beta/passwordless and remain a later
-  option after custom-domain/RP-ID stability; they are not v1 AAL2.
+  the rare control-plane actions only: owner/principal, role/status, verified
+  TOTP factor-set, environment AI-policy and global revoke. Supabase
+  Authenticator App TOTP is compatible with Google Authenticator; no email or
+  custom MFA is introduced. Supabase Passkeys are Beta/passwordless and remain
+  a later option after custom-domain/RP-ID stability; they are not v1 AAL2.
 - Execute B in order: B1 must pass Google identity, tracked-session and mandatory
   TOTP AAL2 gates before B2 adds the four-digit AI PIN, remembered-browser
-  credential, AI policy and master-provenance expansion. Dedicated AI Passkey is
-  deferred from the initial implementation.
+  credential, AI policy and master-provenance expansion and implements the
+  continuous-session lifetime/invalidation migration. Phase 7.30C then
+  completes the unified verifier across all operational Admin Edge/RPC paths.
+  Dedicated AI Passkey is deferred from the initial implementation.
 
 ### 7.30C - RBAC, ownership and all server authorization
 
@@ -679,7 +711,8 @@ master-provenance portion listed below is B2 and remains HOLD.
   environment-scoped entitlement. Lecture ownership binds to either role's
   active membership, not specifically to the `owner` role.
 - Migrate every Admin Edge/RPC path to verified bearer, immutable Google
-  binding, active membership/capability, tracked session, AAL2/step-up,
+  binding, active membership/capability, tracked session, AAL2 and the narrowly
+  scoped control-plane step-up where applicable,
   ownership/lifecycle and feature/cost checks, with transaction-time rechecks.
 - Owners can manage the Admin ledger, revoke an account/session, stop any
   lecture and inspect bounded audit. Instructors are self/own-lecture only, and
@@ -694,7 +727,8 @@ master-provenance portion listed below is B2 and remains HOLD.
   and bounded TLS body and clears it after the response. Browser persistence
   stores only a non-extractable profile key plus revocable public credential.
   Short-lived one-time enrollment is bound to identity, membership, session,
-  exact TOTP step-up event, factor version, Origin and key fingerprint.
+  verified TOTP factor-set version, AI-factor version, Origin and key
+  fingerprint without requesting another TOTP challenge.
 - Five failures per 15 minutes lock the environment+membership across every
   session/factor/browser; separate pepper-hashed network and environment circuit
   breakers fail closed without retaining raw IP. Factor rotation cannot clear
@@ -702,6 +736,12 @@ master-provenance portion listed below is B2 and remains HOLD.
 - Session, factor, browser credential, membership/entitlement, policy and lecture
   transitions each have explicit idempotent master/child drain behavior. Budget
   exhaustion alone preserves the activated master but denies child admissions.
+- Complete the unified operational verifier for the B2 session migration:
+  app-session expiry is anchored to the backing Auth session's creation time
+  plus eight hours, with no idle timeout. Role changes are live. AI-PIN changes
+  and `can_use_ai=false` drain AI authority without dropping the Admin session;
+  principal/environment/membership invalidation or verified TOTP-factor-set
+  change ends it.
 
 ### 7.30D - Google, MFA and Admin-ledger UX
 
@@ -713,28 +753,31 @@ master-provenance portion listed below is B2 and remains HOLD.
   surface keeps exactly two master choices, and optional trusted-browser memory
   is default OFF on shared devices and stores no raw PIN. It is described as
   browser-profile-bound, not hardware/device-bound, until the WebAuthn gate.
-- Dangerous actions name target/effect, require recent step-up and are
-  idempotent/audited. Infrastructure details stay in the runbook.
+- Owner/principal, role/status, verified TOTP-factor-set, environment AI-policy
+  and global-revoke actions name target/effect, require a five-minute TOTP
+  step-up and are idempotent/audited. Normal lecture controls, emergency stop,
+  AI master/escalation and child calls do not prompt. Infrastructure details
+  stay in the runbook.
 - Accessibility, mobile/desktop, Chromium/WebKit OAuth callback, storage
   sanitizer, expiry, recovery and ledger E2E are mandatory.
 
-### 7.30E - dual-read compatibility and full regression
+### 7.30E - Google-only cutover and full regression
 
-- Run Google and legacy shared-login-PIN authorization in an expand-first,
-  default-OFF dual-read period; backfill/assign legacy lecture ownership without
-  widening it.
-- Keep the PIN-login path as time-bounded break-glass rollback only. It cannot
-  grant broader roles or bypass AAL2 after Google enforcement, and it receives a
-  tested retirement deadline.
-- Keep legacy `BILLING_PIN` admission behind its own default-OFF, owner-only
-  rollback flag. Google-enforced clients fail closed on direct legacy PIN use;
-  after the deadline the secret and compatibility RPC are removed in a contract
-  migration.
-- Keep the names and authority separate: `ADMIN_PIN` is only legacy shared
-  login, `BILLING_PIN` is only the default-OFF Google-owner/AAL2 paid rollback,
-  and the personal four-digit `AI PIN` is only the normal intent factor. A full
-  shared-`ADMIN_PIN` revision rollback keeps new paid starts disabled because it
-  cannot prove an individual owner at AAL2; free stop remains available.
+- Use expand-first schema and explicit ownership claim/backfill, but cut
+  operational authorization to Google-only after every Admin Edge/RPC path has
+  migrated. Do not operate a dual-login Production period or widen ownership
+  from request input.
+- Revoke all active legacy application sessions, remove the shared
+  `ADMIN_PIN` issuer, UI, flags and secret after the Phase 7.30C migration, and
+  retain revoked historical rows only where foreign-key/audit integrity needs
+  them.
+- After personal-AI-PIN E2E, remove `BILLING_PIN`, its compatibility RPC, UI,
+  flag and secret before Production. Direct legacy PIN clients fail closed.
+- The personal four-digit `AI PIN` remains only the normal lecture-intent
+  factor. It cannot sign in, elevate role or recover an owner.
+- Rehearse rollback to a reviewed immutable Google-only revision and documented
+  Supabase operator owner recovery. Never restore a shared PIN path; free stop
+  remains available while paid admission is disabled.
 - Inventory and regress every Admin Edge/RPC plus Phase 0-7.29 student, PDF,
   Display, Poll, AI, Archive and Presenter-OFF contract before migration.
 
@@ -803,17 +846,21 @@ Recheck them at implementation and Production Gate.
   and may opt into the safe remembered-browser flow, then unlocks its own lecture
   with the ordinary two-scope master CTA. Dedicated AI Passkey is added only
   after its WebAuthn gate. Owner intervention and `BILLING_PIN` are not required
-  per lecture or per call. The owner preconfigures `can_use_ai`, allowed
-  features/models and bounded lecture/day/cost/Realtime limits; reviewers cannot
-  change those policies.
+  per lecture or per call; `BILLING_PIN` is removed before Production. The
+  personal AI PIN is requested once per new lecture master or explicit
+  scope/cost escalation, never per child call. The owner preconfigures
+  `can_use_ai`, allowed features/models and bounded lecture/day/cost/Realtime
+  limits; reviewers cannot change those policies.
 - Browser remembering atomically consumes a short-lived enrollment nonce bound
-  to the reviewer, environment, membership, Admin session, exact TOTP step-up,
-  factor version, Origin and public-key fingerprint. It stores no PIN, is
-  individually revocable and is browser-profile-bound rather than hardware-bound.
-- Caption-scope escalation rechecks the AI factor and recent TOTP step-up;
-  downgrade/stop are free. The complete session/factor/browser/membership/policy
-  revoke matrix, membership-wide and coarse abuse limits, XSS/profile-copy tests
-  and no-R2-infrastructure UI acceptance are mandatory.
+  to the reviewer, environment, membership, Admin session, verified TOTP
+  factor-set version, AI-factor version, Origin and public-key fingerprint. It
+  stores no PIN, is individually revocable and is browser-profile-bound rather
+  than hardware-bound.
+- Caption-scope escalation rechecks the AI factor inside the valid AAL2 session
+  without a new TOTP prompt; downgrade/stop are free. The complete session/
+  factor/browser/membership/policy revoke matrix, membership-wide and coarse
+  abuse limits, XSS/profile-copy tests and no-R2-infrastructure UI acceptance
+  are mandatory.
 - Isolate Supabase, OAuth client, Cloudflare environment/domain, a dedicated
   Private R2 bucket/binding/credential,
   OpenAI project/budget, audit and cleanup from Production. Reviewers receive no
@@ -853,7 +900,7 @@ release.
 - Phase 7.29 signed/native/device/venue/rate-limit/cleanup activation blockers
   resolved;
 - Phase 7.30 Google identity, TOTP AAL2, principal/RBAC, all Edge/RPC ownership,
-  recovery and legacy-PIN migration Hosted/Human evidence;
+  operator recovery and complete shared-PIN removal Hosted/Human evidence;
 - Phase 7.31 protected main, public-source audit and explicit publication
   approval, isolated reviewer E2E, expiry/revoke/cleanup/cost evidence;
 - Phase 7.32 tenant isolation, commercial operations, accessibility, privacy,
@@ -885,7 +932,9 @@ automatic HOLD. Only a complete PASS permits the staged final release.
 - Keep Luna as default.
 - Offer Terra only for multi-study conflict, methodological appraisal, advanced
   causal reasoning or mechanistic synthesis.
-- Require explicit teacher `高度解析`, API-use PIN and a displayed cost ceiling.
+- Require explicit teacher `高度解析`, a valid lecture AI master (or a new
+  personal AI-unlock proof for an explicit scope/cost escalation) and a
+  displayed cost ceiling. Do not restore a shared API-use PIN.
 - Never auto-fallback from a Luna failure.
 - Apply a separate per-lecture call/budget ceiling and the same verified sources
   and teacher approval.
@@ -941,7 +990,7 @@ reasoning.
 | 7.30B           | **Sol Ultra primary; Supabase Auth/RLS/token-storage review**                                             | B1 identity/TOTP must pass before B2 low-entropy AI PIN, browser credential/rate-limit and policy/master state intersect              |
 | 7.30C           | **Sol Ultra primary; external authorization/concurrency/cost review**                                     | Every Edge/RPC, ownership, last-owner, unlock factor, AI policy and master authorization must converge transactionally                |
 | 7.30D           | Extra High for implementation; Ultra security/accessibility review                                        | UX work is bounded after the identity contract is fixed                                                                               |
-| 7.30E           | **Sol Ultra primary; old-client/backfill/rollback review**                                                | Dual-read migration and break-glass retirement can cause lockout or privilege expansion                                               |
+| 7.30E           | **Sol Ultra primary; cutover/backfill/rollback review**                                                   | Google-only cutover, explicit ownership backfill and shared-PIN removal must avoid lockout or privilege expansion                     |
 | 7.30F           | **Sol Ultra primary plus external final review and Human Gate**                                           | Exact Hosted state, MFA/recovery and rollback decide the limited identity-migration canary                                            |
 | 7.31A-B         | **Sol Ultra primary plus independent supply-chain/history/license review**                                | Repository governance and public visibility can irreversibly expose history and define release authority                              |
 | 7.31C           | **Sol Ultra primary plus independent identity/isolation/cost review**                                     | Real reviewer access must exercise AI-capable instructor UX without crossing Production or owner boundaries                           |

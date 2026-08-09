@@ -126,7 +126,9 @@ flowchart LR
 - Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。Phase 7.29 PowerPoint連携はdefault-OFFの候補で、Native・Device・Human・activation Gateとは分離します。
 - Phase 6.7で、README、Architecture、Security、Data Policy、Roadmap、Runbookを正本文書として整備しました。
 - Phase 7.29Bのdormant配置は機能有効化や正式なProduction Gate合格を意味しません。次の正式な統合判定はPhase 7.33であり、Presenter有効化、Google Admin/AAL2、GitHub保護・公開監査、審査員用独立実環境、商用運用品質がすべて揃うまでHOLDです。
-- Phase 7.30A-B1は、個別Google Admin identity、TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。通常activationは3つを同時に有効化し、legacy Admin PINは`VITE_PHASE7_30_LEGACY_ADMIN_PIN=true`を含めdefault-ONです。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。実Google OAuth、Hosted/Human evidence、B2のAI PIN、C以降の運用RBACとProduction activationは未実行/HOLDで、今回のlocal実装に固定費は発生しません。
+- Phase 7.30A-B1は、個別Google Admin identity、Supabase TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。通常activationは3つを同時に有効化し、legacy Admin PINは`VITE_PHASE7_30_LEGACY_ADMIN_PIN=true`を含めdefault-ONです。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。これはB1時点の実装事実であり、実Google OAuth、Hosted/Human evidence、B2のAI PIN、C以降の運用RBACとProduction activationは未実行/HOLDです。今回のlocal実装に固定費は発生しません。
+- 承認済みのPhase 7.30B2/C session migrationでは、B2が継続sessionの期限・失効処理を実装し、Cが全Admin Edge/RPCの統合verifierを完成させます。MFAはGoogle Authenticator等に対応するSupabase標準TOTPだけを使い、メールMFAや独自MFAを追加しません。Admin app sessionは基礎となる`auth.sessions.created_at + 8時間`まで講義中継続し、30分idle失効や周期的TOTP再要求を廃止します。再認証はlogout、基礎Auth session消失、principal/environment/membership無効化、確認済みTOTP factor構成変更、8時間上限に限定します。role変更はsessionを維持したまま即時反映し、`can_use_ai=false`はAI権限だけをdrainします。5分fresh TOTPはowner/principal、role/status、TOTP factor、environment AI policy、global revokeという稀なcontrol-plane変更に限定し、講義操作、緊急停止、AI master、個別AI callでは要求しません。
+- personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revokeはAI authorityをdrainしてもAdmin sessionを維持します。Phase 7.30C移行後は`ADMIN_PIN`をProduction前に完全撤去し、失効済みhistorical session rowはFK/audit用途だけ残せます。personal AI PIN E2E後は`BILLING_PIN`と互換RPCもProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
 - 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
 
@@ -159,7 +161,7 @@ flowchart LR
 
 ### Admin
 
-- Admin PINによる管理セッション
+- 現行sourceではlegacy Admin PIN管理セッション。Phase 7.30C以降は個別Google＋Supabase TOTP AAL2へ移行し、Production前に共有PINを撤去
 - 講義の作成、開始、終了、再利用
 - PDF公開と表示ページ制御
 - コメント管理とライブ投票の作成・進行
@@ -282,7 +284,7 @@ commitされていないobjectは学生へ公開しません。PDF本文、PDF b
 
 - 教員による明示操作
 - 有効なAdminセッション
-- API利用PINまたは許可されたlecture-wide authorization
+- 現行互換のAPI利用PIN、または許可されたlecture-wide authorization。Phase 7.30C以降の通常経路はpersonal AI PINによる講義master一回確認
 - openかつ期限内の講義
 - server-side feature flag
 - 利用回数と費用の上限
@@ -463,7 +465,7 @@ cloudflare/asset-worker/.dev.vars.example
 
 次の値には、`VITE_`prefixを付与してはいけません。
 
-- Admin PIN、API利用PIN
+- 現行互換のAdmin PIN、API利用PIN（Phase 7.30完了時にProductionから撤去）
 - OpenAI API key
 - Supabase service-role key
 - Turnstile secret

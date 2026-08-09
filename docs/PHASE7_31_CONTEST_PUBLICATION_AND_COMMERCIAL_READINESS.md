@@ -3,7 +3,7 @@
 Status: Planned
 Approval: requirements approved; implementation not started
 Scope: GitHub ガバナンス、公開リポジトリ化、審査員向け実環境、商用 EdTech 品質、統合 Production Gate
-Last verified: 2026-08-09
+Last verified: 2026-08-10
 
 ## 1. この計画の位置付け
 
@@ -34,6 +34,10 @@ Production Gate の合格を意味しない。
 - Google ログインは本人確認の入口であり、それだけでは Admin 権限を与えない。
   明示招待、有効な Admin principal、TOTP による AAL2、未失効 Admin session、
   講義所有権、機能・予算・同時実行・課金意図の各サーバー側検証を通過させる。
+- MFA はGoogle Authenticator互換のSupabase Authenticator App TOTPだけを用い、email
+  MFAや独自MFAを追加しない。Google→TOTP login後のAdmin sessionは
+  `auth.sessions.created_at + 8時間`まで継続し、30分idle失効や周期的TOTP promptを
+  設けない。
 - 審査員、教員、owner のいずれにも秘密値を表示する機能を作らない。owner が扱う
   のは secret の存在状態、用途、更新時刻、ローテーション操作であり、値の閲覧では
   ない。
@@ -165,6 +169,12 @@ master有効化後は講義終了または90分hard stopまで選択scopeが一�
 開始でPINを再入力しない。ownerは事前に`can_use_ai`と費用・回数・Realtime分・scopeの
 上限を設定するだけで、審査員はそのpolicyを変更できない。
 
+personal AI PINは新しい講義masterごとに一度だけ確認し、明示的なscope/cost拡張時にだけ
+新しいAI-unlock proofを求める。どちらもfresh TOTPを追加要求しない。5分fresh TOTPは
+owner/principal、role/status、確認済みTOTP factor set、environment AI policy、global
+revokeという稀なcontrol-plane変更に限定し、通常講義、緊急停止、AI master/child callでは
+要求しない。`ADMIN_PIN`と`BILLING_PIN`はProduction前に完全撤去する。
+
 審査員には次を認めない。
 
 - `owner` または global-admin 権限への昇格;
@@ -211,11 +221,11 @@ contest project内でのみ次のpolicyと運用を有効にする。
   原子的に記録する。
 - `private.admin_ai_policies`はreviewer membership、許可action/model scope、講義/日ごとの
   最大call/token/費用、Realtime分、最大同時実行、validityとversionを保持する。ownerの
-  変更はrecent AAL2、idempotency key、append-only auditを必須とする。
-- 各reviewerはserver-recorded recent TOTP step-upを持つAAL2 sessionで本人専用4桁AI
-  PINを登録する。通常のGoogle→TOTP loginがfreshness window内なら追加のTOTP入力を
-  求めない。serverはsaltedかつserver-peppered verifier、factor version、rotation/revoke
-  metadataだけを保持する。raw PINはtrusted formと限定TLS bodyにだけ一時存在し、応答後に
+  変更は5分fresh TOTP、idempotency key、append-only auditを必須とする。
+- 各reviewerは有効なTOTP AAL2 sessionで本人専用4桁AI PINを登録する。登録、利用、
+  rotate/revokeは追加のTOTP入力を求めない。serverはsaltedかつserver-peppered verifier、
+  factor version、rotation/revoke metadataだけを保持する。raw PINはtrusted formと限定TLS
+  bodyにだけ一時存在し、応答後に
   clearし、browser/server persistence、URL、log、audit、analytics、error traceへ残さない。
 - environment+membershipを正規keyとする5回/15分の原子的失敗counterで、全session、factor
   version、browserにまたがってAI unlockだけを15分以上lockする。factor rotation/resetでは
@@ -224,7 +234,7 @@ contest project内でのみ次のpolicyと運用を有効にする。
 - `このブラウザで記憶` はdefault OFFとする。browserが生成したnon-extractable WebCrypto鍵と、
   principal/membership/environmentへ拘束した最長30日・個別失効可能なcredentialだけを保存
   する。登録時は短命一回限りnonceを`auth.uid()`、environment/membership、tracked Admin
-  session、server-recorded TOTP step-up event、factor version、exact Origin、public-key
+  session、verified TOTP factor-set version、AI-factor version、exact Origin、public-key
   fingerprintへ拘束し、PIN検証・nonce消費・credential作成を同一transactionで行う。同一
   idempotency retryだけ収束し、replay、期限切れ、cross-principal/session/environment/Origin、
   key差替えを拒否する。利用時はlecture/scope/session/policy versionを含むfresh server
@@ -234,18 +244,21 @@ contest project内でのみ次のpolicyと運用を有効にする。
 - master CTAはAAL2、tracked session、active membership、`can_use_ai`、reviewer所有のopen
   lecture、AI factor/browser proof、policy scope/allowanceを1transactionで検証し、既存
   `lecture_ai_master_authorizations`へ収束する。同scope retryは冪等で、scope変更は明示操作
-  とする。`all_except_captions`から`all_including_captions`への拡張は新しいAI PIN/browser
-  proof（後続AI Passkey）とfreshness window内のTOTP step-upを再検証し、新versionへ原子的に
-  置換する。downgradeとstopは無償・proof不要。有効期限は講義終了/90分/session・
-  membership・policy失効の最早時刻とする。
+  とする。personal AI PINは新しい講義masterごとに一度だけ確認する。
+  `all_except_captions`から`all_including_captions`への拡張は新しいAI PIN/browser
+  proof（後続AI Passkey）を有効なAAL2 session内で再検証し、新versionへ原子的に
+  置換するがfresh TOTPは要求しない。downgradeとstopは無償・proof不要。有効期限は
+  講義終了/90分/session・membership・policy失効の最早時刻とする。
 - master作成自体はproviderを呼ばない。master下のpaid startはPIN再入力なしでlive policy、
   budget、同時実行、lifecycle、冪等性を再検証し、短命single-use child reservationを原子的に
   確保する。caption-inclusiveでもRealtimeは専用CTAとmic permissionなしに起動しない。
-- session失効はそのsession由来master/childをdrainするがbrowser credential自体は残し、
-  新しいAAL2 sessionなしには利用できない。factor rotate/reset/revokeは旧version由来browser
-  credentialとmaster/childを失効し、個別browser credential revokeはそのproof由来だけを
-  drainする。membership/principal suspension、`can_use_ai=false`、owner emergency revokeは
-  factor/browser/master/childをすべて失効する。policy expiry/revokeはmasterをdrainし、scope
+- session失効、backing `auth.sessions`消失またはverified TOTP factor-set変更はそのsession由来
+  master/childをdrainするがbrowser credential自体は残し、新しいAAL2 sessionなしには利用
+  できない。AI-factor rotate/reset/revokeは旧version由来browser credentialとmaster/childを
+  失効するがAdmin sessionは維持し、個別browser credential revokeはそのproof由来だけを
+  drainする。membership/principal/environment invalidationはAdmin sessionと派生権限を失効する。
+  role変更はsessionを維持してlive適用し、`can_use_ai=false`はAdmin sessionを維持したまま
+  factor/browser/master/childのAI authorityをdrainする。policy expiry/revokeはmasterをdrainし、scope
   縮小は可能なら`all_except_captions`へ原子的にnarrowしてactive字幕を停止し、不可能なら
   revokeする。講義終了/90分/stopもdrainする。予算枯渇だけではactivated scopeを解除せず、
   child provider startを説明可能な状態でfail closedとする。開始済み結果は既存AI lifecycle
@@ -281,20 +294,24 @@ contest project内でのみ次のpolicyと運用を有効にする。
   冪等に収束する。
 - TOTP AAL2、active `can_use_ai`、own lecture、live policy、登録済み4桁AI PINまたは有効な
   remembered-browser proofが揃った時だけmasterを作成できる。owner介入や`BILLING_PIN`は
-  不要で、master後のchild startはPIN再入力なしに収束する。PIN brute-force、membership /
-  network / environment lockout競合、raw PINの永続化・log・URL・trace混入、enrollment nonce
-  replay、cross-environment、cross-principal、cross-session、cross-Origin、key差替え、expiry、
-  上限超過のnegative testがPASSする。
+  不要で、`BILLING_PIN`自体もProduction前に撤去される。personal AI PINは新lecture master
+  または明示的scope/cost拡張時だけ確認し、master後のchild startはPIN/TOTP再入力なしに
+  収束する。PIN brute-force、membership / network / environment lockout競合、raw PINの
+  永続化・log・URL・trace混入、enrollment nonce replay、cross-environment、cross-principal、
+  cross-session、cross-Origin、key差替え、expiry、上限超過のnegative testがPASSする。
 - raw PINはtrusted formと限定TLS requestにのみ一時存在して応答後にclearされる。ブラウザ
   証明はprofile/origin-boundであり、hardware-boundとは主張しない。同一origin XSS / CSP /
   supply-chain、通常storage copy、full-profile copy、Chrome / Edge / WebKitの保存・失効を
   Hosted/Human Gateで確認する。
 - `all_except_captions`から`all_including_captions`への拡張は新しいAI unlock proofと
-  server-recorded recent TOTP step-upを要求する。同scope retryは冪等、downgrade / stopは
-  proof不要で、session / factor / browser / membership / entitlement / policyの各失効・縮小が
-  定義済みmatrixどおりmaster / childへ収束する。
+  有効なAAL2 sessionを要求するがfresh TOTPは要求しない。同scope retryは冪等、downgrade /
+  stopはproof不要で、session / factor / browser / membership / entitlement / policyの各失効・
+  縮小が定義済みmatrixどおりmaster / childへ収束する。
 - master有効化はprovider callを発生させず、2scopeと終了/90分drainが正しく動作し、字幕を
   自動起動しない。将来の専用AI Passkeyは同じchallenge/scope/policy契約を満たす。
+- 30分idleや周期的TOTP promptが発生しない。logout、backing `auth.sessions`消失、principal/
+  environment/membership無効化、verified TOTP factor-set変更、8時間capだけが再loginを要求し、
+  role/AI-PIN変更はsessionを維持し、`can_use_ai=false`はAI authorityだけをdrainする。
 - production の identity、data、R2、OpenAI budget、audit に読み書きが一切発生しない。
 - Admin / reviewer UIは`講義資料`だけを表示し、R2 bucket、binding、credential、namespace、
   secretを表示または説明しない。
@@ -364,7 +381,7 @@ Phase 7.33 は新機能を急いで追加する段階ではなく、全契約を
 - Phase 7.29C の installer / signing / PowerPoint / loopback / device / venue / rate protection
   を含む activation blockers が解消済みである。
 - Phase 7.30 の Google identity、TOTP AAL2、principal / capability、全 Edge / RPC 認可、
-  owner recovery、legacy PIN retirement が Hosted / Human Gate を通過している。
+  operator owner recovery、`ADMIN_PIN`/`BILLING_PIN`完全撤去が Hosted / Human Gate を通過している。
 - Phase 7.31A–C の main protection、public-source audit、明示的公開承認、独立 contest tenant、
   審査員 E2E、失効 / cleanup / cost gate が PASS している。
 - Phase 7.32 の multi-tenant、商用運用、法務 / privacy、accessibility、load、backup / restore、
@@ -393,8 +410,8 @@ canary、観測、停止条件、直前 revision を記録する。GitHub visibi
 
 - schema は additive のまま残し、認証・Presenter・contest・commercial capability を個別
   flag OFF にする。障害時に down migration や物理削除を急がない。
-- Admin 認証は Phase 7.30 の期限付き legacy recovery、個別 session revoke、owner recovery
-  を用い、認可の弱い経路へ恒久退避しない。
+- Admin 認証は Phase 7.30 の Google-only immutable revision、個別 session revoke、
+  Supabase operator owner recoveryを用い、共有PINや認可の弱い経路へ退避しない。
 - contest incident は新規招待停止、対象 principal / session / grant / ticket 失効、paid AI
   停止、Edge admission OFF、immutable revision への rollback、冪等 cleanup の順で封じ込める。
 - production と contest を同時に rollback しない。環境ごとの project / deployment / secret
