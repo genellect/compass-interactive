@@ -775,6 +775,10 @@ for (const fixture of [b1PgTap, legacyUpgradeFixture, b2UpgradeFixture]) {
   assert.doesNotMatch(fixture, /\bconfirmed_at\b/)
 }
 assert.match(b2UpgradeFixture, /authentication_method[\s\S]*?'google_totp'/)
+assert.match(
+  b2UpgradeFixture,
+  /bootstrap_sealed_at[\s\S]*?owner_invariant_enforced_at/,
+)
 assert.match(b2UpgradeTest, /auth_session\.created_at \+ interval '8 hours'/)
 assert.match(
   b2UpgradeTest,

@@ -42,6 +42,7 @@ insert into private.admin_environments (
   canonical_admin_origin,
   supabase_issuer,
   current_deployment,
+  bootstrap_sealed_at,
   owner_invariant_enforced_at
 ) values (
   '73020000-0000-4000-8000-000000000003'::uuid,
@@ -49,6 +50,7 @@ insert into private.admin_environments (
   'http://127.0.0.1:5173',
   'http://127.0.0.1:54321/auth/v1',
   true,
+  statement_timestamp() - interval '1 hour',
   statement_timestamp()
 );
 
