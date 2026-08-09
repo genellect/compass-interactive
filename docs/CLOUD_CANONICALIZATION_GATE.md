@@ -79,13 +79,31 @@ default-OFF behavior, rollback and any external asset reuse. Exact-head CI must
 be green before merge. Direct commits to `main` and force-push/delete of the
 release branch are prohibited by repository policy.
 
-As of 2026-08-08 this private user-owned repository cannot enforce branch
-protection through GitHub without a GitHub Pro plan. The repository remains
-private, and PR-only integration is therefore a procedural control. Technical
-enforcement is a separate governance subgate: enable required checks,
-force-push/delete protection and PR review after the approved GitHub Education
-benefits become active. This limitation must not be reported as enforced
-protection.
+GitHub Education is active. Main ruleset `20600565` now requires a Pull Request,
+conversation resolution and these five CI contexts, and rejects force-push and
+branch deletion:
+
+- `Quality and non-live regression`;
+- `Demo browser E2E`;
+- `Local Supabase, pgTAP and live browser E2E`;
+- `Presenter Bridge Windows x64 build and tests`;
+- `Presenter Bridge Windows x86 build and tests`.
+
+The ruleset intentionally keeps `strict_required_status_checks_policy=false`.
+A later `main` update therefore does not force every open PR to update its base
+and repeat the complete browser/database matrix, while the five checks remain
+mandatory for the actual candidate head. High-risk PRs should still synchronize
+with current `main` once near the final head when practical.
+
+Required approving reviews intentionally remain zero to avoid deadlocking the
+solo owner. For a manual Copilot review, open the PR, request Copilot from the
+Reviewers control, address or explicitly resolve each actionable conversation,
+then rerun and verify the exact-head required checks. Copilot is an advisory
+external review, not a human approval and not a substitute for any required
+check, Hosted/Device/Human evidence or owner Production decision. Re-audit the
+live ruleset before a high-risk merge. No administrator bypass is currently
+configured; any incident-time ruleset change requires an explicit, dated
+decision and must not become the normal integration path.
 
 ## Cloudflare build routing
 
@@ -118,6 +136,7 @@ disconnected broad Worker build token.
 
 The reproducibility portion of C0 is PASS when `cloud:doctor`, `cloud:check`, the
 relevant environment contract and exact-head CI pass on a dedicated branch.
-The branch-protection enforcement subgate remains HOLD until the plan capability
-is available through GitHub Education. That HOLD does not authorize bypassing PR review and does not
-require making the private repository public.
+The main-protection enforcement subgate is active through ruleset `20600565`.
+Phase 7.31A still remains incomplete until the remaining supply-chain controls,
+protected deployment environments and negative tests are recorded. This does
+not authorize making the private repository public.

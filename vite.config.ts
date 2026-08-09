@@ -5,4 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   cacheDir: process.env.VITE_CACHE_DIR,
   plugins: [react()],
+  server: {
+    watch: {
+      ignored: [
+        '**/presenter-bridge/**/bin/**',
+        '**/presenter-bridge/**/obj/**',
+      ],
+    },
+  },
 })

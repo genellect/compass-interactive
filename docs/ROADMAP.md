@@ -535,9 +535,11 @@ activation gates remain HOLD until separately recorded.
   Those Native/Human/Hosted checks remain blocking before activation.
 - A local application-control block or untrusted native binary is a HOLD, not a
   reason to weaken Windows security or report the native gate as PASS.
-- Before activation, replace declared-installation metadata with an
-  asymmetric per-install proof-of-possession contract, add server-side rate
-  protection and cleanup Cron, and prove recovery after slideshow/COM loss.
+- The rescued 7.29C source now adds asymmetric per-install proof, the dedicated
+  Gateway and server-side rate/cleanup controls. Activation still requires the
+  final-candidate Hosted/Device/Human evidence, signed distribution and
+  bounded recovery-credential proof defined below; source presence is not
+  acceptance.
 
 ### 7.29A/B/C split
 
@@ -549,12 +551,20 @@ activation gates remain HOLD until separately recorded.
   old manual PDF/Display/student paths and save Hosted evidence.
   The public `presenter-bridge-session` machine endpoint, its secret and native
   distribution are explicitly excluded from 7.29B.
-- **7.29C activation:** implement signed per-user install/update/rollback,
-  complete manual recovery, real Office/browser/PNA/500-transition/venue tests
-  and then perform a controlled activation canary.
+- **7.29C activation:** place the native machine endpoint behind the dedicated
+  fixed-upstream Cloudflare Gateway; require per-install P-256 request proof,
+  replay/rate controls and the fail-closed `.invalid` release placeholder;
+  package with pinned Velopack and a signed per-user install/update/rollback
+  path; prove the 55-second automatic ticket, five-minute manual recovery-code
+  TTL, one-time positive/negative receipts and real
+  Office/browser/PNA/500-transition/venue behavior before a controlled canary.
+  Hosted, Device and Human gates remain HOLD until the owner supplies the exact
+  FQDN/zone, signing identity and update feed.
 
 The complete ordering and rollback contract is
 [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md).
+The signed activation contract is
+[`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).
 
 ## 14. Legacy Phase 7 release checklist
 
@@ -594,7 +604,8 @@ browser/database evidence alone.
 For Phase 7.29B, apply its additive migration and deploy only the named
 JWT-protected management and compatible Display functions with all gates OFF;
 leave the machine endpoint, its secret and native Bridge undeployed. Phase
-7.29C separately requires rate/PoP/signed-native/real HTTPS-to-loopback gates
+7.29C separately requires the fixed-upstream Gateway, rate/PoP, signed-native,
+bounded automatic/manual recovery credentials and real HTTPS-to-loopback gates
 before machine admission, DB runtime and a controlled frontend cohort may be
 enabled. Rollback starts at the DB runtime gate and must leave manual Admin
 navigation, Display snapshot fallback and the student five-second path intact.
@@ -740,14 +751,16 @@ Recheck them at implementation and Production Gate.
 
 ### 7.31A - GitHub governance
 
-- After GitHub Education enables the required private-repository controls,
-  enforce PR-only main integration, exact-head required checks, no force push
-  or deletion, review/conversation resolution and protected deployment
-  environments.
+- GitHub Education is active. Main ruleset `20600565` enforces Pull Request
+  integration, the five configured exact-head CI contexts, conversation
+  resolution and force-push/deletion denial. Required approving reviews remain
+  zero for solo-owner continuity; manual Copilot review is advisory and cannot
+  substitute for a required check or human/Production decision.
 - Add CodeQL, dependency review, secret scanning/push protection, action SHA
   pinning, least-privilege workflow tokens, ownership and release provenance.
-- Until those controls are configured and negative-tested, describe main
-  protection as procedural only.
+- Add and negative-test protected deployment environments. The active main
+  ruleset is real enforcement, but Phase 7.31A remains incomplete until these
+  remaining supply-chain and deployment controls pass.
 
 ### 7.31B - public-source readiness
 

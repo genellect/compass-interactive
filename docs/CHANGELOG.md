@@ -3,6 +3,26 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-09 - Phase 7.29C local activation hardening
+
+- Added a dedicated, fixed-upstream Cloudflare Presenter Gateway contract that
+  preserves exact signed request bytes, injects a server-only gateway secret,
+  applies coarse location/network rate protection and rejects browser,
+  redirected, encoded, oversized or untrusted traffic.
+- Replaced copyable installation metadata as the machine trust boundary with a
+  non-exportable per-user P-256 CNG signing key, timestamp/nonce/raw-body proof
+  and atomic database replay/key binding.
+- Pinned Velopack SDK and `vpk` tool `1.2.0`, locked NuGet restore and placed the
+  startup hook before all normal native initialization with automatic update
+  apply disabled.
+- Kept release builds deliberately unusable through `presenter-api.invalid`,
+  kept the Gateway without workers.dev, preview or route, and separated the
+  55-second automatic ticket from the five-minute manual recovery-code TTL.
+- Hosted, Device, Human and activation Production gates remain HOLD until the
+  owner records the exact FQDN/zone, signing identity and update feed and the
+  signed Office/browser/venue canary passes. No route, secret, installer or
+  feature was published by this local work.
+
 ## 2026-08-01 - Phase 7.29 PowerPoint Presenter Bridge local gate
 
 - Added a default-OFF optional Presenter Bridge boundary for synchronizing the

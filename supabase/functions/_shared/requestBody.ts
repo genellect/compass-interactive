@@ -22,10 +22,10 @@ export const describeJsonBodyError = (error: unknown) => {
   return { message: 'Invalid JSON body.', status: 400 }
 }
 
-export const readJsonBody = async <T>(
+export const readRequestBodyBytes = async (
   request: Request,
   maxBytes: number,
-): Promise<T> => {
+): Promise<Uint8Array> => {
   const mediaType =
     request.headers
       .get('content-type')
@@ -70,5 +70,13 @@ export const readJsonBody = async <T>(
     offset += chunk.byteLength
   }
 
+  return bodyBytes
+}
+
+export const readJsonBody = async <T>(
+  request: Request,
+  maxBytes: number,
+): Promise<T> => {
+  const bodyBytes = await readRequestBodyBytes(request, maxBytes)
   return JSON.parse(new TextDecoder().decode(bodyBytes)) as T
 }

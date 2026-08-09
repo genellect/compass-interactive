@@ -89,6 +89,28 @@
   flex-basis: 100%;
 }
 
+.admin-presenter-recovery {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-presenter-recovery-code {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: clamp(1.2rem, 4vw, 1.65rem);
+  letter-spacing: 0.16em;
+  padding: 10px 12px;
+  text-align: center;
+  user-select: all;
+}
+
+.admin-presenter-recovery-panel > div {
+  min-width: 0;
+}
+
 .admin-presenter-review {
   align-items: stretch;
   display: grid;

@@ -1,8 +1,8 @@
 # Phase 7.29 - PowerPoint Presenter Bridge
 
-Status: Implemented, verification pending
+Status: Dormant 7.29B placement complete; 7.29C local activation source under verification
 Scope: optional Windows PowerPoint-to-PDF Presenter Bridge contract
-Last verified: 2026-08-08
+Last verified: 2026-08-09
 
 The 2026-08-01 automated web/database result is historical evidence from the
 former local branch. The rescued GitHub implementation must pass its current
@@ -66,7 +66,8 @@ request reconciliation but must not use Office COM objects directly.
 
 ```text
 OFF
-  -> pairing (Admin issues a 55 second ticket and recovery code)
+  -> pairing (Admin issues a 55-second automatic ticket and a separate
+     five-minute manual recovery code)
   -> inspected (Bridge binds installation and deck metadata)
   -> confirmed (teacher confirms the shown PowerPoint/PDF pair)
   -> active (Bridge atomically consumes the ticket and receives capability)
@@ -102,23 +103,36 @@ service role or long-lived credential to loopback.
 
 ### Bridge to Supabase Edge
 
-`presenter-bridge-session` rejects `Origin` and `OPTIONS`. It is authenticated
-with one of two dedicated HMAC capabilities:
+`presenter-bridge-session` rejects `Origin` and `OPTIONS`. Pairing and active
+authorization continue to use two dedicated HMAC capabilities:
 
 - pairing: exact scope/audience/origin, maximum 60 seconds, one database nonce;
 - active bearer capability: connection, lecture and declared-installation
   metadata bound, ending no later than the lecture/Admin hard stop and 95
   minutes after claim.
 
-The installation digest detects accidental cross-installation mismatch but is
-not proof of possession: it is carried inside the signed bearer capability.
-Copy resistance requires a later per-install asymmetric signing key and
-request nonce/timestamp contract. Until then, short expiry, TLS, body-only
-transport, server replay fencing and the activation HOLD are authoritative.
+Every machine request is additionally signed by a per-Windows-user P-256 CNG
+key that is signing-only and non-exportable. The proof binds the method, fixed
+path, timestamp, random nonce and SHA-256 of the exact raw body. Edge verifies
+the public-key fingerprint, at most 120 seconds of clock skew and the signature,
+then atomically consumes the proof-key/nonce receipt. A copied capability alone
+cannot authorize a request, and replay or body/key substitution is rejected.
+
+A dedicated Cloudflare Presenter Gateway is the only allowed network path to
+the machine Edge function. It forwards the signed raw bytes to one fixed
+Supabase upstream, applies coarse location/network rate protection and injects
+a separate server-only gateway secret. Direct Edge calls without that secret
+are rejected. The Gateway has no R2, Admin, AI, PDF or service-role binding.
 
 The signing secret is `PRESENTER_BRIDGE_TOKEN_SECRET`, a server-only value of
 at least 32 bytes and independent of Admin, Billing, Display and PDF secrets.
-Only HMAC/SHA-256 digests are stored at rest.
+`PRESENTER_BRIDGE_GATEWAY_SECRET` is an independent Worker-to-Edge secret and
+never enters the native app. Only public proof-key material, HMAC/SHA-256
+digests and bounded replay metadata are stored at rest.
+
+The complete Gateway, signed Velopack delivery, five-minute manual recovery-code
+TTL and activation evidence contract is
+[`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).
 
 ## 6. Database and authorization
 
@@ -207,7 +221,7 @@ Rollout is split between dormant 7.29B placement and a separately authorized
 5. leave the `verify_jwt=false` `presenter-bridge-session` machine endpoint
    undeployed and do not provision its dedicated secret in 7.29B;
 6. deploy the frontend with its flag OFF and verify the existing manual path;
-7. only after the 7.29C rate-protection, proof-of-possession, signed installer,
+7. only after the 7.29C Gateway, rate-protection, proof-of-possession, signed installer,
    device and Human gates pass, deploy the machine endpoint and secret;
 8. verify Edge/Chrome HTTPS-to-loopback and real PowerPoint, then enable server
    admission, DB runtime and one controlled frontend cohort in that order;
@@ -241,4 +255,7 @@ It cannot approve the following external boundaries:
 - Hosted Supabase/Cloudflare rollout, Advisor and cleanup scheduling;
 - teacher human confirmation of the PowerPoint/PDF binding UX.
 
-Those remain Human/Hosted/Production Gate HOLD until recorded separately.
+Those remain Device/Human/Hosted/Production Gate HOLD until recorded
+separately. The release endpoint remains the fail-closed
+`presenter-api.invalid` placeholder and no Gateway route exists until the owner
+approves the exact FQDN, signing identity and update feed.

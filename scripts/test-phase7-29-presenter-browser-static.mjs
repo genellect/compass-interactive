@@ -15,7 +15,7 @@ test('browser bridge is fixed to loopback port 43124 with bounded timeouts', () 
     /PRESENTER_BRIDGE_BASE_URL = 'http:\/\/127\.0\.0\.1:43124'/,
   )
   assert.match(protocol, /PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS = 1_500/)
-  assert.match(protocol, /PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 5_000/)
+  assert.match(protocol, /PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 12_000/)
   assert.doesNotMatch(protocol, /localhost|0\.0\.0\.0|43123/)
 })
 

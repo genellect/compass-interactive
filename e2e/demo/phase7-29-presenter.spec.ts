@@ -18,9 +18,33 @@ const workerAccessToken = `eyJhbGciOiJIUzI1NiJ9.${'c'.repeat(43)}`
 type PresenterAction = 'confirm' | 'issue' | 'revoke' | 'status'
 
 type MockState = {
+  confirmed: boolean
+  connectionIssued: boolean
+  delayedStatusDelivered: Promise<void>
+  delayedStatusRequested: Promise<void>
+  localActivationFailure: boolean
+  manualRecovery: boolean
+  manualStatusPollsBeforeInspect: number
+  manualStatusPollsAfterConfirm: number
   presenterActions: PresenterAction[]
   presenterActive: boolean
+  releaseDelayedStatus: () => void
   revoked: boolean
+}
+
+type NetworkMockOptions = {
+  delayFirstStatus?: boolean
+  expiredAutomaticTicket?: boolean
+  localActivationFailure?: boolean
+  manualRecovery?: boolean
+}
+
+function createDeferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = () => done()
+  })
+  return { promise, resolve }
 }
 
 function encodeJwtPart(value: unknown) {
@@ -141,27 +165,34 @@ function operatorSnapshot() {
   }
 }
 
-function presenterStatus() {
+function presenterStatus(
+  state: 'active' | 'confirmed' | 'inspected' | 'pairing' = 'active',
+) {
   const now = Date.now()
   return {
-    capabilityExpiresAt: new Date(now + 60 * 60_000).toISOString(),
-    confirmedAt: new Date(now).toISOString(),
+    capabilityExpiresAt:
+      state === 'active' ? new Date(now + 60 * 60_000).toISOString() : null,
+    confirmedAt:
+      state === 'confirmed' || state === 'active'
+        ? new Date(now).toISOString()
+        : null,
     connectionId,
+    customShowActive: state === 'pairing' ? null : false,
     hardStopAt: new Date(now + 60 * 60_000).toISOString(),
-    hiddenSlideCount: 0,
-    lastCommittedPdfPage: 1,
+    hiddenSlideCount: state === 'pairing' ? null : 0,
+    lastCommittedPdfPage: state === 'active' ? 1 : null,
     lastSeenAt: new Date(now).toISOString(),
     lastSequence: 0,
     pdfDocumentId: documentId,
     pdfDocumentVersion: documentVersion,
     pdfPageCount: 3,
-    pptxFileSha256: 'e'.repeat(64),
+    pptxFileSha256: state === 'pairing' ? null : 'e'.repeat(64),
     revokedAt: null,
     revokeReason: null,
-    slideCount: 3,
-    slideIdOrderSha256: 'f'.repeat(64),
-    state: 'active',
-    ticketExpiresAt: new Date(now + 45_000).toISOString(),
+    slideCount: state === 'pairing' ? null : 3,
+    slideIdOrderSha256: state === 'pairing' ? null : 'f'.repeat(64),
+    state,
+    ticketExpiresAt: new Date(now + 5 * 60_000).toISOString(),
   }
 }
 
@@ -202,10 +233,26 @@ async function installAdminState(page: Page) {
   )
 }
 
-async function installNetworkMocks(page: Page) {
+async function installNetworkMocks(
+  page: Page,
+  options: NetworkMockOptions = {},
+) {
+  const delayedStatusRequest = createDeferred()
+  const delayedStatusRelease = createDeferred()
+  const delayedStatusDelivery = createDeferred()
+  let delayedStatusHeld = false
   const state: MockState = {
+    confirmed: false,
+    connectionIssued: false,
+    delayedStatusDelivered: delayedStatusDelivery.promise,
+    delayedStatusRequested: delayedStatusRequest.promise,
+    localActivationFailure: options.localActivationFailure ?? false,
+    manualRecovery: options.manualRecovery ?? false,
+    manualStatusPollsBeforeInspect: 0,
+    manualStatusPollsAfterConfirm: 0,
     presenterActions: [],
     presenterActive: false,
+    releaseDelayedStatus: delayedStatusRelease.resolve,
     revoked: false,
   }
   const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
@@ -303,12 +350,16 @@ async function installNetworkMocks(page: Page) {
       expect(body.adminToken).toBe(adminToken)
       if (action === 'issue') {
         expect(body.lectureSessionId).toBe(lectureSessionId)
+        state.connectionIssued = true
         const now = Date.now()
         await fulfillJson(route, {
           connectionId,
           hardStopAt: new Date(now + 60 * 60_000).toISOString(),
           manualCode: 'ABCD2345',
           ok: true,
+          pairingTicketExpiresAt: new Date(
+            now + (options.expiredAutomaticTicket ? -1_000 : 45_000),
+          ).toISOString(),
           pairingTicket,
           pdf: {
             documentId,
@@ -316,13 +367,16 @@ async function installNetworkMocks(page: Page) {
             manifestVersion: 1,
             pageCount: 3,
           },
-          ticketExpiresAt: new Date(now + 45_000).toISOString(),
+          ticketExpiresAt: new Date(now + 5 * 60_000).toISOString(),
         })
         return
       }
       if (action === 'confirm') {
         expect(body.connectionId).toBe(connectionId)
-        state.presenterActive = true
+        state.confirmed = true
+        if (!state.manualRecovery && !state.localActivationFailure) {
+          state.presenterActive = true
+        }
         await fulfillJson(route, {
           connectionId,
           ok: true,
@@ -333,12 +387,46 @@ async function installNetworkMocks(page: Page) {
       }
       if (action === 'status') {
         expect(body.lectureSessionId).toBe(lectureSessionId)
+        let connection = null
+        if (state.connectionIssued && !state.revoked) {
+          if (state.manualRecovery && !state.confirmed) {
+            state.manualStatusPollsBeforeInspect += 1
+            connection = presenterStatus(
+              state.manualStatusPollsBeforeInspect >= 2
+                ? 'inspected'
+                : 'pairing',
+            )
+          } else if (state.manualRecovery && state.confirmed) {
+            state.manualStatusPollsAfterConfirm += 1
+            if (state.manualStatusPollsAfterConfirm >= 3) {
+              state.presenterActive = true
+            }
+            connection = presenterStatus(
+              state.presenterActive ? 'active' : 'confirmed',
+            )
+          } else if (state.presenterActive) {
+            connection = presenterStatus()
+          } else if (state.localActivationFailure && state.confirmed) {
+            connection = presenterStatus('confirmed')
+          } else {
+            connection = presenterStatus('inspected')
+          }
+        }
+        const shouldDelayStatus =
+          options.delayFirstStatus === true && !delayedStatusHeld
+        if (shouldDelayStatus) {
+          delayedStatusHeld = true
+          delayedStatusRequest.resolve()
+          await delayedStatusRelease.promise
+        }
         await fulfillJson(route, {
-          connection:
-            state.presenterActive && !state.revoked ? presenterStatus() : null,
+          connection,
           ok: true,
           runtimeEnabled: true,
         })
+        if (shouldDelayStatus) {
+          delayedStatusDelivery.resolve()
+        }
         return
       }
       if (action === 'revoke') {
@@ -457,11 +545,164 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
     expect.arrayContaining(['issue', 'confirm', 'status']),
   )
 
-  await active.getByRole('button', { name: '手動操作に切り替える' }).click()
+  await active.getByRole('button', { name: '手動操作へ切り替える' }).click()
   await expect(presenter).toBeVisible()
   await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await expect(pdfPanel.getByLabel('表示するページ番号')).toBeEnabled()
   await expect(pdfPanel.getByLabel('PDF資料')).toBeEnabled()
   expect(state.presenterActions.at(-1)).toBe('revoke')
   expect(pageErrors).toEqual([])
+})
+
+test('recovers without localhost access, confirms once, and reaches active sync', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  const loopbackRequests: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.route('http://127.0.0.1:43124/**', async (route) => {
+    loopbackRequests.push(new URL(route.request().url()).pathname)
+    await route.abort('connectionrefused')
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, { manualRecovery: true })
+
+  await page.goto('/admin')
+  const pdfPanel = page.locator('#admin-live')
+  const presenter = page.getByTestId('powerpoint-sync-control')
+  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
+
+  const recovery = page.locator('.admin-presenter-recovery-panel')
+  await expect(recovery).toBeVisible()
+  await expect(recovery).toContainText('復旧コードで接続')
+  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
+    'ABCD2345',
+  )
+  expect(loopbackRequests).toEqual(['/v1/health'])
+
+  const review = page.locator('.admin-presenter-review')
+  await expect(review).toBeVisible()
+  await expect(review).toContainText('接続中のPowerPoint')
+  await expect(review).toContainText('3スライド')
+  await expect(review).toContainText('Phase 7.29 lecture.pdf')
+  await expect(
+    review.getByRole('button', {
+      name: 'このPowerPointと講義資料を同期',
+    }),
+  ).toBeEnabled()
+  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
+
+  await review
+    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
+    .click()
+  await expect(page.locator('.admin-presenter-recovery-panel')).toContainText(
+    'Presenter Bridgeの接続待ち',
+  )
+
+  const active = page.locator('.admin-presenter-active')
+  await expect(active).toContainText('PowerPoint同期中')
+  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeDisabled()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(1)
+  expect(loopbackRequests).toEqual(['/v1/health'])
+  expect(pageErrors).toEqual([])
+})
+
+test('moves an expired automatic ticket to the five-minute recovery path without confirming', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    expiredAutomaticTicket: true,
+  })
+
+  await page.goto('/admin')
+  const presenter = page.getByTestId('powerpoint-sync-control')
+  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
+  const review = page.locator('.admin-presenter-review')
+  await expect(review).toBeVisible()
+  await review
+    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
+    .click()
+
+  const recovery = page.locator('.admin-presenter-recovery-panel')
+  await expect(recovery).toBeVisible()
+  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
+    'ABCD2345',
+  )
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(0)
+})
+
+test('keeps the recovery code available when local activation fails after confirmation', async ({
+  page,
+}) => {
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
+  await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
+    const body = route.request().postDataJSON() as Record<
+      string,
+      unknown
+    > | null
+    if (body?.action !== 'activate') {
+      await route.continue()
+      return
+    }
+    await route.fulfill({
+      body: JSON.stringify({
+        code: 'invalid_session',
+        message: 'Request rejected.',
+        ok: false,
+      }),
+      contentType: 'application/json',
+      headers: {
+        'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+        'Cache-Control': 'no-store',
+        Vary: 'Origin',
+      },
+      status: 401,
+    })
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    delayFirstStatus: true,
+    localActivationFailure: true,
+  })
+
+  await page.goto('/admin')
+  const presenter = page.getByTestId('powerpoint-sync-control')
+  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
+  const review = page.locator('.admin-presenter-review')
+  await expect(review).toBeVisible()
+  await state.delayedStatusRequested
+  await review
+    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
+    .click()
+
+  const recovery = page.locator('.admin-presenter-recovery-panel')
+  await expect(recovery).toBeVisible({ timeout: 17_000 })
+  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
+    'ABCD2345',
+  )
+  state.releaseDelayedStatus()
+  await state.delayedStatusDelivered
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }),
+  )
+  await expect(recovery).toBeVisible()
+  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
+    'ABCD2345',
+  )
+  await expect(review).toBeHidden()
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(1)
 })

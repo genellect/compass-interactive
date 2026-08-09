@@ -8,6 +8,9 @@
     <RootNamespace>Compass.Presenter.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Velopack" Version="[1.2.0]" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
     <ProjectReference Include="../Compass.Presenter.Core/Compass.Presenter.Core.csproj" />
     <ProjectReference Include="../Compass.Presenter.Loopback/Compass.Presenter.Loopback.csproj" />

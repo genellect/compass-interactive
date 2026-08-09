@@ -13,6 +13,11 @@ const migrationName = readdirSync(
 assert.ok(migrationName, 'Phase 7.29 migration must exist')
 
 const migration = read('supabase', 'migrations', migrationName)
+const proofMigrationName = readdirSync(
+  new URL('supabase/migrations/', rootUrl),
+).find((name) => name.endsWith('_phase7_29c_presenter_proof_and_cleanup.sql'))
+assert.ok(proofMigrationName, 'Phase 7.29C proof migration must exist')
+const proofMigration = read('supabase', 'migrations', proofMigrationName)
 const manageConnection = read(
   'supabase',
   'functions',
@@ -31,6 +36,12 @@ const presenterToken = read(
   '_shared',
   'presenterToken.ts',
 )
+const presenterProof = read(
+  'supabase',
+  'functions',
+  '_shared',
+  'presenterProof.ts',
+)
 const updateDisplay = read(
   'supabase',
   'functions',
@@ -44,6 +55,12 @@ const repository = read(
 )
 const browserClient = read('src', 'presenter', 'presenterBridgeClient.ts')
 const browserProtocol = read('src', 'presenter', 'presenterBridgeProtocol.ts')
+const adminPresenterHook = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'useAdminPowerPointSync.ts',
+)
 const featureFlags = read('src', 'lib', 'featureFlags.ts')
 const envExample = read('.env.local.example')
 const supabaseConfig = read('supabase', 'config.toml')
@@ -55,6 +72,36 @@ const nativeCoordinator = read(
   'src',
   'Compass.Presenter.App',
   'PresenterSessionCoordinator.cs',
+)
+const nativeProof = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'WindowsInstallationProof.cs',
+)
+const nativeRequestSigner = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'PresenterRequestSigner.cs',
+)
+const nativeClient = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'EdgePresenterClient.cs',
+)
+const nativeManualRecovery = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'ManualRecoveryService.cs',
+)
+const nativeTray = read(
+  'presenter-bridge',
+  'src',
+  'Compass.Presenter.App',
+  'PresenterTrayHost.cs',
 )
 const nativeOptions = read(
   'presenter-bridge',
@@ -85,6 +132,17 @@ const nativePowerPoint = read(
   'src',
   'Compass.Presenter.PowerPoint.External',
   'PowerPointComObservationSource.cs',
+)
+const presenterGateway = read(
+  'cloudflare',
+  'presenter-gateway',
+  'src',
+  'worker.ts',
+)
+const presenterGatewayConfig = read(
+  'cloudflare',
+  'presenter-gateway',
+  'wrangler.jsonc',
 )
 
 assert.match(
@@ -127,6 +185,28 @@ assert.doesNotMatch(
   migration,
   /alter publication supabase_realtime[\s\S]*?presenter_/i,
 )
+
+assert.match(proofMigration, /add column proof_key_id text/)
+assert.match(proofMigration, /create table private\.presenter_request_receipts/)
+assert.match(proofMigration, /primary key \(proof_key_id, nonce_hash\)/)
+assert.match(
+  proofMigration,
+  /create table private\.presenter_machine_rate_limits/,
+)
+assert.match(
+  proofMigration,
+  /create function public\.inspect_presenter_connection_v2/,
+)
+assert.match(proofMigration, /create function public\.apply_presenter_page_v2/)
+assert.match(proofMigration, /set statement_timeout = '3s'/)
+assert.match(proofMigration, /set lock_timeout = '750ms'/)
+assert.match(proofMigration, /'compass-presenter-cleanup'/)
+assert.match(proofMigration, /'\* \* \* \* \*'/)
+assert.match(proofMigration, /enable row level security/g)
+assert.doesNotMatch(
+  proofMigration,
+  /alter publication supabase_realtime[\s\S]*?presenter_/i,
+)
 assert.doesNotMatch(
   migration,
   /(?:pdf_bytes|pptx_bytes|slide_text|local_path|raw_ticket)/i,
@@ -145,8 +225,13 @@ assert.match(manageConnection, /getAllowedCorsOrigin\(request\)/)
 assert.match(manageConnection, /createPresenterPairingToken/)
 assert.match(
   manageConnection,
-  /ticketExpiresAt = new Date\(Date\.now\(\) \+ 55_000\)/,
+  /pairingTicketExpiresAt = new Date\(Date\.now\(\) \+ 55_000\)/,
 )
+assert.match(
+  manageConnection,
+  /manualCodeExpiresAt = new Date\(Date\.now\(\) \+ 5 \* 60_000\)/,
+)
+assert.match(manageConnection, /issue_presenter_connection_v2/)
 assert.match(
   manageConnection,
   /readJsonBody<RequestBody>\(request, 8 \* 1024\)/,
@@ -158,15 +243,24 @@ assert.match(
 )
 assert.match(bridgeSession, /Browser requests are not allowed\./)
 assert.match(bridgeSession, /PHASE729_POWERPOINT_SYNC_ENABLED/)
-assert.match(
-  bridgeSession,
-  /readJsonBody<BridgeRequest>\(request, 16 \* 1024\)/,
-)
+assert.match(bridgeSession, /readRequestBodyBytes\(request, 16 \* 1024\)/)
 assert.match(bridgeSession, /getPresenterPairingClaims/)
 assert.match(bridgeSession, /getPresenterCapabilityClaims/)
-assert.match(bridgeSession, /claim_presenter_connection_v1/)
-assert.match(bridgeSession, /apply_presenter_page_v1/)
-assert.match(bridgeSession, /heartbeat_presenter_connection_v1/)
+assert.match(bridgeSession, /claim_presenter_connection_v2/)
+assert.match(bridgeSession, /apply_presenter_page_v2/)
+assert.match(bridgeSession, /heartbeat_presenter_connection_v2/)
+assert.match(presenterProof, /PRESENTER_BRIDGE_GATEWAY_SECRET/)
+assert.match(bridgeSession, /verifyPresenterRequestProof\(request, rawBody\)/)
+assert.match(bridgeSession, /AbortSignal\.timeout\(RPC_TIMEOUT_MS\)/)
+
+assert.match(presenterProof, /compass-presenter-session-v1/)
+assert.match(presenterProof, /x-compass-presenter-signature/)
+assert.match(presenterProof, /ALLOWED_CLOCK_SKEW_SECONDS = 120/)
+assert.match(presenterProof, /namedCurve: 'P-256'/)
+assert.match(
+  presenterProof,
+  /request\.headers\.get\('x-compass-presenter-gateway'\)/,
+)
 
 assert.match(presenterToken, /PRESENTER_BRIDGE_TOKEN_SECRET/)
 assert.match(presenterToken, /byteLength < 32/)
@@ -178,6 +272,8 @@ assert.match(presenterToken, /origin: string/)
 assert.match(presenterToken, /installationHash: string/)
 assert.doesNotMatch(envExample, /^VITE_PRESENTER_BRIDGE_TOKEN_SECRET=/m)
 assert.match(envExample, /^PRESENTER_BRIDGE_TOKEN_SECRET=$/m)
+assert.doesNotMatch(envExample, /^VITE_PRESENTER_BRIDGE_GATEWAY_SECRET=/m)
+assert.match(envExample, /^PRESENTER_BRIDGE_GATEWAY_SECRET=$/m)
 
 assert.match(
   repository,
@@ -187,7 +283,9 @@ assert.match(repository, /MANUAL_CODE_PATTERN = \/\^\[A-HJ-NP-Z2-9\]\{8\}\$\//)
 assert.match(repository, /SUPABASE_REQUEST_TIMEOUT_MS\.adminFunction/)
 assert.match(browserProtocol, /http:\/\/127\.0\.0\.1:43124/)
 assert.match(browserProtocol, /PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS = 1_500/)
-assert.match(browserProtocol, /PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 5_000/)
+assert.match(browserProtocol, /PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 12_000/)
+assert.match(adminPresenterHook, /pairingTicketExpiresAtRef/)
+assert.match(adminPresenterHook, /transitionAutomaticPairingToRecovery/)
 assert.match(browserClient, /credentials: 'omit'/)
 assert.match(browserClient, /redirect: 'manual'/)
 assert.match(browserClient, /referrerPolicy: 'no-referrer'/)
@@ -238,13 +336,45 @@ assert.match(nativePowerPoint, /hiddenSlideIds\.Add\(slideId\)/)
 assert.match(nativePowerPoint, /hidden:\{string\.Join\(',', hiddenSlideIds\)\}/)
 assert.match(nativeCoordinator, /IPresenterSessionFaultSource/)
 assert.match(nativeCoordinator, /SessionFaulted\?\.Invoke/)
-assert.match(nativeOptions, /pfvedtqccblecuyjlfqh\.supabase\.co/)
+assert.match(nativeCoordinator, /SessionStateChanged\?\.Invoke/)
+assert.match(nativeCoordinator, /PresenterSessionState\.Active/)
+assert.match(nativeCoordinator, /PresenterSessionState\.Faulted/)
+assert.match(
+  nativeManualRecovery,
+  /PresentationEligibilityEvaluator\.Evaluate\([\s\S]*?observation,[\s\S]*?observation\.SlideCount[\s\S]*?InspectManualCodeAsync/,
+)
+assert.match(nativeTray, /ReportSessionState/)
+assert.match(nativeTray, /状態: PowerPoint同期中/)
+assert.match(nativeOptions, /presenter-api\.invalid/)
+assert.doesNotMatch(nativeOptions, /supabase\.co/)
+assert.match(nativeOptions, /ProductionPresenterEndpoint/)
 assert.match(nativeOptions, /endpoint\.IsDefaultPort/)
 assert.match(nativeRuntime, /missingObservationGrace/)
 assert.match(nativeRuntime, /observationTimeout/)
 assert.match(nativeRuntime, /Faulted\?\.Invoke/)
 assert.match(nativeLoopbackSessions, /State = "faulted"/)
 assert.match(nativeLoopbackServer, /sessions\.MarkFaulted/)
+assert.match(nativeProof, /CngAlgorithm\.ECDsaP256/)
+assert.match(nativeProof, /CngExportPolicies\.None/)
+assert.match(nativeProof, /CngKeyOpenOptions\.UserKey/)
+assert.doesNotMatch(nativeProof, /CngKeyCreationOptions\.MachineKey/)
+assert.match(nativeRequestSigner, /IeeeP1363FixedFieldConcatenation/)
+assert.match(nativeRequestSigner, /RandomNumberGenerator\.GetBytes\(24\)/)
+assert.match(nativeClient, /X-Compass-Presenter-Signature/)
+assert.match(nativeClient, /X-Compass-Presenter-Nonce/)
+assert.match(nativeClient, /HttpStatusCode\.TooManyRequests/)
+assert.match(nativeClient, /"rate_limited"/)
+assert.match(proofMigration, /ticket_consumed_at is not null/)
+assert.match(presenterGateway, /const CANONICAL_UPSTREAM =/)
+assert.match(presenterGateway, /PRESENTER_LOCATION_RATE_LIMITER/)
+assert.match(presenterGateway, /x-compass-presenter-network/i)
+assert.match(presenterGatewayConfig, /"workers_dev": false/)
+assert.match(presenterGatewayConfig, /"preview_urls": false/)
+assert.match(
+  presenterGatewayConfig,
+  /"required": \["PRESENTER_BRIDGE_GATEWAY_SECRET"\]/,
+)
+assert.doesNotMatch(presenterGatewayConfig, /"routes"\s*:/)
 
 console.log(
   'Phase 7.29 static PASS: secret, CORS/Origin, memory-only tokens, default-OFF, legacy Display and student paths preserved.',

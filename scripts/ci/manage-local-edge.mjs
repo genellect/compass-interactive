@@ -7,8 +7,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 const action = process.argv[2]
 const runnerTemp = process.env.RUNNER_TEMP?.trim() ?? ''
@@ -22,23 +23,49 @@ if (!['start', 'restart', 'stop'].includes(action)) {
 if (!runnerTemp) {
   throw new Error('RUNNER_TEMP is required for local Edge process management.')
 }
+if (!isAbsolute(runnerTemp)) {
+  throw new Error('RUNNER_TEMP must be an absolute path.')
+}
 
 const pidPath = join(runnerTemp, 'compass-edge.pid')
 const envPath = join(runnerTemp, 'compass-edge.env')
 const logPath = join(runnerTemp, 'compass-edge.log')
+const require = createRequire(import.meta.url)
 
 const delay = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
-function readPid() {
+function discardPidFile(reason) {
+  if (existsSync(pidPath)) unlinkSync(pidPath)
+  process.stderr.write(
+    `[manage-local-edge] ${reason}; removed the PID record without signalling a process.\n`,
+  )
+}
+
+function readPidRecord() {
   if (!existsSync(pidPath)) return null
 
-  const pid = Number.parseInt(readFileSync(pidPath, 'utf8').trim(), 10)
-  if (!Number.isSafeInteger(pid) || pid <= 1) {
-    throw new Error('The local Edge PID file is invalid.')
+  const raw = readFileSync(pidPath, 'utf8').trim()
+  let record
+  try {
+    record = JSON.parse(raw)
+  } catch {
+    return { invalidReason: 'The local Edge PID record is not valid JSON' }
   }
 
-  return pid
+  if (
+    record?.version !== 1 ||
+    !Number.isSafeInteger(record.pid) ||
+    record.pid <= 1 ||
+    typeof record.executable !== 'string' ||
+    record.executable.length === 0 ||
+    typeof record.startedAt !== 'string' ||
+    record.startedAt.length === 0
+  ) {
+    return { invalidReason: 'The local Edge PID record has an invalid shape' }
+  }
+
+  return { record }
 }
 
 function groupIsAlive(pid) {
@@ -60,6 +87,64 @@ function signalGroup(pid, signal) {
   }
 }
 
+function normalizeWindowsExecutable(executable) {
+  return resolve(executable).replaceAll('/', '\\').toLowerCase()
+}
+
+function readWindowsProcessIdentity(pid) {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$process = Get-Process -Id ${pid} -ErrorAction Stop`,
+    '[pscustomobject]@{',
+    '  pid = [int]$process.Id',
+    '  executable = [string]$process.Path',
+    "  startedAt = $process.StartTime.ToUniversalTime().ToString('o')",
+    '} | ConvertTo-Json -Compress',
+  ].join('\n')
+  const output = execFileSync(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  ).trim()
+  const identity = JSON.parse(output)
+
+  if (
+    identity?.pid !== pid ||
+    typeof identity.executable !== 'string' ||
+    identity.executable.length === 0 ||
+    typeof identity.startedAt !== 'string' ||
+    identity.startedAt.length === 0
+  ) {
+    throw new Error('PowerShell returned an invalid process identity.')
+  }
+
+  return identity
+}
+
+function windowsIdentityMatches(record) {
+  if (!groupIsAlive(record.pid)) {
+    return { matches: false, reason: 'The recorded process no longer exists' }
+  }
+
+  const identity = readWindowsProcessIdentity(record.pid)
+  const executableMatches =
+    normalizeWindowsExecutable(identity.executable) ===
+    normalizeWindowsExecutable(record.executable)
+  const startTimeMatches = identity.startedAt === record.startedAt
+
+  if (!executableMatches || !startTimeMatches) {
+    return {
+      matches: false,
+      reason: 'The PID now belongs to a different Windows process identity',
+    }
+  }
+
+  return { matches: true }
+}
+
 async function waitForExit(pid, timeoutMs) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -70,12 +155,41 @@ async function waitForExit(pid, timeoutMs) {
 }
 
 async function stop() {
-  const pid = readPid()
-  if (pid === null) return
+  const pidState = readPidRecord()
+  if (pidState === null) return
+  if (pidState.invalidReason) {
+    discardPidFile(pidState.invalidReason)
+    return
+  }
+
+  const { record } = pidState
+  const pid = record.pid
+
+  if (process.platform === 'win32') {
+    const identity = windowsIdentityMatches(record)
+    if (!identity.matches) {
+      discardPidFile(identity.reason)
+      return
+    }
+  }
 
   if (groupIsAlive(pid)) {
+    if (process.platform === 'win32') {
+      const identity = windowsIdentityMatches(record)
+      if (!identity.matches) {
+        discardPidFile(identity.reason)
+        return
+      }
+    }
     signalGroup(pid, 'SIGTERM')
     if (!(await waitForExit(pid, 10_000))) {
+      if (process.platform === 'win32') {
+        const identity = windowsIdentityMatches(record)
+        if (!identity.matches) {
+          discardPidFile(identity.reason)
+          return
+        }
+      }
       signalGroup(pid, 'SIGKILL')
       if (!(await waitForExit(pid, 5_000))) {
         throw new Error('The local Edge process group did not stop.')
@@ -91,11 +205,23 @@ function start() {
     throw new Error('The synthetic local Edge environment file is missing.')
   }
 
-  const existingPid = readPid()
-  if (existingPid !== null && groupIsAlive(existingPid)) {
-    throw new Error('The local Edge process group is already running.')
+  const existingState = readPidRecord()
+  if (existingState?.invalidReason) {
+    discardPidFile(existingState.invalidReason)
+  } else if (existingState?.record) {
+    const { record } = existingState
+    if (process.platform === 'win32') {
+      const identity = windowsIdentityMatches(record)
+      if (identity.matches) {
+        throw new Error('The local Edge process group is already running.')
+      }
+      discardPidFile(identity.reason)
+    } else if (groupIsAlive(record.pid)) {
+      throw new Error('The local Edge process group is already running.')
+    } else {
+      discardPidFile('The recorded process group no longer exists')
+    }
   }
-  if (existingPid !== null) unlinkSync(pidPath)
 
   appendFileSync(
     logPath,
@@ -103,24 +229,47 @@ function start() {
     'utf8',
   )
   const logDescriptor = openSync(logPath, 'a')
-  const executable = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-  const child = spawn(
-    executable,
-    ['supabase', 'functions', 'serve', '--env-file', envPath],
-    {
-      detached: true,
-      env: process.env,
-      stdio: ['ignore', logDescriptor, logDescriptor],
-      windowsHide: true,
-    },
-  )
+  const windowsCli =
+    process.platform === 'win32'
+      ? join(
+          dirname(
+            require.resolve(
+              `@supabase/cli-windows-${process.arch}/package.json`,
+            ),
+          ),
+          'bin',
+          'supabase.exe',
+        )
+      : null
+  const executable = windowsCli ?? 'npx'
+  const args = windowsCli
+    ? ['functions', 'serve', '--env-file', envPath]
+    : ['supabase', 'functions', 'serve', '--env-file', envPath]
+  const child = spawn(executable, args, {
+    detached: true,
+    env: process.env,
+    stdio: ['ignore', logDescriptor, logDescriptor],
+    windowsHide: true,
+  })
   closeSync(logDescriptor)
 
   if (!child.pid) {
     throw new Error('The local Edge process did not return a PID.')
   }
 
-  writeFileSync(pidPath, `${child.pid}\n`, 'utf8')
+  const identity =
+    process.platform === 'win32'
+      ? readWindowsProcessIdentity(child.pid)
+      : {
+          pid: child.pid,
+          executable,
+          startedAt: new Date().toISOString(),
+        }
+  writeFileSync(
+    pidPath,
+    `${JSON.stringify({ version: 1, ...identity })}\n`,
+    'utf8',
+  )
   child.unref()
 }
 

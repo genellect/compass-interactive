@@ -231,9 +231,11 @@ rollback.
   Office state. COMPASS does not upload PPTX/PDF bytes, slide text, speaker
   notes, animations or the local path to Supabase.
 - Supabase stores only bounded coordination metadata: lecture/Admin-session
-  identifiers, SHA-256/HMAC digests for pairing, installation, PPTX, ordered
-  Slide IDs and PDF version, page/slide counts, accepted sequence/page,
-  lifecycle timestamps, terminal reason and content-free audit events. Raw
+  identifiers, the public Presenter proof key/fingerprint, SHA-256/HMAC digests
+  for pairing, request nonce/body receipts, coarse network buckets, PPTX,
+  ordered Slide IDs and PDF version, page/slide counts, accepted sequence/page,
+  lifecycle timestamps, terminal reason and content-free audit events. The
+  non-exportable private proof key remains in the Windows user key store. Raw
   ticket, recovery code and active capability are never stored.
 - Browser pairing and loopback session values are memory-only and must not be
   placed in a URL, local/session storage, analytics, crash logs or clipboard by

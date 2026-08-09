@@ -113,7 +113,11 @@ export function getPresenterTokenSecret() {
 
 export async function hashPresenterContext(
   value: string,
-  domain: 'manual-code',
+  domain:
+    | 'manual-code'
+    | 'presenter-rate-global'
+    | 'presenter-rate-key'
+    | 'presenter-rate-network',
   secret: string,
 ) {
   const key = await crypto.subtle.importKey(
@@ -194,6 +198,7 @@ export async function createPresenterCapabilityToken(input: {
   connectionId: string
   expiresAt: number
   installationHash: string
+  jti: string
   lectureSessionId: string
   secret: string
 }) {
@@ -201,6 +206,7 @@ export async function createPresenterCapabilityToken(input: {
   if (
     !isUuid(input.connectionId) ||
     !isUuid(input.lectureSessionId) ||
+    !isUuid(input.jti) ||
     !isSha256(input.installationHash) ||
     !Number.isInteger(input.expiresAt) ||
     input.expiresAt <= Date.now() / 1000 ||
@@ -215,7 +221,7 @@ export async function createPresenterCapabilityToken(input: {
       exp: input.expiresAt,
       iat: issuedAt,
       installationHash: input.installationHash,
-      jti: input.connectionId,
+      jti: input.jti,
       lectureSessionId: input.lectureSessionId,
       scope: CAPABILITY_SCOPE,
     } as PresenterCapabilityClaims,
@@ -234,7 +240,7 @@ export async function getPresenterCapabilityClaims(
     claims.aud === CAPABILITY_AUDIENCE &&
     isUuid(claims.connectionId) &&
     isUuid(claims.lectureSessionId) &&
-    claims.jti === claims.connectionId &&
+    isUuid(claims.jti) &&
     isSha256(claims.installationHash) &&
     typeof claims.iat === 'number' &&
     claims.iat <= now + 5 &&
@@ -243,4 +249,20 @@ export async function getPresenterCapabilityClaims(
     claims.exp - claims.iat === MAX_CAPABILITY_TTL_SECONDS,
   )
   return valid ? (claims as PresenterCapabilityClaims) : null
+}
+
+export function presenterCapabilityJtiFromNonceHash(nonceHash: string) {
+  if (!isSha256(nonceHash)) {
+    throw new Error('Invalid Presenter proof nonce hash.')
+  }
+  const value = nonceHash.slice(0, 32).split('')
+  value[12] = '5'
+  value[16] = ((Number.parseInt(value[16], 16) & 0x3) | 0x8).toString(16)
+  return [
+    value.slice(0, 8).join(''),
+    value.slice(8, 12).join(''),
+    value.slice(12, 16).join(''),
+    value.slice(16, 20).join(''),
+    value.slice(20, 32).join(''),
+  ].join('-')
 }

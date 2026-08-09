@@ -27,6 +27,7 @@ type IssueResult = {
   pdf_document_version: string
   pdf_manifest_version: number
   pdf_page_count: number
+  pairing_ticket_expires_at: string
   ticket_expires_at: string
 }
 
@@ -40,6 +41,7 @@ function camelCaseConnection(connection: Record<string, unknown>) {
     capabilityExpiresAt: connection.capability_expires_at ?? null,
     confirmedAt: connection.confirmed_at ?? null,
     connectionId: connection.connection_id,
+    customShowActive: connection.custom_show_active ?? null,
     hardStopAt: connection.hard_stop_at,
     hiddenSlideCount: connection.hidden_slide_count ?? null,
     lastCommittedPdfPage: connection.last_committed_pdf_page ?? null,
@@ -62,6 +64,13 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MANUAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PRESENTER_ACTIONS = new Set(['confirm', 'issue', 'revoke', 'status'])
+const RPC_TIMEOUT_MS = 3_500
+const TRANSIENT_DATABASE_CODES = new Set([
+  '55P03',
+  '57014',
+  'P7297',
+  'PGRST003',
+])
 
 function isPresenterAction(
   value: unknown,
@@ -140,6 +149,19 @@ Deno.serve(async (request) => {
   const service = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
+  const rpc = async (name: string, parameters: Record<string, unknown>) => {
+    try {
+      const result = await service
+        .rpc(name, parameters)
+        .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+      return {
+        ...result,
+        unavailable: TRANSIENT_DATABASE_CODES.has(result.error?.code ?? ''),
+      }
+    } catch {
+      return { data: null, error: null, unavailable: true }
+    }
+  }
   const userJwt = bearerToken(request)
   const { data: userData, error: userError } = userJwt
     ? await service.auth.getUser(userJwt)
@@ -162,8 +184,9 @@ Deno.serve(async (request) => {
     const ticketJti = crypto.randomUUID()
     const manualCode = randomManualCode()
     const tokenSecret = getPresenterTokenSecret()
-    const ticketExpiresAt = new Date(Date.now() + 55_000)
-    const { data, error } = await service.rpc('issue_presenter_connection_v1', {
+    const pairingTicketExpiresAt = new Date(Date.now() + 55_000)
+    const manualCodeExpiresAt = new Date(Date.now() + 5 * 60_000)
+    const { data, error, unavailable } = await rpc('issue_presenter_connection_v2', {
       target_admin_auth_user_id: userData.user.id,
       target_admin_session_id: claims.sid,
       target_lecture_session_id: body.lectureSessionId,
@@ -172,9 +195,17 @@ Deno.serve(async (request) => {
         'manual-code',
         tokenSecret,
       ),
-      target_ticket_expires_at: ticketExpiresAt.toISOString(),
+      target_manual_code_expires_at: manualCodeExpiresAt.toISOString(),
+      target_pairing_ticket_expires_at:
+        pairingTicketExpiresAt.toISOString(),
       target_ticket_jti_hash: await sha256Hex(ticketJti),
     })
+    if (unavailable) {
+      return jsonResponse(
+        { ok: false, message: 'PowerPoint connection preparation timed out.' },
+        504,
+      )
+    }
     if (error || !data) {
       return jsonResponse(
         { ok: false, message: 'PowerPoint connection could not be prepared.' },
@@ -184,7 +215,7 @@ Deno.serve(async (request) => {
     const issued = data as unknown as IssueResult
     const issuedAt = Math.floor(Date.now() / 1000)
     const expiresAt = Math.floor(
-      new Date(issued.ticket_expires_at).getTime() / 1000,
+      new Date(issued.pairing_ticket_expires_at).getTime() / 1000,
     )
     const pairingTicket = await createPresenterPairingToken({
       connectionId: issued.connection_id,
@@ -200,6 +231,7 @@ Deno.serve(async (request) => {
       hardStopAt: issued.hard_stop_at,
       manualCode,
       ok: true,
+      pairingTicketExpiresAt: issued.pairing_ticket_expires_at,
       pairingTicket,
       pdf: {
         documentId: issued.pdf_document_id,
@@ -215,7 +247,7 @@ Deno.serve(async (request) => {
     if (!body.lectureSessionId || !UUID_PATTERN.test(body.lectureSessionId)) {
       return jsonResponse({ ok: false, message: 'Lecture is invalid.' }, 400)
     }
-    const { data, error } = await service.rpc(
+    const { data, error, unavailable } = await rpc(
       'get_presenter_connection_status_v1',
       {
         target_admin_auth_user_id: userData.user.id,
@@ -223,6 +255,12 @@ Deno.serve(async (request) => {
         target_lecture_session_id: body.lectureSessionId,
       },
     )
+    if (unavailable) {
+      return jsonResponse(
+        { ok: false, message: 'PowerPoint status loading timed out.' },
+        504,
+      )
+    }
     if (error || !data) {
       return jsonResponse(
         { ok: false, message: 'PowerPoint status could not be loaded.' },
@@ -252,7 +290,19 @@ Deno.serve(async (request) => {
     target_connection_id: body.connectionId,
     ...(body.action === 'revoke' ? { target_reason: 'manual_handover' } : {}),
   }
-  const { data, error } = await service.rpc(functionName, parameters)
+  const { data, error, unavailable } = await rpc(functionName, parameters)
+  if (unavailable) {
+    return jsonResponse(
+      {
+        ok: false,
+        message:
+          body.action === 'confirm'
+            ? 'PowerPoint confirmation timed out.'
+            : 'PowerPoint synchronization stop timed out.',
+      },
+      504,
+    )
+  }
   if (error || !data) {
     return jsonResponse(
       {

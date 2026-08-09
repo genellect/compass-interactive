@@ -55,7 +55,7 @@ Do not run `test:phase5-openai-live`, `test:phase6-openai-live`, hosted migratio
 
 - Do not commit directly to `main`.
 - Keep changes narrow, commit intentionally, push the branch, and open a Draft Pull Request.
-- This private user-owned repository currently has no enforceable branch protection without GitHub Pro. Until protection is enabled, PR-only integration and no-direct-main are mandatory procedural controls; never describe them as technically enforced.
+- Main ruleset `20600565` is active: integration requires a Pull Request, all five configured CI contexts, and conversation resolution; force-push and branch deletion are blocked. Required approving reviews remain zero so the solo owner is not deadlocked. `strict_required_status_checks_policy` is intentionally `false`: a later `main` update does not by itself force a PR update and another full CI run, but every candidate PR head must still pass all five checks. Sync a high-risk PR with current `main` once near its final head when practical. A manual Copilot review is advisory and does not count as a required approval. No administrator bypass is currently configured; re-audit the live ruleset before a high-risk merge and never weaken it as an ordinary integration shortcut.
 - Local, CI, hosted, device, human, and Production acceptance are separate gates.
 - Phase 7.29B dormant placement is not feature activation or a formal Production Gate. The next formal integrated Production Gate is Phase 7.33 and remains HOLD until the Phase 7.29 activation blockers, Phase 7.30 identity work, Phase 7.31 governance/contest environment, and Phase 7.32 commercial-readiness contract all pass.
 

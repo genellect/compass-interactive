@@ -215,6 +215,7 @@ jobs:
           PHASE7_28_AI_MASTER_AUTH_ENABLED=true
           PHASE729_POWERPOINT_SYNC_ENABLED=false
           PRESENTER_BRIDGE_TOKEN_SECRET=compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
+          PRESENTER_BRIDGE_GATEWAY_SECRET=compass-ci-only-presenter-gateway-secret-at-least-32-bytes
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
           EOF
           node --input-type=module -e "const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']); console.log('PDF_ACCESS_PRIVATE_JWK=' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)))" >> "$edge_env"
@@ -225,6 +226,30 @@ jobs:
 
       - name: Verify local Auth, CORS and fail-closed paid features
         run: npm run test:production-local-edge
+
+      - name: Restart local Edge Functions with Presenter proof enabled
+        run: |
+          node scripts/ci/manage-local-edge.mjs stop
+          node scripts/ci/set-local-presenter-edge.mjs on
+          node scripts/ci/manage-local-edge.mjs start
+
+      - name: Wait for Presenter-enabled local Edge Functions
+        run: node scripts/ci/wait-for-local-edge.mjs
+
+      - name: Run Presenter proof through the real local Edge and database
+        env:
+          PRESENTER_BRIDGE_GATEWAY_SECRET: compass-ci-only-presenter-gateway-secret-at-least-32-bytes
+          PRESENTER_BRIDGE_TOKEN_SECRET: compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
+        run: npm run test:phase7-29c-local-edge
+
+      - name: Restore dormant Presenter Edge configuration
+        run: |
+          node scripts/ci/manage-local-edge.mjs stop
+          node scripts/ci/set-local-presenter-edge.mjs off
+          node scripts/ci/manage-local-edge.mjs start
+
+      - name: Wait for dormant local Edge Functions
+        run: node scripts/ci/wait-for-local-edge.mjs
 
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
@@ -290,12 +315,22 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: presenter-bridge/global.json
+          architecture: ${{ matrix.platform }}
+      - name: Verify pinned .NET SDK
+        shell: pwsh
+        run: |
+          $actualVersion = dotnet --version
+          if ($actualVersion -ne '10.0.302') {
+            throw "Expected .NET SDK 10.0.302 but found $actualVersion."
+          }
+      - name: Reject stale local Edge PID reuse
+        if: matrix.platform == 'x64'
+        run: node scripts/ci/test-manage-local-edge-pid.mjs
       - name: Restore native solution
-        run: dotnet restore presenter-bridge/Compass.PresenterBridge.slnx
+        run: dotnet restore presenter-bridge/Compass.PresenterBridge.slnx --locked-mode
       - name: Build native solution without publishing an artifact
         run: dotnet build presenter-bridge/Compass.PresenterBridge.slnx --configuration Release --no-restore -p:PlatformTarget=${{ matrix.platform }}
       - name: Run deterministic Core and loopback tests
-        if: matrix.platform == 'x64'
         run: dotnet run --project presenter-bridge/tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj --configuration Release --no-build -p:PlatformTarget=${{ matrix.platform }}
       - run: git diff --check
 

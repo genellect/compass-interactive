@@ -553,7 +553,8 @@ supabase/
 └─ config.toml             Local Supabase構成
 
 cloudflare/
-└─ asset-worker/           Private PDF・Archive Worker
+├─ asset-worker/           Private PDF・Archive Worker
+└─ presenter-gateway/      Dormant PowerPoint machine gateway; no public route
 
 publisher/                 Local PDF Publisher / recovery path
 presenter-bridge/          Optional Windows PowerPoint integration source
@@ -597,6 +598,7 @@ READMEは、現行システムの全体像と開発の入口を示します。�
 | [`docs/ROADMAP.md`](docs/ROADMAP.md)                                                                                               | 今後の開発計画                                              |
 | [`docs/CLOUD_CANONICALIZATION_GATE.md`](docs/CLOUD_CANONICALIZATION_GATE.md)                                                       | GitHub/Cloud正本化と復旧移植契約                            |
 | [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)                         | PPT救出・dormant rollout・rollback                          |
+| [`docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)                                 | Presenter Gateway・署名配布・activation HOLD契約            |
 | [`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Google Admin認証・AAL2・RBAC計画                            |
 | [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画 |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                       |

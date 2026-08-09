@@ -12,8 +12,7 @@ const issueLabels: Record<PresenterIssueCode, string> = {
   pdf_page_count_invalid: '講義資料のページ数を確認できません。',
   powerpoint_not_running: 'PowerPointのスライドショーを開始してください。',
   presentation_changed: 'PowerPointが変更されています。',
-  presenter_session_stopped:
-    'PowerPoint同期が停止しました。再接続してください。',
+  presenter_session_stopped: 'PowerPoint同期が停止しました。再接続してください。',
   presenter_view_must_be_disabled: '発表者ツールをオフにしてください。',
   slide_id_order_invalid: 'PowerPointのスライド構成を確認できません。',
   windowed_slide_show_required:
@@ -25,6 +24,18 @@ type AdminPowerPointSyncControlProps = {
   pdfPreview?: ReactNode
   pdfTitle: string
   sync: ReturnTypeOfPowerPointSync
+}
+
+function RecoveryCode({ code }: { code: string }) {
+  return (
+    <div className="admin-presenter-recovery" aria-live="polite">
+      <p className="note">
+        Presenter Bridgeのトレイアイコンから「復旧コードを入力」を開き、
+        次のコードを入力してください（5分間有効）。
+      </p>
+      <strong className="admin-presenter-recovery-code">{code}</strong>
+    </div>
+  )
 }
 
 export function AdminPowerPointSyncControl({
@@ -42,19 +53,11 @@ export function AdminPowerPointSyncControl({
         <div>
           <strong>PowerPointと同期</strong>
           {sync.message ? <p className="note">{sync.message}</p> : null}
+          {sync.manualCode ? <RecoveryCode code={sync.manualCode} /> : null}
         </div>
         <button className="secondary-button" onClick={sync.start} type="button">
           PowerPointと同期
         </button>
-        {sync.manualCode ? (
-          <details>
-            <summary>接続できない場合</summary>
-            <p className="note">
-              Presenter Bridgeに次の復旧コードを入力してください：
-              <strong>{sync.manualCode}</strong>
-            </p>
-          </details>
-        ) : null}
       </div>
     )
   }
@@ -62,7 +65,29 @@ export function AdminPowerPointSyncControl({
   if (sync.phase === 'checking') {
     return (
       <div className="admin-presenter-sync" aria-live="polite">
-        <strong>PowerPointを確認しています…</strong>
+        <strong>PowerPoint接続を準備しています…</strong>
+      </div>
+    )
+  }
+
+  if (sync.phase === 'recovery' || sync.phase === 'activating') {
+    return (
+      <div
+        className="admin-presenter-sync admin-presenter-recovery-panel"
+        aria-live="polite"
+      >
+        <div>
+          <strong>
+            {sync.phase === 'recovery'
+              ? '復旧コードで接続'
+              : 'Presenter Bridgeの接続待ち'}
+          </strong>
+          {sync.message ? <p className="note">{sync.message}</p> : null}
+          {sync.manualCode ? <RecoveryCode code={sync.manualCode} /> : null}
+        </div>
+        <button className="secondary-button" onClick={sync.stop} type="button">
+          やめる
+        </button>
       </div>
     )
   }
@@ -76,7 +101,7 @@ export function AdminPowerPointSyncControl({
             <strong>{sync.presentation.displayName}</strong>
             <small>{sync.presentation.slideCount}スライド</small>
           </div>
-          <div aria-hidden="true">↔</div>
+          <div aria-hidden="true">→</div>
           <div>
             <span>講義資料</span>
             <strong>{pdfTitle}</strong>
@@ -92,6 +117,9 @@ export function AdminPowerPointSyncControl({
           </ul>
         ) : null}
         {sync.message ? <p className="note">{sync.message}</p> : null}
+        {sync.manualCode && !sync.presentation.bindingDigest ? (
+          <RecoveryCode code={sync.manualCode} />
+        ) : null}
         <div className="admin-presenter-actions">
           <button
             className="primary-button"
@@ -131,7 +159,7 @@ export function AdminPowerPointSyncControl({
         {sync.message ? <p className="error-note">{sync.message}</p> : null}
       </div>
       <button className="secondary-button" onClick={sync.stop} type="button">
-        手動操作に切り替える
+        手動操作へ切り替える
       </button>
     </div>
   )

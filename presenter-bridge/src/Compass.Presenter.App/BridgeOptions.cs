@@ -6,8 +6,10 @@ internal sealed record BridgeOptions(
 {
     private const string CanonicalOrigin =
         "https://compass-interactive.pages.dev";
+    internal const string ProductionPresenterEndpoint =
+        "https://presenter-api.invalid/functions/v1/presenter-bridge-session";
     private const string CanonicalEndpointHost =
-        "pfvedtqccblecuyjlfqh.supabase.co";
+        "presenter-api.invalid";
     private const string EndpointVariable =
         "COMPASS_PRESENTER_SESSION_ENDPOINT";
     private const string OriginsVariable =
@@ -15,9 +17,22 @@ internal sealed record BridgeOptions(
 
     public static BridgeOptions Load()
     {
+#if DEBUG
         var endpointText = Environment.GetEnvironmentVariable(EndpointVariable);
+        endpointText = string.IsNullOrWhiteSpace(endpointText)
+            ? ProductionPresenterEndpoint
+            : endpointText;
+#else
+        var endpointText = ProductionPresenterEndpoint;
+#endif
         var endpoint = ValidatePresenterEndpoint(endpointText);
+        if (endpoint.IdnHost.EndsWith(".invalid", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The production Presenter gateway has not been configured.");
+        }
 
+#if DEBUG
         var configuredOrigins = Environment.GetEnvironmentVariable(OriginsVariable);
         string[] origins = string.IsNullOrWhiteSpace(configuredOrigins)
             ? [CanonicalOrigin]
@@ -25,6 +40,9 @@ internal sealed record BridgeOptions(
                 ';',
                 StringSplitOptions.RemoveEmptyEntries |
                     StringSplitOptions.TrimEntries);
+#else
+        string[] origins = [CanonicalOrigin];
+#endif
         if (origins.Length == 0 || origins.Distinct(StringComparer.Ordinal).Count() !=
             origins.Length)
         {

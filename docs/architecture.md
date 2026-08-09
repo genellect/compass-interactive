@@ -319,6 +319,15 @@ browser sends no Admin token, PIN or service credential to the Bridge. Pairing
 and active capabilities are short-lived, single-purpose and bound to Origin,
 lecture, deck and installation. PowerPoint/PPTX/PDF bytes never enter Supabase.
 
+Every machine request also carries a per-user, non-exportable P-256 proof bound
+to the exact raw body, method, fixed path, timestamp and nonce. A dedicated
+Cloudflare Gateway forwards only those bounded bytes to one source-pinned Edge
+upstream, overwrites its server-only gateway/network headers and applies coarse
+location/network rate protection. Edge and the database remain authoritative
+for signature, replay, lifecycle, binding and global-rate decisions. Release
+builds retain a `.invalid` endpoint and the Worker has no public route until an
+owner-approved FQDN exists.
+
 Database and Edge admission use independent default-OFF gates. At most one
 unrevoked Presenter binding may fence a lecture's manual page writes. Explicit
 handover, runtime disable, expiry, lecture close, Admin revoke, disconnect or
@@ -327,3 +336,8 @@ manual control. The final commit still flows through the existing live-state
 mutation, so Phase 7.28 Display acceleration remains unchanged and students
 continue the five-second snapshot with no Presenter request, table or Realtime
 subscription.
+
+Signed Velopack distribution, exact Custom Domain/update feed, physical Office
+and browser testing, and verification of the 55-second automatic ticket versus
+the five-minute manual recovery-code TTL are separate Phase 7.29C
+Hosted/Device/Human gates; source or CI PASS cannot activate them.
