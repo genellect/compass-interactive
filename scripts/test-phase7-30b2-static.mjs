@@ -30,6 +30,22 @@ const nonLiveSuite = read('scripts/ci/run-nonlive-suite.mjs')
 const workflow = read('.github/workflows/ci.yml')
 const databaseTypes = read('src/types/database.ts')
 
+const assertGoogleSessionFixturesHaveStepUpNonce = (source, label) => {
+  const inserts = [
+    ...source.matchAll(
+      /insert into public\.admin_sessions\s*\(([\s\S]*?)\)\s*values\s*([\s\S]*?);/gi,
+    ),
+  ].filter((match) => /'google_totp'/.test(match[2]))
+  assert.ok(inserts.length > 0, `${label} must create a Google Admin session`)
+  for (const insert of inserts) {
+    assert.match(
+      insert[1],
+      /\bstep_up_nonce_id\b/,
+      `${label} Google Admin sessions must reference a tracked step-up nonce`,
+    )
+  }
+}
+
 const extractFunction = (schema, name) => {
   const definition = migration.match(
     new RegExp(
@@ -789,6 +805,23 @@ assert.match(workflow, /run: npm run test:ci:nonlive/)
 assert.match(workflow, /run: npx supabase test db --local/)
 assert.match(workflow, /run: npm run test:phase7-30b2-concurrency/)
 assert.match(concurrencyRunner, /Promise\.all\(\[/)
+assertGoogleSessionFixturesHaveStepUpNonce(pgTap, 'B2 pgTAP')
+assertGoogleSessionFixturesHaveStepUpNonce(
+  b2UpgradeFixture,
+  'B2 populated upgrade fixture',
+)
+assertGoogleSessionFixturesHaveStepUpNonce(
+  concurrencyRunner,
+  'B2 concurrency fixture',
+)
+assert.match(
+  concurrencyRunner,
+  /insert into private\.admin_step_up_nonces[\s\S]*?step_up_nonce_id/i,
+)
+assert.match(
+  b2UpgradeFixture,
+  /insert into private\.admin_step_up_nonces[\s\S]*?step_up_nonce_id/i,
+)
 assert.match(
   concurrencyRunner,
   /concurrent PIN discovery did not converge to one exact receipt/,
@@ -857,6 +890,8 @@ assert.match(
 )
 assert.match(concurrencyRunner, /select pg_sleep\(0\.10\)/)
 assert.match(pgTap, /auth\.sessions/)
+assert.match(pgTap, /insert into private\.admin_step_up_nonces/i)
+assert.match(pgTap, /step_up_nonce_id/i)
 assert.match(pgTap, /bcrypt cost 12/)
 assert.match(pgTap, /public B2 wrappers are invoker-only and service-role-only/)
 assert.match(pgTap, /every B2 foreign key has a valid leading lookup index/)

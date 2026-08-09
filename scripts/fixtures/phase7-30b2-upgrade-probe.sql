@@ -88,6 +88,36 @@ insert into private.admin_environment_memberships (
   statement_timestamp() - interval '1 hour'
 );
 
+insert into private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  issued_at,
+  expires_at
+) values (
+  '73020000-0000-4000-8000-000000000007'::uuid,
+  encode(extensions.digest('phase7.30b2-upgrade-login-nonce', 'sha256'), 'hex'),
+  '73020000-0000-4000-8000-000000000006'::uuid,
+  '73020000-0000-4000-8000-000000000003'::uuid,
+  '73020000-0000-4000-8000-000000000004'::uuid,
+  '73020000-0000-4000-8000-000000000005'::uuid,
+  '73020000-0000-4000-8000-000000000002'::uuid,
+  'admin_login',
+  '73020000-0000-4000-8000-000000000008'::uuid,
+  encode(extensions.digest('phase7.30b2-upgrade-prechallenge', 'sha256'), 'hex'),
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '55 minutes'
+);
+
 insert into public.admin_sessions (
   id,
   token_hash,
@@ -100,6 +130,7 @@ insert into public.admin_sessions (
   environment_id,
   supabase_auth_session_id,
   step_up_verified_at,
+  step_up_nonce_id,
   issued_at,
   last_seen_at,
   idle_expires_at,
@@ -116,8 +147,17 @@ insert into public.admin_sessions (
   '73020000-0000-4000-8000-000000000003'::uuid,
   '73020000-0000-4000-8000-000000000002'::uuid,
   statement_timestamp() - interval '1 hour',
+  '73020000-0000-4000-8000-000000000007'::uuid,
   statement_timestamp() - interval '1 hour',
   statement_timestamp() - interval '1 hour',
   statement_timestamp() + interval '12 hours',
   statement_timestamp() + interval '12 hours'
 );
+
+update private.admin_step_up_nonces
+set
+  status = 'consumed',
+  consumed_at = statement_timestamp() - interval '1 hour',
+  completed_admin_session_id = '73020000-0000-4000-8000-000000000006'::uuid,
+  updated_at = statement_timestamp() - interval '1 hour'
+where id = '73020000-0000-4000-8000-000000000007'::uuid;

@@ -1021,6 +1021,36 @@ VALUES (
   statement_timestamp() - interval '1 hour'
 ) ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  issued_at,
+  expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000734a'::uuid,
+  encode(extensions.digest('phase7.30b2-main-login-nonce', 'sha256'), 'hex'),
+  '00000000-0000-4000-8000-000000007341'::uuid,
+  '00000000-0000-4000-8000-000000007320'::uuid,
+  '00000000-0000-4000-8000-000000007321'::uuid,
+  '00000000-0000-4000-8000-000000007323'::uuid,
+  '00000000-0000-4000-8000-000000007340'::uuid,
+  'admin_login',
+  '00000000-0000-4000-8000-00000000734b'::uuid,
+  encode(extensions.digest('phase7.30b2-main-prechallenge', 'sha256'), 'hex'),
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '55 minutes'
+);
+
 INSERT INTO public.admin_sessions (
   id,
   token_hash,
@@ -1033,6 +1063,7 @@ INSERT INTO public.admin_sessions (
   environment_id,
   supabase_auth_session_id,
   step_up_verified_at,
+  step_up_nonce_id,
   issued_at,
   last_seen_at,
   idle_expires_at,
@@ -1049,11 +1080,20 @@ INSERT INTO public.admin_sessions (
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007340'::uuid,
   statement_timestamp() - interval '1 hour',
+  '00000000-0000-4000-8000-00000000734a'::uuid,
   statement_timestamp() - interval '1 hour',
   statement_timestamp() - interval '1 hour',
   statement_timestamp() + interval '12 hours',
   statement_timestamp() + interval '12 hours'
 );
+
+UPDATE private.admin_step_up_nonces
+SET
+  status = 'consumed',
+  consumed_at = statement_timestamp() - interval '1 hour',
+  completed_admin_session_id = '00000000-0000-4000-8000-000000007341'::uuid,
+  updated_at = statement_timestamp() - interval '1 hour'
+WHERE id = '00000000-0000-4000-8000-00000000734a'::uuid;
 
 SELECT ok(
   (
@@ -1894,6 +1934,36 @@ INSERT INTO private.admin_environment_memberships (
   statement_timestamp() - interval '7 hours 59 minutes'
 );
 
+INSERT INTO private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  issued_at,
+  expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000737a'::uuid,
+  encode(extensions.digest('phase7.30b2-near-cap-login-nonce', 'sha256'), 'hex'),
+  '00000000-0000-4000-8000-000000007374'::uuid,
+  '00000000-0000-4000-8000-000000007320'::uuid,
+  '00000000-0000-4000-8000-000000007372'::uuid,
+  '00000000-0000-4000-8000-000000007373'::uuid,
+  '00000000-0000-4000-8000-000000007371'::uuid,
+  'admin_login',
+  '00000000-0000-4000-8000-00000000737b'::uuid,
+  encode(extensions.digest('phase7.30b2-near-cap-prechallenge', 'sha256'), 'hex'),
+  statement_timestamp() - interval '7 hours 59 minutes',
+  statement_timestamp() - interval '7 hours 59 minutes',
+  statement_timestamp() - interval '7 hours 54 minutes'
+);
+
 INSERT INTO public.admin_sessions (
   id,
   token_hash,
@@ -1906,6 +1976,7 @@ INSERT INTO public.admin_sessions (
   environment_id,
   supabase_auth_session_id,
   step_up_verified_at,
+  step_up_nonce_id,
   issued_at,
   last_seen_at,
   idle_expires_at,
@@ -1922,11 +1993,20 @@ INSERT INTO public.admin_sessions (
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007371'::uuid,
   statement_timestamp() - interval '7 hours 59 minutes',
+  '00000000-0000-4000-8000-00000000737a'::uuid,
   statement_timestamp() - interval '7 hours 59 minutes',
   statement_timestamp() - interval '7 hours 59 minutes',
   statement_timestamp() + interval '1 hour',
   statement_timestamp() + interval '1 hour'
 );
+
+UPDATE private.admin_step_up_nonces
+SET
+  status = 'consumed',
+  consumed_at = statement_timestamp() - interval '7 hours 59 minutes',
+  completed_admin_session_id = '00000000-0000-4000-8000-000000007374'::uuid,
+  updated_at = statement_timestamp() - interval '7 hours 59 minutes'
+WHERE id = '00000000-0000-4000-8000-00000000737a'::uuid;
 
 INSERT INTO private.admin_ai_unlock_factors (
   id,

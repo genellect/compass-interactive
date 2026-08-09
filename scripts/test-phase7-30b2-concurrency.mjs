@@ -18,6 +18,12 @@ const id = Object.fromEntries(
     'adminSessionA1',
     'adminSessionA2',
     'adminSessionB',
+    'stepUpNonceA1',
+    'stepUpNonceA2',
+    'stepUpNonceB',
+    'stepUpRequestA1',
+    'stepUpRequestA2',
+    'stepUpRequestB',
     'factorA',
     'factorB',
     'factorRequestA',
@@ -59,6 +65,12 @@ const tokenA2 = hex()
 const tokenB = hex()
 const subjectHmacA = hex()
 const subjectHmacB = hex()
+const stepUpNonceHashA1 = hex()
+const stepUpNonceHashA2 = hex()
+const stepUpNonceHashB = hex()
+const stepUpPrechallengeHashA1 = hex()
+const stepUpPrechallengeHashA2 = hex()
+const stepUpPrechallengeHashB = hex()
 const pinHmacA = hex()
 const pinHmacB = hex()
 const wrongPinHmacA = hex()
@@ -265,14 +277,36 @@ await runSql(`
       owner_invariant_enforced_at = statement_timestamp()
   where id = ${literal(id.environment)}::uuid;
 
+  insert into private.admin_step_up_nonces (
+    id, nonce_hash, reserved_admin_session_id, environment_id, principal_id,
+    membership_id, supabase_auth_session_id, intended_action, request_id,
+    prechallenge_jwt_hash, min_amr_at, issued_at, expires_at
+  ) values
+    (${literal(id.stepUpNonceA1)}::uuid, ${literal(stepUpNonceHashA1)}, ${literal(id.adminSessionA1)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA1)}::uuid, 'admin_login', ${literal(id.stepUpRequestA1)}::uuid, ${literal(stepUpPrechallengeHashA1)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes'),
+    (${literal(id.stepUpNonceA2)}::uuid, ${literal(stepUpNonceHashA2)}, ${literal(id.adminSessionA2)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA2)}::uuid, 'admin_login', ${literal(id.stepUpRequestA2)}::uuid, ${literal(stepUpPrechallengeHashA2)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes'),
+    (${literal(id.stepUpNonceB)}::uuid, ${literal(stepUpNonceHashB)}, ${literal(id.adminSessionB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.authSessionB)}::uuid, 'admin_login', ${literal(id.stepUpRequestB)}::uuid, ${literal(stepUpPrechallengeHashB)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes');
+
   insert into public.admin_sessions (
     id, token_hash, auth_user_id, pin_version_hash, authentication_method, aal,
     principal_id, membership_id, environment_id, supabase_auth_session_id,
-    step_up_verified_at, issued_at, last_seen_at, idle_expires_at, expires_at
+    step_up_verified_at, step_up_nonce_id, issued_at, last_seen_at,
+    idle_expires_at, expires_at
   ) values
-    (${literal(id.adminSessionA1)}::uuid, ${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA1)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
-    (${literal(id.adminSessionA2)}::uuid, ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA2)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
-    (${literal(id.adminSessionB)}::uuid, ${literal(tokenB)}, ${literal(id.authUserB)}::uuid, null, 'google_totp', 2, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionB)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours');
+    (${literal(id.adminSessionA1)}::uuid, ${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA1)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceA1)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
+    (${literal(id.adminSessionA2)}::uuid, ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA2)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceA2)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
+    (${literal(id.adminSessionB)}::uuid, ${literal(tokenB)}, ${literal(id.authUserB)}::uuid, null, 'google_totp', 2, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionB)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceB)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours');
+
+  update private.admin_step_up_nonces
+  set
+    status = 'consumed',
+    consumed_at = statement_timestamp() - interval '1 hour',
+    completed_admin_session_id = reserved_admin_session_id,
+    updated_at = statement_timestamp() - interval '1 hour'
+  where id in (
+    ${literal(id.stepUpNonceA1)}::uuid,
+    ${literal(id.stepUpNonceA2)}::uuid,
+    ${literal(id.stepUpNonceB)}::uuid
+  );
 
   insert into private.admin_ai_unlock_factors (
     id, environment_id, principal_id, membership_id, pin_verifier,
