@@ -164,6 +164,9 @@ jobs:
       - name: Run real-database Presenter connection concurrency regression
         run: npm run test:phase7-29-concurrency
 
+      - name: Run Admin AI unlock replay and lock-order concurrency regression
+        run: npm run test:phase7-30b2-concurrency
+
       - name: Verify Phase 7.2 data upgrade through Phase 7.26
         run: npm run test:phase7-26-upgrade
 

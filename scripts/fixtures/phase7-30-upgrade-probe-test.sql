@@ -116,7 +116,9 @@ SET ROLE service_role;
 SELECT throws_ok(
   $$
     UPDATE public.admin_sessions
-    SET authentication_method = 'google_totp'
+    SET
+      authentication_method = 'google_totp',
+      supabase_auth_session_id = '73000000-0000-4000-8000-000000000003'::uuid
     WHERE id = '73000000-0000-4000-8000-000000000001'::uuid
   $$,
   '23514',
