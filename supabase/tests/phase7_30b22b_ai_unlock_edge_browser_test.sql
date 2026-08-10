@@ -133,7 +133,7 @@ SELECT alike(
   '%array_agg(factor.id order by factor.id::text)%max(factor.status) filter (where factor.id = target_factor_id)%live_count := cardinality(live_ids)%live_hash := private.hash_verified_totp_factor_ids_v1(%target_auth_user_id,%live_ids%',
   'factor transition intent derives IDs, target status, count, and hash from one aggregate snapshot'
 );
-SELECT unlike(
+SELECT unalike(
   pg_get_functiondef(
     'private.describe_admin_totp_factor_transition_v1(uuid,uuid,text,uuid)'::regprocedure
   ),
@@ -216,14 +216,14 @@ SELECT alike(
   '%recovery_token_hash = target_recovery_token_hash%',
   'finalize binds the exact durable recovery credential'
 );
-SELECT unlike(
+SELECT unalike(
   pg_get_functiondef(
     'private.finalize_admin_totp_factor_transition_v1(text,uuid,uuid,text,uuid,text,uuid,uuid)'::regprocedure
   ),
   '%session.token_hash = target_recovery_token_hash%',
   'recovery credential is not confused with the app-session token'
 );
-SELECT unlike(
+SELECT unalike(
   pg_get_functiondef(
     'private.drain_admin_ai_on_session_revoke_v1()'::regprocedure
   ),

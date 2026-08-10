@@ -253,46 +253,14 @@ SELECT alike(
   pg_get_functiondef(
     'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
   ),
-  '%current_verified_totp_factor_set_snapshot_v1(%revoke_reason = ''totp_factor_set_changed''%auth_session_row.created_at + interval ''8 hours''%',
+  '%current_verified_totp_factor_set_snapshot_v1(%auth_session_row.created_at + interval ''8 hours''%revoke_reason = ''totp_factor_set_changed''%',
   'C1 context rechecks one TOTP snapshot, drains mismatch, and preserves the eight-hour cap'
 );
-SELECT ok(
-  strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from private.admin_principals as principal'
-  ) < strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from private.admin_environment_memberships as membership'
-  )
-  AND strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from private.admin_environment_memberships as membership'
-  ) < strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from private.admin_environments as environment'
-  )
-  AND strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from private.admin_environments as environment'
-  ) < strpos(
-    pg_get_functiondef(
-      'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-    ),
-    'from public.admin_sessions as session'
-  )
-  AND pg_get_functiondef(
+SELECT alike(
+  pg_get_functiondef(
     'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
-  ) LIKE '%from private.admin_environments as environment%for share%',
+  ),
+  '%from private.admin_principals as principal%for update%from private.admin_environment_memberships as membership%for update%from private.admin_environments as environment%for share%from public.admin_sessions as session%for update%from auth.sessions as auth_session%for key share%',
   'C1 context preserves principal, membership, environment-share, then session lock order'
 );
 

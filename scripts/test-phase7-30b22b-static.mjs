@@ -54,6 +54,8 @@ assert.match(
 assert.match(pgTap, /idx\.indpred IS NULL/)
 assert.doesNotMatch(pgTap, /SELECT like\(/)
 assert.match(pgTap, /SELECT alike\(/)
+assert.doesNotMatch(pgTap, /SELECT unlike\(/)
+assert.match(pgTap, /SELECT unalike\(/)
 assert.match(
   b2PgTap,
   /Phase 7\.30B2\.2b latest-schema browser fixtures[\s\S]*latest_schema_browser_fixture[\s\S]*google_session_issue_enabled = false[\s\S]*00000000-0000-4000-8000-000000007339/,
