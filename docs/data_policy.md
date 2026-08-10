@@ -325,9 +325,15 @@ evidence remain unproven.
   principal/environment/membership invalidation, verified TOTP factor-set
   change or that cap requires login again. Role changes are applied live;
   `can_use_ai=false` drains AI authority without deleting the Admin session.
+- B2.2a authorizes a dormant Google Admin session only when the principal's
+  approved factor-set hash/version/count, the live verified set, the immutable
+  session binding and completed post-challenge JWT/AMR nonce evidence agree.
+  Migration infers neither an approval nor a session hash. First-factor approval
+  is atomic only for an unbound `pending_mfa` 0-to-1 completion; existing sets
+  require the Edge-unwired, default-OFF operator-adoption HOLD.
 - A five-minute TOTP step-up record exists only for rare owner/principal,
   role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
-  and AI PIN factor enrollment/rotation/reset control-plane actions. It is
+  and AI PIN factor enrollment/rotation/revoke/reset control-plane actions. It is
   content-free and never contains a TOTP code. Initial PIN enrollment after
   login uses the already-fresh login timestamp without another prompt; normal
   PIN verification and lecture AI operations do not require freshness.

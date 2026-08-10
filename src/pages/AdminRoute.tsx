@@ -276,7 +276,7 @@ export function AdminRoute() {
     setIsSubmitting(true)
     setErrorMessage('')
     try {
-      const { stepUpNonce } = await beginGoogleAdminStepUp()
+      const { stepUpNonce } = await beginGoogleAdminStepUp(factorId)
       const { error } = await adminSupabase.auth.mfa.challengeAndVerify({
         code: totpCode,
         factorId,

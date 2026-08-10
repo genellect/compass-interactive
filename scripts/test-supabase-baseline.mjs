@@ -64,6 +64,8 @@ const phase730b1AdminIdentityMigrationName =
   '20260809143000_phase7_30b1_admin_identity_aal2.sql'
 const phase730b2AdminAiUnlockMigrationName =
   '20260809155129_phase7_30b2_admin_ai_unlock_foundation.sql'
+const phase730b22aAdminControlMigrationName =
+  '20260809231342_phase7_30b22a_admin_control_hardening.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -107,6 +109,7 @@ assert.deepEqual(
     phase729cPresenterProofMigrationName,
     phase730b1AdminIdentityMigrationName,
     phase730b2AdminAiUnlockMigrationName,
+    phase730b22aAdminControlMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

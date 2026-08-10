@@ -3,6 +3,27 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-10 - Phase 7.30B2.2a dormant Admin control hardening
+
+- Bound new Google/TOTP Admin sessions to a principal-approved, domain-separated
+  digest/version/count for the exact verified Supabase TOTP factor set plus
+  completed post-challenge JWT/AMR nonce evidence and the default-OFF issue
+  gate. Pre-existing Google sessions and factor sets are never inferred or
+  backfilled; sessions are reason-revoked, while initial 0-to-1 enrollment is
+  approved atomically and existing-set adoption remains an Edge-unwired,
+  separately gated Hosted/Human operation.
+- Added canonical-intent-bound, single-use five-minute control nonce/grant state
+  for rare PIN and policy mutations. Mutation facades rederive PIN, policy and
+  terminal factor intent before consumption and close the old six-argument PIN
+  and policy-v1 freshness bypasses while preserving exact committed replay.
+- Added explicit PIN revoke/reset/profile and factor reconciliation RPCs plus
+  the minimum default-OFF identity Edge/client begin/complete actions. Normal
+  lecture, PIN verification and remembered-browser paths gain no periodic TOTP.
+- Unified login and AI-drain lock order, added static/pgTAP/concurrency/upgrade
+  contracts, and kept all Hosted, secret, deploy and paid-resource state
+  unchanged. A real AAL2-to-AAL2 fresh-AMR Local Edge proof and exact-head DB CI
+  remain activation HOLD.
+
 ## 2026-08-10 - Phase 7.30B2 dormant Admin AI-unlock database foundation
 
 - Added nine default-OFF private tables for AI policy, versioned personal-PIN

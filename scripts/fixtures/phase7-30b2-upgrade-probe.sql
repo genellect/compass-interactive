@@ -163,3 +163,33 @@ set
   completed_admin_session_id = '73020000-0000-4000-8000-000000000006'::uuid,
   updated_at = statement_timestamp() - interval '1 hour'
 where id = '73020000-0000-4000-8000-000000000007'::uuid;
+
+insert into private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  issued_at,
+  expires_at
+) values (
+  '73020000-0000-4000-8000-000000000009'::uuid,
+  encode(extensions.digest('phase7.30b2-upgrade-pending-login', 'sha256'), 'hex'),
+  '73020000-0000-4000-8000-00000000000a'::uuid,
+  '73020000-0000-4000-8000-000000000003'::uuid,
+  '73020000-0000-4000-8000-000000000004'::uuid,
+  '73020000-0000-4000-8000-000000000005'::uuid,
+  '73020000-0000-4000-8000-000000000002'::uuid,
+  'admin_login',
+  '73020000-0000-4000-8000-00000000000b'::uuid,
+  encode(extensions.digest('phase7.30b2-upgrade-pending-prejwt', 'sha256'), 'hex'),
+  statement_timestamp(),
+  statement_timestamp(),
+  statement_timestamp() + interval '5 minutes'
+);

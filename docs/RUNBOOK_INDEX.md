@@ -161,7 +161,7 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (A-B2 source; runtime/activation HOLD)
+## 6. Google Admin identity and MFA (A-B2.2a source; runtime/activation HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
@@ -189,8 +189,15 @@ Local writer while browser mode is active.
   its unified verifier across every operational Admin Edge/RPC path. It never
   prompts for TOTP periodically during a lecture. Logout, backing
   `auth.sessions` removal, principal/environment/membership invalidation or the
-  cap. The final C-integrated verifier also ends the session on a verified TOTP
-  factor-set change; B2 does not yet implement that fingerprint/version check.
+  cap. B2.2a stores an approved factor-set hash/version/count on the principal
+  and issues a dormant Google Admin session only when approval, the live set,
+  the session binding and completed post-challenge JWT/AMR nonce evidence agree.
+  Changed sets are reason-revoked and drain pending AI authority. The only
+  automatic approval is an unbound `pending_mfa` principal's exact first 0-to-1
+  factor during fresh completion. Existing verified but unbound sets require
+  Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
+  performs no inferred backfill. Factor add/replace remains B2.2b rare-control
+  HOLD. Phase 7.30C applies the verifier to every operational Admin Edge/RPC path.
   Role changes take effect live; `can_use_ai=false` drains AI authority without
   ending the Admin session.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
@@ -222,7 +229,7 @@ Local writer while browser mode is active.
   rotation/revoke drains AI authority but preserves the Admin session.
 - Five-minute fresh TOTP is used only for owner/principal, role/status, verified
   TOTP-factor-set, environment AI-policy, global-revoke and AI PIN factor
-  enrollment/rotation/reset control-plane changes. Initial PIN enrollment
+  enrollment/rotation/revoke/reset control-plane changes. Initial PIN enrollment
   immediately after login uses the already-fresh login TOTP with no additional
   prompt. Normal lecture operation, emergency stop, PIN verification, browser
   proof, AI master/escalation and child calls never prompt.

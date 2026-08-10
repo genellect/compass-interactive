@@ -1,15 +1,16 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Implemented, verification pending
-Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2 source/static PASS, exact-head runtime DB CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-B2 source; Phase 7.30C-F HOLD
+Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-B2.2a source; Phase 7.30C-F HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-10
 
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
-[`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md).
+[`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md) and
+[`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md).
 
 ## Implementation checkpoint
 
@@ -38,9 +39,18 @@ Edge/RPC path. B2 removes the 30-minute idle limit and anchors the application s
 lecture. The B2 database path rejects explicit logout, disappearance of the
 backing `auth.sessions` row, principal/environment/membership invalidation or
 the eight-hour cap. Role changes are enforced live without dropping the Admin
-session; `can_use_ai=false` drains AI authority while preserving it. The final
-C-integrated contract also ends the session on a verified TOTP factor-set
-change, but B2 does not yet store or compare that authoritative fingerprint.
+session; `can_use_ai=false` drains AI authority while preserving it. B2.2a now
+stores an approved factor-set hash/version/count on the principal and issues a
+Google Admin session only when that trust anchor, the live verified set, the
+session binding and completed post-challenge JWT/AMR nonce evidence agree.
+Changed sets are reason-revoked and drain pending AI authority. The only
+automatic approval is an unbound `pending_mfa` principal's exact first 0-to-1
+factor during fresh completion. Existing verified but unbound sets require an
+Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
+never infers approval. Adding/replacing a factor beside an approved set requires
+B2.2b rare-control with fresh existing-factor proof and remains HOLD.
+Phase 7.30C still applies the unified verifier to every operational
+Admin Edge/RPC path.
 
 The B2 source additionally implements nine private AI-unlock tables, service-
 role-only public wrappers, fixed-search-path private helpers, bcrypt cost-12 of
@@ -56,8 +66,8 @@ No Google Cloud OAuth client, Supabase Hosted provider/database/Edge setting,
 callback allowlist, secret, or real account was created or changed. Real Google
 OAuth, Hosted and Human evidence is not executed and remains HOLD. B2 does not
 implement the Edge raw-PIN/HMAC path, real browser CryptoKey/signature flow,
-TOTP factor-set fingerprint, all-Admin verifier, lecture ownership, atomic
-proof-to-master admission, UI or AI Passkey. Those B2.2/C and later boundaries,
+all-Admin verifier, lecture ownership, atomic proof-to-master admission, Edge
+raw-PIN/HMAC, UI or AI Passkey. Those B2.2b/C and later boundaries,
 Phase 7.30C-F and every activation remain HOLD. The source implementation adds
 no recurring fixed-cost dependency.
 
@@ -356,9 +366,10 @@ inactivity expiry and no periodic TOTP challenge during a lecture. Every
 sensitive request still checks that the backing `auth.sessions` row,
 application session, principal, environment and membership are valid. Explicit
 logout, backing-session removal, principal/environment/membership invalidation,
-or the eight-hour cap requires a new Google-to-TOTP login. The C-integrated
-verifier additionally requires a new login on a verified TOTP factor-set change;
-B2 does not yet compare that fingerprint/version. Role changes are enforced
+or the eight-hour cap requires a new Google-to-TOTP login. B2.2a additionally
+requires a new login on a verified TOTP factor-set change for its factor-bound
+session/context paths; Phase 7.30C applies that verifier to every operational
+Admin endpoint. Role changes are enforced
 from current membership state without terminating the session. Removing
 `can_use_ai` drains AI master/browser/pending authority but does not log the
 teacher out.
@@ -367,14 +378,14 @@ JWT `aal2` alone does not prove a recent challenge for the small set of
 control-plane actions that require one. A five-minute server-recorded TOTP
 step-up is used only for owner/principal changes, role/status changes, verified
 TOTP factor-set changes, environment AI-policy changes, global revocation and
-AI PIN factor enrollment/rotation/reset. It is bound to `auth.uid()`,
+AI PIN factor enrollment/rotation/revoke/reset. It is bound to `auth.uid()`,
 membership, Admin session and intended action; success requires a server-
 recorded TOTP AMR timestamp inside the five-minute boundary, atomically
 consumes the mutation request and records server time. Initial PIN enrollment
 immediately after Google-to-TOTP login uses that already-fresh login event and
 does not add another prompt. Once an actor/session/scope-bound request ID
-commits, any retry with that same binding returns the committed result after the
-window without re-reading or comparing PIN material. Normal
+commits, an exact canonical-intent retry returns the committed result after the
+window; the same request ID with changed PIN or policy material is rejected. Normal
 lecture operations, emergency stop, AI PIN verification/use,
 remembered-browser enrollment/assertion, AI-master activation or scope/cost
 escalation, and child AI calls never request this five-minute step-up.
@@ -406,7 +417,7 @@ be authorized:
 
 The four-digit PIN is an intentional second UI layer for paid AI, distinct from
 Admin login. Its low entropy means it never substitutes for Google, AAL2,
-membership or ownership. New factor enrollment, rotation and reset are rare
+membership or ownership. New factor enrollment, rotation, revoke and reset are rare
 factor-control changes and require the five-minute boundary above. Login-time
 initial enrollment uses the already-fresh TOTP event without another prompt.
 Remembered-browser enrollment, PIN verification/use and master activation need
@@ -568,7 +579,7 @@ consent review.
 Rare control-plane actions show the target and effect, require the five-minute
 TOTP step-up, carry an idempotency key and return an auditable result. This is
 limited to owner/principal, role/status, verified TOTP-factor-set, environment
-AI-policy, global-revoke and AI PIN factor enrollment/rotation/reset changes.
+AI-policy, global-revoke and AI PIN factor enrollment/rotation/revoke/reset changes.
 Immediate post-login PIN enrollment adds no second prompt because the login
 TOTP is already fresh. Lecture operation, emergency stop, PIN verification,
 browser proof, AI-master activation/escalation and child calls stay on the
@@ -720,7 +731,7 @@ never signs in an Admin or grants owner authority.
   factor-set change or that cap requires a new login. Five-minute TOTP step-up
   is limited to rare control-plane owner/principal, role/status, TOTP-factor,
   environment AI-policy, global-revoke and AI PIN factor enrollment/rotation/
-  reset changes. Login-time initial enrollment uses the already-fresh TOTP and
+  revoke/reset changes. Login-time initial enrollment uses the already-fresh TOTP and
   adds no second prompt; ordinary PIN verification and lecture AI operations do
   not require freshness.
 - `ADMIN_PIN` is removed after the Phase 7.30C authorization migration and

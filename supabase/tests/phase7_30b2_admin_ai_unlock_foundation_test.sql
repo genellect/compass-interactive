@@ -3,6 +3,108 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 SELECT no_plan();
 
+CREATE FUNCTION pg_temp.seed_admin_control_grant(
+  target_admin_session_id uuid,
+  target_action text,
+  target_request_id uuid,
+  target_intent_digest text
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  session_row public.admin_sessions%ROWTYPE;
+  nonce_id uuid := extensions.gen_random_uuid();
+  grant_id uuid := extensions.gen_random_uuid();
+  effective_now timestamptz := statement_timestamp();
+BEGIN
+  SELECT session.*
+  INTO STRICT session_row
+  FROM public.admin_sessions AS session
+  WHERE session.id = target_admin_session_id;
+
+  INSERT INTO private.admin_control_step_up_nonces (
+    id,
+    nonce_hash,
+    environment_id,
+    principal_id,
+    membership_id,
+    admin_session_id,
+    supabase_auth_session_id,
+    verified_totp_factor_set_hash,
+    intended_action,
+    intent_digest,
+    mutation_request_id,
+    prechallenge_jwt_hash,
+    min_amr_at,
+    issued_at,
+    expires_at,
+    status,
+    consumed_at,
+    completed_grant_id
+  ) VALUES (
+    nonce_id,
+    encode(extensions.digest('b22a-nonce:' || target_request_id::text, 'sha256'), 'hex'),
+    session_row.environment_id,
+    session_row.principal_id,
+    session_row.membership_id,
+    session_row.id,
+    session_row.supabase_auth_session_id,
+    session_row.verified_totp_factor_set_hash,
+    target_action,
+    target_intent_digest,
+    target_request_id,
+    encode(extensions.digest('b22a-pre:' || target_request_id::text, 'sha256'), 'hex'),
+    effective_now - interval '1 minute',
+    effective_now - interval '1 minute',
+    effective_now + interval '4 minutes',
+    'consumed',
+    effective_now,
+    grant_id
+  );
+
+  INSERT INTO private.admin_control_step_up_grants (
+    id,
+    source_kind,
+    control_nonce_id,
+    environment_id,
+    principal_id,
+    membership_id,
+    admin_session_id,
+    supabase_auth_session_id,
+    verified_totp_factor_set_hash,
+    intended_action,
+    intent_digest,
+    mutation_request_id,
+    prechallenge_jwt_hash,
+    completion_jwt_hash,
+    min_amr_at,
+    verified_totp_amr_at,
+    issued_at,
+    expires_at
+  ) VALUES (
+    grant_id,
+    'control',
+    nonce_id,
+    session_row.environment_id,
+    session_row.principal_id,
+    session_row.membership_id,
+    session_row.id,
+    session_row.supabase_auth_session_id,
+    session_row.verified_totp_factor_set_hash,
+    target_action,
+    target_intent_digest,
+    target_request_id,
+    encode(extensions.digest('b22a-pre:' || target_request_id::text, 'sha256'), 'hex'),
+    encode(extensions.digest('b22a-post:' || target_request_id::text, 'sha256'), 'hex'),
+    effective_now - interval '1 minute',
+    effective_now - interval '1 minute',
+    effective_now,
+    effective_now + interval '4 minutes'
+  );
+END;
+$$;
+
 SELECT has_table('private', 'admin_ai_unlock_runtime_gate', 'B2 runtime gate exists');
 SELECT has_table('private', 'admin_ai_policies', 'Admin AI policies exist');
 SELECT has_table('private', 'admin_ai_unlock_factors', 'personal AI factors exist');
@@ -150,6 +252,8 @@ SELECT ok(
         'private.admin_ai_browser_enrollment_nonces'::regclass,
         'private.admin_ai_browser_credentials'::regclass,
         'private.admin_ai_browser_assertion_challenges'::regclass,
+        'private.admin_control_step_up_nonces'::regclass,
+        'private.admin_control_step_up_grants'::regclass,
         'public.lecture_ai_master_authorizations'::regclass
       )
       AND NOT EXISTS (
@@ -161,7 +265,7 @@ SELECT ok(
           AND split_part(idx.indkey::text, ' ', 1)::smallint = foreign_key.conkey[1]
       )
   ),
-  'every B2 foreign key has a valid leading lookup index for RESTRICT and security drains'
+  'every B2/B2.2a foreign key has a valid leading lookup index for RESTRICT and security drains'
 );
 
 SELECT is(
@@ -332,20 +436,32 @@ SELECT ok(
 SELECT ok(
   pg_get_functiondef(
     'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
-  ) LIKE '%from auth.sessions%'
+  ) LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
   AND pg_get_functiondef(
     'private.require_admin_ai_context_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
+  ) LIKE '%require_admin_ai_context_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
+  ) LIKE '%from auth.sessions%'
+  AND pg_get_functiondef(
+    'private.require_admin_ai_context_pre_b22a_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
   ) LIKE '%from auth.sessions%',
-  'B1 session touch and every B2 context verify backing auth.sessions existence'
+  'B2.2a wrappers delegate to the B1/B2 implementations that verify backing auth.sessions existence'
 );
 
 WITH definitions AS (
   SELECT
     pg_get_functiondef(
       'private.require_admin_ai_context_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
+    ) AS b2_context_wrapper,
+    pg_get_functiondef(
+      'private.require_admin_ai_context_pre_b22a_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
     ) AS b2_context,
     pg_get_functiondef(
       'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+    ) AS b1_touch_wrapper,
+    pg_get_functiondef(
+      'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
     ) AS b1_touch,
     pg_get_functiondef(
       'private.enforce_admin_principal_identity_v1()'::regprocedure
@@ -355,7 +471,9 @@ WITH definitions AS (
     ) AS membership_guard
 )
 SELECT ok(
-  position('from private.admin_principals as principal' IN b2_context)
+  b2_context_wrapper LIKE '%require_admin_ai_context_pre_b22a_v1%'
+  AND b1_touch_wrapper LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
+  AND position('from private.admin_principals as principal' IN b2_context)
     < position('from private.admin_environment_memberships as membership' IN b2_context)
   AND position('from private.admin_environment_memberships as membership' IN b2_context)
     < position('where session.id = session_snapshot.id' IN b2_context)
@@ -373,7 +491,7 @@ SELECT ok(
   AND b1_touch NOT LIKE '%from private.admin_environments as environment%for key share%'
   AND principal_guard LIKE '%for update of environment%'
   AND membership_guard LIKE '%from private.admin_environments as environment%for update%',
-  'B1/B2 readers lock principal-membership-session and revalidate environment without inverting owner DELETE'
+  'B2.2a wrappers preserve the B1/B2 principal-membership-session lock order in their delegated implementations'
 )
 FROM definitions;
 
@@ -389,11 +507,14 @@ SELECT ok(
   ) LIKE '%new.idle_expires_at := new.expires_at%'
   AND pg_get_functiondef(
     'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+  ) LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
   ) LIKE '%idle_expires_at = expires_at%'
   AND pg_get_functiondef(
-    'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
   ) NOT LIKE '%interval ''30 minutes''%',
-  'Google/TOTP app sessions inherit the backing Auth-session eight-hour cap without an idle TOTP timer'
+  'B2.2a session touch preserves the delegated eight-hour cap without an idle TOTP timer'
 );
 
 SELECT ok(
@@ -414,11 +535,23 @@ SELECT ok(
   ) NOT LIKE '%target_min_step_up_verified_at%'
   AND pg_get_functiondef(
     'private.set_admin_ai_policy_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
+  ) LIKE '%consume_admin_control_step_up_grant_v1%'
+  AND pg_get_functiondef(
+    'private.set_admin_ai_policy_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
+  ) LIKE '%set_admin_ai_policy_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.set_admin_ai_policy_pre_b22a_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
   ) LIKE '%effective_now - interval ''5 minutes''%'
   AND pg_get_functiondef(
     'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%consume_admin_control_step_up_grant_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%enroll_admin_ai_pin_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_pre_b22a_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
   ) LIKE '%effective_now - interval ''5 minutes''%',
-  'normal lecture AI uses valid AAL2 while rare policy and PIN-factor mutations enforce a DB-authoritative five-minute step-up'
+  'normal lecture AI avoids fresh TOTP while B2.2a grants delegate rare mutations to the fixed-five-minute B2 implementations'
 );
 
 SELECT ok(
@@ -926,8 +1059,11 @@ SELECT ok(
   )
   AND pg_get_functiondef(
     'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%enroll_admin_ai_pin_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_pre_b22a_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
   ) LIKE '%drain_admin_ai_factor_authority_v1%',
-  'PIN rotation drains master, browser and pending proofs without revoking the Admin login session'
+  'B2.2a PIN rotation delegates to the B2 drain for master, browser and pending proofs without revoking the Admin login session'
 );
 
 SELECT throws_ok(
@@ -1021,6 +1157,40 @@ VALUES (
   statement_timestamp() - interval '1 hour'
 ) ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO auth.mfa_factors (
+  id,
+  user_id,
+  friendly_name,
+  factor_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-4000-8000-000000007342'::uuid,
+  '00000000-0000-4000-8000-000000007322'::uuid,
+  'phase730b2-main-totp',
+  'totp',
+  'verified',
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+UPDATE private.admin_principals
+SET
+  approved_totp_factor_set_hash =
+    private.current_verified_totp_factor_set_hash_v1(
+      '00000000-0000-4000-8000-000000007322'::uuid
+    ),
+  approved_totp_factor_set_version = 1,
+  approved_totp_factor_count = 1,
+  approved_totp_factor_set_at = statement_timestamp(),
+  approved_totp_factor_set_request_id =
+    '00000000-0000-4000-8000-00000000734c'::uuid,
+  approved_totp_factor_set_source = 'operator_adoption',
+  approved_totp_factor_set_actor = 'fixture:phase7_30b2',
+  approved_totp_factor_set_reason = 'latest_schema_direct_session_fixture'
+WHERE id = '00000000-0000-4000-8000-000000007321'::uuid;
+
 INSERT INTO private.admin_step_up_nonces (
   id,
   nonce_hash,
@@ -1033,6 +1203,13 @@ INSERT INTO private.admin_step_up_nonces (
   request_id,
   prechallenge_jwt_hash,
   min_amr_at,
+  challenged_totp_factor_id,
+  prechallenge_verified_totp_factor_set_hash,
+  verified_totp_factor_set_hash,
+  factor_set_bootstrap_allowed,
+  approved_totp_factor_set_version,
+  completion_jwt_hash,
+  verified_totp_amr_at,
   issued_at,
   expires_at
 ) VALUES (
@@ -1046,10 +1223,25 @@ INSERT INTO private.admin_step_up_nonces (
   'admin_login',
   '00000000-0000-4000-8000-00000000734b'::uuid,
   encode(extensions.digest('phase7.30b2-main-prechallenge', 'sha256'), 'hex'),
-  statement_timestamp() - interval '1 hour',
-  statement_timestamp() - interval '1 hour',
-  statement_timestamp() - interval '55 minutes'
+  statement_timestamp() - interval '1 minute',
+  '00000000-0000-4000-8000-000000007342'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
+  false,
+  1,
+  encode(extensions.digest('phase7.30b2-main-postchallenge', 'sha256'), 'hex'),
+  statement_timestamp(),
+  statement_timestamp() - interval '1 minute',
+  statement_timestamp() + interval '4 minutes'
 );
+
+UPDATE private.admin_identity_runtime_gate
+SET google_session_issue_enabled = true
+WHERE singleton;
 
 INSERT INTO public.admin_sessions (
   id,
@@ -1064,6 +1256,7 @@ INSERT INTO public.admin_sessions (
   supabase_auth_session_id,
   step_up_verified_at,
   step_up_nonce_id,
+  verified_totp_factor_set_hash,
   issued_at,
   last_seen_at,
   idle_expires_at,
@@ -1079,8 +1272,11 @@ INSERT INTO public.admin_sessions (
   '00000000-0000-4000-8000-000000007323'::uuid,
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007340'::uuid,
-  statement_timestamp() - interval '1 hour',
+  statement_timestamp(),
   '00000000-0000-4000-8000-00000000734a'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
   statement_timestamp() - interval '1 hour',
   statement_timestamp() - interval '1 hour',
   statement_timestamp() + interval '12 hours',
@@ -1519,6 +1715,20 @@ SELECT is(
 UPDATE public.admin_sessions
 SET step_up_verified_at = statement_timestamp() - interval '1 minute'
 WHERE id = '00000000-0000-4000-8000-000000007341'::uuid;
+SELECT pg_temp.seed_admin_control_grant(
+  '00000000-0000-4000-8000-000000007341'::uuid,
+  'environment_ai_policy_change',
+  '00000000-0000-4000-8000-000000007351'::uuid,
+  private.admin_ai_policy_control_intent_digest_v1(
+    '00000000-0000-4000-8000-000000007323'::uuid,
+    ARRAY['academic_answers', 'summaries']::text[],
+    ARRAY['test-model']::text[],
+    11, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
+    0, 0, 1,
+    '2020-01-01 00:00:00+00'::timestamptz,
+    '2099-01-01 00:00:00+00'::timestamptz
+  )
+);
 SET ROLE service_role;
 
 SELECT is(
@@ -1806,6 +2016,14 @@ SELECT is(
 UPDATE public.admin_sessions
 SET step_up_verified_at = statement_timestamp() - interval '4 minutes 59 seconds'
 WHERE id = '00000000-0000-4000-8000-000000007341'::uuid;
+SELECT pg_temp.seed_admin_control_grant(
+  '00000000-0000-4000-8000-000000007341'::uuid,
+  'ai_pin_rotate',
+  '00000000-0000-4000-8000-000000007366'::uuid,
+  private.admin_ai_pin_control_intent_digest_v1(
+    'ai_pin_rotate', 2, repeat('b', 64)
+  )
+);
 SET ROLE service_role;
 
 SELECT is(
@@ -1849,8 +2067,8 @@ SELECT is(
     2,
     '00000000-0000-4000-8000-000000007366'::uuid
   ) ->> 'factor_version',
-  '2',
-  'same PIN enrollment request returns the committed result without rechecking changed PIN input'
+  null,
+  'same PIN request rejects changed canonical PIN input after the grant is consumed'
 );
 
 RESET ROLE;
@@ -1898,6 +2116,24 @@ VALUES (
   statement_timestamp() - interval '7 hours 59 minutes'
 ) ON CONFLICT (id) DO NOTHING;
 
+INSERT INTO auth.mfa_factors (
+  id,
+  user_id,
+  friendly_name,
+  factor_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-4000-8000-000000007372'::uuid,
+  '00000000-0000-4000-8000-000000007370'::uuid,
+  'phase730b2-near-cap-totp',
+  'totp',
+  'verified',
+  statement_timestamp() - interval '7 hours 59 minutes',
+  statement_timestamp() - interval '7 hours 59 minutes'
+) ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO private.admin_principals (
   id,
   auth_user_id,
@@ -1934,6 +2170,22 @@ INSERT INTO private.admin_environment_memberships (
   statement_timestamp() - interval '7 hours 59 minutes'
 );
 
+UPDATE private.admin_principals
+SET
+  approved_totp_factor_set_hash =
+    private.current_verified_totp_factor_set_hash_v1(
+      '00000000-0000-4000-8000-000000007370'::uuid
+    ),
+  approved_totp_factor_set_version = 1,
+  approved_totp_factor_count = 1,
+  approved_totp_factor_set_at = statement_timestamp(),
+  approved_totp_factor_set_request_id =
+    '00000000-0000-4000-8000-00000000737c'::uuid,
+  approved_totp_factor_set_source = 'operator_adoption',
+  approved_totp_factor_set_actor = 'fixture:phase7_30b2',
+  approved_totp_factor_set_reason = 'latest_schema_near_cap_session_fixture'
+WHERE id = '00000000-0000-4000-8000-000000007372'::uuid;
+
 INSERT INTO private.admin_step_up_nonces (
   id,
   nonce_hash,
@@ -1946,6 +2198,13 @@ INSERT INTO private.admin_step_up_nonces (
   request_id,
   prechallenge_jwt_hash,
   min_amr_at,
+  challenged_totp_factor_id,
+  prechallenge_verified_totp_factor_set_hash,
+  verified_totp_factor_set_hash,
+  factor_set_bootstrap_allowed,
+  approved_totp_factor_set_version,
+  completion_jwt_hash,
+  verified_totp_amr_at,
   issued_at,
   expires_at
 ) VALUES (
@@ -1959,9 +2218,20 @@ INSERT INTO private.admin_step_up_nonces (
   'admin_login',
   '00000000-0000-4000-8000-00000000737b'::uuid,
   encode(extensions.digest('phase7.30b2-near-cap-prechallenge', 'sha256'), 'hex'),
-  statement_timestamp() - interval '7 hours 59 minutes',
-  statement_timestamp() - interval '7 hours 59 minutes',
-  statement_timestamp() - interval '7 hours 54 minutes'
+  statement_timestamp() - interval '1 minute',
+  '00000000-0000-4000-8000-000000007372'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007370'::uuid
+  ),
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007370'::uuid
+  ),
+  false,
+  1,
+  encode(extensions.digest('phase7.30b2-near-cap-postchallenge', 'sha256'), 'hex'),
+  statement_timestamp(),
+  statement_timestamp() - interval '1 minute',
+  statement_timestamp() + interval '4 minutes'
 );
 
 INSERT INTO public.admin_sessions (
@@ -1977,6 +2247,7 @@ INSERT INTO public.admin_sessions (
   supabase_auth_session_id,
   step_up_verified_at,
   step_up_nonce_id,
+  verified_totp_factor_set_hash,
   issued_at,
   last_seen_at,
   idle_expires_at,
@@ -1992,8 +2263,11 @@ INSERT INTO public.admin_sessions (
   '00000000-0000-4000-8000-000000007373'::uuid,
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007371'::uuid,
-  statement_timestamp() - interval '7 hours 59 minutes',
+  statement_timestamp(),
   '00000000-0000-4000-8000-00000000737a'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007370'::uuid
+  ),
   statement_timestamp() - interval '7 hours 59 minutes',
   statement_timestamp() - interval '7 hours 59 minutes',
   statement_timestamp() + interval '1 hour',
@@ -2066,6 +2340,14 @@ SELECT ok(
 UPDATE public.admin_sessions
 SET step_up_verified_at = statement_timestamp() - interval '1 minute'
 WHERE id = '00000000-0000-4000-8000-000000007374'::uuid;
+SELECT pg_temp.seed_admin_control_grant(
+  '00000000-0000-4000-8000-000000007374'::uuid,
+  'ai_pin_rotate',
+  '00000000-0000-4000-8000-000000007379'::uuid,
+  private.admin_ai_pin_control_intent_digest_v1(
+    'ai_pin_rotate', 2, repeat('a', 64)
+  )
+);
 SET ROLE service_role;
 
 SELECT is(

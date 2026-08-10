@@ -14,7 +14,7 @@ passed for the reviewed source.
 
 This is not runtime database acceptance. Exact-head CI still has to prove the
 from-zero migration, every pgTAP file, the real two-transaction concurrency
-runner, the populated Phase 7.29/B1-to-B2 upgrade, generated database types and
+runner, the populated Phase 7.29/B1/B2-head-to-B2.2a upgrades, generated database types and
 database lint. Hosted Supabase, real Google OAuth, Human MFA/browser evidence,
 feature activation and Production remain **HOLD**.
 
@@ -131,7 +131,8 @@ rotation supersedes the old factor's pending browser state and drains derived
 AI master authority while leaving the Admin session intact. Individual browser
 revoke drains only that credential's authority. Policy supersession drains
 masters carrying the superseded policy version. An explicit factor revoke/reset
-transition API remains B2.2/C.
+transition API was added by B2.2a and requires its exact single-use rare-control
+grant; raw-PIN Edge integration remains B2.2b/C.
 
 Cleanup is bounded to 500 rows per class, uses nonblocking membership
 serialization plus `SKIP LOCKED`, records a content-free request audit and
@@ -148,8 +149,9 @@ The following remain B2.2/Phase 7.30C or later and **HOLD**:
   server-only pepper HMAC and clears raw input after the bounded TLS request;
 - actual remembered-browser WebCrypto key creation and ES256 signature
   verification;
-- authoritative verified-TOTP factor-set fingerprinting and invalidation;
-- explicit AI PIN factor revoke/reset transition APIs;
+- all-operational-endpoint use of the B2.2a verified-TOTP factor-set verifier;
+- explicit AI PIN factor revoke/reset transition APIs were added by B2.2a;
+  their raw-PIN Edge wiring remains HOLD;
 - the unified verifier across every Admin Edge/RPC path;
 - lecture ownership and owner/instructor operational RBAC;
 - one-transaction AI proof-to-lecture-master admission and every paid child

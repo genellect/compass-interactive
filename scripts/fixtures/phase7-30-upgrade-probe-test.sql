@@ -107,6 +107,10 @@ SELECT is(
 
 RESET ROLE;
 
+UPDATE private.admin_identity_runtime_gate
+SET google_session_issue_enabled = true
+WHERE singleton;
+
 UPDATE public.admin_sessions
 SET revoked_at = null, revoke_reason = null
 WHERE id = '73000000-0000-4000-8000-000000000001'::uuid;
@@ -121,10 +125,19 @@ SELECT throws_ok(
       supabase_auth_session_id = '73000000-0000-4000-8000-000000000003'::uuid
     WHERE id = '73000000-0000-4000-8000-000000000001'::uuid
   $$,
-  '23514',
-  null,
-  'legacy data cannot be relabelled as Google without its provenance'
+  'P7330',
+  'verified TOTP factor set not found',
+  'legacy data cannot be relabelled as Google without factor-set provenance'
 );
+
+RESET ROLE;
+
+UPDATE private.admin_identity_runtime_gate
+SET google_session_issue_enabled = false
+WHERE singleton;
+
+SET ROLE service_role;
+
 SELECT lives_ok(
   $$
     UPDATE public.admin_sessions

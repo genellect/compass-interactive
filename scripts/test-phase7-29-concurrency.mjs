@@ -67,6 +67,88 @@ function runSql(sql) {
   })
 }
 
+function startSqlUntilReady(sql, readyMarker) {
+  let resolveReady
+  let rejectReady
+  let readySettled = false
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+  const done = new Promise((resolve, reject) => {
+    const child = spawn(
+      'docker',
+      [
+        'exec',
+        '-i',
+        container,
+        'psql',
+        '-X',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-c',
+        sql,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let stdout = ''
+    let stderr = ''
+    const observeReady = (chunk) => {
+      if (!readySettled && chunk.includes(readyMarker)) {
+        readySettled = true
+        resolveReady()
+      }
+    }
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      observeReady(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      observeReady(chunk)
+    })
+    child.on('error', (error) => {
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+    child.on('exit', (exitCode) => {
+      if (exitCode === 0) {
+        if (!readySettled) {
+          const error = new Error(
+            `psql exited before readiness marker ${readyMarker}: ${stdout.trim()}`,
+          )
+          readySettled = true
+          rejectReady(error)
+          reject(error)
+          return
+        }
+        resolve()
+        return
+      }
+      const error = new Error(
+        stderr.trim() ||
+          stdout.trim() ||
+          `psql exited with ${exitCode} before ${readyMarker}`,
+      )
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+  })
+  return { ready, done }
+}
+
 const transactionSettings = `
   set local lock_timeout = '5s';
   set local statement_timeout = '15s';
@@ -192,12 +274,30 @@ try {
 
   // Issue owns the singleton gate first. The kill switch waits, then drains
   // the just-issued connection. Both calls must complete without deadlock.
-  await Promise.all([
-    runSql(`
+  const issueFirst = startSqlUntilReady(
+    `
       begin;
       ${transactionSettings}
       select 1 from private.presenter_runtime_gate where singleton for update;
-      select pg_sleep(0.5);
+      do $$
+      declare
+        wait_started_at timestamptz := clock_timestamp();
+      begin
+        raise notice 'PHASE729_ISSUE_FIRST_GATE_READY';
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-issue-first-kill-waiter'
+              and wait_event_type = 'Lock'
+          );
+          if clock_timestamp() > wait_started_at + interval '10 seconds' then
+            raise exception 'issue-first kill did not reach the gate lock barrier';
+          end if;
+          perform pg_sleep(0.01);
+        end loop;
+      end;
+      $$;
       update public.phase729_race_fixture
       set issue_first_connection_id = (
         public.issue_presenter_connection_v1(
@@ -210,15 +310,18 @@ try {
         ) ->> 'connection_id'
       )::uuid;
       commit;
-    `),
-    runSql(`
-      begin;
-      ${transactionSettings}
-      select pg_sleep(0.1);
-      select public.set_presenter_runtime_v1(false);
-      commit;
-    `),
-  ])
+    `,
+    'PHASE729_ISSUE_FIRST_GATE_READY',
+  )
+  await issueFirst.ready
+  const issueFirstKill = runSql(`
+    begin;
+    ${transactionSettings}
+    set local application_name = 'phase729-issue-first-kill-waiter';
+    select public.set_presenter_runtime_v1(false);
+    commit;
+  `)
+  await Promise.all([issueFirst.done, issueFirstKill])
   await runSql(`
     do $$
     begin
@@ -241,29 +344,53 @@ try {
 
   // Kill-switch owns the gate first. The later issue must observe OFF and be
   // the sole rejected contender rather than persisting a connection.
-  const killFirstRace = await Promise.allSettled([
-    runSql(`
+  const killFirst = startSqlUntilReady(
+    `
       begin;
       ${transactionSettings}
       select 1 from private.presenter_runtime_gate where singleton for update;
-      select pg_sleep(0.5);
+      do $$
+      declare
+        wait_started_at timestamptz := clock_timestamp();
+      begin
+        raise notice 'PHASE729_KILL_FIRST_GATE_READY';
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-kill-first-issue-waiter'
+              and wait_event_type = 'Lock'
+          );
+          if clock_timestamp() > wait_started_at + interval '10 seconds' then
+            raise exception 'kill-first issue did not reach the gate lock barrier';
+          end if;
+          perform pg_sleep(0.01);
+        end loop;
+      end;
+      $$;
       select public.set_presenter_runtime_v1(false);
       commit;
-    `),
-    runSql(`
-      begin;
-      ${transactionSettings}
-      select pg_sleep(0.1);
-      select public.issue_presenter_connection_v1(
-        (select lecture_id from public.phase729_race_fixture),
-        ${sqlLiteral(adminSessionId)}::uuid,
-        ${sqlLiteral(adminAuthUserId)}::uuid,
-        ${sqlLiteral(killFirstTicket)},
-        ${sqlLiteral(killFirstManual)},
-        statement_timestamp() + interval '45 seconds'
-      );
-      commit;
-    `),
+    `,
+    'PHASE729_KILL_FIRST_GATE_READY',
+  )
+  await killFirst.ready
+  const killFirstIssue = runSql(`
+    begin;
+    ${transactionSettings}
+    set local application_name = 'phase729-kill-first-issue-waiter';
+    select public.issue_presenter_connection_v1(
+      (select lecture_id from public.phase729_race_fixture),
+      ${sqlLiteral(adminSessionId)}::uuid,
+      ${sqlLiteral(adminAuthUserId)}::uuid,
+      ${sqlLiteral(killFirstTicket)},
+      ${sqlLiteral(killFirstManual)},
+      statement_timestamp() + interval '45 seconds'
+    );
+    commit;
+  `)
+  const killFirstRace = await Promise.allSettled([
+    killFirst.done,
+    killFirstIssue,
   ])
   if (
     killFirstRace.filter((result) => result.status === 'rejected').length !== 1
@@ -465,8 +592,8 @@ try {
 
   // The page writer owns the global gate first; manual handover waits and then
   // becomes terminal. No lock cycle or stale active connection may remain.
-  await Promise.all([
-    runSql(`
+  const pageFirst = startSqlUntilReady(
+    `
       begin;
       ${transactionSettings}
       select 1 from private.presenter_runtime_gate where singleton for update;
@@ -474,7 +601,25 @@ try {
       set last_request_at = statement_timestamp() - interval '1 second'
       from public.phase729_race_fixture as fixture
       where connection.id = fixture.claim_connection_id;
-      select pg_sleep(0.5);
+      do $$
+      declare
+        wait_started_at timestamptz := clock_timestamp();
+      begin
+        raise notice 'PHASE729_PAGE_FIRST_GATE_READY';
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-page-first-manual-waiter'
+              and wait_event_type = 'Lock'
+          );
+          if clock_timestamp() > wait_started_at + interval '10 seconds' then
+            raise exception 'page-first manual revoke did not reach the gate lock barrier';
+          end if;
+          perform pg_sleep(0.01);
+        end loop;
+      end;
+      $$;
       select public.apply_presenter_page_v1(
         connection.id,
         connection.capability_jti_hash,
@@ -491,21 +636,24 @@ try {
       join public.phase729_race_fixture as fixture
         on fixture.claim_connection_id = connection.id;
       commit;
-    `),
-    runSql(`
-      begin;
-      ${transactionSettings}
-      select pg_sleep(0.1);
-      select public.revoke_presenter_connection_v1(
-        claim_connection_id,
-        ${sqlLiteral(adminSessionId)}::uuid,
-        ${sqlLiteral(adminAuthUserId)}::uuid,
-        'manual_handover'
-      )
-      from public.phase729_race_fixture;
-      commit;
-    `),
-  ])
+    `,
+    'PHASE729_PAGE_FIRST_GATE_READY',
+  )
+  await pageFirst.ready
+  const pageFirstManual = runSql(`
+    begin;
+    ${transactionSettings}
+    set local application_name = 'phase729-page-first-manual-waiter';
+    select public.revoke_presenter_connection_v1(
+      claim_connection_id,
+      ${sqlLiteral(adminSessionId)}::uuid,
+      ${sqlLiteral(adminAuthUserId)}::uuid,
+      'manual_handover'
+    )
+    from public.phase729_race_fixture;
+    commit;
+  `)
+  await Promise.all([pageFirst.done, pageFirstManual])
   await runSql(`
     do $$
     begin

@@ -22,11 +22,31 @@ import { createJsonResponse } from '../_shared/responses.ts'
 import { hashAdminContext } from '../_shared/adminToken.ts'
 
 type AdminIdentityRequest = {
-  action?: 'admit' | 'beginStepUp' | 'completeStepUp' | 'logout' | 'status'
+  action?:
+    | 'admit'
+    | 'beginControlStepUp'
+    | 'beginStepUp'
+    | 'completeControlStepUp'
+    | 'completeStepUp'
+    | 'logout'
+    | 'reconcileTotpFactorSet'
+    | 'status'
   appSessionToken?: string
+  challengedFactorId?: string
+  controlAction?: AdminControlAction
+  controlIntentDigest?: string
+  controlRequestId?: string
+  controlStepUpNonce?: string
   invitationToken?: string
   stepUpNonce?: string
 }
+
+type AdminControlAction =
+  | 'ai_pin_enroll'
+  | 'ai_pin_reset'
+  | 'ai_pin_revoke'
+  | 'ai_pin_rotate'
+  | 'environment_ai_policy_change'
 
 type EnvironmentConfig = {
   audience?: string
@@ -54,8 +74,17 @@ type SessionSummary = {
   step_up_verified_at?: string
 }
 
+const ADMIN_CONTROL_ACTIONS = new Set<AdminControlAction>([
+  'ai_pin_enroll',
+  'ai_pin_reset',
+  'ai_pin_revoke',
+  'ai_pin_rotate',
+  'environment_ai_policy_change',
+])
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/
 
 function getBearerToken(request: Request) {
   const authorization = request.headers.get('authorization') ?? ''
@@ -124,6 +153,22 @@ function rpcErrorResponse(
     )
     response.headers.set('Retry-After', '300')
     return response
+  }
+  if (errorCode === 'P7320' || errorCode === 'P7331') {
+    return errorResponse(
+      jsonResponse,
+      'feature_disabled',
+      'Admin AI control is not enabled.',
+      503,
+    )
+  }
+  if (errorCode === 'P7332') {
+    return errorResponse(
+      jsonResponse,
+      'factor_set_adoption_required',
+      'This Authenticator setup requires approved recovery before Admin sign-in.',
+      409,
+    )
   }
   return errorResponse(
     jsonResponse,
@@ -238,9 +283,16 @@ async function handleRequest(request: Request) {
 
   if (
     !body.action ||
-    !['admit', 'beginStepUp', 'completeStepUp', 'logout', 'status'].includes(
-      body.action,
-    )
+    ![
+      'admit',
+      'beginControlStepUp',
+      'beginStepUp',
+      'completeControlStepUp',
+      'completeStepUp',
+      'logout',
+      'reconcileTotpFactorSet',
+      'status',
+    ].includes(body.action)
   ) {
     return errorResponse(
       jsonResponse,
@@ -251,18 +303,87 @@ async function handleRequest(request: Request) {
   }
 
   const allowedBodyKeys = new Set(
-    body.action === 'admit' || body.action === 'beginStepUp'
+    body.action === 'admit'
       ? ['action', 'invitationToken']
+      : body.action === 'beginStepUp'
+        ? ['action', 'challengedFactorId', 'invitationToken']
       : body.action === 'completeStepUp'
         ? ['action', 'stepUpNonce']
-        : ['action', 'appSessionToken'],
+        : body.action === 'beginControlStepUp'
+          ? [
+              'action',
+               'appSessionToken',
+               'controlAction',
+               'controlIntentDigest',
+               'controlRequestId',
+            ]
+          : body.action === 'completeControlStepUp'
+            ? [
+                'action',
+                 'appSessionToken',
+                 'controlAction',
+                 'controlIntentDigest',
+                 'controlRequestId',
+                'controlStepUpNonce',
+              ]
+            : body.action === 'reconcileTotpFactorSet'
+              ? ['action']
+              : ['action', 'appSessionToken'],
   )
   const rawBody = body as Record<string, unknown>
   if (
     Object.keys(rawBody).some((key) => !allowedBodyKeys.has(key)) ||
-    ['appSessionToken', 'invitationToken', 'stepUpNonce'].some(
+    [
+      'appSessionToken',
+      'challengedFactorId',
+      'controlAction',
+      'controlIntentDigest',
+      'controlRequestId',
+      'controlStepUpNonce',
+      'invitationToken',
+      'stepUpNonce',
+    ].some(
       (key) => rawBody[key] !== undefined && typeof rawBody[key] !== 'string',
     )
+  ) {
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
+  }
+
+  if (
+    body.action === 'beginStepUp' &&
+    (!body.challengedFactorId ||
+      !UUID_PATTERN.test(body.challengedFactorId))
+  ) {
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
+  }
+
+  if (
+    (body.action === 'beginControlStepUp' ||
+      body.action === 'completeControlStepUp') &&
+    (!body.controlAction ||
+      !ADMIN_CONTROL_ACTIONS.has(body.controlAction) ||
+      !body.controlRequestId ||
+      !UUID_PATTERN.test(body.controlRequestId) ||
+      (body.action === 'completeControlStepUp' &&
+        (!body.controlIntentDigest ||
+          !SHA256_HEX_PATTERN.test(body.controlIntentDigest))) ||
+      (body.action === 'beginControlStepUp' &&
+        body.controlAction !== 'ai_pin_revoke' &&
+        body.controlAction !== 'ai_pin_reset' &&
+        (!body.controlIntentDigest ||
+          !SHA256_HEX_PATTERN.test(body.controlIntentDigest))) ||
+      (body.controlIntentDigest !== undefined &&
+        !SHA256_HEX_PATTERN.test(body.controlIntentDigest)))
   ) {
     return errorResponse(
       jsonResponse,
@@ -400,6 +521,28 @@ async function handleRequest(request: Request) {
   }
 
   if (body.action === 'beginStepUp') {
+    const totpFactors = (userData.user.factors ?? []).filter(
+      (factor) => factor.factor_type === 'totp',
+    )
+    const challengedFactor = totpFactors.find(
+      (factor) =>
+        factor.id === body.challengedFactorId &&
+        (factor.status === 'unverified' || factor.status === 'verified'),
+    )
+    const hasVerifiedTotpFactor = totpFactors.some(
+      (factor) => factor.status === 'verified',
+    )
+    if (
+      !challengedFactor ||
+      (challengedFactor.status === 'unverified' && hasVerifiedTotpFactor)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'step_up_unavailable',
+        'Two-step verification could not be started.',
+        409,
+      )
+    }
     const { admission, errorCode } = await admitIdentity()
     if (errorCode) return rpcErrorResponse(jsonResponse, errorCode)
     if (!admission?.eligible) {
@@ -413,9 +556,10 @@ async function handleRequest(request: Request) {
     const rawNonce = createAdminLoginNonce()
     const reservedSessionId = crypto.randomUUID()
     const { data, error } = await serviceClient.rpc(
-      'begin_admin_totp_step_up_v1',
+      'begin_admin_totp_step_up_v2',
       {
         target_auth_user_id: userData.user.id,
+        target_challenged_factor_id: body.challengedFactorId!,
         target_environment_id: environmentId,
         target_nonce_hash: await sha256Hex(rawNonce),
         target_prechallenge_jwt_hash: await sha256Hex(bearerToken),
@@ -444,6 +588,42 @@ async function handleRequest(request: Request) {
       expiresAt: result.expires_at,
       ok: true,
       stepUpNonce: rawNonce,
+    })
+  }
+
+  // Factor enrollment/unenrollment can make the current JWT's AAL claim
+  // stale. Reconcile by the already server-verified Auth user before the AAL2
+  // branch so stale Admin sessions are drained even after the last TOTP factor
+  // was removed.
+  if (body.action === 'reconcileTotpFactorSet') {
+    const { data, error } = await serviceClient.rpc(
+      'reconcile_admin_totp_factor_set_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_request_id: requestId,
+      },
+    )
+    if (error) return rpcErrorResponse(jsonResponse, error.code)
+    const result = data as {
+      active_factor_set_present?: boolean
+      revoked_sessions?: number
+    } | null
+    if (
+      !result ||
+      typeof result.active_factor_set_present !== 'boolean' ||
+      typeof result.revoked_sessions !== 'number'
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Admin identity is temporarily unavailable.',
+        503,
+      )
+    }
+    return jsonResponse({
+      activeFactorSetPresent: result.active_factor_set_present,
+      ok: true,
+      revokedSessions: result.revoked_sessions,
     })
   }
 
@@ -477,6 +657,65 @@ async function handleRequest(request: Request) {
       'This Google account is not available for Admin sign-in.',
       403,
     )
+  }
+
+  if (body.action === 'beginControlStepUp') {
+    const appSessionToken = body.appSessionToken?.trim() ?? ''
+    if (!isGoogleAdminSessionToken(appSessionToken)) {
+      return errorResponse(
+        jsonResponse,
+        'app_session_invalid',
+        'Admin session is no longer available.',
+        401,
+      )
+    }
+    const rawNonce = createAdminLoginNonce()
+    const { data, error } = await serviceClient.rpc(
+      'begin_admin_control_step_up_v1',
+      {
+        target_action: body.controlAction!,
+        target_auth_user_id: userData.user.id,
+        target_mutation_request_id: body.controlRequestId!,
+        target_nonce_hash: await sha256Hex(rawNonce),
+        target_prechallenge_jwt_hash: await sha256Hex(bearerToken),
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: await sha256Hex(appSessionToken),
+        ...(body.controlIntentDigest
+          ? { target_intent_digest: body.controlIntentDigest }
+          : {}),
+      },
+    )
+    const result = data as {
+      action?: string
+      expires_at?: string
+      intent_digest?: string
+      request_id?: string
+      status?: string
+    } | null
+    if (error) return rpcErrorResponse(jsonResponse, error.code)
+    if (
+      !result?.expires_at ||
+      !result.intent_digest ||
+      !SHA256_HEX_PATTERN.test(result.intent_digest) ||
+      result.action !== body.controlAction ||
+      result.request_id !== body.controlRequestId ||
+      result.status !== 'pending'
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'step_up_unavailable',
+        'Two-step verification could not be started.',
+        409,
+      )
+    }
+    return jsonResponse({
+      controlAction: result.action,
+      controlIntentDigest: result.intent_digest,
+      controlRequestId: result.request_id,
+      controlStepUpNonce: rawNonce,
+      expiresAt: result.expires_at,
+      ok: true,
+    })
   }
 
   if (body.action === 'completeStepUp') {
@@ -563,6 +802,92 @@ async function handleRequest(request: Request) {
         role: session.role,
         stepUpVerifiedAt: session.step_up_verified_at,
       },
+    })
+  }
+
+  if (body.action === 'completeControlStepUp') {
+    const appSessionToken = body.appSessionToken?.trim() ?? ''
+    const rawNonce = body.controlStepUpNonce?.trim() ?? ''
+    const totpTimestamp = getFreshTotpAmrTimestamp(claims)
+    if (!isGoogleAdminSessionToken(appSessionToken)) {
+      return errorResponse(
+        jsonResponse,
+        'app_session_invalid',
+        'Admin session is no longer available.',
+        401,
+      )
+    }
+    try {
+      assertAdminLoginNonce(rawNonce)
+    } catch {
+      return errorResponse(
+        jsonResponse,
+        'step_up_invalid',
+        'Two-step verification could not be completed.',
+        409,
+      )
+    }
+    if (!totpTimestamp) {
+      return errorResponse(
+        jsonResponse,
+        'aal2_required',
+        'Authenticator verification is required.',
+        401,
+      )
+    }
+
+    const { data, error } = await serviceClient.rpc(
+      'complete_admin_control_step_up_v1',
+      {
+         target_action: body.controlAction!,
+         target_auth_user_id: userData.user.id,
+         target_current_jwt_hash: await sha256Hex(bearerToken),
+         target_current_jwt_iat: new Date(claims.issuedAt * 1000).toISOString(),
+         target_intent_digest: body.controlIntentDigest!,
+         target_mutation_request_id: body.controlRequestId!,
+        target_nonce_hash: await sha256Hex(rawNonce),
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: await sha256Hex(appSessionToken),
+        target_totp_amr_method: claims.amr.some(
+          ({ method, timestamp }) =>
+            method === 'mfa/totp' && timestamp === totpTimestamp,
+        )
+          ? 'mfa/totp'
+          : 'totp',
+        target_totp_amr_at: new Date(totpTimestamp * 1000).toISOString(),
+      },
+    )
+    const result = data as {
+      action?: string
+      expires_at?: string
+      intent_digest?: string
+      request_id?: string
+      status?: string
+      verified_totp_amr_at?: string
+    } | null
+    if (error) return rpcErrorResponse(jsonResponse, error.code)
+    if (
+      !result?.expires_at ||
+      result.intent_digest !== body.controlIntentDigest ||
+      !result.verified_totp_amr_at ||
+      result.action !== body.controlAction ||
+      result.request_id !== body.controlRequestId ||
+      (result.status !== 'available' && result.status !== 'consumed')
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'step_up_invalid',
+        'Two-step verification could not be completed.',
+        409,
+      )
+    }
+    return jsonResponse({
+      controlAction: result.action,
+      controlIntentDigest: result.intent_digest,
+      controlRequestId: result.request_id,
+      expiresAt: result.expires_at,
+      ok: true,
+      verifiedTotpAmrAt: result.verified_totp_amr_at,
     })
   }
 

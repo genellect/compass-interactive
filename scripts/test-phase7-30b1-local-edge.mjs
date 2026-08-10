@@ -121,6 +121,16 @@ function decodeJwtPayload(token) {
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
 }
 
+function latestTotpAmrTimestamp(claims) {
+  const timestamps = (claims.amr ?? [])
+    .filter(
+      (entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp',
+    )
+    .map((entry) => entry.timestamp)
+    .filter(Number.isSafeInteger)
+  return timestamps.length > 0 ? Math.max(...timestamps) : null
+}
+
 function decodeBase32(value) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
   let buffer = 0
@@ -154,6 +164,11 @@ function currentTotp(secret, now = Date.now()) {
       (digest[offset + 3] & 0xff)) %
     1_000_000
   return value.toString().padStart(6, '0')
+}
+
+async function waitForNextTotpWindow() {
+  const waitMs = 30_000 - (Date.now() % 30_000) + 750
+  await new Promise((resolve) => setTimeout(resolve, waitMs))
 }
 
 function signAccessToken(status, claims) {
@@ -306,6 +321,11 @@ try {
       statement_timestamp(),
       statement_timestamp()
     );
+    update auth.users
+    set raw_app_meta_data =
+      '{"provider":"google","providers":["google"]}'::jsonb,
+        updated_at = statement_timestamp()
+    where id = ${sqlLiteral(authUserId)}::uuid;
     select public.bootstrap_admin_environment_v1(
       ${sqlLiteral(environmentId)}::uuid,
       'local',
@@ -321,6 +341,10 @@ try {
     );
     update private.admin_identity_runtime_gate
     set google_session_issue_enabled = true,
+        updated_at = statement_timestamp()
+    where singleton;
+    update private.admin_ai_unlock_runtime_gate
+    set ai_unlock_enabled = true,
         updated_at = statement_timestamp()
     where singleton;
   `)
@@ -348,7 +372,7 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'beginStepUp' },
+    { action: 'beginStepUp', challengedFactorId: enrolled.id },
     200,
   )
   assert.match(begun.stepUpNonce, /^[A-Za-z0-9_-]{43}$/)
@@ -373,13 +397,15 @@ try {
   const aal2AuthClaims = decodeJwtPayload(verified.access_token)
   assert.equal(aal2AuthClaims.aal, 'aal2')
   assert.equal(aal2AuthClaims.session_id, sessionId)
-  const verifiedTotpAmr = aal2AuthClaims.amr?.find(
-    (entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp',
-  )
-  assert.ok(Number.isSafeInteger(verifiedTotpAmr?.timestamp))
+  const verifiedTotpAmrTimestamp = latestTotpAmrTimestamp(aal2AuthClaims)
+  assert.ok(Number.isSafeInteger(verifiedTotpAmrTimestamp))
+  assert.equal(aal2AuthClaims.app_metadata?.provider, 'google')
+  // The local fixture starts from a password session and then adds its signed
+  // Google identity. Preserve the real GoTrue TOTP proof timestamp while
+  // signing the same-session Google OAuth bearer expected by the Edge gate.
   const aal2 = accessToken(status, {
     aal: 'aal2',
-    totpTimestamp: verifiedTotpAmr.timestamp,
+    totpTimestamp: verifiedTotpAmrTimestamp,
   })
 
   const completed = await invoke(
@@ -412,9 +438,70 @@ try {
   )
   assert.equal(restored.session?.id, completed.session.id)
 
-  const legacyCrossMode = await invoke(
+  const controlRequestId = randomUUID()
+  const controlIntentDigest = randomBytes(32).toString('hex')
+  const controlBegunAt = Math.floor(Date.now() / 1_000)
+  const controlBegun = await invoke(
     status,
     aal2,
+    'admin-identity-session',
+    {
+      action: 'beginControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'environment_ai_policy_change',
+      controlIntentDigest,
+      controlRequestId,
+    },
+    200,
+  )
+  assert.match(controlBegun.controlStepUpNonce, /^[A-Za-z0-9_-]{43}$/)
+  assert.equal(controlBegun.controlIntentDigest, controlIntentDigest)
+
+  // GoTrue's AAL2 -> AAL2 freshness semantics are not documented. Keep this
+  // real same-factor exchange in Local CI as the B2.2a activation proof.
+  await waitForNextTotpWindow()
+  const { data: reverified, error: reverifyError } =
+    await authClient.auth.mfa.challengeAndVerify({
+      code: currentTotp(enrolled.totp.secret),
+      factorId: enrolled.id,
+    })
+  if (reverifyError) throw reverifyError
+  assert.ok(reverified.access_token)
+  assert.notEqual(reverified.access_token, verified.access_token)
+  const reverifiedClaims = decodeJwtPayload(reverified.access_token)
+  assert.equal(reverifiedClaims.aal, 'aal2')
+  assert.equal(reverifiedClaims.session_id, sessionId)
+  assert.ok(reverifiedClaims.iat > aal2AuthClaims.iat)
+  const refreshedTotpAmrTimestamp = latestTotpAmrTimestamp(reverifiedClaims)
+  assert.ok(Number.isSafeInteger(refreshedTotpAmrTimestamp))
+  assert.ok(refreshedTotpAmrTimestamp > verifiedTotpAmrTimestamp)
+  assert.ok(refreshedTotpAmrTimestamp >= controlBegunAt - 1)
+  const refreshedAal2 = accessToken(status, {
+    aal: 'aal2',
+    totpTimestamp: refreshedTotpAmrTimestamp,
+  })
+
+  const controlCompleted = await invoke(
+    status,
+    refreshedAal2,
+    'admin-identity-session',
+    {
+      action: 'completeControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'environment_ai_policy_change',
+      controlIntentDigest,
+      controlRequestId,
+      controlStepUpNonce: controlBegun.controlStepUpNonce,
+    },
+    200,
+  )
+  assert.equal(controlCompleted.controlIntentDigest, controlIntentDigest)
+  assert.equal(controlCompleted.controlRequestId, controlRequestId)
+  assert.ok(Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000)
+
+  const legacyCrossMode = await invoke(
+    status,
+    refreshedAal2,
     'verify-admin-pin',
     { pin: '246810' },
     401,
@@ -423,7 +510,7 @@ try {
 
   const loggedOut = await invoke(
     status,
-    aal2,
+    refreshedAal2,
     'admin-identity-session',
     { action: 'logout', appSessionToken: completed.appSessionToken },
     200,
@@ -432,7 +519,7 @@ try {
 
   const revokedStatus = await invoke(
     status,
-    aal2,
+    refreshedAal2,
     'admin-identity-session',
     { action: 'status', appSessionToken: completed.appSessionToken },
     401,
@@ -481,6 +568,11 @@ try {
       set google_session_issue_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
+      update private.admin_ai_unlock_runtime_gate
+      set ai_unlock_enabled = false,
+          remembered_browser_enabled = false,
+          updated_at = statement_timestamp()
+      where singleton;
       update private.admin_environments
       set owner_invariant_enforced_at = null
       where id = ${sqlLiteral(environmentId)}::uuid;
@@ -490,6 +582,10 @@ try {
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       alter table private.admin_audit_events
         enable trigger admin_audit_events_append_only;
+      delete from private.admin_control_step_up_grants
+      where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      delete from private.admin_control_step_up_nonces
+      where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from public.admin_sessions
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_step_up_nonces

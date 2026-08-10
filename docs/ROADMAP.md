@@ -118,7 +118,7 @@ Every future phase must preserve all of the following.
   authority while preserving the Admin session.
 - Five-minute fresh TOTP is reserved for rare control-plane owner/principal,
   role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
-  and AI PIN factor enrollment/rotation/reset changes. Initial PIN enrollment
+  and AI PIN factor enrollment/rotation/revoke/reset changes. Initial PIN enrollment
   immediately after login uses the already-fresh login TOTP without an extra
   prompt. Normal lecture operation, emergency stop, PIN verification,
   remembered-browser proof, master activation/escalation and child calls never
@@ -660,9 +660,12 @@ anchors the cap to `auth.sessions.created_at + 8 hours`, requires the backing
 Auth session, adds nine private AI-unlock/policy/rate/receipt/browser tables and
 expands lecture-master provenance. It is default OFF. Source/static evidence is
 PASS; clean/populated upgrade, pgTAP, real database concurrency, generated types
-and lint await exact-head CI. Phase 7.30C still has to complete the unified
-verifier across every operational Admin Edge/RPC path. Edge raw-PIN handling,
-real browser cryptography, TOTP factor-set fingerprinting, lecture ownership,
+  and lint await exact-head CI. B2.2a source adds a principal-approved TOTP
+  factor-set trust anchor, completed JWT/AMR evidence for session issuance,
+  changed-factor-set invalidation and single-use rare-control grants; its runtime
+DB and Local Edge evidence await exact-head CI. Phase 7.30C still has to complete
+the unified verifier across every operational Admin Edge/RPC path. Edge raw-PIN
+handling, real browser cryptography, lecture ownership,
 proof-to-master admission, UI, AI Passkey, real OAuth and Hosted/Human evidence
 remain HOLD. See `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
 
@@ -702,7 +705,7 @@ master provenance; its exact-head runtime DB gate remains pending.
 - Require TOTP AAL2 and a server-recorded five-minute step-up for the rare
   control-plane actions only: owner/principal, role/status, verified TOTP
   factor-set, environment AI-policy, global revoke and AI PIN factor enrollment/
-  rotation/reset. Initial PIN enrollment after login uses the already-fresh
+  rotation/revoke/reset. Initial PIN enrollment after login uses the already-fresh
   login TOTP without another prompt. Supabase
   Authenticator App TOTP is compatible with Google Authenticator; no email or
   custom MFA is introduced. Supabase Passkeys are Beta/passwordless and remain
@@ -710,8 +713,10 @@ master provenance; its exact-head runtime DB gate remains pending.
 - Execute B in order: B1 established Google identity, tracked-session and
   mandatory TOTP AAL2 before B2 added the four-digit AI PIN database factor,
   remembered-browser state, AI policy, rate/receipt state, master-provenance
-  expansion and continuous-session migration. B2 source/static is implemented;
-  runtime DB exact-head CI is pending. Phase 7.30C then completes the unified
+  expansion and continuous-session migration. B2.2a source additionally binds
+  principal-approved/live/session factor sets, completed JWT/AMR issuance
+  evidence and rare-control grants; runtime DB/Local Edge exact-head
+  CI is pending. Phase 7.30C then completes the unified
   verifier across all operational Admin Edge/RPC paths. Dedicated AI Passkey is
   deferred from the initial implementation.
 
@@ -764,7 +769,7 @@ master provenance; its exact-head runtime DB gate remains pending.
   is default OFF on shared devices and stores no raw PIN. It is described as
   browser-profile-bound, not hardware/device-bound, until the WebAuthn gate.
 - Owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
-  global-revoke and AI PIN factor enrollment/rotation/reset actions name
+  global-revoke and AI PIN factor enrollment/rotation/revoke/reset actions name
   target/effect, require a five-minute TOTP step-up and are idempotent/audited.
   Login-time initial PIN enrollment uses the already-fresh event. Normal
   lecture controls, emergency stop, PIN verification, browser proof, AI master/

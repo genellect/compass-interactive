@@ -13,6 +13,13 @@ export type GoogleAdminSession = {
   stepUpVerifiedAt: string
 }
 
+export type AdminControlAction =
+  | 'ai_pin_enroll'
+  | 'ai_pin_reset'
+  | 'ai_pin_revoke'
+  | 'ai_pin_rotate'
+  | 'environment_ai_policy_change'
+
 export class AdminIdentityError extends Error {
   readonly code: string
 
@@ -24,14 +31,21 @@ export class AdminIdentityError extends Error {
 }
 
 type IdentityResponse = {
+  activeFactorSetPresent?: boolean
   appSessionToken?: string
   code?: string
+  controlAction?: AdminControlAction
+  controlIntentDigest?: string
+  controlRequestId?: string
+  controlStepUpNonce?: string
   eligible?: boolean
   expiresAt?: string
   message?: string
   ok?: boolean
   session?: GoogleAdminSession
   stepUpNonce?: string
+  revokedSessions?: number
+  verifiedTotpAmrAt?: string
 }
 
 const ADMIN_IDENTITY_MESSAGES: Record<string, string> = {
@@ -39,6 +53,8 @@ const ADMIN_IDENTITY_MESSAGES: Record<string, string> = {
   app_session_invalid:
     '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
   feature_disabled: 'Google管理者ログインは現在利用できません。',
+  factor_set_adoption_required:
+    '認証アプリの登録状態を運用担当者が承認する必要があります。再試行せず運用担当者に連絡してください。',
   identity_invalid:
     'Googleアカウントを確認できませんでした。もう一度ログインしてください。',
   membership_unavailable:
@@ -121,9 +137,13 @@ export async function admitGoogleAdmin(invitationToken?: string) {
   }
 }
 
-export async function beginGoogleAdminStepUp(invitationToken?: string) {
+export async function beginGoogleAdminStepUp(
+  challengedFactorId: string,
+  invitationToken?: string,
+) {
   const result = await invoke({
     action: 'beginStepUp',
+    challengedFactorId,
     invitationToken: invitationToken || undefined,
   })
   if (!result.stepUpNonce || !result.expiresAt) {
@@ -162,4 +182,91 @@ export async function restoreGoogleAdminSession(appSessionToken: string) {
 
 export async function revokeGoogleAdminSession(appSessionToken: string) {
   await invoke({ action: 'logout', appSessionToken })
+}
+
+export async function beginAdminControlStepUp(
+  appSessionToken: string,
+  controlAction: AdminControlAction,
+  controlIntentDigest: string | null,
+  controlRequestId = crypto.randomUUID(),
+) {
+  const result = await invoke({
+    action: 'beginControlStepUp',
+    appSessionToken,
+    controlAction,
+    controlIntentDigest: controlIntentDigest ?? undefined,
+    controlRequestId,
+  })
+  if (
+    !result.controlStepUpNonce ||
+    !result.controlIntentDigest ||
+    !result.expiresAt ||
+    result.controlAction !== controlAction ||
+    result.controlRequestId !== controlRequestId
+  ) {
+    throw new AdminIdentityError(
+      'step_up_unavailable',
+      getIdentityMessage('step_up_unavailable'),
+    )
+  }
+  return {
+    controlAction,
+    controlIntentDigest: result.controlIntentDigest,
+    controlRequestId,
+    controlStepUpNonce: result.controlStepUpNonce,
+    expiresAt: result.expiresAt,
+  }
+}
+
+export async function completeAdminControlStepUp(
+  appSessionToken: string,
+  controlAction: AdminControlAction,
+  controlRequestId: string,
+  controlIntentDigest: string,
+  controlStepUpNonce: string,
+) {
+  const result = await invoke({
+    action: 'completeControlStepUp',
+    appSessionToken,
+    controlAction,
+    controlIntentDigest,
+    controlRequestId,
+    controlStepUpNonce,
+  })
+  if (
+    !result.expiresAt ||
+    result.controlIntentDigest !== controlIntentDigest ||
+    !result.verifiedTotpAmrAt ||
+    result.controlAction !== controlAction ||
+    result.controlRequestId !== controlRequestId
+  ) {
+    throw new AdminIdentityError(
+      'step_up_invalid',
+      getIdentityMessage('step_up_invalid'),
+    )
+  }
+  return {
+    controlAction,
+    controlIntentDigest,
+    controlRequestId,
+    expiresAt: result.expiresAt,
+    verifiedTotpAmrAt: result.verifiedTotpAmrAt,
+  }
+}
+
+export async function reconcileAdminTotpFactorSet() {
+  const result = await invoke({ action: 'reconcileTotpFactorSet' })
+  if (
+    typeof result.activeFactorSetPresent !== 'boolean' ||
+    typeof result.revokedSessions !== 'number'
+  ) {
+    throw new AdminIdentityError(
+      'identity_request_failed',
+      getIdentityMessage('identity_request_failed'),
+    )
+  }
+  return {
+    activeFactorSetPresent: result.activeFactorSetPresent,
+    revokedSessions: result.revokedSessions,
+  }
 }
