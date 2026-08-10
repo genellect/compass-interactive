@@ -354,18 +354,19 @@ for (const applicationName of [
     2,
   )
 }
-for (const releaseMarker of [
+for (const obsoleteReleaseMarker of [
   'issue-first-kill-release',
   'kill-first-issue-release',
   'page-first-manual-release',
 ]) {
-  assert.equal(
-    (concurrency.match(new RegExp(releaseMarker, 'g')) ?? []).length,
-    2,
+  assert.doesNotMatch(
+    concurrency,
+    new RegExp(obsoleteReleaseMarker),
+    'Presenter race holders must release themselves after observing the waiter lock',
   )
 }
 assert.equal((concurrency.match(/wait_event_type = 'Lock'/g) ?? []).length, 3)
-assert.equal((concurrency.match(/interval '10 seconds'/g) ?? []).length, 6)
+assert.equal((concurrency.match(/interval '10 seconds'/g) ?? []).length, 3)
 assert.match(concurrency, /lock_timeout = '5s'/)
 assert.match(concurrency, /statement_timeout = '15s'/)
 assert.doesNotMatch(

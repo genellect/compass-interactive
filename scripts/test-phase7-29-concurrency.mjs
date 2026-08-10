@@ -285,11 +285,12 @@ try {
       begin
         raise notice 'PHASE729_ISSUE_FIRST_GATE_READY';
         while not exists (
-          select 1 from public.phase729_race_results
-          where label = 'issue-first-kill-release'
+          select 1 from pg_stat_activity
+          where application_name = 'phase729-issue-first-kill-waiter'
+            and wait_event_type = 'Lock'
         ) loop
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
-            raise exception 'timed out waiting to release issue-first gate';
+            raise exception 'issue-first kill did not reach the gate lock barrier';
           end if;
           perform pg_sleep(0.01);
         end loop;
@@ -317,26 +318,6 @@ try {
     set local application_name = 'phase729-issue-first-kill-waiter';
     select public.set_presenter_runtime_v1(false);
     commit;
-  `)
-  await runSql(`
-    do $$
-    declare
-      wait_started_at timestamptz := clock_timestamp();
-    begin
-      while not exists (
-        select 1 from pg_stat_activity
-        where application_name = 'phase729-issue-first-kill-waiter'
-          and wait_event_type = 'Lock'
-      ) loop
-        if clock_timestamp() > wait_started_at + interval '10 seconds' then
-          raise exception 'issue-first kill did not reach the gate lock barrier';
-        end if;
-        perform pg_sleep(0.01);
-      end loop;
-    end;
-    $$;
-    insert into public.phase729_race_results (label, payload)
-    values ('issue-first-kill-release', 'true'::jsonb);
   `)
   await Promise.all([issueFirst.done, issueFirstKill])
   await runSql(`
@@ -372,11 +353,12 @@ try {
       begin
         raise notice 'PHASE729_KILL_FIRST_GATE_READY';
         while not exists (
-          select 1 from public.phase729_race_results
-          where label = 'kill-first-issue-release'
+          select 1 from pg_stat_activity
+          where application_name = 'phase729-kill-first-issue-waiter'
+            and wait_event_type = 'Lock'
         ) loop
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
-            raise exception 'timed out waiting to release kill-first gate';
+            raise exception 'kill-first issue did not reach the gate lock barrier';
           end if;
           perform pg_sleep(0.01);
         end loop;
@@ -401,26 +383,6 @@ try {
       statement_timestamp() + interval '45 seconds'
     );
     commit;
-  `)
-  await runSql(`
-    do $$
-    declare
-      wait_started_at timestamptz := clock_timestamp();
-    begin
-      while not exists (
-        select 1 from pg_stat_activity
-        where application_name = 'phase729-kill-first-issue-waiter'
-          and wait_event_type = 'Lock'
-      ) loop
-        if clock_timestamp() > wait_started_at + interval '10 seconds' then
-          raise exception 'kill-first issue did not reach the gate lock barrier';
-        end if;
-        perform pg_sleep(0.01);
-      end loop;
-    end;
-    $$;
-    insert into public.phase729_race_results (label, payload)
-    values ('kill-first-issue-release', 'true'::jsonb);
   `)
   const killFirstRace = await Promise.allSettled([
     killFirst.done,
@@ -641,11 +603,12 @@ try {
       begin
         raise notice 'PHASE729_PAGE_FIRST_GATE_READY';
         while not exists (
-          select 1 from public.phase729_race_results
-          where label = 'page-first-manual-release'
+          select 1 from pg_stat_activity
+          where application_name = 'phase729-page-first-manual-waiter'
+            and wait_event_type = 'Lock'
         ) loop
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
-            raise exception 'timed out waiting to release page-first gate';
+            raise exception 'page-first manual revoke did not reach the gate lock barrier';
           end if;
           perform pg_sleep(0.01);
         end loop;
@@ -683,26 +646,6 @@ try {
     )
     from public.phase729_race_fixture;
     commit;
-  `)
-  await runSql(`
-    do $$
-    declare
-      wait_started_at timestamptz := clock_timestamp();
-    begin
-      while not exists (
-        select 1 from pg_stat_activity
-        where application_name = 'phase729-page-first-manual-waiter'
-          and wait_event_type = 'Lock'
-      ) loop
-        if clock_timestamp() > wait_started_at + interval '10 seconds' then
-          raise exception 'page-first manual revoke did not reach the gate lock barrier';
-        end if;
-        perform pg_sleep(0.01);
-      end loop;
-    end;
-    $$;
-    insert into public.phase729_race_results (label, payload)
-    values ('page-first-manual-release', 'true'::jsonb);
   `)
   await Promise.all([pageFirst.done, pageFirstManual])
   await runSql(`
