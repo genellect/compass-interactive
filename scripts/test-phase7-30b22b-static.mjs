@@ -27,6 +27,9 @@ const browserE2e = read('e2e/demo/phase7-30b22b-browser-storage.spec.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
 const upgradeFixture = read('scripts/fixtures/phase7-30b22b-b22a-head-upgrade-probe.sql')
 const upgradeProbe = read('scripts/fixtures/phase7-30b22b-b22a-head-upgrade-probe-test.sql')
+const b2HeadUpgradeProbe = read(
+  'scripts/fixtures/phase7-30b22a-b2-head-upgrade-probe-test.sql',
+)
 const concurrency = read('scripts/test-phase7-30b2-concurrency.mjs')
 const b2PgTap = read('supabase/tests/phase7_30b2_admin_ai_unlock_foundation_test.sql')
 const confirmBrowserWindow = browserCredential.slice(
@@ -59,6 +62,11 @@ assert.match(pgTap, /SELECT unalike\(/)
 assert.match(
   b2PgTap,
   /Phase 7\.30B2\.2b latest-schema browser fixtures[\s\S]*latest_schema_browser_fixture[\s\S]*google_session_issue_enabled = false[\s\S]*00000000-0000-4000-8000-000000007339/,
+)
+assert.match(
+  b2HeadUpgradeProbe,
+  /status = 'revoked'[\s\S]*revoke_reason = 'totp_binding_upgrade'[\s\S]*approved_totp_factor_set_hash IS NULL[\s\S]*supabase_auth_session_id IS NULL[\s\S]*revokes its authority without backfill/,
+  'a B2-head remembered browser must remain as history but lose authority when B2.2b cannot infer binding',
 )
 assert.match(pgTap, /full non-partial leading lookup index/)
 assert.doesNotMatch(migration, /status in \([^)]*cancelled/)

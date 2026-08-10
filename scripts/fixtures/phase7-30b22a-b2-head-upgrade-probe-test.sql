@@ -86,11 +86,17 @@ SELECT ok(
 
 SELECT ok(
   (
-    SELECT status = 'active' AND revoked_at IS NULL
+    SELECT status = 'revoked'
+      AND revoked_at IS NOT NULL
+      AND revoke_reason = 'totp_binding_upgrade'
+      AND approved_totp_factor_set_hash IS NULL
+      AND approved_totp_factor_set_version IS NULL
+      AND approved_totp_factor_count IS NULL
+      AND supabase_auth_session_id IS NULL
     FROM private.admin_ai_browser_credentials
     WHERE id = '73022000-0000-4000-8000-000000000013'::uuid
   ),
-  'session migration does not destroy the opted-in remembered-browser credential'
+  'B2.2b retains pre-binding remembered-browser history but revokes its authority without backfill'
 );
 
 SELECT ok(
