@@ -126,7 +126,7 @@ SELECT is(
   'remembered browser remains default OFF'
 );
 
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.describe_admin_totp_factor_transition_v1(uuid,uuid,text,uuid)'::regprocedure
   ),
@@ -180,7 +180,7 @@ SELECT ok(
   ),
   'control retention deletes transition then grant then nonce'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.cleanup_admin_control_step_up_ephemera_v1(timestamptz,uuid)'::regprocedure
   ),
@@ -188,28 +188,28 @@ SELECT like(
   'transition retention is bounded, nonblocking and reports its result'
 );
 
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.authorize_admin_totp_factor_transition_v1(text,uuid,uuid,text,uuid,text,text,uuid)'::regprocedure
   ),
   '%try_serialize_admin_ai_scope_v1%',
   'competing transitions use a nonblocking principal serializer'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.authorize_admin_totp_factor_transition_v1(text,uuid,uuid,text,uuid,text,text,uuid)'::regprocedure
   ),
   '%transition_expires_at <= effective_now + interval ''5 minutes''%',
   'transition authorization rejects an Auth session with too little recovery time'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.authorize_admin_totp_factor_transition_v1(text,uuid,uuid,text,uuid,text,text,uuid)'::regprocedure
   ),
   '%set status = ''expired''%expires_at <= effective_now%limit 25%',
   'expired transitions are released and retained with bounded cleanup'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.finalize_admin_totp_factor_transition_v1(text,uuid,uuid,text,uuid,text,uuid,uuid)'::regprocedure
   ),
@@ -230,7 +230,7 @@ SELECT unlike(
   '%admin_ai_browser_credentials%',
   'ordinary app-session logout preserves remembered-browser credentials'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.bind_admin_ai_browser_totp_context_v1()'::regprocedure
   ),

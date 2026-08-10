@@ -364,6 +364,16 @@ assert.deepEqual(
   'C1 pgTAP must not grant service_role a direct private-table read path',
 )
 assert.match(pgTap, /every C1 evidence foreign key has a full leading index/)
+assert.doesNotMatch(pgTap, /SELECT like\(/)
+assert.match(pgTap, /SELECT alike\(/)
+assert.match(
+  migration,
+  /create index admin_ai_master_admission_receipts_browser_idx\s+on private\.admin_ai_master_admission_receipts \(browser_credential_id\);/,
+)
+assert.match(
+  migration,
+  /create index admin_ai_master_control_receipts_master_idx\s+on private\.admin_ai_master_control_receipts \(master_authorization_id\);/,
+)
 assert.match(pgTap, /existing lectures receive no inferred ownership/)
 assert.match(
   pgTap,

@@ -249,7 +249,7 @@ SELECT ok(
   'private C1 functions remain non-executable by service_role, PUBLIC, anon and authenticated'
 );
 
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.require_google_ai_master_context_v1(text,uuid,uuid,boolean)'::regprocedure
   ),
@@ -296,7 +296,7 @@ SELECT ok(
   'C1 context preserves principal, membership, environment-share, then session lock order'
 );
 
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.replay_or_reuse_google_ai_master_v1(jsonb,uuid,text,uuid,bigint,text,uuid,text)'::regprocedure
   ),
@@ -304,28 +304,28 @@ SELECT like(
   'proof-free reuse records an immutable request before returning authority state'
 );
 
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.authorize_google_ai_master_with_pin_v1(text,uuid,uuid,uuid,text,uuid,bigint,text,integer,text,uuid)'::regprocedure
   ),
   '%replay_or_reuse_google_ai_master_v1(%consume_admin_ai_pin_attempt_v1(%apply_google_ai_master_admission_v1(%',
   'PIN proof and master issuance remain one transaction with replay first'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.complete_google_ai_master_browser_admission_v1(text,uuid,uuid,uuid,text,uuid,bigint,text,text,text,text,boolean,uuid)'::regprocedure
   ),
   '%replay_or_reuse_google_ai_master_v1(%complete_admin_ai_browser_assertion_v1(%raise exception ''browser proof binding changed during admission''%apply_google_ai_master_admission_v1(%',
   'browser proof mismatch rolls back proof and master atomically'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.apply_google_ai_master_admission_v1(jsonb,uuid,uuid,text,uuid,bigint,text,uuid,bigint,uuid,uuid,uuid,timestamptz,uuid,text)'::regprocedure
   ),
   '%pre-C1 AI master cannot be converted by C1%insert into private.admin_ai_master_admission_receipts%',
   'C1 refuses implicit legacy conversion and writes immutable admission evidence'
 );
-SELECT like(
+SELECT alike(
   pg_get_functiondef(
     'private.issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)'::regprocedure
   ),

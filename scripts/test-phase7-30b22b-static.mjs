@@ -28,6 +28,7 @@ const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
 const upgradeFixture = read('scripts/fixtures/phase7-30b22b-b22a-head-upgrade-probe.sql')
 const upgradeProbe = read('scripts/fixtures/phase7-30b22b-b22a-head-upgrade-probe-test.sql')
 const concurrency = read('scripts/test-phase7-30b2-concurrency.mjs')
+const b2PgTap = read('supabase/tests/phase7_30b2_admin_ai_unlock_foundation_test.sql')
 const confirmBrowserWindow = browserCredential.slice(
   browserCredential.indexOf('export async function confirmPendingBrowserEnrollmentWindow'),
   browserCredential.indexOf('export async function activatePendingRememberedBrowserEnrollment'),
@@ -51,6 +52,12 @@ assert.match(
   /create index admin_totp_factor_transition_principal_idx\s+on private\.admin_totp_factor_transitions \(principal_id, status\)/,
 )
 assert.match(pgTap, /idx\.indpred IS NULL/)
+assert.doesNotMatch(pgTap, /SELECT like\(/)
+assert.match(pgTap, /SELECT alike\(/)
+assert.match(
+  b2PgTap,
+  /Phase 7\.30B2\.2b latest-schema browser fixtures[\s\S]*latest_schema_browser_fixture[\s\S]*google_session_issue_enabled = false[\s\S]*00000000-0000-4000-8000-000000007339/,
+)
 assert.match(pgTap, /full non-partial leading lookup index/)
 assert.doesNotMatch(migration, /status in \([^)]*cancelled/)
 assert.match(

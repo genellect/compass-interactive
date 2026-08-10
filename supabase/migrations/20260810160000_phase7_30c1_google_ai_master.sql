@@ -256,8 +256,7 @@ create index admin_ai_master_admission_receipts_factor_idx
     unlock_factor_version
   );
 create index admin_ai_master_admission_receipts_browser_idx
-  on private.admin_ai_master_admission_receipts (browser_credential_id)
-  where browser_credential_id is not null;
+  on private.admin_ai_master_admission_receipts (browser_credential_id);
 
 create index admin_ai_master_control_receipts_environment_idx
   on private.admin_ai_master_control_receipts (environment_id, completed_at desc);
@@ -270,8 +269,7 @@ create index admin_ai_master_control_receipts_session_idx
 create index admin_ai_master_control_receipts_lecture_idx
   on private.admin_ai_master_control_receipts (lecture_session_id, completed_at desc);
 create index admin_ai_master_control_receipts_master_idx
-  on private.admin_ai_master_control_receipts (master_authorization_id)
-  where master_authorization_id is not null;
+  on private.admin_ai_master_control_receipts (master_authorization_id);
 
 create index admin_ai_master_reuse_receipts_environment_idx
   on private.admin_ai_master_reuse_receipts (environment_id, observed_at desc);
