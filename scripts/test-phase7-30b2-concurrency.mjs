@@ -71,6 +71,7 @@ const id = Object.fromEntries(
     'challengeFour',
     'sessionDrainRotationRequest',
     'sessionDrainRevokeRequest',
+    'factorReconcileRequest',
   ].map((name) => [name, randomUUID()]),
 )
 const hex = () => randomBytes(32).toString('hex')
@@ -1574,25 +1575,79 @@ await runSql(`
   );
 `)
 
-await Promise.all([
-  runSql(
-    recordServiceResult(
-      'factor-reconcile',
-      `public.reconcile_admin_totp_factor_set_v1(${literal(id.authUserA)}::uuid, ${literal(randomUUID())}::uuid)`,
-    ),
-  ),
-  runSql(
-    recordDelayedServiceResult(
-      'factor-touch-race',
-      `public.verify_and_touch_google_admin_session_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid)`,
-    ),
-  ),
-])
+const factorReconcile = startSqlUntilReady(
+  `
+    begin;
+    ${transactionSettings}
+    select private.serialize_admin_ai_scope_v1(
+      'totp-factor-set-user', ${literal(id.authUserA)}::uuid
+    );
+    select id
+    from private.admin_principals
+    where id = ${literal(id.principalA)}::uuid
+      and auth_user_id = ${literal(id.authUserA)}::uuid
+    for update;
+    do $$
+    begin
+      raise notice 'PHASE730B22A_FACTOR_RECONCILE_LOCKS_READY';
+    end;
+    $$;
+    do $$
+    declare
+      wait_started_at timestamptz := clock_timestamp();
+    begin
+      loop
+        perform pg_catalog.pg_stat_clear_snapshot();
+        exit when exists (
+          select 1
+          from pg_catalog.pg_stat_activity
+          where application_name = 'phase730b22a-factor-touch-waiter'
+            and wait_event_type = 'Lock'
+            and pid <> pg_catalog.pg_backend_pid()
+        );
+        if clock_timestamp() > wait_started_at + interval '10 seconds' then
+          raise exception 'factor touch did not reach the principal lock barrier';
+        end if;
+        perform pg_catalog.pg_sleep(0.01);
+      end loop;
+    end;
+    $$;
+    with outcome as (
+      select public.reconcile_admin_totp_factor_set_v1(
+        ${literal(id.authUserA)}::uuid,
+        ${literal(id.factorReconcileRequest)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'factor-reconcile', to_jsonb(outcome.value)
+    from outcome;
+    commit;
+  `,
+  'PHASE730B22A_FACTOR_RECONCILE_LOCKS_READY',
+)
+await factorReconcile.ready
+const factorTouch = runSql(
+  asServiceRole(`
+    set local application_name = 'phase730b22a-factor-touch-waiter';
+    with outcome as (
+      select public.verify_and_touch_google_admin_session_v1(
+        ${literal(tokenA1)}, ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA1)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'factor-touch-race',
+      coalesce(to_jsonb(outcome.value), 'null'::jsonb)
+    from outcome;
+  `),
+)
+await Promise.all([factorReconcile.done, factorTouch])
 
 await runSql(`
   do $$
   begin
     if (select outcome ->> 'revoked_sessions' from public.phase7_30b2_concurrency_results where scenario = 'factor-reconcile') <> '1'
+       or (select outcome from public.phase7_30b2_concurrency_results where scenario = 'factor-touch-race') is distinct from 'null'::jsonb
        or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionA1)}::uuid and revoked_at is not null and revoke_reason = 'totp_factor_set_changed') <> 1
        or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionA2)}::uuid and revoked_at is not null and revoke_reason = 'self_logout') <> 1
        or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionB)}::uuid and revoked_at is null) <> 1

@@ -675,20 +675,22 @@ assert.match(
 for (const barrier of [
   'PHASE730B22A_LOGIN_BEGIN_LOCKS_READY',
   'PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY',
+  'PHASE730B22A_FACTOR_RECONCILE_LOCKS_READY',
   'phase730b22a-login-complete-waiter',
   'phase730b22a-session-revoke-waiter',
+  'phase730b22a-factor-touch-waiter',
 ]) {
   assert.match(concurrency, new RegExp(barrier))
 }
 assert.match(concurrency, /wait_event_type = 'Lock'/)
 assert.equal(
   concurrency.match(/wait_event_type = 'Lock'/g)?.length,
-  2,
+  3,
   'each holder must observe its fixed waiter without a third release process',
 )
 assert.equal(
   concurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
-  2,
+  3,
   'each holder must refresh its statistics snapshot before observing the waiter',
 )
 assert.doesNotMatch(
@@ -703,6 +705,14 @@ assert.match(
 assert.match(
   concurrency,
   /PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY[\s\S]*?phase730b22a-session-revoke-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?from private\.admin_ai_browser_enrollment_nonces as nonce[\s\S]*?for update nowait/,
+)
+assert.match(
+  concurrency,
+  /PHASE730B22A_FACTOR_RECONCILE_LOCKS_READY[\s\S]*?phase730b22a-factor-touch-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?reconcile_admin_totp_factor_set_v1[\s\S]*?factor-touch-race[\s\S]*?coalesce\(to_jsonb\(outcome\.value\), 'null'::jsonb\)/,
+)
+assert.match(
+  concurrency,
+  /verify_and_touch_google_admin_session_v1\([\s\S]*?literal\(tokenA1\)[\s\S]*?id\.authSessionA1[\s\S]*?factor-touch-race'/,
 )
 assert.match(
   concurrency,
