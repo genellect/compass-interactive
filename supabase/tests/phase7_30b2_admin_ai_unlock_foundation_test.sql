@@ -436,20 +436,32 @@ SELECT ok(
 SELECT ok(
   pg_get_functiondef(
     'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
-  ) LIKE '%from auth.sessions%'
+  ) LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
   AND pg_get_functiondef(
     'private.require_admin_ai_context_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
+  ) LIKE '%require_admin_ai_context_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
+  ) LIKE '%from auth.sessions%'
+  AND pg_get_functiondef(
+    'private.require_admin_ai_context_pre_b22a_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
   ) LIKE '%from auth.sessions%',
-  'B1 session touch and every B2 context verify backing auth.sessions existence'
+  'B2.2a wrappers delegate to the B1/B2 implementations that verify backing auth.sessions existence'
 );
 
 WITH definitions AS (
   SELECT
     pg_get_functiondef(
       'private.require_admin_ai_context_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
+    ) AS b2_context_wrapper,
+    pg_get_functiondef(
+      'private.require_admin_ai_context_pre_b22a_v1(text,uuid,uuid,timestamptz,boolean,boolean)'::regprocedure
     ) AS b2_context,
     pg_get_functiondef(
       'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+    ) AS b1_touch_wrapper,
+    pg_get_functiondef(
+      'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
     ) AS b1_touch,
     pg_get_functiondef(
       'private.enforce_admin_principal_identity_v1()'::regprocedure
@@ -459,7 +471,9 @@ WITH definitions AS (
     ) AS membership_guard
 )
 SELECT ok(
-  position('from private.admin_principals as principal' IN b2_context)
+  b2_context_wrapper LIKE '%require_admin_ai_context_pre_b22a_v1%'
+  AND b1_touch_wrapper LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
+  AND position('from private.admin_principals as principal' IN b2_context)
     < position('from private.admin_environment_memberships as membership' IN b2_context)
   AND position('from private.admin_environment_memberships as membership' IN b2_context)
     < position('where session.id = session_snapshot.id' IN b2_context)
@@ -477,7 +491,7 @@ SELECT ok(
   AND b1_touch NOT LIKE '%from private.admin_environments as environment%for key share%'
   AND principal_guard LIKE '%for update of environment%'
   AND membership_guard LIKE '%from private.admin_environments as environment%for update%',
-  'B1/B2 readers lock principal-membership-session and revalidate environment without inverting owner DELETE'
+  'B2.2a wrappers preserve the B1/B2 principal-membership-session lock order in their delegated implementations'
 )
 FROM definitions;
 
@@ -493,11 +507,14 @@ SELECT ok(
   ) LIKE '%new.idle_expires_at := new.expires_at%'
   AND pg_get_functiondef(
     'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+  ) LIKE '%verify_and_touch_google_admin_session_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
   ) LIKE '%idle_expires_at = expires_at%'
   AND pg_get_functiondef(
-    'private.verify_and_touch_google_admin_session_v1(text,uuid,uuid)'::regprocedure
+    'private.verify_and_touch_google_admin_session_pre_b22a_v1(text,uuid,uuid)'::regprocedure
   ) NOT LIKE '%interval ''30 minutes''%',
-  'Google/TOTP app sessions inherit the backing Auth-session eight-hour cap without an idle TOTP timer'
+  'B2.2a session touch preserves the delegated eight-hour cap without an idle TOTP timer'
 );
 
 SELECT ok(
@@ -518,11 +535,23 @@ SELECT ok(
   ) NOT LIKE '%target_min_step_up_verified_at%'
   AND pg_get_functiondef(
     'private.set_admin_ai_policy_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
+  ) LIKE '%consume_admin_control_step_up_grant_v1%'
+  AND pg_get_functiondef(
+    'private.set_admin_ai_policy_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
+  ) LIKE '%set_admin_ai_policy_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.set_admin_ai_policy_pre_b22a_v1(text,uuid,uuid,uuid,text[],text[],integer,integer,bigint,bigint,bigint,bigint,bigint,bigint,integer,integer,integer,timestamptz,timestamptz,uuid)'::regprocedure
   ) LIKE '%effective_now - interval ''5 minutes''%'
   AND pg_get_functiondef(
     'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%consume_admin_control_step_up_grant_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%enroll_admin_ai_pin_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_pre_b22a_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
   ) LIKE '%effective_now - interval ''5 minutes''%',
-  'normal lecture AI uses valid AAL2 while rare policy and PIN-factor mutations enforce a DB-authoritative five-minute step-up'
+  'normal lecture AI avoids fresh TOTP while B2.2a grants delegate rare mutations to the fixed-five-minute B2 implementations'
 );
 
 SELECT ok(
@@ -1030,8 +1059,11 @@ SELECT ok(
   )
   AND pg_get_functiondef(
     'private.enroll_admin_ai_pin_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
+  ) LIKE '%enroll_admin_ai_pin_pre_b22a_v1%'
+  AND pg_get_functiondef(
+    'private.enroll_admin_ai_pin_pre_b22a_v1(text,uuid,uuid,text,integer,uuid)'::regprocedure
   ) LIKE '%drain_admin_ai_factor_authority_v1%',
-  'PIN rotation drains master, browser and pending proofs without revoking the Admin login session'
+  'B2.2a PIN rotation delegates to the B2 drain for master, browser and pending proofs without revoking the Admin login session'
 );
 
 SELECT throws_ok(

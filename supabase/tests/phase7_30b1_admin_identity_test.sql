@@ -456,6 +456,15 @@ SELECT throws_ok(
 );
 
 RESET ROLE;
+SELECT set_config(
+  'compass.test.admin_totp_amr_at',
+  (
+    SELECT (min_amr_at + interval '1 second')::text
+    FROM private.admin_step_up_nonces
+    WHERE nonce_hash = repeat('b', 64)
+  ),
+  false
+);
 UPDATE auth.mfa_factors
 SET status = 'verified', updated_at = statement_timestamp()
 WHERE id = '00000000-0000-4000-8000-000000000712'::uuid;
@@ -469,17 +478,9 @@ SELECT is(
       '00000000-0000-4000-8000-000000000711'::uuid,
       2::smallint,
       repeat('d', 64),
-      (
-        SELECT min_amr_at + interval '1 second'
-        FROM private.admin_step_up_nonces
-        WHERE nonce_hash = repeat('b', 64)
-      ),
+      current_setting('compass.test.admin_totp_amr_at')::timestamptz,
       'totp',
-      (
-        SELECT min_amr_at + interval '1 second'
-        FROM private.admin_step_up_nonces
-        WHERE nonce_hash = repeat('b', 64)
-      ),
+      current_setting('compass.test.admin_totp_amr_at')::timestamptz,
       repeat('e', 64),
       repeat('f', 64),
       repeat('0', 64),
@@ -520,17 +521,9 @@ SELECT is(
       '00000000-0000-4000-8000-000000000711'::uuid,
       2::smallint,
       repeat('d', 64),
-      (
-        SELECT min_amr_at + interval '1 second'
-        FROM private.admin_step_up_nonces
-        WHERE nonce_hash = repeat('b', 64)
-      ),
+      current_setting('compass.test.admin_totp_amr_at')::timestamptz,
       'totp',
-      (
-        SELECT min_amr_at + interval '1 second'
-        FROM private.admin_step_up_nonces
-        WHERE nonce_hash = repeat('b', 64)
-      ),
+      current_setting('compass.test.admin_totp_amr_at')::timestamptz,
       repeat('e', 64),
       repeat('f', 64),
       repeat('0', 64),

@@ -722,6 +722,35 @@ assert.match(
   /UPDATE auth\.mfa_factors[\s\S]*?SET status = 'verified'[\s\S]*?public\.complete_admin_totp_step_up_v1/,
   'B1 latest-schema regression must exercise the real 0-to-1 bootstrap order',
 )
+assert.equal(
+  (b1PgTap.match(/min_amr_at \+ interval '1 second'/g) ?? []).length,
+  1,
+  'B1 fixture reads private nonce evidence only before entering service_role',
+)
+assert.equal(
+  (
+    b1PgTap.match(
+      /current_setting\('compass\.test\.admin_totp_amr_at'\)::timestamptz/g,
+    ) ?? []
+  ).length,
+  4,
+  'B1 initial completion and exact retry reuse one session-scoped AMR timestamp',
+)
+const b22aLoginCompleteCalls =
+  pgTap.match(/public\.complete_admin_totp_step_up_v1\([\s\S]*?\n  \)/g) ?? []
+assert.equal(b22aLoginCompleteCalls.length, 2)
+for (const call of b22aLoginCompleteCalls) {
+  assert.match(call, /\n\s+2::smallint,\n/)
+}
+for (const delegatedContract of [
+  'require_admin_ai_context_pre_b22a_v1',
+  'verify_and_touch_google_admin_session_pre_b22a_v1',
+  'consume_admin_control_step_up_grant_v1',
+  'set_admin_ai_policy_pre_b22a_v1',
+  'enroll_admin_ai_pin_pre_b22a_v1',
+]) {
+  assert.match(b2PgTap, new RegExp(delegatedContract))
+}
 assert.match(
   b2PgTap,
   /approved_totp_factor_set_actor = 'fixture:phase7_30b2'/,
