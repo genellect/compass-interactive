@@ -686,6 +686,11 @@ assert.equal(
   2,
   'each holder must observe its fixed waiter without a third release process',
 )
+assert.equal(
+  concurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
+  2,
+  'each holder must refresh its statistics snapshot before observing the waiter',
+)
 assert.doesNotMatch(
   concurrency,
   /login-begin-lock-order-release|session-factor-assertion-lock-release/,

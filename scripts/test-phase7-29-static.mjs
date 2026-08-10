@@ -366,6 +366,11 @@ for (const obsoleteReleaseMarker of [
   )
 }
 assert.equal((concurrency.match(/wait_event_type = 'Lock'/g) ?? []).length, 3)
+assert.equal(
+  (concurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g) ?? []).length,
+  3,
+  'each Presenter holder must refresh its statistics snapshot before observing the waiter',
+)
 assert.equal((concurrency.match(/interval '10 seconds'/g) ?? []).length, 3)
 assert.match(concurrency, /lock_timeout = '5s'/)
 assert.match(concurrency, /statement_timeout = '15s'/)

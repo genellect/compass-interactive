@@ -284,11 +284,13 @@ try {
         wait_started_at timestamptz := clock_timestamp();
       begin
         raise notice 'PHASE729_ISSUE_FIRST_GATE_READY';
-        while not exists (
-          select 1 from pg_stat_activity
-          where application_name = 'phase729-issue-first-kill-waiter'
-            and wait_event_type = 'Lock'
-        ) loop
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-issue-first-kill-waiter'
+              and wait_event_type = 'Lock'
+          );
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
             raise exception 'issue-first kill did not reach the gate lock barrier';
           end if;
@@ -352,11 +354,13 @@ try {
         wait_started_at timestamptz := clock_timestamp();
       begin
         raise notice 'PHASE729_KILL_FIRST_GATE_READY';
-        while not exists (
-          select 1 from pg_stat_activity
-          where application_name = 'phase729-kill-first-issue-waiter'
-            and wait_event_type = 'Lock'
-        ) loop
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-kill-first-issue-waiter'
+              and wait_event_type = 'Lock'
+          );
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
             raise exception 'kill-first issue did not reach the gate lock barrier';
           end if;
@@ -602,11 +606,13 @@ try {
         wait_started_at timestamptz := clock_timestamp();
       begin
         raise notice 'PHASE729_PAGE_FIRST_GATE_READY';
-        while not exists (
-          select 1 from pg_stat_activity
-          where application_name = 'phase729-page-first-manual-waiter'
-            and wait_event_type = 'Lock'
-        ) loop
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1 from pg_stat_activity
+            where application_name = 'phase729-page-first-manual-waiter'
+              and wait_event_type = 'Lock'
+          );
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
             raise exception 'page-first manual revoke did not reach the gate lock barrier';
           end if;

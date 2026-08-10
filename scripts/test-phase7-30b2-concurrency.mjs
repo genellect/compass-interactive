@@ -578,13 +578,15 @@ const loginBeginLockOrder = startSqlUntilReady(
     declare
       wait_started_at timestamptz := clock_timestamp();
     begin
-      while not exists (
-        select 1
-        from pg_catalog.pg_stat_activity
+      loop
+        perform pg_catalog.pg_stat_clear_snapshot();
+        exit when exists (
+          select 1
+          from pg_catalog.pg_stat_activity
           where application_name = 'phase730b22a-login-complete-waiter'
             and wait_event_type = 'Lock'
             and pid <> pg_catalog.pg_backend_pid()
-      ) loop
+        );
         if clock_timestamp() > wait_started_at + interval '10 seconds' then
           raise exception 'login complete did not reach the principal lock barrier';
         end if;
@@ -1229,13 +1231,15 @@ await runSql(`
       declare
         wait_started_at timestamptz := clock_timestamp();
       begin
-        while not exists (
-          select 1
-          from pg_catalog.pg_stat_activity
-          where application_name = 'phase730b22a-session-revoke-waiter'
-            and wait_event_type = 'Lock'
-            and pid <> pg_catalog.pg_backend_pid()
-        ) loop
+        loop
+          perform pg_catalog.pg_stat_clear_snapshot();
+          exit when exists (
+            select 1
+            from pg_catalog.pg_stat_activity
+            where application_name = 'phase730b22a-session-revoke-waiter'
+              and wait_event_type = 'Lock'
+              and pid <> pg_catalog.pg_backend_pid()
+          );
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
             raise exception 'session revoke did not reach the assertion lock barrier';
           end if;
