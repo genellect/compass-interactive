@@ -1430,6 +1430,7 @@ declare
   revoked_sessions integer := 0;
   revoked_credentials integer := 0;
   auth_session_found boolean := false;
+  requested_factor_id uuid := target_factor_id;
   effective_now timestamptz := statement_timestamp();
 begin
   if target_action is null
@@ -1528,7 +1529,7 @@ begin
   where transition.id = transition_snapshot.id
     and transition.mutation_request_id = target_mutation_request_id
     and transition.intended_action = target_action
-    and transition.target_factor_id = target_factor_id
+    and transition.target_factor_id = requested_factor_id
     and transition.intent_digest = target_intent_digest
     and transition.recovery_token_hash = target_recovery_token_hash
     and transition.environment_id = transition_snapshot.environment_id

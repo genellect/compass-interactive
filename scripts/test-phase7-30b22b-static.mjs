@@ -110,6 +110,16 @@ assert.doesNotMatch(
   /select transition\.\* into transition_row[\s\S]*for update/,
   'finalize must not lock a transition before the principal',
 )
+assert.match(finalizeTransition, /requested_factor_id uuid := target_factor_id/)
+assert.match(
+  finalizeTransition,
+  /transition\.target_factor_id = requested_factor_id/,
+  'the transition row comparison must not collide with the same-named input parameter',
+)
+assert.doesNotMatch(
+  finalizeTransition,
+  /transition\.target_factor_id = target_factor_id/,
+)
 assert.ok(
   finalizePrincipalLock < finalizeAdvisory,
   'finalize must lock the principal before the principal transition advisory',
