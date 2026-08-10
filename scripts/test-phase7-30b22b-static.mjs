@@ -68,7 +68,7 @@ assert.match(
 )
 assert.match(
   migration,
-  /Do not consume the competing grant[\s\S]*return null;[\s\S]*select grant\.\* into grant_row/,
+  /Do not consume the competing grant[\s\S]*return null;[\s\S]*select control_grant\.\* into grant_row/,
 )
 const finalizeTransition = migration.match(
   /create function private\.finalize_admin_totp_factor_transition_v1[\s\S]*?\n\$\$;/,
@@ -117,10 +117,10 @@ assert.ok(
     'delete from private.admin_totp_factor_transitions as transition',
   ) <
     controlCleanup.indexOf(
-      'delete from private.admin_control_step_up_grants as grant',
+      'delete from private.admin_control_step_up_grants as control_grant',
     ) &&
     controlCleanup.indexOf(
-      'delete from private.admin_control_step_up_grants as grant',
+      'delete from private.admin_control_step_up_grants as control_grant',
     ) <
       controlCleanup.indexOf(
         'delete from private.admin_control_step_up_nonces as nonce',
@@ -130,7 +130,12 @@ assert.ok(
 assert.match(controlCleanup, /for update of transition skip locked[\s\S]*limit 500/)
 assert.match(
   controlCleanup,
-  /not exists \([\s\S]*admin_totp_factor_transitions[\s\S]*control_grant_id = grant\.id/,
+  /not exists \([\s\S]*admin_totp_factor_transitions[\s\S]*control_grant_id = control_grant\.id/,
+)
+assert.doesNotMatch(
+  migration,
+  /\bas\s+grant\b|\bgrant\.(?:\*|[a-z_]+\b)/,
+  'reserved GRANT keyword must not be reused as a table alias',
 )
 assert.match(controlCleanup, /'transitions_deleted', deleted_transitions/)
 assert.match(

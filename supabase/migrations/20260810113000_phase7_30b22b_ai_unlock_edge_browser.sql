@@ -303,17 +303,18 @@ begin
   get diagnostics expired_nonces = row_count;
 
   with candidates as (
-    select grant.id
-    from private.admin_control_step_up_grants as grant
-    where grant.status = 'available' and grant.expires_at <= effective_now
-    order by grant.expires_at, grant.id
-    for update of grant skip locked
+    select control_grant.id
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.status = 'available'
+      and control_grant.expires_at <= effective_now
+    order by control_grant.expires_at, control_grant.id
+    for update of control_grant skip locked
     limit 500
   )
-  update private.admin_control_step_up_grants as grant
+  update private.admin_control_step_up_grants as control_grant
   set status = 'expired', updated_at = effective_now
   from candidates
-  where grant.id = candidates.id;
+  where control_grant.id = candidates.id;
   get diagnostics expired_grants = row_count;
 
   with candidates as (
@@ -331,22 +332,22 @@ begin
   get diagnostics deleted_transitions = row_count;
 
   with candidates as (
-    select grant.id
-    from private.admin_control_step_up_grants as grant
-    where grant.status in ('consumed', 'superseded', 'expired')
-      and grant.updated_at < target_retention_before
+    select control_grant.id
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.status in ('consumed', 'superseded', 'expired')
+      and control_grant.updated_at < target_retention_before
       and not exists (
         select 1
         from private.admin_totp_factor_transitions as transition
-        where transition.control_grant_id = grant.id
+        where transition.control_grant_id = control_grant.id
       )
-    order by grant.updated_at, grant.id
-    for update of grant skip locked
+    order by control_grant.updated_at, control_grant.id
+    for update of control_grant skip locked
     limit 500
   )
-  delete from private.admin_control_step_up_grants as grant
+  delete from private.admin_control_step_up_grants as control_grant
   using candidates
-  where grant.id = candidates.id;
+  where control_grant.id = candidates.id;
   get diagnostics deleted_grants = row_count;
 
   with candidates as (
@@ -356,8 +357,8 @@ begin
       and nonce.updated_at < target_retention_before
       and not exists (
         select 1
-        from private.admin_control_step_up_grants as grant
-        where grant.control_nonce_id = nonce.id
+        from private.admin_control_step_up_grants as control_grant
+        where control_grant.control_nonce_id = nonce.id
       )
     order by nonce.updated_at, nonce.id
     for update of nonce skip locked
@@ -384,16 +385,17 @@ begin
       where nonce.status = 'pending' and nonce.expires_at <= effective_now
     )
     or exists (
-      select 1 from private.admin_control_step_up_grants as grant
-      where grant.status = 'available' and grant.expires_at <= effective_now
+      select 1 from private.admin_control_step_up_grants as control_grant
+      where control_grant.status = 'available'
+        and control_grant.expires_at <= effective_now
     )
     or exists (
-      select 1 from private.admin_control_step_up_grants as grant
-      where grant.status in ('consumed', 'superseded', 'expired')
-        and grant.updated_at < target_retention_before
+      select 1 from private.admin_control_step_up_grants as control_grant
+      where control_grant.status in ('consumed', 'superseded', 'expired')
+        and control_grant.updated_at < target_retention_before
         and not exists (
           select 1 from private.admin_totp_factor_transitions as transition
-          where transition.control_grant_id = grant.id
+          where transition.control_grant_id = control_grant.id
         )
     )
     or exists (
@@ -401,8 +403,8 @@ begin
       where nonce.status in ('consumed', 'superseded', 'expired')
         and nonce.updated_at < target_retention_before
         and not exists (
-          select 1 from private.admin_control_step_up_grants as grant
-          where grant.control_nonce_id = nonce.id
+          select 1 from private.admin_control_step_up_grants as control_grant
+          where control_grant.control_nonce_id = nonce.id
         )
     )
   into has_more;
@@ -881,14 +883,14 @@ begin
   end if;
 
   if nonce_row.status = 'consumed' then
-    select grant.* into grant_row
-    from private.admin_control_step_up_grants as grant
-    where grant.control_nonce_id = nonce_row.id
-      and grant.mutation_request_id = target_mutation_request_id
-      and grant.intended_action = target_action
-      and grant.intent_digest = target_intent_digest
-      and grant.completion_jwt_hash = target_current_jwt_hash
-      and grant.verified_totp_amr_at is not distinct from target_totp_amr_at;
+    select control_grant.* into grant_row
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.control_nonce_id = nonce_row.id
+      and control_grant.mutation_request_id = target_mutation_request_id
+      and control_grant.intended_action = target_action
+      and control_grant.intent_digest = target_intent_digest
+      and control_grant.completion_jwt_hash = target_current_jwt_hash
+      and control_grant.verified_totp_amr_at is not distinct from target_totp_amr_at;
     if not found then return null; end if;
     return jsonb_build_object(
       'action', grant_row.intended_action,
@@ -1310,18 +1312,18 @@ begin
     return null;
   end if;
 
-  select grant.* into grant_row
-  from private.admin_control_step_up_grants as grant
-  where grant.mutation_request_id = target_mutation_request_id
-    and grant.source_kind = 'control'
-    and grant.intended_action = target_action
-    and grant.intent_digest = target_intent_digest
-    and grant.environment_id = (context_value ->> 'environment_id')::uuid
-    and grant.principal_id = (context_value ->> 'principal_id')::uuid
-    and grant.membership_id = (context_value ->> 'membership_id')::uuid
-    and grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
-    and grant.supabase_auth_session_id = target_supabase_auth_session_id
-    and grant.verified_totp_factor_set_hash =
+  select control_grant.* into grant_row
+  from private.admin_control_step_up_grants as control_grant
+  where control_grant.mutation_request_id = target_mutation_request_id
+    and control_grant.source_kind = 'control'
+    and control_grant.intended_action = target_action
+    and control_grant.intent_digest = target_intent_digest
+    and control_grant.environment_id = (context_value ->> 'environment_id')::uuid
+    and control_grant.principal_id = (context_value ->> 'principal_id')::uuid
+    and control_grant.membership_id = (context_value ->> 'membership_id')::uuid
+    and control_grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
+    and control_grant.supabase_auth_session_id = target_supabase_auth_session_id
+    and control_grant.verified_totp_factor_set_hash =
       description_value ->> 'approved_pre_hash'
   for update;
   if not found
