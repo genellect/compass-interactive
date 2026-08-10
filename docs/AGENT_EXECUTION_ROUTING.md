@@ -93,7 +93,7 @@ Authenticator, and no email or custom MFA. The Admin app session has no
 30-minute idle expiry or periodic TOTP prompt and is capped at
 `auth.sessions.created_at + 8 hours`. Five-minute TOTP step-up is reserved for
 owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
-global-revoke and AI PIN factor enrollment/rotation/reset changes. Initial PIN
+global-revoke and AI PIN factor enrollment/rotation/revoke/reset changes. Initial PIN
 enrollment immediately after login uses the already-fresh login TOTP without an
 extra prompt; normal lecture, emergency stop, PIN verification, browser proof,
 AI-master escalation and child calls never prompt. `ADMIN_PIN` is removed after

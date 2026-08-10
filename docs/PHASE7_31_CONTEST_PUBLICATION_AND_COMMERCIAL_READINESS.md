@@ -223,8 +223,8 @@ contest project内でのみ次のpolicyと運用を有効にする。
   最大call/token/費用、Realtime分、最大同時実行、validityとversionを保持する。ownerの
   変更は5分fresh TOTP、idempotency key、append-only auditを必須とする。
 - 各reviewerは有効なTOTP AAL2 sessionで本人専用4桁AI PINを登録する。AI PIN factorの
-  enrollment/rotation/resetは5分fresh TOTP境界を使うが、login直後の初回登録はlogin時TOTPが
-  既にfreshなので追加promptを出さない。通常利用とrevokeは追加のTOTP入力を求めない。
+  enrollment/rotation/revoke/resetは5分fresh TOTP境界を使うが、login直後の初回登録はlogin時TOTPが
+  既にfreshなので追加promptを出さない。通常利用は追加のTOTP入力を求めない。
   serverはsaltedかつserver-peppered verifier、
   factor version、rotation/revoke metadataだけを保持する。raw PINはtrusted formと限定TLS
   bodyにだけ一時存在し、応答後に

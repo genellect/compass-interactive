@@ -70,6 +70,7 @@ const safeTestScripts = [
   'test:phase7-29-load',
   'test:phase7-30-admin-identity',
   'test:phase7-30b2-static',
+  'test:phase7-30b22a-static',
   'test:production-gate:static',
   'test:production-env',
   'test:admin-lifecycle',

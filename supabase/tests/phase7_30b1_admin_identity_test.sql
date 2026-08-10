@@ -61,7 +61,7 @@ SELECT is(
         'get_admin_identity_environment_v1',
         'bootstrap_admin_environment_v1',
         'consume_admin_identity_admission_v1',
-        'begin_admin_totp_step_up_v1',
+        'begin_admin_totp_step_up_v2',
         'complete_admin_totp_step_up_v1',
         'verify_and_touch_google_admin_session_v1',
         'revoke_own_google_admin_session_v1'
@@ -77,13 +77,12 @@ SELECT ok(
     FROM pg_proc AS procedure
     JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
     WHERE namespace.nspname = 'public'
-      AND procedure.proname LIKE '%admin%v1'
       AND procedure.proname IN (
         'get_admin_identity_runtime_gate_v1',
         'get_admin_identity_environment_v1',
         'bootstrap_admin_environment_v1',
         'consume_admin_identity_admission_v1',
-        'begin_admin_totp_step_up_v1',
+        'begin_admin_totp_step_up_v2',
         'complete_admin_totp_step_up_v1',
         'verify_and_touch_google_admin_session_v1',
         'revoke_own_google_admin_session_v1'
@@ -177,6 +176,24 @@ INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
 VALUES (
   '00000000-0000-4000-8000-000000000711'::uuid,
   '00000000-0000-4000-8000-000000000701'::uuid,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.mfa_factors (
+  id,
+  user_id,
+  friendly_name,
+  factor_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-4000-8000-000000000712'::uuid,
+  '00000000-0000-4000-8000-000000000701'::uuid,
+  'phase730b1-test-totp',
+  'totp',
+  'unverified',
   statement_timestamp() - interval '1 hour',
   statement_timestamp() - interval '1 hour'
 ) ON CONFLICT (id) DO NOTHING;
@@ -358,10 +375,11 @@ SET ROLE service_role;
 
 SELECT lives_ok(
   $$
-    SELECT public.begin_admin_totp_step_up_v1(
+    SELECT public.begin_admin_totp_step_up_v2(
       '00000000-0000-4000-8000-000000000730'::uuid,
       '00000000-0000-4000-8000-000000000701'::uuid,
       '00000000-0000-4000-8000-000000000711'::uuid,
+      '00000000-0000-4000-8000-000000000712'::uuid,
       repeat('b', 64),
       '00000000-0000-4000-8000-000000000721'::uuid,
       repeat('c', 64),
@@ -437,6 +455,12 @@ SELECT throws_ok(
   'NULL JWT and TOTP provenance cannot create a tracked session'
 );
 
+RESET ROLE;
+UPDATE auth.mfa_factors
+SET status = 'verified', updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-000000000712'::uuid;
+SET ROLE service_role;
+
 SELECT is(
   (
     public.complete_admin_totp_step_up_v1(
@@ -445,9 +469,17 @@ SELECT is(
       '00000000-0000-4000-8000-000000000711'::uuid,
       2::smallint,
       repeat('d', 64),
-      statement_timestamp() + interval '1 second',
+      (
+        SELECT min_amr_at + interval '1 second'
+        FROM private.admin_step_up_nonces
+        WHERE nonce_hash = repeat('b', 64)
+      ),
       'totp',
-      statement_timestamp() + interval '1 second',
+      (
+        SELECT min_amr_at + interval '1 second'
+        FROM private.admin_step_up_nonces
+        WHERE nonce_hash = repeat('b', 64)
+      ),
       repeat('e', 64),
       repeat('f', 64),
       repeat('0', 64),
@@ -488,9 +520,17 @@ SELECT is(
       '00000000-0000-4000-8000-000000000711'::uuid,
       2::smallint,
       repeat('d', 64),
-      statement_timestamp() + interval '1 second',
+      (
+        SELECT min_amr_at + interval '1 second'
+        FROM private.admin_step_up_nonces
+        WHERE nonce_hash = repeat('b', 64)
+      ),
       'totp',
-      statement_timestamp() + interval '1 second',
+      (
+        SELECT min_amr_at + interval '1 second'
+        FROM private.admin_step_up_nonces
+        WHERE nonce_hash = repeat('b', 64)
+      ),
       repeat('e', 64),
       repeat('f', 64),
       repeat('0', 64),
@@ -730,10 +770,11 @@ SELECT throws_ok(
 
 SELECT throws_ok(
   $$
-    SELECT public.begin_admin_totp_step_up_v1(
+    SELECT public.begin_admin_totp_step_up_v2(
       '00000000-0000-4000-8000-000000000730'::uuid,
       '00000000-0000-4000-8000-000000000701'::uuid,
       '00000000-0000-4000-8000-000000000711'::uuid,
+      '00000000-0000-4000-8000-000000000712'::uuid,
       repeat('7', 64),
       '00000000-0000-4000-8000-000000000722'::uuid,
       repeat('6', 64),

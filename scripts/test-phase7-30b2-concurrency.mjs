@@ -15,6 +15,10 @@ const id = Object.fromEntries(
     'authSessionA1',
     'authSessionA2',
     'authSessionB',
+    'mfaFactorA',
+    'mfaFactorB',
+    'anchorRequestA',
+    'anchorRequestB',
     'adminSessionA1',
     'adminSessionA2',
     'adminSessionB',
@@ -57,6 +61,16 @@ const id = Object.fromEntries(
     'challengeThree',
     'cleanupCleanerRequestA',
     'cleanupCleanerRequestB',
+    'loginRaceReservedOld',
+    'loginRaceReservedNew',
+    'loginRaceRequestOld',
+    'loginRaceRequestNew',
+    'loginRaceCompletionRequest',
+    'enrollmentFour',
+    'credentialFour',
+    'challengeFour',
+    'sessionDrainRotationRequest',
+    'sessionDrainRevokeRequest',
   ].map((name) => [name, randomUUID()]),
 )
 const hex = () => randomBytes(32).toString('hex')
@@ -71,12 +85,24 @@ const stepUpNonceHashB = hex()
 const stepUpPrechallengeHashA1 = hex()
 const stepUpPrechallengeHashA2 = hex()
 const stepUpPrechallengeHashB = hex()
+const stepUpCompletionHashA1 = hex()
+const stepUpCompletionHashA2 = hex()
+const stepUpCompletionHashB = hex()
 const pinHmacA = hex()
 const pinHmacB = hex()
 const wrongPinHmacA = hex()
 const wrongPinHmacB = hex()
 const rotatedPinHmac = hex()
 const cleanupRotatedPinHmac = hex()
+const sessionDrainRotatedPinHmac = hex()
+const loginRaceNonceOld = hex()
+const loginRaceNonceNew = hex()
+const loginRacePrechallengeOld = hex()
+const loginRacePrechallengeNew = hex()
+const loginRaceCompletionJwt = hex()
+const loginRaceToken = hex()
+const policyValidFrom = new Date(Date.now() - 5 * 60_000).toISOString()
+const policyValidUntil = new Date(Date.now() + 24 * 60 * 60_000).toISOString()
 const networkRace = hex()
 const intentRace = hex()
 const networkA = hex()
@@ -103,6 +129,9 @@ const proof = Object.fromEntries(
     'nonceThree',
     'credentialThree',
     'challengeThree',
+    'nonceFour',
+    'credentialFour',
+    'challengeFour',
   ].map((name) => [name, hex()]),
 )
 const jwk = {
@@ -151,6 +180,88 @@ function runSql(sql) {
       else reject(new Error(stderr.trim() || `psql exited with ${code}`))
     })
   })
+}
+
+function startSqlUntilReady(sql, readyMarker) {
+  let resolveReady
+  let rejectReady
+  let readySettled = false
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+  const done = new Promise((resolve, reject) => {
+    const child = spawn(
+      'docker',
+      [
+        'exec',
+        '-i',
+        container,
+        'psql',
+        '-X',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-c',
+        sql,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let stdout = ''
+    let stderr = ''
+    const observeReady = (chunk) => {
+      if (!readySettled && chunk.includes(readyMarker)) {
+        readySettled = true
+        resolveReady()
+      }
+    }
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      observeReady(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      observeReady(chunk)
+    })
+    child.on('error', (error) => {
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+    child.on('exit', (code) => {
+      if (code === 0) {
+        if (!readySettled) {
+          const error = new Error(
+            `psql exited before readiness marker ${readyMarker}: ${stdout.trim()}`,
+          )
+          readySettled = true
+          rejectReady(error)
+          reject(error)
+          return
+        }
+        resolve()
+        return
+      }
+      const error = new Error(
+        stderr.trim() ||
+          stdout.trim() ||
+          `psql exited with ${code} before ${readyMarker}`,
+      )
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+  })
+  return { ready, done }
 }
 
 const transactionSettings = `
@@ -202,6 +313,61 @@ const recordAfterReadyServiceResult = (scenario, readyScenario, expression) =>
     from outcome;
   `)
 
+const seedControlGrant = async (
+  adminSessionId,
+  action,
+  requestId,
+  intentDigestExpression,
+) => {
+  const nonceId = randomUUID()
+  const grantId = randomUUID()
+  const nonceHash = hex()
+  const prechallengeHash = hex()
+  const completionHash = hex()
+  await runSql(`
+    insert into private.admin_control_step_up_nonces (
+      id, nonce_hash, environment_id, principal_id, membership_id,
+      admin_session_id, supabase_auth_session_id,
+      verified_totp_factor_set_hash, intended_action, intent_digest,
+      mutation_request_id,
+      prechallenge_jwt_hash, min_amr_at, issued_at, expires_at,
+      status, consumed_at, completed_grant_id
+    )
+    select
+      ${literal(nonceId)}::uuid, ${literal(nonceHash)}, session.environment_id,
+      session.principal_id, session.membership_id, session.id,
+      session.supabase_auth_session_id, session.verified_totp_factor_set_hash,
+      ${literal(action)}, ${intentDigestExpression}, ${literal(requestId)}::uuid,
+      ${literal(prechallengeHash)}, statement_timestamp() - interval '1 minute',
+      statement_timestamp() - interval '1 minute',
+      statement_timestamp() + interval '4 minutes', 'consumed',
+      statement_timestamp(), ${literal(grantId)}::uuid
+    from public.admin_sessions as session
+    where session.id = ${literal(adminSessionId)}::uuid;
+
+    insert into private.admin_control_step_up_grants (
+      id, source_kind, control_nonce_id, environment_id, principal_id,
+      membership_id, admin_session_id, supabase_auth_session_id,
+      verified_totp_factor_set_hash, intended_action, intent_digest,
+      mutation_request_id,
+      prechallenge_jwt_hash, completion_jwt_hash, min_amr_at,
+      verified_totp_amr_at, issued_at, expires_at
+    )
+    select
+      ${literal(grantId)}::uuid, 'control', ${literal(nonceId)}::uuid,
+      session.environment_id, session.principal_id, session.membership_id,
+      session.id, session.supabase_auth_session_id,
+      session.verified_totp_factor_set_hash, ${literal(action)},
+      ${intentDigestExpression},
+      ${literal(requestId)}::uuid, ${literal(prechallengeHash)},
+      ${literal(completionHash)}, statement_timestamp() - interval '1 minute',
+      statement_timestamp() - interval '1 minute', statement_timestamp(),
+      statement_timestamp() + interval '4 minutes'
+    from public.admin_sessions as session
+    where session.id = ${literal(adminSessionId)}::uuid;
+  `)
+}
+
 await runSql(`
   do $$
   begin
@@ -249,6 +415,18 @@ await runSql(`
     (${literal(id.authSessionA2)}::uuid, ${literal(id.authUserA)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour'),
     (${literal(id.authSessionB)}::uuid, ${literal(id.authUserB)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour');
 
+  insert into auth.mfa_factors (
+    id, user_id, friendly_name, factor_type, status, created_at, updated_at
+  ) values
+    (${literal(id.mfaFactorA)}::uuid, ${literal(id.authUserA)}::uuid,
+      'phase730b2-concurrency-a', 'totp', 'verified',
+      statement_timestamp() - interval '1 hour',
+      statement_timestamp() - interval '1 hour'),
+    (${literal(id.mfaFactorB)}::uuid, ${literal(id.authUserB)}::uuid,
+      'phase730b2-concurrency-b', 'totp', 'verified',
+      statement_timestamp() - interval '1 hour',
+      statement_timestamp() - interval '1 hour');
+
   insert into private.admin_environments (
     id, environment_kind, canonical_admin_origin, supabase_issuer,
     current_deployment
@@ -277,24 +455,58 @@ await runSql(`
       owner_invariant_enforced_at = statement_timestamp()
   where id = ${literal(id.environment)}::uuid;
 
+  update private.admin_principals
+  set
+    approved_totp_factor_set_hash =
+      private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid),
+    approved_totp_factor_set_version = 1,
+    approved_totp_factor_count = 1,
+    approved_totp_factor_set_at = statement_timestamp(),
+    approved_totp_factor_set_request_id = ${literal(id.anchorRequestA)}::uuid,
+    approved_totp_factor_set_source = 'operator_adoption',
+    approved_totp_factor_set_actor = 'fixture:phase7_30b2_concurrency',
+    approved_totp_factor_set_reason = 'latest_schema_direct_session_fixture'
+  where id = ${literal(id.principalA)}::uuid;
+  update private.admin_principals
+  set
+    approved_totp_factor_set_hash =
+      private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserB)}::uuid),
+    approved_totp_factor_set_version = 1,
+    approved_totp_factor_count = 1,
+    approved_totp_factor_set_at = statement_timestamp(),
+    approved_totp_factor_set_request_id = ${literal(id.anchorRequestB)}::uuid,
+    approved_totp_factor_set_source = 'operator_adoption',
+    approved_totp_factor_set_actor = 'fixture:phase7_30b2_concurrency',
+    approved_totp_factor_set_reason = 'latest_schema_direct_session_fixture'
+  where id = ${literal(id.principalB)}::uuid;
+
   insert into private.admin_step_up_nonces (
     id, nonce_hash, reserved_admin_session_id, environment_id, principal_id,
     membership_id, supabase_auth_session_id, intended_action, request_id,
-    prechallenge_jwt_hash, min_amr_at, issued_at, expires_at
+    prechallenge_jwt_hash, min_amr_at, challenged_totp_factor_id,
+    prechallenge_verified_totp_factor_set_hash,
+    verified_totp_factor_set_hash, factor_set_bootstrap_allowed,
+    approved_totp_factor_set_version, completion_jwt_hash,
+    verified_totp_amr_at, issued_at, expires_at
   ) values
-    (${literal(id.stepUpNonceA1)}::uuid, ${literal(stepUpNonceHashA1)}, ${literal(id.adminSessionA1)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA1)}::uuid, 'admin_login', ${literal(id.stepUpRequestA1)}::uuid, ${literal(stepUpPrechallengeHashA1)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes'),
-    (${literal(id.stepUpNonceA2)}::uuid, ${literal(stepUpNonceHashA2)}, ${literal(id.adminSessionA2)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA2)}::uuid, 'admin_login', ${literal(id.stepUpRequestA2)}::uuid, ${literal(stepUpPrechallengeHashA2)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes'),
-    (${literal(id.stepUpNonceB)}::uuid, ${literal(stepUpNonceHashB)}, ${literal(id.adminSessionB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.authSessionB)}::uuid, 'admin_login', ${literal(id.stepUpRequestB)}::uuid, ${literal(stepUpPrechallengeHashB)}, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() - interval '55 minutes');
+    (${literal(id.stepUpNonceA1)}::uuid, ${literal(stepUpNonceHashA1)}, ${literal(id.adminSessionA1)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA1)}::uuid, 'admin_login', ${literal(id.stepUpRequestA1)}::uuid, ${literal(stepUpPrechallengeHashA1)}, statement_timestamp() - interval '1 minute', ${literal(id.mfaFactorA)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), false, 1, ${literal(stepUpCompletionHashA1)}, statement_timestamp(), statement_timestamp() - interval '1 minute', statement_timestamp() + interval '4 minutes'),
+    (${literal(id.stepUpNonceA2)}::uuid, ${literal(stepUpNonceHashA2)}, ${literal(id.adminSessionA2)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.authSessionA2)}::uuid, 'admin_login', ${literal(id.stepUpRequestA2)}::uuid, ${literal(stepUpPrechallengeHashA2)}, statement_timestamp() - interval '1 minute', ${literal(id.mfaFactorA)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), false, 1, ${literal(stepUpCompletionHashA2)}, statement_timestamp(), statement_timestamp() - interval '1 minute', statement_timestamp() + interval '4 minutes'),
+    (${literal(id.stepUpNonceB)}::uuid, ${literal(stepUpNonceHashB)}, ${literal(id.adminSessionB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.authSessionB)}::uuid, 'admin_login', ${literal(id.stepUpRequestB)}::uuid, ${literal(stepUpPrechallengeHashB)}, statement_timestamp() - interval '1 minute', ${literal(id.mfaFactorB)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserB)}::uuid), private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserB)}::uuid), false, 1, ${literal(stepUpCompletionHashB)}, statement_timestamp(), statement_timestamp() - interval '1 minute', statement_timestamp() + interval '4 minutes');
+
+  update private.admin_identity_runtime_gate
+  set google_session_issue_enabled = true
+  where singleton;
 
   insert into public.admin_sessions (
     id, token_hash, auth_user_id, pin_version_hash, authentication_method, aal,
     principal_id, membership_id, environment_id, supabase_auth_session_id,
-    step_up_verified_at, step_up_nonce_id, issued_at, last_seen_at,
+    step_up_verified_at, step_up_nonce_id, verified_totp_factor_set_hash,
+    issued_at, last_seen_at,
     idle_expires_at, expires_at
   ) values
-    (${literal(id.adminSessionA1)}::uuid, ${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA1)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceA1)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
-    (${literal(id.adminSessionA2)}::uuid, ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA2)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceA2)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
-    (${literal(id.adminSessionB)}::uuid, ${literal(tokenB)}, ${literal(id.authUserB)}::uuid, null, 'google_totp', 2, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionB)}::uuid, statement_timestamp() - interval '1 hour', ${literal(id.stepUpNonceB)}::uuid, statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours');
+    (${literal(id.adminSessionA1)}::uuid, ${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA1)}::uuid, statement_timestamp(), ${literal(id.stepUpNonceA1)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
+    (${literal(id.adminSessionA2)}::uuid, ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, null, 'google_totp', 2, ${literal(id.principalA)}::uuid, ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionA2)}::uuid, statement_timestamp(), ${literal(id.stepUpNonceA2)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserA)}::uuid), statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours'),
+    (${literal(id.adminSessionB)}::uuid, ${literal(tokenB)}, ${literal(id.authUserB)}::uuid, null, 'google_totp', 2, ${literal(id.principalB)}::uuid, ${literal(id.membershipB)}::uuid, ${literal(id.environment)}::uuid, ${literal(id.authSessionB)}::uuid, statement_timestamp(), ${literal(id.stepUpNonceB)}::uuid, private.current_verified_totp_factor_set_hash_v1(${literal(id.authUserB)}::uuid), statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour', statement_timestamp() + interval '12 hours', statement_timestamp() + interval '12 hours');
 
   update private.admin_step_up_nonces
   set
@@ -319,6 +531,169 @@ await runSql(`
   update private.admin_ai_unlock_runtime_gate
   set ai_unlock_enabled = true, remembered_browser_enabled = true
   where singleton;
+  update private.admin_identity_runtime_gate
+  set google_session_issue_enabled = true
+  where singleton;
+`)
+
+await runSql(
+  asServiceRole(`
+    do $$
+    begin
+      if public.begin_admin_totp_step_up_v2(
+        ${literal(id.environment)}::uuid,
+        ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA1)}::uuid,
+        ${literal(id.mfaFactorA)}::uuid,
+        ${literal(loginRaceNonceOld)},
+        ${literal(id.loginRaceReservedOld)}::uuid,
+        ${literal(loginRacePrechallengeOld)},
+        ${literal(id.loginRaceRequestOld)}::uuid
+      ) is null then
+        raise exception 'could not seed login begin/complete lock-order race';
+      end if;
+    end;
+    $$;
+  `),
+)
+
+const loginBeginLockOrder = startSqlUntilReady(
+  `
+    begin;
+    ${transactionSettings}
+    select id
+    from private.admin_principals
+    where id = ${literal(id.principalA)}::uuid
+    for update;
+    select id
+    from private.admin_environment_memberships
+    where id = ${literal(id.membershipA)}::uuid
+    for update;
+    do $$
+    begin
+      raise notice 'PHASE730B22A_LOGIN_BEGIN_LOCKS_READY';
+    end;
+    $$;
+    do $$
+    declare
+      wait_started_at timestamptz := clock_timestamp();
+    begin
+      while not exists (
+        select 1
+        from public.phase7_30b2_concurrency_results
+        where scenario = 'login-begin-lock-order-release'
+      ) loop
+        if clock_timestamp() > wait_started_at + interval '10 seconds' then
+          raise exception 'timed out waiting to release login begin locks';
+        end if;
+        perform pg_sleep(0.01);
+      end loop;
+    end;
+    $$;
+    with outcome as (
+      select public.begin_admin_totp_step_up_v2(
+        ${literal(id.environment)}::uuid,
+        ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA1)}::uuid,
+        ${literal(id.mfaFactorA)}::uuid,
+        ${literal(loginRaceNonceNew)},
+        ${literal(id.loginRaceReservedNew)}::uuid,
+        ${literal(loginRacePrechallengeNew)},
+        ${literal(id.loginRaceRequestNew)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'login-begin-lock-order', to_jsonb(outcome.value)
+    from outcome;
+    commit;
+  `,
+  'PHASE730B22A_LOGIN_BEGIN_LOCKS_READY',
+)
+await loginBeginLockOrder.ready
+const loginCompleteLockOrder = runSql(
+  asServiceRole(`
+    set local application_name = 'phase730b22a-login-complete-waiter';
+    with outcome as (
+      select coalesce(
+        public.complete_admin_totp_step_up_v1(
+          ${literal(loginRaceNonceOld)},
+          ${literal(id.authUserA)}::uuid,
+          ${literal(id.authSessionA1)}::uuid,
+          2,
+          ${literal(loginRaceCompletionJwt)},
+          statement_timestamp(),
+          'totp',
+          statement_timestamp(),
+          ${literal(loginRaceToken)},
+          null,
+          null,
+          ${literal(id.loginRaceCompletionRequest)}::uuid
+        ),
+        '{"status":"rejected"}'::jsonb
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'login-complete-lock-order', to_jsonb(outcome.value)
+    from outcome;
+  `),
+)
+await runSql(`
+  do $$
+  declare
+    wait_started_at timestamptz := clock_timestamp();
+  begin
+    while not exists (
+      select 1
+      from pg_stat_activity
+      where application_name = 'phase730b22a-login-complete-waiter'
+        and wait_event_type = 'Lock'
+    ) loop
+      if clock_timestamp() > wait_started_at + interval '10 seconds' then
+        raise exception 'login complete did not reach the principal lock barrier';
+      end if;
+      perform pg_sleep(0.01);
+    end loop;
+  end;
+  $$;
+
+  begin;
+  select id
+  from private.admin_step_up_nonces
+  where reserved_admin_session_id = ${literal(id.loginRaceReservedOld)}::uuid
+  for update nowait;
+  rollback;
+
+  insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+  values ('login-begin-lock-order-release', 'true'::jsonb);
+`)
+await Promise.all([loginBeginLockOrder.done, loginCompleteLockOrder])
+
+await runSql(`
+  do $$
+  begin
+    if (select outcome ->> 'reserved_admin_session_id'
+        from public.phase7_30b2_concurrency_results
+        where scenario = 'login-begin-lock-order') <>
+         ${literal(id.loginRaceReservedNew)}
+       or (select outcome ->> 'status'
+           from public.phase7_30b2_concurrency_results
+           where scenario = 'login-complete-lock-order') <> 'rejected'
+       or not exists (
+         select 1 from private.admin_step_up_nonces
+         where reserved_admin_session_id =
+           ${literal(id.loginRaceReservedOld)}::uuid
+           and status = 'superseded'
+       )
+       or not exists (
+         select 1 from private.admin_step_up_nonces
+         where reserved_admin_session_id =
+           ${literal(id.loginRaceReservedNew)}::uuid
+           and status = 'pending'
+       ) then
+      raise exception 'login begin/complete two-transaction lock order did not converge';
+    end if;
+  end;
+  $$;
 `)
 
 const metadataExpression = (
@@ -382,8 +757,17 @@ const policyExpression = (token, authSession, requestId) => `
     ${literal(id.membershipA)}::uuid,
     array['academic_answers']::text[], array['test-model']::text[],
     10, 100, 10000, 100000, 10000, 100000, 1000000, 10000000,
-    0, 0, 2, statement_timestamp() - interval '1 minute',
-    statement_timestamp() + interval '1 day', ${literal(requestId)}::uuid
+    0, 0, 2, ${literal(policyValidFrom)}::timestamptz,
+    ${literal(policyValidUntil)}::timestamptz, ${literal(requestId)}::uuid
+  )
+`
+const policyIntentDigestExpression = `
+  private.admin_ai_policy_control_intent_digest_v1(
+    ${literal(id.membershipA)}::uuid,
+    array['academic_answers']::text[], array['test-model']::text[],
+    10, 100, 10000, 100000, 10000, 100000, 1000000, 10000000,
+    0, 0, 2, ${literal(policyValidFrom)}::timestamptz,
+    ${literal(policyValidUntil)}::timestamptz
   )
 `
 const policyCall = (token, authSession, requestId) =>
@@ -422,6 +806,20 @@ await runSql(`
     ${literal(id.adminSessionA2)}::uuid
   );
 `)
+await Promise.all([
+  seedControlGrant(
+    id.adminSessionA1,
+    'environment_ai_policy_change',
+    id.policyRequestA,
+    policyIntentDigestExpression,
+  ),
+  seedControlGrant(
+    id.adminSessionA2,
+    'environment_ai_policy_change',
+    id.policyRequestB,
+    policyIntentDigestExpression,
+  ),
+])
 await Promise.all([
   runSql(policyCall(tokenA1, id.authSessionA1, id.policyRequestA)),
   runSql(policyCall(tokenA2, id.authSessionA2, id.policyRequestB)),
@@ -788,6 +1186,12 @@ await runSql(`
     ${literal(id.adminSessionA2)}::uuid
   );
 `)
+await seedControlGrant(
+  id.adminSessionA2,
+  'ai_pin_rotate',
+  id.rotationRequest,
+  `private.admin_ai_pin_control_intent_digest_v1('ai_pin_rotate', 2, ${literal(rotatedPinHmac)})`,
+)
 await Promise.all([
   runSql(
     recordServiceResult(
@@ -808,11 +1212,19 @@ await Promise.all([
       `public.enroll_admin_ai_pin_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid, ${literal(rotatedPinHmac)}, 2, ${literal(id.rotationRequest)}::uuid)`,
     ),
   ),
+  runSql(
+    recordDelayedServiceResult(
+      'rotation-factor-retry',
+      `public.enroll_admin_ai_pin_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid, ${literal(rotatedPinHmac)}, 2, ${literal(id.rotationRequest)}::uuid)`,
+    ),
+  ),
 ])
 await runSql(`
   do $$
   begin
     if (select outcome ->> 'factor_version' from public.phase7_30b2_concurrency_results where scenario = 'rotation-factor') <> '2'
+       or (select outcome from public.phase7_30b2_concurrency_results where scenario = 'rotation-factor')
+          is distinct from (select outcome from public.phase7_30b2_concurrency_results where scenario = 'rotation-factor-retry')
        or (select outcome ->> 'available' from public.phase7_30b2_concurrency_results where scenario = 'rotation-metadata') <> 'true'
        or (select (outcome ->> 'factor_version')::integer from public.phase7_30b2_concurrency_results where scenario = 'rotation-metadata') not in (1, 2)
        or (select count(*) from private.admin_ai_unlock_factors where environment_id = ${literal(id.environment)}::uuid and membership_id = ${literal(id.membershipA)}::uuid and status = 'active' and factor_version = 2 and pin_pepper_version = 2) <> 1 then
@@ -831,7 +1243,27 @@ await runSql(`
   set search_path = ''
   as $$
   begin
-    if old.id in (${literal(id.challengeOne)}::uuid, ${literal(id.challengeTwo)}::uuid, ${literal(id.challengeThree)}::uuid)
+    if old.id = ${literal(id.challengeFour)}::uuid
+       and old.status = 'pending'
+       and new.status <> 'pending' then
+      -- UPDATE already owns the assertion row when the BEFORE ROW trigger runs.
+      -- Hold that exact lock until the other transaction is observed waiting.
+      raise notice 'PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY';
+      declare
+        wait_started_at timestamptz := clock_timestamp();
+      begin
+        while not exists (
+          select 1
+          from public.phase7_30b2_concurrency_results
+          where scenario = 'session-factor-assertion-lock-release'
+        ) loop
+          if clock_timestamp() > wait_started_at + interval '10 seconds' then
+            raise exception 'timed out waiting to release assertion lock';
+          end if;
+          perform pg_catalog.pg_sleep(0.01);
+        end loop;
+      end;
+    elsif old.id in (${literal(id.challengeOne)}::uuid, ${literal(id.challengeTwo)}::uuid, ${literal(id.challengeThree)}::uuid)
        and old.status = 'pending'
        and new.status <> 'pending' then
       perform pg_catalog.pg_sleep(0.40);
@@ -853,6 +1285,7 @@ const expiredBrowserFixture = (
   nonceHash,
   credentialHash,
   challengeHash,
+  adminSessionId = id.adminSessionA1,
 ) => `
   -- The nonce remains pending on purpose. Credential expiry/self-revoke drains
   -- only credential-derived assertions, so cleanup later marks this nonce
@@ -866,7 +1299,7 @@ const expiredBrowserFixture = (
   )
   select ${literal(enrollmentId)}::uuid, ${literal(nonceHash)}, ${literal(credentialId)}::uuid,
     ${literal(credentialHash)}, factor.environment_id, factor.principal_id,
-    factor.membership_id, ${literal(id.adminSessionA1)}::uuid, factor.id,
+    factor.membership_id, ${literal(adminSessionId)}::uuid, factor.id,
     factor.factor_version, statement_timestamp() - interval '1 hour',
     'http://127.0.0.1:5173', ${literal(jwkFingerprint)},
     statement_timestamp() - interval '1 day', ${literal(randomUUID())}::uuid,
@@ -884,7 +1317,7 @@ const expiredBrowserFixture = (
   select ${literal(credentialId)}::uuid, ${literal(credentialHash)}, factor.environment_id,
     factor.principal_id, factor.membership_id, factor.id, factor.factor_version,
     'http://127.0.0.1:5173', ${literal(JSON.stringify(jwk))}::jsonb,
-    ${literal(jwkFingerprint)}, ${literal(id.adminSessionA1)}::uuid,
+    ${literal(jwkFingerprint)}, ${literal(adminSessionId)}::uuid,
     ${literal(enrollmentId)}::uuid, statement_timestamp() - interval '2 days',
     statement_timestamp() - interval '1 day'
   from private.admin_ai_unlock_factors as factor
@@ -898,7 +1331,7 @@ const expiredBrowserFixture = (
   )
   select ${literal(challengeId)}::uuid, ${literal(challengeHash)}, ${literal(credentialId)}::uuid,
     factor.environment_id, factor.principal_id, factor.membership_id,
-    ${literal(id.adminSessionA1)}::uuid, factor.id, factor.factor_version,
+    ${literal(adminSessionId)}::uuid, factor.id, factor.factor_version,
     ${literal(id.lecture)}::uuid, 'all_except_captions', policy.id, policy.version,
     'http://127.0.0.1:5173', ${literal(randomUUID())}::uuid,
     statement_timestamp() - interval '2 days',
@@ -918,6 +1351,12 @@ await runSql(
     proof.credentialOne,
     proof.challengeOne,
   ),
+)
+await seedControlGrant(
+  id.adminSessionA2,
+  'ai_pin_rotate',
+  id.cleanupFactorRequest,
+  `private.admin_ai_pin_control_intent_digest_v1('ai_pin_rotate', 3, ${literal(cleanupRotatedPinHmac)})`,
 )
 await Promise.all([
   runSql(
@@ -949,7 +1388,7 @@ await runSql(`
        -- membership try-lock, so either safe terminal reason is deterministic.
        or not exists (select 1 from private.admin_ai_browser_enrollment_nonces where id = ${literal(id.enrollmentOne)}::uuid and status in ('expired', 'superseded'))
        or not exists (select 1 from private.admin_ai_browser_assertion_challenges where id = ${literal(id.challengeOne)}::uuid and status in ('expired', 'superseded'))
-       or (select count(*) from private.admin_audit_events where request_id in (${literal(id.cleanupRotationRequest)}::uuid, ${literal(id.cleanupFactorRequest)}::uuid)) <> 2 then
+       or (select count(*) from private.admin_audit_events where request_id in (${literal(id.cleanupRotationRequest)}::uuid, ${literal(id.cleanupFactorRequest)}::uuid)) <> 3 then
       raise exception 'cleanup/rotation two-transaction race did not converge to one exact terminalizer';
     end if;
   end;
@@ -1050,6 +1489,160 @@ await runSql(`
     end if;
   end;
   $$;
+`)
+
+await runSql(
+  expiredBrowserFixture(
+    id.enrollmentFour,
+    id.credentialFour,
+    id.challengeFour,
+    proof.nonceFour,
+    proof.credentialFour,
+    proof.challengeFour,
+    id.adminSessionA2,
+  ),
+)
+await seedControlGrant(
+  id.adminSessionA1,
+  'ai_pin_rotate',
+  id.sessionDrainRotationRequest,
+  `private.admin_ai_pin_control_intent_digest_v1('ai_pin_rotate', 4, ${literal(sessionDrainRotatedPinHmac)})`,
+)
+const sessionFactorRotation = startSqlUntilReady(
+  recordServiceResult(
+      'session-drain-factor-rotation',
+      `public.enroll_admin_ai_pin_v1(${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA1)}::uuid, ${literal(sessionDrainRotatedPinHmac)}, 4, ${literal(id.sessionDrainRotationRequest)}::uuid)`,
+  ),
+  'PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY',
+)
+await sessionFactorRotation.ready
+const sessionSelfRevoke = runSql(
+  asServiceRole(`
+    set local application_name = 'phase730b22a-session-revoke-waiter';
+    with outcome as (
+      select public.revoke_own_google_admin_session_v1(
+        ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA2)}::uuid,
+        ${literal(id.sessionDrainRevokeRequest)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'session-drain-self-revoke', to_jsonb(outcome.value)
+    from outcome;
+  `),
+)
+await runSql(`
+  do $$
+  declare
+    wait_started_at timestamptz := clock_timestamp();
+  begin
+    while not exists (
+      select 1
+      from pg_stat_activity
+      where application_name = 'phase730b22a-session-revoke-waiter'
+        and wait_event_type = 'Lock'
+    ) loop
+      if clock_timestamp() > wait_started_at + interval '10 seconds' then
+        raise exception 'session revoke did not reach the assertion lock barrier';
+      end if;
+      perform pg_sleep(0.01);
+    end loop;
+  end;
+  $$;
+
+  begin;
+  select id
+  from private.admin_ai_browser_enrollment_nonces
+  where id = ${literal(id.enrollmentFour)}::uuid
+  for update nowait;
+  rollback;
+
+  insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+  values ('session-factor-assertion-lock-release', 'true'::jsonb);
+`)
+await Promise.all([sessionFactorRotation.done, sessionSelfRevoke])
+await runSql(`
+  do $$
+  begin
+    if (select outcome ->> 'factor_version'
+        from public.phase7_30b2_concurrency_results
+        where scenario = 'session-drain-factor-rotation') <> '4'
+       or (select outcome
+           from public.phase7_30b2_concurrency_results
+           where scenario = 'session-drain-self-revoke') <> 'true'::jsonb
+       or not exists (
+         select 1 from public.admin_sessions
+         where id = ${literal(id.adminSessionA2)}::uuid
+           and revoke_reason = 'self_logout'
+           and revoked_at is not null
+       )
+       or not exists (
+         select 1 from private.admin_ai_browser_assertion_challenges
+         where id = ${literal(id.challengeFour)}::uuid
+           and status = 'superseded'
+       )
+       or not exists (
+         select 1 from private.admin_ai_browser_enrollment_nonces
+         where id = ${literal(id.enrollmentFour)}::uuid
+           and status = 'superseded'
+       ) then
+      raise exception 'session revoke/factor drain two-transaction lock order did not converge';
+    end if;
+  end;
+  $$;
+
+
+  insert into private.admin_control_step_up_nonces (
+    nonce_hash, environment_id, principal_id, membership_id, admin_session_id,
+    supabase_auth_session_id, verified_totp_factor_set_hash, intended_action,
+    intent_digest, mutation_request_id, prechallenge_jwt_hash, min_amr_at,
+    expires_at
+  )
+  select ${literal(hex())}, session.environment_id, session.principal_id,
+    session.membership_id, session.id, session.supabase_auth_session_id,
+    session.verified_totp_factor_set_hash, 'ai_pin_reset',
+    ${literal(hex())}, ${literal(randomUUID())}::uuid, ${literal(hex())},
+    statement_timestamp(),
+    statement_timestamp() + interval '5 minutes'
+  from public.admin_sessions as session
+  where session.id = ${literal(id.adminSessionA1)}::uuid;
+
+  insert into auth.mfa_factors (
+    id, user_id, friendly_name, factor_type, status, created_at, updated_at
+  ) values (
+    ${literal(randomUUID())}::uuid, ${literal(id.authUserA)}::uuid,
+    'phase730b22a-factor-change', 'totp', 'verified',
+    statement_timestamp(), statement_timestamp()
+  );
+`)
+
+await Promise.all([
+  runSql(
+    recordServiceResult(
+      'factor-reconcile',
+      `public.reconcile_admin_totp_factor_set_v1(${literal(id.authUserA)}::uuid, ${literal(randomUUID())}::uuid)`,
+    ),
+  ),
+  runSql(
+    recordDelayedServiceResult(
+      'factor-touch-race',
+      `public.verify_and_touch_google_admin_session_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid)`,
+    ),
+  ),
+])
+
+await runSql(`
+  do $$
+  begin
+    if (select outcome ->> 'revoked_sessions' from public.phase7_30b2_concurrency_results where scenario = 'factor-reconcile') <> '1'
+       or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionA1)}::uuid and revoked_at is not null and revoke_reason = 'totp_factor_set_changed') <> 1
+       or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionA2)}::uuid and revoked_at is not null and revoke_reason = 'self_logout') <> 1
+       or (select count(*) from public.admin_sessions where id = ${literal(id.adminSessionB)}::uuid and revoked_at is null) <> 1
+       or exists (select 1 from private.admin_control_step_up_nonces where admin_session_id = ${literal(id.adminSessionA1)}::uuid and status = 'pending') then
+      raise exception 'factor reconciliation/session touch race did not converge to stale-session drain';
+    end if;
+  end;
+  $$;
 
   drop trigger phase7_30b2_concurrency_child_delay
     on private.admin_ai_browser_assertion_challenges;
@@ -1058,5 +1651,5 @@ await runSql(`
 `)
 
 console.log(
-  'Phase 7.30B2 exact request, DB step-up, bounded bcrypt, independent-rate, owner DELETE, cleanup/rotation, cleanup/revoke and cleaner/cleaner races converged without deadlock.',
+  'Phase 7.30B2/B2.2a exact request, single-use control, factor reconciliation, bounded bcrypt, independent-rate, owner DELETE and cleanup races converged without deadlock.',
 )

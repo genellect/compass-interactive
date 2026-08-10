@@ -328,9 +328,30 @@ cleanup is
 bounded, `SKIP LOCKED`, nonblocking by membership and returns `has_more` for
 convergence.
 
-The B2 source/static contract is implemented. From-zero migration, all pgTAP,
+Phase 7.30B2.2a adds `verified_totp_factor_set_hash` to Google/TOTP Admin
+sessions, an approved hash/version/count plus bounded approval provenance to
+`private.admin_principals`, a separate default-OFF operator-adoption gate, and
+two more RLS-enabled private tables:
+
+| Table                          | Responsibility                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `admin_control_step_up_nonces` | Digest-only five-minute action/request/session/factor-set/JWT/AMR and canonical-intent challenge state |
+| `admin_control_step_up_grants` | Single-use rare PIN/policy authority; exact canonical intent is rederived by the mutation transaction  |
+
+Existing Google sessions are reason-revoked with
+`totp_factor_set_migration`; the migration infers neither a session hash nor a
+principal approval. Initial `pending_mfa` 0-to-1 setup approves the exact
+singleton only inside fresh completion. Existing verified sets require the
+Edge-unwired operator-adoption RPC while its own gate is ON and issuance is OFF.
+New sessions require approved/live/session equality and completed nonce JWT/AMR
+evidence. PIN revoke/reset/profile and factor reconciliation are service-role-
+only invoker wrappers. The old PIN-enroll and policy function signatures are
+replaced by grant-enforcing facades, while the renamed bodies have no executable
+privilege.
+
+The B2/B2.2a source/static contract is implemented. From-zero migration, all pgTAP,
 real database concurrency, populated Phase 7.29/B1 upgrade, generated types and
 DB lint remain exact-head CI verification requirements. Edge raw-PIN/HMAC,
-actual browser key/signature verification, TOTP factor-set fingerprint, unified
+actual browser key/signature verification, unified
 Admin authorization, lecture ownership, atomic master issuance and Hosted/
 Human activation are not database-schema claims of this phase.

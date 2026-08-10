@@ -14,6 +14,7 @@ const studentStorageSentinelKey = 'compass-phase730-student-sentinel'
 const studentSessionSentinelKey = 'compass-phase730-student-session-sentinel'
 const callbackCode = 'phase730-playwright-google-code'
 const factorId = '73000000-0000-4000-8000-000000000003'
+const abandonedFactorId = '73000000-0000-4000-8000-000000000006'
 const challengeId = '73000000-0000-4000-8000-000000000004'
 const appSessionToken = `g1.${'a'.repeat(43)}`
 
@@ -73,19 +74,22 @@ function sessionJwt(aal: 'aal1' | 'aal2', subject: string) {
   ].join('.')
 }
 
-function factor(status: 'unverified' | 'verified') {
+function factor(
+  status: 'unverified' | 'verified',
+  id = factorId,
+) {
   const now = new Date().toISOString()
   return {
     created_at: now,
     factor_type: 'totp',
     friendly_name: 'COMPASS Interactive Admin',
-    id: factorId,
+    id,
     status,
     updated_at: now,
   }
 }
 
-function googleUser(verified: boolean) {
+function googleUser(verified: boolean, includeAbandonedFactor = false) {
   const now = new Date().toISOString()
   const id = '73000000-0000-4000-8000-000000000001'
   const googleSubject = 'phase730-google-subject'
@@ -96,7 +100,14 @@ function googleUser(verified: boolean) {
     created_at: now,
     email: 'educator@example.test',
     email_confirmed_at: now,
-    factors: verified ? [factor('verified')] : [],
+    factors: verified
+      ? [
+          factor('verified'),
+          ...(includeAbandonedFactor
+            ? [factor('unverified', abandonedFactorId)]
+            : []),
+        ]
+      : [],
     id,
     identities: [
       {
@@ -126,8 +137,14 @@ function googleUser(verified: boolean) {
   }
 }
 
-function authSession(aal: 'aal1' | 'aal2') {
-  const user = googleUser(aal === 'aal2')
+function authSession(
+  aal: 'aal1' | 'aal2',
+  options: { includeAbandonedFactor?: boolean; verified?: boolean } = {},
+) {
+  const user = googleUser(
+    options.verified ?? aal === 'aal2',
+    options.includeAbandonedFactor,
+  )
   const nowSeconds = Math.floor(Date.now() / 1_000)
   return {
     access_token: sessionJwt(aal, user.id),
@@ -251,9 +268,19 @@ async function installBroadcastCapture(page: Page) {
   })
 }
 
-async function installNetworkMocks(page: Page, studentAccessToken: string) {
-  const aal1Session = authSession('aal1')
-  const aal2Session = authSession('aal2')
+async function installNetworkMocks(
+  page: Page,
+  studentAccessToken: string,
+  options: { includeAbandonedFactor?: boolean; initialVerified?: boolean } = {},
+) {
+  const aal1Session = authSession('aal1', {
+    includeAbandonedFactor: options.includeAbandonedFactor,
+    verified: options.initialVerified,
+  })
+  const aal2Session = authSession('aal2', {
+    includeAbandonedFactor: options.includeAbandonedFactor,
+    verified: true,
+  })
   const state: MockState = {
     anonymousRequests: 0,
     authorizeQueries: [],
@@ -263,7 +290,7 @@ async function installNetworkMocks(page: Page, studentAccessToken: string) {
     factorVerifyBodies: [],
     pkceBodies: [],
     unexpectedRequests: [],
-    verified: false,
+    verified: options.initialVerified ?? false,
   }
 
   await page.route('https://example.supabase.co/**', async (route) => {
@@ -321,7 +348,10 @@ async function installNetworkMocks(page: Page, studentAccessToken: string) {
         return
       }
       if (url.pathname === '/auth/v1/user' && request.method() === 'GET') {
-        await fulfillJson(route, googleUser(state.verified))
+        await fulfillJson(
+          route,
+          googleUser(state.verified, options.includeAbandonedFactor),
+        )
         return
       }
       if (url.pathname === '/auth/v1/factors' && request.method() === 'POST') {
@@ -390,6 +420,11 @@ async function installNetworkMocks(page: Page, studentAccessToken: string) {
         return
       }
       if (action === 'beginStepUp') {
+        if (body.challengedFactorId !== factorId) {
+          state.unexpectedRequests.push('beginStepUp factor binding mismatch')
+          await fulfillJson(route, { code: 'request_invalid' }, 400)
+          return
+        }
         await fulfillJson(route, {
           expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
           ok: true,
@@ -562,6 +597,10 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   expect(state.edgeCalls[0]?.authorization).toBe(`Bearer ${aal1AccessToken}`)
   expect(state.edgeCalls[1]?.authorization).toBe(`Bearer ${aal1AccessToken}`)
   expect(state.edgeCalls[2]?.authorization).toBe(`Bearer ${aal2AccessToken}`)
+  expect(state.edgeCalls[1]?.body).toEqual({
+    action: 'beginStepUp',
+    challengedFactorId: factorId,
+  })
 
   const storageAtReady = await page.evaluate(
     ({ adminAppSessionStorageKey, studentAuthStorageKey }) => ({
@@ -662,4 +701,44 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   ).toEqual([])
   expect(state.unexpectedRequests).toEqual([])
   expect(pageErrors).toEqual([])
+})
+
+test('uses the existing verified factor instead of an abandoned unverified factor', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { state } = await installNetworkMocks(page, student.accessToken, {
+    includeAbandonedFactor: true,
+    initialVerified: true,
+  })
+
+  await page.goto('/admin')
+  await page.locator('main .admin-identity-card button.primary-button').click()
+
+  const card = page.locator('main .admin-identity-card')
+  await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
+  await card.locator('input[autocomplete="one-time-code"]').fill('123456')
+  await card.locator('button[type="submit"]').click()
+  await expect(card.locator('.eyebrow')).toHaveText('IDENTITY READY')
+
+  expect(
+    state.authRequests.filter(
+      ({ method, pathname }) =>
+        method === 'POST' && pathname === '/auth/v1/factors',
+    ),
+  ).toEqual([])
+  expect(state.edgeCalls.find(({ action }) => action === 'beginStepUp')?.body)
+    .toEqual({
+      action: 'beginStepUp',
+      challengedFactorId: factorId,
+    })
+  expect(
+    state.edgeCalls.some(
+      ({ action, body }) =>
+        action === 'beginStepUp' &&
+        body.challengedFactorId === abandonedFactorId,
+    ),
+  ).toBe(false)
+  expect(state.unexpectedRequests).toEqual([])
 })

@@ -154,16 +154,25 @@ The current legacy source admits paid work with all of the following:
 
 Stop is intentionally easier than start and does not require the API-use PIN.
 
-Phase 7.30B2 implements the continuous-session lifetime/invalidation migration;
-Phase 7.30C completes its unified verifier across every operational Admin
+Phase 7.30B2 implements the continuous-session lifetime migration and B2.2a
+adds an approved TOTP factor-set trust anchor; Phase 7.30C completes its unified
+verifier across every operational Admin
 Edge/RPC path. Admin identity uses Google plus Supabase Authenticator App TOTP
 AAL2, compatible with Google Authenticator; there is no email MFA or custom MFA.
 The application session has no idle timeout or periodic TOTP prompt and is
 capped at the backing `auth.sessions.created_at + 8 hours`. B2 rejects logout,
 backing-session removal, principal/environment/membership invalidation or that
-cap in its database path. The final C-integrated verifier also ends the session
-on a verified TOTP factor-set change; B2 does not yet implement that
-fingerprint/version comparison. Role changes apply live; `can_use_ai=false`
+cap in its database path. B2.2a stores an approved hash/version/count on the
+Admin principal and issues a dormant Google Admin app session only when that
+anchor, the live verified set, the immutable session hash and completed
+post-challenge JWT/AMR nonce evidence agree. Missing or changed sets revoke the
+session and drain pending AI authority. Only an unbound `pending_mfa` principal
+with no verified factors may atomically approve the exact first factor during
+fresh completion. Existing verified but unbound sets require an Edge-unwired,
+default-OFF operator adoption while issuance is OFF; migration never infers an
+approval. Factor addition/replacement beside an approved set remains a B2.2b
+rare-control HOLD.
+Role changes apply live; `can_use_ai=false`
 drains AI authority without logging the teacher out.
 
 Paid intent becomes a personal AI PIN (or valid remembered-browser/future AI
@@ -172,7 +181,7 @@ escalation. Child starts do not re-prompt and still recheck lecture lifecycle,
 scope, policy, budget, concurrency and idempotency. AI-PIN rotation/revoke drains
 AI authority but preserves the Admin session. Five-minute fresh TOTP is limited
 to owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
-global-revoke and AI PIN factor enrollment/rotation/reset control-plane changes.
+global-revoke and AI PIN factor enrollment/rotation/revoke/reset control-plane changes.
 Initial PIN enrollment after login uses the already-fresh login TOTP without an
 extra prompt; ordinary lecture controls, emergency stop, PIN verification,
 browser proof, AI master/escalation and child starts never prompt. `ADMIN_PIN` is removed
@@ -412,16 +421,18 @@ rate updates.
 Remembered-browser rows constrain ES256/P-256 public JWK and RFC 7638
 fingerprint state and bind nonce/challenge state to identity, session, factor,
 Origin, lecture, scope and policy. They do not implement a real browser
-CryptoKey or Edge signature verifier. Policy, factor-rotation and browser
+CryptoKey or Edge signature verifier. Policy, factor-rotation/revoke/reset and browser
 transitions plus bounded cleanup drain derived AI authority while preserving
-the Admin session where required. An explicit factor revoke/reset transition
-API remains B2.2/C. Existing lecture masters gain nullable provenance columns,
+the Admin session where required. B2.2a adds service-only factor revoke/reset,
+safe profile and single-use rare-control APIs whose grants bind a DB-recomputed
+canonical mutation-intent digest. Existing lecture masters gain nullable provenance columns,
 but B2 does not issue a master from an AI proof.
 
 All public wrappers are service-role-only `SECURITY INVOKER`; private privileged
 helpers use a fixed empty `search_path`, minimum grants and database context
 revalidation. The source/static gate is PASS, while exact-head from-zero/
 populated upgrade, pgTAP, database concurrency, generated types and lint remain
-pending. Edge/UI, TOTP factor-set fingerprint, all Admin authorization, lecture
+pending. B2.2a implements the TOTP factor-set fingerprint and dormant identity
+Edge begin/complete/reconcile transport. Raw-PIN/AI mutation Edge/UI, all Admin authorization, lecture
 ownership, proof-to-master admission, AI Passkey, Hosted/Human and activation
 are later HOLD boundaries.

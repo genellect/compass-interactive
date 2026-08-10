@@ -23,6 +23,7 @@ const requiredDocuments = [
   'docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md',
   'docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
   'docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md',
+  'docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
@@ -64,6 +65,9 @@ const contestPlan = read(
 )
 const googleAdminPlan = read('docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md')
 const adminAiUnlockRecord = read('docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md')
+const adminControlRecord = read(
+  'docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md',
+)
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
 const gateRouting = read('docs/GATE_ROUTING.md')
@@ -169,7 +173,7 @@ for (const requiredText of [
   'No hardware/device-binding claim',
   '`auth.sessions.created_at + 8 hours`',
   'Phase 7.30B2 now implements the default-OFF',
-  'B2 does not yet store or compare that authoritative fingerprint',
+  'B2.2a additionally',
   'still has to complete its unified verifier',
   'no email MFA',
   'Role changes are enforced live',
@@ -189,6 +193,44 @@ assert.match(
   /there is no 30-minute\s+inactivity expiry/,
   'Google Admin contract must remove the transitional B1 idle expiry in B2',
 )
+assert.match(docsIndex, /PHASE7_30B22A_ADMIN_CONTROL_HARDENING\.md/)
+assert.match(
+  adminControlRecord,
+  /factor-history-free initial PIN enrollment can reuse the tracked fresh TOTP/,
+)
+assert.match(adminControlRecord, /canonical mutation[- ]intent/)
+assert.match(
+  adminControlRecord,
+  /unverified challenged factor is accepted only for a `pending_mfa`\s+membership whose principal is unbound and whose current verified TOTP set is\s+empty/,
+)
+assert.match(
+  adminControlRecord,
+  /Adding, removing or replacing a factor\s+requires B2\.2b rare-control[\s\S]{0,80}remains\s+HOLD/,
+)
+assert.match(
+  adminControlRecord,
+  /`private\.admin_principals` therefore stores the authoritative\s+approved digest, version and factor count plus bounded approval provenance/,
+)
+assert.match(
+  adminControlRecord,
+  /migration never guesses or backfills either a\s+session digest or a principal approval/,
+)
+assert.match(
+  adminControlRecord,
+  /service-role\/operator RPC can adopt one exact DB-recomputed set only while its\s+own gate is ON and normal Google session issuance is OFF/,
+)
+for (const [name, document] of [
+  ['Google Admin', googleAdminPlan],
+  ['Runbook', runbook],
+  ['Security', security],
+  ['Roadmap', roadmap],
+]) {
+  assert.doesNotMatch(
+    document,
+    /B2 does not yet (?:implement|store|compare)[^\n]*factor|TOTP factor-set fingerprinting[^\n]*remain HOLD/,
+    `${name} must not defer the implemented B2.2a factor-set binding`,
+  )
+}
 assert.match(
   googleAdminPlan,
   /`BILLING_PIN` and its\s+compatibility RPC are removed after personal-AI-PIN E2E/,
@@ -201,13 +243,13 @@ assert.match(
 )
 assert.match(
   googleAdminPlan,
-  /A five-minute server-recorded TOTP\s+step-up is used only for owner\/principal changes, role\/status changes, verified\s+TOTP factor-set changes, environment AI-policy changes, global revocation and\s+AI PIN factor enrollment\/rotation\/reset/,
+  /A five-minute server-recorded TOTP\s+step-up is used only for owner\/principal changes, role\/status changes, verified\s+TOTP factor-set changes, environment AI-policy changes, global revocation and\s+AI PIN factor enrollment\/rotation\/revoke\/reset/,
   'Fresh TOTP step-up must have the exact rare control-plane allowlist',
 )
 assert.match(
   googleAdminPlan,
-  /New factor enrollment, rotation and reset are rare\s+factor-control changes and require the five-minute boundary/,
-  'AI PIN enrollment, rotation and reset must use the rare five-minute boundary',
+  /New factor enrollment, rotation, revoke and reset are rare\s+factor-control changes and require the five-minute boundary/,
+  'AI PIN enrollment, rotation, revoke and reset must use the rare five-minute boundary',
 )
 assert.match(
   googleAdminPlan,
@@ -216,13 +258,13 @@ assert.match(
 )
 assert.match(
   googleAdminPlan,
-  /Once an actor\/session\/scope-bound request ID\s+commits, any retry with that same binding returns the committed result after the\s+window without re-reading or comparing PIN material/,
-  'Committed rare-mutation replay must not become a stale PIN oracle',
+  /Once an actor\/session\/scope-bound request ID\s+commits, an exact canonical-intent retry returns the committed result after the\s+window; the same request ID with changed PIN or policy material is rejected/,
+  'Committed rare-mutation replay must require the exact canonical intent',
 )
-assert.doesNotMatch(
+assert.match(
   googleAdminPlan,
-  /Phase 7\.30B2 implements[\s\S]{0,700}verified TOTP factor-set change or the eight-hour cap/,
-  'Current B2 session claims must not include the deferred factor-set invalidation',
+  /B2\.2a additionally\s+requires a new login on a verified TOTP factor-set change/,
+  'B2.2a must record factor-set session invalidation while C retains all-endpoint integration',
 )
 
 for (const [name, document] of [
@@ -239,7 +281,7 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /AI PIN factor(?:の)?\s*enrollment\/rotation\/reset/,
+    /AI PIN factor(?:の)?\s*enrollment\/rotation\/revoke\/reset/,
     `${name} must route rare AI PIN factor mutations through the five-minute boundary`,
   )
 }
@@ -396,8 +438,8 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /66 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(66 groups\)/,
-    `${name} must record the 66-group non-live suite`,
+    /67 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(67 groups\)/,
+    `${name} must record the 67-group non-live suite`,
   )
 }
 assert.match(

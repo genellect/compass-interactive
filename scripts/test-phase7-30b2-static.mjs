@@ -782,7 +782,7 @@ assert.match(
 assert.match(b2UpgradeTest, /auth_session\.created_at \+ interval '8 hours'/)
 assert.match(
   b2UpgradeTest,
-  /does not introduce a 30-minute lecture idle cutoff/,
+  /does not rewrite the retained no-idle evidence/,
 )
 assert.match(upgradeRunner, /phase7-30b2-upgrade-probe\.sql/)
 assert.match(upgradeRunner, /phase7-30b2-upgrade-probe-test\.sql/)
@@ -898,7 +898,7 @@ assert.match(pgTap, /insert into private\.admin_step_up_nonces/i)
 assert.match(pgTap, /step_up_nonce_id/i)
 assert.match(pgTap, /bcrypt cost 12/)
 assert.match(pgTap, /public B2 wrappers are invoker-only and service-role-only/)
-assert.match(pgTap, /every B2 foreign key has a valid leading lookup index/)
+assert.match(pgTap, /every B2\/B2\.2a foreign key has a valid leading lookup index/)
 assert.match(pgTap, /generate_series\(1, 501\)/)
 assert.match(pgTap, /second cleanup call converges/)
 assert.match(pgTap, /canonical Admin audit remains append-only/)
@@ -923,7 +923,7 @@ assert.match(
 )
 assert.match(
   pgTap,
-  /same PIN enrollment request returns the committed result without rechecking changed PIN input/,
+  /same PIN request rejects changed canonical PIN input after the grant is consumed/,
 )
 assert.match(
   pgTap,

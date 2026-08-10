@@ -106,9 +106,18 @@ session cap to `auth.sessions.created_at + 8 hours`, removes the idle expiry and
 never prompts for TOTP periodically during a lecture. Phase 7.30C completes its
 unified verifier across every operational Admin Edge/RPC path. The B2 database
 path rejects explicit logout, backing `auth.sessions` removal, principal/
-environment/membership invalidation or the eight-hour cap. The final
-C-integrated verifier also ends the session on a verified TOTP factor-set
-change; B2 does not yet implement that fingerprint/version comparison. Role
+environment/membership invalidation or the eight-hour cap. B2.2a stores an
+approved factor-set hash/version/count on the Admin principal and binds newly
+issued Google Admin sessions only when principal approval, live verified TOTP
+state, completed JWT/AMR nonce evidence and the default-OFF issue gate agree.
+Changed-set sessions are reason-revoked and their pending AI authority drains.
+An unverified login candidate is accepted only for a `pending_mfa`, unbound,
+empty set's first 0-to-1 enrollment and is approved atomically after fresh
+completion. Existing verified but unbound sets require an Edge-unwired,
+default-OFF operator adoption while Google issuance is OFF; migration never
+infers that approval. Adding/replacing a factor beside an approved set is a
+B2.2b fresh-existing-factor rare-control HOLD.
+Phase 7.30C applies that verifier to every operational Admin Edge/RPC path. Role
 changes are enforced live without session termination; `can_use_ai=false`
 drains AI authority while preserving the Admin session.
 
@@ -116,7 +125,7 @@ Production v1 uses only Supabase Authenticator App TOTP (compatible with Google
 Authenticator) for MFA. No email MFA or custom MFA path is added. A five-minute
 fresh TOTP step-up is reserved for owner/principal, role/status, verified
 TOTP-factor-set, environment AI-policy, global-revoke and AI PIN factor
-enrollment/rotation/reset control-plane changes. Initial PIN enrollment
+enrollment/rotation/revoke/reset control-plane changes. Initial PIN enrollment
 immediately after login uses the already-fresh login TOTP and adds no prompt.
 Normal lecture operation, emergency stop, personal-AI-PIN verification/use,
 remembered-browser proof, lecture-master activation or scope/cost escalation
@@ -450,7 +459,9 @@ the unified verifier across every operational Admin Edge/RPC path.
   Edge signature verification remain HOLD.
 - Factor rotation, policy and browser transitions drain their derived AI
   authority while preserving the Admin session where the contract requires.
-  An explicit factor revoke/reset transition API remains B2.2/C. Bounded
+  B2.2a adds explicit factor revoke/reset RPCs whose mutation transaction
+  consumes an action/request/session/factor-set/JWT/AMR and canonical-intent
+  bound grant. Raw-PIN Edge wiring remains B2.2b/C. Bounded
   cleanup uses nonblocking membership serialization plus `SKIP LOCKED`, returns
   `has_more` and permits only safe terminal child states.
 - Lecture-master provenance columns are additive and nullable. B2 does not yet

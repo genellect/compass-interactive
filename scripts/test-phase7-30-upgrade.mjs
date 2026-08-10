@@ -49,6 +49,22 @@ try {
     'scripts/fixtures/phase7-30b2-upgrade-probe-test.sql',
     '--local',
   ])
+  runSupabase([
+    'db',
+    'reset',
+    '--local',
+    '--version',
+    '20260809155129',
+    '--sql-paths',
+    '../scripts/fixtures/phase7-30b22a-b2-head-upgrade-probe.sql',
+  ])
+  runSupabase(['migration', 'up', '--local'])
+  runSupabase([
+    'test',
+    'db',
+    'scripts/fixtures/phase7-30b22a-b2-head-upgrade-probe-test.sql',
+    '--local',
+  ])
 } catch (error) {
   failure = error
 } finally {
@@ -61,5 +77,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Populated legacy and Google Admin sessions upgrade through Phase 7.30 B2 with mode, Auth binding, eight-hour cap and dormant-gate contracts intact.',
+  'Populated legacy, B1 Google Admin and B2 AI-authority states upgrade through Phase 7.30 B2/B2.2a with mode, Auth/factor-set binding, eight-hour cap and dormant-gate contracts intact.',
 )
