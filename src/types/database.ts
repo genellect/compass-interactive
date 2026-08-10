@@ -3586,20 +3586,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      adopt_existing_admin_totp_factor_set_v1: {
-        Args: {
-          target_auth_user_id: string
-          target_environment_id: string
-          target_expected_factor_count: number
-          target_expected_factor_set_hash: string
-          target_membership_id: string
-          target_operator_actor: string
-          target_principal_id: string
-          target_reason: string
-          target_request_id: string
-        }
-        Returns: Json
-      }
       admin_abort_pdf_publication_v1: {
         Args: {
           target_admin_auth_user_id: string
@@ -4583,6 +4569,20 @@ export type Database = {
           updated_at: string
         }[]
       }
+      adopt_existing_admin_totp_factor_set_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_environment_id: string
+          target_expected_factor_count: number
+          target_expected_factor_set_hash: string
+          target_membership_id: string
+          target_operator_actor: string
+          target_principal_id: string
+          target_reason: string
+          target_request_id: string
+        }
+        Returns: Json
+      }
       apply_presenter_page_v1: {
         Args: {
           target_capability_jti_hash: string
@@ -4968,7 +4968,6 @@ export type Database = {
         }
         Returns: Json
       }
-      get_admin_ai_unlock_runtime_gate_v1: { Args: never; Returns: Json }
       get_admin_ai_unlock_profile_v1: {
         Args: {
           target_auth_user_id: string
@@ -4977,6 +4976,7 @@ export type Database = {
         }
         Returns: Json
       }
+      get_admin_ai_unlock_runtime_gate_v1: { Args: never; Returns: Json }
       get_admin_identity_environment_v1: {
         Args: { target_environment_id: string }
         Returns: Json
@@ -5280,6 +5280,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      reconcile_admin_totp_factor_set_v1: {
+        Args: { target_auth_user_id: string; target_request_id: string }
+        Returns: Json
+      }
       record_realtime_provider_client_request: {
         Args: {
           target_actor_id: string
@@ -5299,14 +5303,6 @@ export type Database = {
         }
         Returns: Json
       }
-      reconcile_admin_totp_factor_set_v1: {
-        Args: { target_auth_user_id: string; target_request_id: string }
-        Returns: Json
-      }
-      reset_admin_pin_rate_limit: {
-        Args: { network_bucket_hash?: string; user_bucket_hash: string }
-        Returns: undefined
-      }
       reset_admin_ai_pin_v1: {
         Args: {
           target_auth_user_id: string
@@ -5315,6 +5311,10 @@ export type Database = {
           target_token_hash: string
         }
         Returns: Json
+      }
+      reset_admin_pin_rate_limit: {
+        Args: { network_bucket_hash?: string; user_bucket_hash: string }
+        Returns: undefined
       }
       revoke_admin_ai_browser_credential_v1: {
         Args: {
