@@ -660,6 +660,18 @@ assert.match(localEdge, /action: 'beginControlStepUp'/)
 assert.match(localEdge, /authClient\.auth\.mfa\.challengeAndVerify/)
 assert.match(localEdge, /action: 'completeControlStepUp'/)
 assert.match(localEdge, /latestTotpAmrTimestamp/)
+assert.match(
+  localEdge,
+  /const aal2 = accessToken\(status,[\s\S]*?totpTimestamp: verifiedTotpAmrTimestamp/,
+)
+assert.match(
+  localEdge,
+  /const refreshedAal2 = accessToken\(status,[\s\S]*?totpTimestamp: refreshedTotpAmrTimestamp/,
+)
+assert.doesNotMatch(
+  localEdge,
+  /invoke\([\s\S]{0,120}?reverified\.access_token/,
+)
 assert.match(concurrency, /login-begin-lock-order/)
 assert.match(concurrency, /login-complete-lock-order/)
 assert.match(

@@ -400,7 +400,13 @@ try {
   const verifiedTotpAmrTimestamp = latestTotpAmrTimestamp(aal2AuthClaims)
   assert.ok(Number.isSafeInteger(verifiedTotpAmrTimestamp))
   assert.equal(aal2AuthClaims.app_metadata?.provider, 'google')
-  const aal2 = verified.access_token
+  // The local fixture starts from a password session and then adds its signed
+  // Google identity. Preserve the real GoTrue TOTP proof timestamp while
+  // signing the same-session Google OAuth bearer expected by the Edge gate.
+  const aal2 = accessToken(status, {
+    aal: 'aal2',
+    totpTimestamp: verifiedTotpAmrTimestamp,
+  })
 
   const completed = await invoke(
     status,
@@ -461,7 +467,7 @@ try {
     })
   if (reverifyError) throw reverifyError
   assert.ok(reverified.access_token)
-  assert.notEqual(reverified.access_token, aal2)
+  assert.notEqual(reverified.access_token, verified.access_token)
   const reverifiedClaims = decodeJwtPayload(reverified.access_token)
   assert.equal(reverifiedClaims.aal, 'aal2')
   assert.equal(reverifiedClaims.session_id, sessionId)
@@ -470,10 +476,14 @@ try {
   assert.ok(Number.isSafeInteger(refreshedTotpAmrTimestamp))
   assert.ok(refreshedTotpAmrTimestamp > verifiedTotpAmrTimestamp)
   assert.ok(refreshedTotpAmrTimestamp >= controlBegunAt - 1)
+  const refreshedAal2 = accessToken(status, {
+    aal: 'aal2',
+    totpTimestamp: refreshedTotpAmrTimestamp,
+  })
 
   const controlCompleted = await invoke(
     status,
-    reverified.access_token,
+    refreshedAal2,
     'admin-identity-session',
     {
       action: 'completeControlStepUp',
@@ -491,7 +501,7 @@ try {
 
   const legacyCrossMode = await invoke(
     status,
-    reverified.access_token,
+    refreshedAal2,
     'verify-admin-pin',
     { pin: '246810' },
     401,
@@ -500,7 +510,7 @@ try {
 
   const loggedOut = await invoke(
     status,
-    reverified.access_token,
+    refreshedAal2,
     'admin-identity-session',
     { action: 'logout', appSessionToken: completed.appSessionToken },
     200,
@@ -509,7 +519,7 @@ try {
 
   const revokedStatus = await invoke(
     status,
-    reverified.access_token,
+    refreshedAal2,
     'admin-identity-session',
     { action: 'status', appSessionToken: completed.appSessionToken },
     401,
