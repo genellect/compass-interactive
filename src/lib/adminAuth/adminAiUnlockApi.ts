@@ -3,8 +3,8 @@ import { adminSupabase } from './adminSupabaseClient'
 
 export type TotpFactorAction = 'totp_factor_add' | 'totp_factor_remove'
 export type RememberedBrowserScope =
-  | 'all_except_captions'
-  | 'all_including_captions'
+  'all_except_captions' | 'all_including_captions'
+export type GoogleAiMasterScope = RememberedBrowserScope
 
 export type AdminAiUnlockProfile = {
   activeBrowserCount: number
@@ -67,14 +67,12 @@ async function readError(error: unknown) {
   }
 }
 
-async function invoke(
-  appSessionToken: string,
-  body: Record<string, unknown>,
-) {
-  const { data, error } = await adminSupabase.functions.invoke<AiUnlockResponse>(
-    'admin-ai-unlock',
-    { body: { ...body, appSessionToken }, timeout: 10_000 },
-  )
+async function invoke(appSessionToken: string, body: Record<string, unknown>) {
+  const { data, error } =
+    await adminSupabase.functions.invoke<AiUnlockResponse>('admin-ai-unlock', {
+      body: { ...body, appSessionToken },
+      timeout: 10_000,
+    })
   if (error || !data?.ok) {
     const detail = (await readError(error)) ?? {
       code: typeof data?.code === 'string' ? data.code : 'request_failed',
@@ -94,10 +92,11 @@ async function invoke(
 }
 
 async function invokeRecovery(body: Record<string, unknown>) {
-  const { data, error } = await adminSupabase.functions.invoke<AiUnlockResponse>(
-    'admin-ai-unlock',
-    { body, timeout: 10_000 },
-  )
+  const { data, error } =
+    await adminSupabase.functions.invoke<AiUnlockResponse>('admin-ai-unlock', {
+      body,
+      timeout: 10_000,
+    })
   if (error || !data?.ok) {
     const detail = (await readError(error)) ?? {
       code: typeof data?.code === 'string' ? data.code : 'request_failed',
@@ -127,9 +126,7 @@ export async function getAdminAiUnlockProfile(appSessionToken: string) {
     factorVersion:
       typeof data.factorVersion === 'number' ? data.factorVersion : null,
     pinPepperVersion:
-      typeof data.pinPepperVersion === 'number'
-        ? data.pinPepperVersion
-        : null,
+      typeof data.pinPepperVersion === 'number' ? data.pinPepperVersion : null,
     rememberedBrowserEnabled: data.rememberedBrowserEnabled === true,
     role: typeof data.role === 'string' ? data.role : null,
   } satisfies AdminAiUnlockProfile
@@ -182,6 +179,59 @@ export async function verifyAdminAiPin(
   requestId = crypto.randomUUID(),
 ) {
   return invoke(appSessionToken, { action: 'verifyPin', pin, requestId })
+}
+
+export async function getGoogleAiMasterStatus(
+  appSessionToken: string,
+  lectureSessionId: string,
+) {
+  return invoke(appSessionToken, {
+    action: 'masterStatus',
+    lectureSessionId,
+  })
+}
+
+export async function authorizeGoogleAiMasterWithPin(
+  appSessionToken: string,
+  input: {
+    lectureSessionId: string
+    pin: string
+    policyId: string
+    policyVersion: number
+    requestId: string
+    requestedScope: GoogleAiMasterScope
+  },
+) {
+  return invoke(appSessionToken, {
+    action: 'authorizeMasterWithPin',
+    ...input,
+  })
+}
+
+export async function downgradeGoogleAiMaster(
+  appSessionToken: string,
+  lectureSessionId: string,
+  requestId = crypto.randomUUID(),
+) {
+  return invoke(appSessionToken, {
+    action: 'downgradeMaster',
+    lectureSessionId,
+    requestId,
+  })
+}
+
+export async function revokeGoogleAiMaster(
+  appSessionToken: string,
+  lectureSessionId: string,
+  reason: string,
+  requestId = crypto.randomUUID(),
+) {
+  return invoke(appSessionToken, {
+    action: 'revokeMaster',
+    lectureSessionId,
+    reason,
+    requestId,
+  })
 }
 
 export async function beginRememberedBrowserEnrollment(
@@ -265,6 +315,23 @@ export async function completeRememberedBrowserAssertion(
   })
 }
 
+export async function completeRememberedBrowserMasterAdmission(
+  appSessionToken: string,
+  input: {
+    assertionPayload: string
+    assertionPayloadMac: string
+    credentialToken: string
+    publicKeyJwk: JsonWebKey
+    requestId: string
+    signature: string
+  },
+) {
+  return invoke(appSessionToken, {
+    action: 'completeBrowserMasterAdmission',
+    ...input,
+  })
+}
+
 export async function revokeRememberedBrowserCredential(
   appSessionToken: string,
   browserCredentialId: string,
@@ -305,16 +372,14 @@ export async function authorizeTotpFactorTransition(
   })
 }
 
-export async function finalizeTotpFactorTransition(
-  input: {
-    controlIntentDigest: string
-    factorAction: TotpFactorAction
-    finalizeRequestId: string
-    recoveryToken: string
-    requestId: string
-    targetFactorId: string
-  },
-) {
+export async function finalizeTotpFactorTransition(input: {
+  controlIntentDigest: string
+  factorAction: TotpFactorAction
+  finalizeRequestId: string
+  recoveryToken: string
+  requestId: string
+  targetFactorId: string
+}) {
   return invokeRecovery({
     action: 'finalizeTotpTransition',
     ...input,

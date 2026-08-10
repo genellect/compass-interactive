@@ -89,6 +89,7 @@
     "test:phase7-30b2-static": "node scripts/test-phase7-30b2-static.mjs",
     "test:phase7-30b22a-static": "node scripts/test-phase7-30b22a-static.mjs",
     "test:phase7-30b22b-static": "node scripts/test-phase7-30b22b-static.mjs",
+    "test:phase7-30c1-static": "node scripts/test-phase7-30c1-static.mjs",
     "test:phase7-30b2-concurrency": "node scripts/test-phase7-30b2-concurrency.mjs",
     "test:phase7-30-upgrade": "node scripts/test-phase7-30-upgrade.mjs",
     "test:phase7-30b1-local-edge": "node scripts/test-phase7-30b1-local-edge.mjs",

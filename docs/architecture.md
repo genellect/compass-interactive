@@ -1,8 +1,8 @@
 # COMPASS Interactive Architecture
 
 Last reviewed: 2026-08-10
-Applies to: repository implementation candidate through Phase 7.30A-B2;
-B2 runtime DB, later native, Human, Hosted and Production gates remain separately authoritative
+Applies to: repository implementation candidate through Phase 7.30A-C1;
+B2-C1 runtime DB, later native, Human, Hosted and Production gates remain separately authoritative
 
 ## 1. Architectural goals
 
@@ -433,13 +433,18 @@ safe profile and single-use rare-control APIs whose grants bind a DB-recomputed
 canonical mutation-intent digest. Existing lecture masters gain nullable provenance columns,
 but B2 does not issue a master from an AI proof.
 
-All public wrappers are service-role-only `SECURITY INVOKER`; private privileged
+All B2/B2.2 public wrappers are service-role-only `SECURITY INVOKER`; private privileged
 helpers use a fixed empty `search_path`, minimum grants and database context
 revalidation. The source/static gate is PASS, while exact-head from-zero/
 populated upgrade, pgTAP, database concurrency, generated types and lint remain
 pending. B2.2a implements the TOTP factor-set fingerprint and dormant identity
 Edge begin/complete/reconcile transport. B2.2b implements default-OFF raw-PIN,
 AI mutation, browser proof and approved factor-transition source paths, but
-issues no master. All operational Admin authorization, lecture ownership,
-proof-to-master admission, AI Passkey, Local Edge, Hosted/Human and activation
-are later HOLD boundaries.
+issues no master. C1 adds four RLS-enabled private evidence tables for
+absence-based lecture ownership, atomic proof-to-master admission, proof-free
+same-scope request observation and downgrade/revoke replay. Its nine public
+facades are fixed-search-path `SECURITY DEFINER` functions restricted to
+`service_role`. It never backfills an existing lecture, exposes
+principal UUIDs on `lecture_sessions`, issues child/provider authority or
+converts a pre-C1 master. The remaining all-operational Admin verifier, AI
+Passkey, Local Edge, Hosted/Human and activation are C2/later HOLD boundaries.

@@ -4634,6 +4634,22 @@ export type Database = {
         }
         Returns: Json
       }
+      authorize_google_ai_master_with_pin_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
+          target_network_hmac: string
+          target_peppered_pin_hmac: string
+          target_pin_pepper_version: number
+          target_policy_id: string
+          target_policy_version: number
+          target_request_id: string
+          target_scope: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       begin_admin_ai_browser_assertion_v1: {
         Args: {
           target_auth_user_id: string
@@ -4661,18 +4677,6 @@ export type Database = {
           target_public_key_fingerprint: string
           target_request_id: string
           target_reserved_browser_credential_id: string
-          target_supabase_auth_session_id: string
-          target_token_hash: string
-        }
-        Returns: Json
-      }
-      get_admin_ai_browser_credential_status_v1: {
-        Args: {
-          target_auth_user_id: string
-          target_browser_credential_id: string
-          target_credential_hash: string
-          target_origin: string
-          target_public_key_fingerprint: string
           target_supabase_auth_session_id: string
           target_token_hash: string
         }
@@ -4879,6 +4883,24 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_google_ai_master_browser_admission_v1: {
+        Args: {
+          target_assertion_payload_hash: string
+          target_auth_user_id: string
+          target_challenge_hash: string
+          target_credential_hash: string
+          target_lecture_session_id: string
+          target_origin: string
+          target_policy_id: string
+          target_policy_version: number
+          target_request_id: string
+          target_scope: string
+          target_signature_verified: boolean
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       complete_pdf_publication_cleanup_v1: {
         Args: {
           target_cleanup_claim_id: string
@@ -4920,6 +4942,20 @@ export type Database = {
         }
         Returns: Json
       }
+      create_owned_admin_lecture_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_code: string
+          target_lecture_code_hash: string
+          target_lecture_ends_at: string
+          target_lecture_starts_at: string
+          target_lecture_title: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       disconnect_presenter_connection_v1: {
         Args: {
           target_capability_jti_hash: string
@@ -4944,6 +4980,16 @@ export type Database = {
         }
         Returns: Json
       }
+      downgrade_google_ai_master_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       enroll_admin_ai_pin_v1: {
         Args: {
           target_auth_user_id: string
@@ -4952,6 +4998,19 @@ export type Database = {
           target_request_id: string
           target_supabase_auth_session_id: string
           target_token_hash: string
+        }
+        Returns: Json
+      }
+      finalize_admin_totp_factor_transition_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_factor_id: string
+          target_finalize_request_id: string
+          target_intent_digest: string
+          target_mutation_request_id: string
+          target_recovery_token_hash: string
+          target_supabase_auth_session_id: string
         }
         Returns: Json
       }
@@ -4974,19 +5033,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      finalize_admin_totp_factor_transition_v1: {
-        Args: {
-          target_action: string
-          target_auth_user_id: string
-          target_factor_id: string
-          target_finalize_request_id: string
-          target_intent_digest: string
-          target_mutation_request_id: string
-          target_recovery_token_hash: string
-          target_supabase_auth_session_id: string
-        }
-        Returns: Json
-      }
       finish_realtime_provider_hangup: {
         Args: {
           target_error?: string
@@ -4994,6 +5040,18 @@ export type Database = {
           target_succeeded: boolean
         }
         Returns: boolean
+      }
+      get_admin_ai_browser_credential_status_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_browser_credential_id: string
+          target_credential_hash: string
+          target_origin: string
+          target_public_key_fingerprint: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
       }
       get_admin_ai_pin_factor_metadata_v1: {
         Args: {
@@ -5025,6 +5083,15 @@ export type Database = {
           target_action: string
           target_auth_user_id: string
           target_factor_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      get_google_ai_master_status_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
           target_supabase_auth_session_id: string
           target_token_hash: string
         }
@@ -5351,6 +5418,20 @@ export type Database = {
         }
         Returns: Json
       }
+      replay_google_ai_master_admission_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
+          target_policy_id: string
+          target_policy_version: number
+          target_request_id: string
+          target_scope: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_unlock_method: string
+        }
+        Returns: Json
+      }
       reset_admin_ai_pin_v1: {
         Args: {
           target_auth_user_id: string
@@ -5377,6 +5458,17 @@ export type Database = {
       revoke_admin_ai_pin_v1: {
         Args: {
           target_auth_user_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      revoke_google_ai_master_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
+          target_reason: string
           target_request_id: string
           target_supabase_auth_session_id: string
           target_token_hash: string

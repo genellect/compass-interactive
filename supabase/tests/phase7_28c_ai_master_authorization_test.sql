@@ -59,15 +59,17 @@ SELECT ok(
   'student clients cannot authorize, exchange, revoke, or drain paid AI access'
 );
 SELECT ok(
-  NOT (SELECT prosecdef FROM pg_proc WHERE oid =
+  (SELECT prosecdef AND proconfig @> ARRAY['search_path=""']
+   FROM pg_proc WHERE oid =
     'public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure)
-  AND NOT (SELECT prosecdef FROM pg_proc WHERE oid =
+  AND (SELECT prosecdef AND proconfig @> ARRAY['search_path=""']
+   FROM pg_proc WHERE oid =
     'public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)'::regprocedure)
   AND NOT (SELECT prosecdef FROM pg_proc WHERE oid =
     'public.admin_revoke_ai_master_authorization(uuid,uuid,text,text)'::regprocedure)
   AND NOT (SELECT prosecdef FROM pg_proc WHERE oid =
     'public.service_drain_ai_master_authorizations(text)'::regprocedure),
-  'public master authorization wrappers remain SECURITY INVOKER'
+  'C1 legacy delegates are fixed-search-path definers while revoke/drain remain invokers'
 );
 SELECT ok(
   (SELECT prosecdef AND proconfig @> ARRAY['search_path=""']

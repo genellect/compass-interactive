@@ -33,18 +33,23 @@ import {
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type AiUnlockAction =
+  | 'authorizeMasterWithPin'
   | 'authorizeTotpTransition'
   | 'beginBrowserAssertion'
   | 'beginBrowserEnrollment'
   | 'completeBrowserAssertion'
   | 'completeBrowserEnrollment'
+  | 'completeBrowserMasterAdmission'
+  | 'downgradeMaster'
   | 'finalizeTotpTransition'
   | 'getBrowserEnrollmentStatus'
+  | 'masterStatus'
   | 'preparePinMutation'
   | 'prepareTotpTransition'
   | 'profile'
   | 'resetPin'
   | 'revokeBrowserCredential'
+  | 'revokeMaster'
   | 'revokePin'
   | 'setPin'
   | 'verifyPin'
@@ -105,7 +110,22 @@ const FACTOR_ENTRY_ACTIONS = new Set<AiUnlockAction>([
   'prepareTotpTransition',
 ])
 
+const C1_ADMISSION_ACTIONS = new Set<AiUnlockAction>([
+  'authorizeMasterWithPin',
+  'completeBrowserMasterAdmission',
+])
+
 const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
+  authorizeMasterWithPin: new Set([
+    'action',
+    'appSessionToken',
+    'lectureSessionId',
+    'pin',
+    'policyId',
+    'policyVersion',
+    'requestId',
+    'requestedScope',
+  ]),
   authorizeTotpTransition: new Set([
     'action',
     'appSessionToken',
@@ -154,6 +174,22 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
     'publicKeyJwk',
     'requestId',
   ]),
+  completeBrowserMasterAdmission: new Set([
+    'action',
+    'appSessionToken',
+    'assertionPayload',
+    'assertionPayloadMac',
+    'credentialToken',
+    'publicKeyJwk',
+    'requestId',
+    'signature',
+  ]),
+  downgradeMaster: new Set([
+    'action',
+    'appSessionToken',
+    'lectureSessionId',
+    'requestId',
+  ]),
   finalizeTotpTransition: new Set([
     'action',
     'controlIntentDigest',
@@ -170,6 +206,7 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
     'credentialToken',
     'publicKeyFingerprint',
   ]),
+  masterStatus: new Set(['action', 'appSessionToken', 'lectureSessionId']),
   preparePinMutation: new Set([
     'action',
     'appSessionToken',
@@ -189,6 +226,13 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
     'action',
     'appSessionToken',
     'browserCredentialId',
+    'requestId',
+  ]),
+  revokeMaster: new Set([
+    'action',
+    'appSessionToken',
+    'lectureSessionId',
+    'reason',
     'requestId',
   ]),
   revokePin: new Set(['action', 'appSessionToken', 'requestId']),
@@ -241,7 +285,13 @@ function rpcErrorResponse(
   jsonResponse: ReturnType<typeof createJsonResponse>,
   code: string,
 ) {
-  if (code === 'P7300' || code === 'P7320' || code === 'P7321' || code === 'P7331') {
+  if (
+    code === 'P7300' ||
+    code === 'P7320' ||
+    code === 'P7321' ||
+    code === 'P7331' ||
+    code === 'P7336'
+  ) {
     return errorResponse(
       jsonResponse,
       'feature_disabled',
@@ -275,6 +325,14 @@ function rpcErrorResponse(
       409,
     )
   }
+  if (code === 'P7335') {
+    return errorResponse(
+      jsonResponse,
+      'master_admission_conflict',
+      'Lecture AI authorization could not be changed safely.',
+      409,
+    )
+  }
   return errorResponse(
     jsonResponse,
     'service_unavailable',
@@ -295,6 +353,32 @@ function isPositiveInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 1
 }
 
+function masterResultResponse(
+  jsonResponse: ReturnType<typeof createJsonResponse>,
+  value: Record<string, unknown> | null,
+) {
+  if (!value || value.accepted !== true) {
+    return errorResponse(
+      jsonResponse,
+      'master_admission_unavailable',
+      'Lecture AI authorization is unavailable.',
+      409,
+    )
+  }
+  return jsonResponse({
+    accepted: true,
+    admissionReplayed: value.admission_replayed === true,
+    alreadyDowngraded: value.already_downgraded === true,
+    alreadyInactive: value.already_inactive === true,
+    authorization: value.authorization ?? null,
+    controlReplayed: value.control_replayed === true,
+    dormantAuthority: true,
+    ok: true,
+    providerAuthorityIssued: false,
+    serverTime: value.server_time ?? null,
+  })
+}
+
 async function handleRequest(request: Request) {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
@@ -309,7 +393,12 @@ async function handleRequest(request: Request) {
     )
   }
   if (request.method !== 'POST') {
-    return errorResponse(jsonResponse, 'method_not_allowed', 'Method not allowed.', 405)
+    return errorResponse(
+      jsonResponse,
+      'method_not_allowed',
+      'Method not allowed.',
+      405,
+    )
   }
 
   let body: RequestBody
@@ -317,12 +406,27 @@ async function handleRequest(request: Request) {
     body = await readJsonBody<RequestBody>(request, 12_288)
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
-      return errorResponse(jsonResponse, 'request_too_large', 'Request is too large.', 413)
+      return errorResponse(
+        jsonResponse,
+        'request_too_large',
+        'Request is too large.',
+        413,
+      )
     }
     if (error instanceof UnsupportedJsonContentTypeError) {
-      return errorResponse(jsonResponse, 'content_type_invalid', 'Request must be JSON.', 415)
+      return errorResponse(
+        jsonResponse,
+        'content_type_invalid',
+        'Request must be JSON.',
+        415,
+      )
     }
-    return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
   }
   if (
     !body ||
@@ -332,7 +436,12 @@ async function handleRequest(request: Request) {
     !(body.action in ACTION_KEYS) ||
     Object.keys(body).some((key) => !ACTION_KEYS[body.action!].has(key))
   ) {
-    return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
   }
 
   const action = body.action
@@ -340,6 +449,10 @@ async function handleRequest(request: Request) {
     Deno.env.get('PHASE730_ADMIN_AI_UNLOCK_ENABLED') === 'true'
   const factorSourceEnabled =
     Deno.env.get('PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED') === 'true'
+  const c1AdmissionSourceEnabled =
+    Deno.env.get('PHASE730_C1_GOOGLE_AI_MASTER_ENABLED') === 'true'
+  const c1AdmissionSourceAllowed =
+    !C1_ADMISSION_ACTIONS.has(action) || c1AdmissionSourceEnabled
   if (
     (AI_ACTIONS.has(action) && !aiSourceEnabled) ||
     (FACTOR_ENTRY_ACTIONS.has(action) && !factorSourceEnabled)
@@ -514,6 +627,350 @@ async function handleRequest(request: Request) {
     }
   }
 
+  if (action === 'masterStatus') {
+    if (!isUuid(body.lectureSessionId)) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+    const result = await serviceClient.rpc('get_google_ai_master_status_v1', {
+      target_auth_user_id: userData.user.id,
+      target_lecture_session_id: body.lectureSessionId,
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: tokenHash,
+    })
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    const value = result.data as Record<string, unknown> | null
+    if (!value) {
+      return errorResponse(
+        jsonResponse,
+        'master_status_unavailable',
+        'Lecture AI authorization status is unavailable.',
+        409,
+      )
+    }
+    return jsonResponse({
+      authorization: value.authorization ?? null,
+      canUseAi: value.can_use_ai === true,
+      dormantAuthority: true,
+      lectureOpen: value.lecture_open === true,
+      ok: true,
+      providerAuthorityIssued: false,
+      reason: value.reason ?? null,
+      serverTime: value.server_time ?? null,
+    })
+  }
+
+  if (action === 'downgradeMaster') {
+    if (!isUuid(body.lectureSessionId) || !isUuid(body.requestId)) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+    const result = await serviceClient.rpc('downgrade_google_ai_master_v1', {
+      target_auth_user_id: userData.user.id,
+      target_lecture_session_id: body.lectureSessionId,
+      target_request_id: body.requestId,
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: tokenHash,
+    })
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    return masterResultResponse(
+      jsonResponse,
+      result.data as Record<string, unknown> | null,
+    )
+  }
+
+  if (action === 'revokeMaster') {
+    const reason = isString(body.reason) ? body.reason.trim() : ''
+    if (
+      !isUuid(body.lectureSessionId) ||
+      !isUuid(body.requestId) ||
+      reason.length < 1 ||
+      reason.length > 120
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+    const result = await serviceClient.rpc('revoke_google_ai_master_v1', {
+      target_auth_user_id: userData.user.id,
+      target_lecture_session_id: body.lectureSessionId,
+      target_reason: reason,
+      target_request_id: body.requestId,
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: tokenHash,
+    })
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    return masterResultResponse(
+      jsonResponse,
+      result.data as Record<string, unknown> | null,
+    )
+  }
+
+  if (action === 'authorizeMasterWithPin') {
+    if (
+      !isString(body.pin) ||
+      !FOUR_DIGIT_PIN_PATTERN.test(body.pin) ||
+      !isUuid(body.lectureSessionId) ||
+      !isUuid(body.policyId) ||
+      !isPositiveInteger(body.policyVersion) ||
+      (body.requestedScope !== 'all_except_captions' &&
+        body.requestedScope !== 'all_including_captions') ||
+      !isUuid(body.requestId)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+
+    const replay = await serviceClient.rpc(
+      'replay_google_ai_master_admission_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_lecture_session_id: body.lectureSessionId,
+        target_policy_id: body.policyId,
+        target_policy_version: body.policyVersion,
+        target_request_id: body.requestId,
+        target_scope: body.requestedScope,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+        target_unlock_method: 'ai_pin',
+      },
+    )
+    if (replay.error) return rpcErrorResponse(jsonResponse, replay.error.code)
+    if (replay.data) {
+      return masterResultResponse(
+        jsonResponse,
+        replay.data as Record<string, unknown>,
+      )
+    }
+    if (!c1AdmissionSourceAllowed || !aiSourceEnabled) {
+      return errorResponse(
+        jsonResponse,
+        'feature_disabled',
+        'Lecture AI authorization is not enabled.',
+        503,
+      )
+    }
+
+    const profileResult = await serviceClient.rpc(
+      'get_admin_ai_unlock_profile_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
+    const admissionProfile = profileResult.data as AiProfile | null
+    if (
+      profileResult.error ||
+      !admissionProfile ||
+      !isPositiveInteger(admissionProfile.pin_pepper_version)
+    ) {
+      return profileResult.error
+        ? rpcErrorResponse(jsonResponse, profileResult.error.code)
+        : errorResponse(
+            jsonResponse,
+            'service_unavailable',
+            'Lecture AI authorization is not configured.',
+            503,
+          )
+    }
+
+    try {
+      const networkHmac = await deriveNetworkHmac(
+        request,
+        readSecret('ADMIN_AI_NETWORK_PEPPER'),
+      )
+      const version = admissionProfile.pin_pepper_version
+      const pinHmac = await derivePepperedPinHmac(
+        body.pin,
+        version,
+        getPinPepper(version),
+      )
+      const result = await serviceClient.rpc(
+        'authorize_google_ai_master_with_pin_v1',
+        {
+          target_auth_user_id: userData.user.id,
+          target_lecture_session_id: body.lectureSessionId,
+          target_network_hmac: networkHmac,
+          target_peppered_pin_hmac: pinHmac,
+          target_pin_pepper_version: version,
+          target_policy_id: body.policyId,
+          target_policy_version: body.policyVersion,
+          target_request_id: body.requestId,
+          target_scope: body.requestedScope,
+          target_supabase_auth_session_id: claims.sessionId,
+          target_token_hash: tokenHash,
+        },
+      )
+      if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+      const value = result.data as Record<string, unknown> | null
+      if (value?.accepted === true)
+        return masterResultResponse(jsonResponse, value)
+      const retryAfter = Number(value?.retry_after_seconds ?? 0)
+      const response = errorResponse(
+        jsonResponse,
+        retryAfter > 0 ? 'rate_limited' : 'pin_denied',
+        'AI PIN could not be verified.',
+        retryAfter > 0 ? 429 : 401,
+      )
+      if (retryAfter > 0) {
+        response.headers.set('Retry-After', String(Math.min(900, retryAfter)))
+      }
+      return response
+    } catch {
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Lecture AI authorization is not configured.',
+        503,
+      )
+    }
+  }
+
+  if (action === 'completeBrowserMasterAdmission') {
+    const jwk = normalizePublicP256Jwk(body.publicKeyJwk)
+    const parsed = isString(body.assertionPayload)
+      ? parseBrowserAssertionPayload(body.assertionPayload)
+      : null
+    if (
+      !jwk ||
+      !parsed ||
+      canonicalizeBrowserAssertionPayload(parsed) !== body.assertionPayload ||
+      !isString(body.assertionPayloadMac) ||
+      !isString(body.signature) ||
+      !isString(body.credentialToken) ||
+      !OPAQUE_BROWSER_TOKEN_PATTERN.test(body.credentialToken) ||
+      !isUuid(body.requestId) ||
+      parsed.origin !== requestOrigin ||
+      parsed.adminSessionId !== context!.id ||
+      parsed.authSessionId !== claims.sessionId ||
+      parsed.publicKeyFingerprint !== (await getPublicP256JwkFingerprint(jwk))
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+
+    const replay = await serviceClient.rpc(
+      'replay_google_ai_master_admission_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_lecture_session_id: parsed.lectureSessionId,
+        target_policy_id: parsed.policyId,
+        target_policy_version: parsed.policyVersion,
+        target_request_id: body.requestId,
+        target_scope: parsed.requestedScope,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+        target_unlock_method: 'remembered_browser',
+      },
+    )
+    if (replay.error) return rpcErrorResponse(jsonResponse, replay.error.code)
+    if (replay.data) {
+      return masterResultResponse(
+        jsonResponse,
+        replay.data as Record<string, unknown>,
+      )
+    }
+    if (!c1AdmissionSourceAllowed || !aiSourceEnabled) {
+      return errorResponse(
+        jsonResponse,
+        'feature_disabled',
+        'Lecture AI authorization is not enabled.',
+        503,
+      )
+    }
+    if (
+      Date.parse(parsed.expiresAt) <= Date.now() ||
+      Date.parse(parsed.expiresAt) > Date.now() + 5 * 60 * 1_000
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'assertion_invalid',
+        'Remembered-browser proof is invalid.',
+        409,
+      )
+    }
+
+    let challengeSecret: string
+    try {
+      challengeSecret = readSecret('ADMIN_AI_BROWSER_CHALLENGE_SECRET')
+    } catch {
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Remembered-browser proof is not configured.',
+        503,
+      )
+    }
+    if (
+      !(await verifyHmacSha256Base64Url(
+        challengeSecret,
+        body.assertionPayload,
+        body.assertionPayloadMac,
+      ))
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'assertion_invalid',
+        'Remembered-browser proof is invalid.',
+        409,
+      )
+    }
+    const signatureVerified = await verifyP256P1363Signature(
+      jwk,
+      body.assertionPayload,
+      body.signature,
+    )
+    const result = await serviceClient.rpc(
+      'complete_google_ai_master_browser_admission_v1',
+      {
+        target_assertion_payload_hash: await sha256Hex(body.assertionPayload),
+        target_auth_user_id: userData.user.id,
+        target_challenge_hash: await sha256Hex(parsed.challenge),
+        target_credential_hash: await sha256Hex(body.credentialToken),
+        target_lecture_session_id: parsed.lectureSessionId,
+        target_origin: requestOrigin,
+        target_policy_id: parsed.policyId,
+        target_policy_version: parsed.policyVersion,
+        target_request_id: body.requestId,
+        target_scope: parsed.requestedScope,
+        target_signature_verified: signatureVerified,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    const value = result.data as Record<string, unknown> | null
+    if (!signatureVerified || !value) {
+      return errorResponse(
+        jsonResponse,
+        'assertion_invalid',
+        'Remembered-browser proof is invalid.',
+        401,
+      )
+    }
+    return masterResultResponse(jsonResponse, value)
+  }
+
   if (action === 'profile') {
     return jsonResponse({
       activeBrowserCount: profile!.active_browser_count ?? 0,
@@ -535,7 +992,12 @@ async function handleRequest(request: Request) {
       (body.pinAction !== 'enroll' && body.pinAction !== 'rotate') ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     try {
       const version = getPinPepperVersion()
@@ -572,7 +1034,12 @@ async function handleRequest(request: Request) {
       !FOUR_DIGIT_PIN_PATTERN.test(body.pin) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     try {
       const version = getPinPepperVersion()
@@ -591,7 +1058,12 @@ async function handleRequest(request: Request) {
       })
       if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
       if (!result.data) {
-        return errorResponse(jsonResponse, 'control_proof_required', 'Fresh control approval is required.', 409)
+        return errorResponse(
+          jsonResponse,
+          'control_proof_required',
+          'Fresh control approval is required.',
+          409,
+        )
       }
       const value = result.data as Record<string, unknown>
       return jsonResponse({
@@ -611,10 +1083,17 @@ async function handleRequest(request: Request) {
 
   if (action === 'revokePin' || action === 'resetPin') {
     if (!isUuid(body.requestId)) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     const result = await serviceClient.rpc(
-      action === 'revokePin' ? 'revoke_admin_ai_pin_v1' : 'reset_admin_ai_pin_v1',
+      action === 'revokePin'
+        ? 'revoke_admin_ai_pin_v1'
+        : 'reset_admin_ai_pin_v1',
       {
         target_auth_user_id: userData.user.id,
         target_request_id: body.requestId,
@@ -624,7 +1103,12 @@ async function handleRequest(request: Request) {
     )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     if (!result.data) {
-      return errorResponse(jsonResponse, 'control_proof_required', 'Fresh control approval is required.', 409)
+      return errorResponse(
+        jsonResponse,
+        'control_proof_required',
+        'Fresh control approval is required.',
+        409,
+      )
     }
     return jsonResponse({ ok: true, status: 'revoked' })
   }
@@ -635,7 +1119,12 @@ async function handleRequest(request: Request) {
       !FOUR_DIGIT_PIN_PATTERN.test(body.pin) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     let networkHmac: string
     try {
@@ -644,20 +1133,29 @@ async function handleRequest(request: Request) {
         readSecret('ADMIN_AI_NETWORK_PEPPER'),
       )
     } catch {
-      return errorResponse(jsonResponse, 'service_unavailable', 'Admin AI control is not configured.', 503)
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Admin AI control is not configured.',
+        503,
+      )
     }
     const intentDigest = await sha256Hex(
       `compass:phase7.30:pin-verify:v1|request_id=${body.requestId}|admin_session_id=${context!.id}`,
     )
-    const metadata = await serviceClient.rpc('get_admin_ai_pin_factor_metadata_v1', {
-      target_auth_user_id: userData.user.id,
-      target_intent_digest: intentDigest,
-      target_network_hmac: networkHmac,
-      target_request_id: body.requestId,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
-    if (metadata.error) return rpcErrorResponse(jsonResponse, metadata.error.code)
+    const metadata = await serviceClient.rpc(
+      'get_admin_ai_pin_factor_metadata_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_intent_digest: intentDigest,
+        target_network_hmac: networkHmac,
+        target_request_id: body.requestId,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
+    if (metadata.error)
+      return rpcErrorResponse(jsonResponse, metadata.error.code)
     const metadataValue = metadata.data as Record<string, unknown> | null
     if (!metadataValue || metadataValue.available !== true) {
       return jsonResponse({
@@ -669,10 +1167,19 @@ async function handleRequest(request: Request) {
     }
     const version = metadataValue.pin_pepper_version
     if (!isPositiveInteger(version)) {
-      return errorResponse(jsonResponse, 'service_unavailable', 'Admin AI control is temporarily unavailable.', 503)
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Admin AI control is temporarily unavailable.',
+        503,
+      )
     }
     try {
-      const pinHmac = await derivePepperedPinHmac(body.pin, version, getPinPepper(version))
+      const pinHmac = await derivePepperedPinHmac(
+        body.pin,
+        version,
+        getPinPepper(version),
+      )
       const verification = await serviceClient.rpc('verify_admin_ai_pin_v1', {
         target_auth_user_id: userData.user.id,
         target_intent_digest: intentDigest,
@@ -683,15 +1190,19 @@ async function handleRequest(request: Request) {
         target_supabase_auth_session_id: claims.sessionId,
         target_token_hash: tokenHash,
       })
-      if (verification.error) return rpcErrorResponse(jsonResponse, verification.error.code)
+      if (verification.error)
+        return rpcErrorResponse(jsonResponse, verification.error.code)
       const value = verification.data as Record<string, unknown> | null
-      return jsonResponse({
-        ok: value?.verified === true,
-        reasonCode: value?.reason_code ?? 'invalid_unlock',
-        retryAfterSeconds: value?.retry_after_seconds ?? 0,
-        verified: value?.verified === true,
-        verifiedAt: value?.verified_at ?? null,
-      }, value?.verified === true ? 200 : 401)
+      return jsonResponse(
+        {
+          ok: value?.verified === true,
+          reasonCode: value?.reason_code ?? 'invalid_unlock',
+          retryAfterSeconds: value?.retry_after_seconds ?? 0,
+          verified: value?.verified === true,
+          verifiedAt: value?.verified_at ?? null,
+        },
+        value?.verified === true ? 200 : 401,
+      )
     } catch {
       return errorResponse(
         jsonResponse,
@@ -718,26 +1229,47 @@ async function handleRequest(request: Request) {
       !Number.isFinite(Date.parse(body.absoluteExpiresAt)) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    if ((await getPublicP256JwkFingerprint(jwk)) !== body.publicKeyFingerprint) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+    if (
+      (await getPublicP256JwkFingerprint(jwk)) !== body.publicKeyFingerprint
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    const result = await serviceClient.rpc('begin_admin_ai_browser_enrollment_v1', {
-      target_absolute_expires_at: body.absoluteExpiresAt,
-      target_auth_user_id: userData.user.id,
-      target_credential_hash: await sha256Hex(body.credentialToken),
-      target_nonce_hash: await sha256Hex(body.enrollmentNonce),
-      target_origin: requestOrigin,
-      target_public_key_fingerprint: body.publicKeyFingerprint,
-      target_request_id: body.requestId,
-      target_reserved_browser_credential_id: body.browserCredentialId,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'begin_admin_ai_browser_enrollment_v1',
+      {
+        target_absolute_expires_at: body.absoluteExpiresAt,
+        target_auth_user_id: userData.user.id,
+        target_credential_hash: await sha256Hex(body.credentialToken),
+        target_nonce_hash: await sha256Hex(body.enrollmentNonce),
+        target_origin: requestOrigin,
+        target_public_key_fingerprint: body.publicKeyFingerprint,
+        target_request_id: body.requestId,
+        target_reserved_browser_credential_id: body.browserCredentialId,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
-    if (!value) return errorResponse(jsonResponse, 'enrollment_unavailable', 'Remembered-browser setup is unavailable.', 409)
+    if (!value)
+      return errorResponse(
+        jsonResponse,
+        'enrollment_unavailable',
+        'Remembered-browser setup is unavailable.',
+        409,
+      )
     return jsonResponse({
       browserCredentialId: body.browserCredentialId,
       expiresAt: value.expires_at ?? null,
@@ -753,7 +1285,12 @@ async function handleRequest(request: Request) {
       !isString(body.publicKeyFingerprint) ||
       !SHA256_HEX_PATTERN.test(body.publicKeyFingerprint)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     const result = await serviceClient.rpc(
       'get_admin_ai_browser_credential_status_v1',
@@ -770,7 +1307,12 @@ async function handleRequest(request: Request) {
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
     if (!value) {
-      return errorResponse(jsonResponse, 'service_unavailable', 'Credential status is unavailable.', 503)
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Credential status is unavailable.',
+        503,
+      )
     }
     return jsonResponse({
       browserCredentialId: value.browser_credential_id ?? null,
@@ -791,7 +1333,12 @@ async function handleRequest(request: Request) {
       !FOUR_DIGIT_PIN_PATTERN.test(body.pin) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     if (!isPositiveInteger(profile!.pin_pepper_version)) {
       return errorResponse(
@@ -807,18 +1354,25 @@ async function handleRequest(request: Request) {
         readSecret('ADMIN_AI_NETWORK_PEPPER'),
       )
       const version = profile!.pin_pepper_version!
-      const pinHmac = await derivePepperedPinHmac(body.pin, version, getPinPepper(version))
-      const result = await serviceClient.rpc('complete_admin_ai_browser_enrollment_v1', {
-        target_auth_user_id: userData.user.id,
-        target_network_hmac: networkHmac,
-        target_nonce_hash: await sha256Hex(body.enrollmentNonce),
-        target_peppered_pin_hmac: pinHmac,
-        target_pin_pepper_version: version,
-        target_public_key_jwk: jwk,
-        target_request_id: body.requestId,
-        target_supabase_auth_session_id: claims.sessionId,
-        target_token_hash: tokenHash,
-      })
+      const pinHmac = await derivePepperedPinHmac(
+        body.pin,
+        version,
+        getPinPepper(version),
+      )
+      const result = await serviceClient.rpc(
+        'complete_admin_ai_browser_enrollment_v1',
+        {
+          target_auth_user_id: userData.user.id,
+          target_network_hmac: networkHmac,
+          target_nonce_hash: await sha256Hex(body.enrollmentNonce),
+          target_peppered_pin_hmac: pinHmac,
+          target_pin_pepper_version: version,
+          target_public_key_jwk: jwk,
+          target_request_id: body.requestId,
+          target_supabase_auth_session_id: claims.sessionId,
+          target_token_hash: tokenHash,
+        },
+      )
       if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
       const value = result.data as Record<string, unknown> | null
       if (!value || value.verified === false) {
@@ -861,29 +1415,47 @@ async function handleRequest(request: Request) {
         body.requestedScope !== 'all_including_captions') ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     const challenge = createOpaqueBrowserToken()
     const expiresAt = new Date(Date.now() + 2 * 60 * 1_000).toISOString()
-    const result = await serviceClient.rpc('begin_admin_ai_browser_assertion_v1', {
-      target_auth_user_id: userData.user.id,
-      target_challenge_hash: await sha256Hex(challenge),
-      target_credential_hash: await sha256Hex(body.credentialToken),
-      target_expires_at: expiresAt,
-      target_lecture_session_id: body.lectureSessionId,
-      target_origin: requestOrigin,
-      target_policy_id: body.policyId,
-      target_policy_version: body.policyVersion,
-      target_request_id: body.requestId,
-      target_requested_scope: body.requestedScope,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'begin_admin_ai_browser_assertion_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_challenge_hash: await sha256Hex(challenge),
+        target_credential_hash: await sha256Hex(body.credentialToken),
+        target_expires_at: expiresAt,
+        target_lecture_session_id: body.lectureSessionId,
+        target_origin: requestOrigin,
+        target_policy_id: body.policyId,
+        target_policy_version: body.policyVersion,
+        target_request_id: body.requestId,
+        target_requested_scope: body.requestedScope,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
     const jwk = normalizePublicP256Jwk(value?.public_key_jwk)
-    if (!value || !jwk || !isUuid(value.browser_credential_id) || !isUuid(value.challenge_id)) {
-      return errorResponse(jsonResponse, 'assertion_unavailable', 'Remembered-browser proof is unavailable.', 409)
+    if (
+      !value ||
+      !jwk ||
+      !isUuid(value.browser_credential_id) ||
+      !isUuid(value.challenge_id)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'assertion_unavailable',
+        'Remembered-browser proof is unavailable.',
+        409,
+      )
     }
     const fingerprint = await getPublicP256JwkFingerprint(jwk)
     const assertionPayload = canonicalizeBrowserAssertionPayload({
@@ -904,11 +1476,19 @@ async function handleRequest(request: Request) {
     try {
       challengeSecret = readSecret('ADMIN_AI_BROWSER_CHALLENGE_SECRET')
     } catch {
-      return errorResponse(jsonResponse, 'service_unavailable', 'Remembered-browser proof is not configured.', 503)
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Remembered-browser proof is not configured.',
+        503,
+      )
     }
     return jsonResponse({
       assertionPayload,
-      assertionPayloadMac: await hmacSha256Base64Url(challengeSecret, assertionPayload),
+      assertionPayloadMac: await hmacSha256Base64Url(
+        challengeSecret,
+        assertionPayload,
+      ),
       browserCredentialId: value.browser_credential_id,
       expiresAt,
       ok: true,
@@ -927,14 +1507,24 @@ async function handleRequest(request: Request) {
       !OPAQUE_BROWSER_TOKEN_PATTERN.test(body.credentialToken) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
     const parsed = parseBrowserAssertionPayload(body.assertionPayload)
     let challengeSecret: string
     try {
       challengeSecret = readSecret('ADMIN_AI_BROWSER_CHALLENGE_SECRET')
     } catch {
-      return errorResponse(jsonResponse, 'service_unavailable', 'Remembered-browser proof is not configured.', 503)
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Remembered-browser proof is not configured.',
+        503,
+      )
     }
     if (
       !parsed ||
@@ -944,35 +1534,49 @@ async function handleRequest(request: Request) {
       parsed.authSessionId !== claims.sessionId ||
       Date.parse(parsed.expiresAt) <= Date.now() ||
       Date.parse(parsed.expiresAt) > Date.now() + 5 * 60 * 1_000 ||
-      parsed.publicKeyFingerprint !== (await getPublicP256JwkFingerprint(jwk)) ||
+      parsed.publicKeyFingerprint !==
+        (await getPublicP256JwkFingerprint(jwk)) ||
       !(await verifyHmacSha256Base64Url(
         challengeSecret,
         body.assertionPayload,
         body.assertionPayloadMac,
       ))
     ) {
-      return errorResponse(jsonResponse, 'assertion_invalid', 'Remembered-browser proof is invalid.', 409)
+      return errorResponse(
+        jsonResponse,
+        'assertion_invalid',
+        'Remembered-browser proof is invalid.',
+        409,
+      )
     }
     const signatureVerified = await verifyP256P1363Signature(
       jwk,
       body.assertionPayload,
       body.signature,
     )
-    const result = await serviceClient.rpc('complete_admin_ai_browser_assertion_v1', {
-      target_assertion_payload_hash: await sha256Hex(body.assertionPayload),
-      target_auth_user_id: userData.user.id,
-      target_challenge_hash: await sha256Hex(parsed.challenge),
-      target_credential_hash: await sha256Hex(body.credentialToken),
-      target_origin: requestOrigin,
-      target_request_id: body.requestId,
-      target_signature_verified: signatureVerified,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'complete_admin_ai_browser_assertion_v1',
+      {
+        target_assertion_payload_hash: await sha256Hex(body.assertionPayload),
+        target_auth_user_id: userData.user.id,
+        target_challenge_hash: await sha256Hex(parsed.challenge),
+        target_credential_hash: await sha256Hex(body.credentialToken),
+        target_origin: requestOrigin,
+        target_request_id: body.requestId,
+        target_signature_verified: signatureVerified,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
     if (!signatureVerified || value?.verified !== true) {
-      return errorResponse(jsonResponse, 'assertion_invalid', 'Remembered-browser proof is invalid.', 401)
+      return errorResponse(
+        jsonResponse,
+        'assertion_invalid',
+        'Remembered-browser proof is invalid.',
+        401,
+      )
     }
     return jsonResponse({
       authorityIssued: false,
@@ -989,37 +1593,66 @@ async function handleRequest(request: Request) {
 
   if (action === 'revokeBrowserCredential') {
     if (!isUuid(body.browserCredentialId) || !isUuid(body.requestId)) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    const result = await serviceClient.rpc('revoke_admin_ai_browser_credential_v1', {
-      target_auth_user_id: userData.user.id,
-      target_browser_credential_id: body.browserCredentialId,
-      target_request_id: body.requestId,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'revoke_admin_ai_browser_credential_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_browser_credential_id: body.browserCredentialId,
+        target_request_id: body.requestId,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
-    return jsonResponse({ ok: result.data === true, revoked: result.data === true })
+    return jsonResponse({
+      ok: result.data === true,
+      revoked: result.data === true,
+    })
   }
 
   if (action === 'prepareTotpTransition') {
     if (
-      (body.factorAction !== 'totp_factor_add' && body.factorAction !== 'totp_factor_remove') ||
+      (body.factorAction !== 'totp_factor_add' &&
+        body.factorAction !== 'totp_factor_remove') ||
       !isUuid(body.targetFactorId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    const result = await serviceClient.rpc('get_admin_totp_factor_transition_intent_v1', {
-      target_action: body.factorAction,
-      target_auth_user_id: userData.user.id,
-      target_factor_id: body.targetFactorId,
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'get_admin_totp_factor_transition_intent_v1',
+      {
+        target_action: body.factorAction,
+        target_auth_user_id: userData.user.id,
+        target_factor_id: body.targetFactorId,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
-    if (!value || !isString(value.intent_digest) || !SHA256_HEX_PATTERN.test(value.intent_digest)) {
-      return errorResponse(jsonResponse, 'transition_unavailable', 'Authenticator change is unavailable.', 409)
+    if (
+      !value ||
+      !isString(value.intent_digest) ||
+      !SHA256_HEX_PATTERN.test(value.intent_digest)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'transition_unavailable',
+        'Authenticator change is unavailable.',
+        409,
+      )
     }
     return jsonResponse({
       approvedPreVersion: value.approved_pre_version,
@@ -1034,7 +1667,8 @@ async function handleRequest(request: Request) {
 
   if (action === 'authorizeTotpTransition') {
     if (
-      (body.factorAction !== 'totp_factor_add' && body.factorAction !== 'totp_factor_remove') ||
+      (body.factorAction !== 'totp_factor_add' &&
+        body.factorAction !== 'totp_factor_remove') ||
       !isUuid(body.targetFactorId) ||
       !isString(body.controlIntentDigest) ||
       !SHA256_HEX_PATTERN.test(body.controlIntentDigest) ||
@@ -1042,18 +1676,26 @@ async function handleRequest(request: Request) {
       !OPAQUE_BROWSER_TOKEN_PATTERN.test(body.recoveryToken) ||
       !isUuid(body.requestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    const result = await serviceClient.rpc('authorize_admin_totp_factor_transition_v1', {
-      target_action: body.factorAction,
-      target_auth_user_id: userData.user.id,
-      target_factor_id: body.targetFactorId,
-      target_intent_digest: body.controlIntentDigest,
-      target_mutation_request_id: body.requestId,
-      target_recovery_token_hash: await sha256Hex(body.recoveryToken),
-      target_supabase_auth_session_id: claims.sessionId,
-      target_token_hash: tokenHash,
-    })
+    const result = await serviceClient.rpc(
+      'authorize_admin_totp_factor_transition_v1',
+      {
+        target_action: body.factorAction,
+        target_auth_user_id: userData.user.id,
+        target_factor_id: body.targetFactorId,
+        target_intent_digest: body.controlIntentDigest,
+        target_mutation_request_id: body.requestId,
+        target_recovery_token_hash: await sha256Hex(body.recoveryToken),
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
     if (result.error) {
       if (result.error.code === 'P7334') {
         // The RPC serializes this request and returns any exact transition
@@ -1073,7 +1715,12 @@ async function handleRequest(request: Request) {
     }
     const value = result.data as Record<string, unknown> | null
     if (!value || value.status !== 'authorized') {
-      return errorResponse(jsonResponse, 'control_proof_required', 'Fresh control approval is required.', 409)
+      return errorResponse(
+        jsonResponse,
+        'control_proof_required',
+        'Fresh control approval is required.',
+        409,
+      )
     }
     return jsonResponse({
       expiresAt: value.expires_at,
@@ -1085,7 +1732,8 @@ async function handleRequest(request: Request) {
 
   if (action === 'finalizeTotpTransition') {
     if (
-      (body.factorAction !== 'totp_factor_add' && body.factorAction !== 'totp_factor_remove') ||
+      (body.factorAction !== 'totp_factor_add' &&
+        body.factorAction !== 'totp_factor_remove') ||
       !isUuid(body.targetFactorId) ||
       !isString(body.controlIntentDigest) ||
       !SHA256_HEX_PATTERN.test(body.controlIntentDigest) ||
@@ -1094,22 +1742,35 @@ async function handleRequest(request: Request) {
       !isUuid(body.requestId) ||
       !isUuid(body.finalizeRequestId)
     ) {
-      return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
     }
-    const result = await serviceClient.rpc('finalize_admin_totp_factor_transition_v1', {
-      target_action: body.factorAction,
-      target_auth_user_id: userData.user.id,
-      target_factor_id: body.targetFactorId,
-      target_finalize_request_id: body.finalizeRequestId,
-      target_intent_digest: body.controlIntentDigest,
-      target_mutation_request_id: body.requestId,
-      target_recovery_token_hash: await sha256Hex(body.recoveryToken),
-      target_supabase_auth_session_id: claims.sessionId,
-    })
+    const result = await serviceClient.rpc(
+      'finalize_admin_totp_factor_transition_v1',
+      {
+        target_action: body.factorAction,
+        target_auth_user_id: userData.user.id,
+        target_factor_id: body.targetFactorId,
+        target_finalize_request_id: body.finalizeRequestId,
+        target_intent_digest: body.controlIntentDigest,
+        target_mutation_request_id: body.requestId,
+        target_recovery_token_hash: await sha256Hex(body.recoveryToken),
+        target_supabase_auth_session_id: claims.sessionId,
+      },
+    )
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
     if (!value || value.status !== 'finalized') {
-      return errorResponse(jsonResponse, 'transition_incomplete', 'Authenticator change could not be finalized.', 409)
+      return errorResponse(
+        jsonResponse,
+        'transition_incomplete',
+        'Authenticator change could not be finalized.',
+        409,
+      )
     }
     return jsonResponse({
       approvedFactorCount: value.approved_factor_count,
@@ -1121,7 +1782,12 @@ async function handleRequest(request: Request) {
     })
   }
 
-  return errorResponse(jsonResponse, 'request_invalid', 'Request is invalid.', 400)
+  return errorResponse(
+    jsonResponse,
+    'request_invalid',
+    'Request is invalid.',
+    400,
+  )
 }
 
 Deno.serve((request) =>

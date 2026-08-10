@@ -333,8 +333,8 @@ sessions, an approved hash/version/count plus bounded approval provenance to
 `private.admin_principals`, a separate default-OFF operator-adoption gate, and
 two more RLS-enabled private tables:
 
-| Table                          | Responsibility                                                                                          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Table                          | Responsibility                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | `admin_control_step_up_nonces` | Digest-only five-minute action/request/session/factor-set/JWT/AMR and canonical-intent challenge state |
 | `admin_control_step_up_grants` | Single-use rare PIN/policy authority; exact canonical intent is rederived by the mutation transaction  |
 
@@ -352,9 +352,9 @@ privilege.
 Phase 7.30B2.2b adds one RLS-enabled private durable transition table and
 binding columns on remembered-browser state:
 
-| Table                            | Responsibility                                                                                              |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `admin_totp_factor_transitions`  | One active principal-scoped add/remove authorization, expected post-set and hash-only recovery provenance |
+| Table                           | Responsibility                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `admin_totp_factor_transitions` | One active principal-scoped add/remove authorization, expected post-set and hash-only recovery provenance |
 
 Transition prepare derives verified IDs, target status, count and hash from one
 aggregate `auth.mfa_factors` statement snapshot. Authorize consumes one exact
@@ -366,9 +366,23 @@ version, current Auth-session and completion provenance so a new valid AAL2
 session may use the same credential without treating enrollment-session identity
 as current authority.
 
-The B2/B2.2a/B2.2b source/static contracts are implemented. From-zero migration,
-all pgTAP, real database concurrency, populated Phase 7.29/B1/B2/B2.2a-head
-upgrade, generated types and DB lint remain exact-head CI verification
-requirements. B2.2b includes raw-PIN/HMAC and actual browser key/signature source
-paths, but unified Admin authorization, lecture ownership, atomic master issuance
-and Hosted/Human activation are not database-schema claims of this phase.
+Phase 7.30C1 adds four RLS-enabled private tables:
+
+| Table                                | Responsibility                                                               |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `admin_lecture_ownerships`           | Optional-row, no-backfill ownership for lectures created by a verified Admin |
+| `admin_ai_master_admission_receipts` | Immutable atomic PIN/browser-proof to dormant-master exact replay            |
+| `admin_ai_master_reuse_receipts`     | Immutable proof-free same-scope observation; stale retry cannot resurrect    |
+| `admin_ai_master_control_receipts`   | Immutable downgrade/revoke request binding and recorded-row convergence      |
+
+The C1 runtime gate is default OFF. Public C1 facades are fixed-search-path
+SECURITY DEFINER functions executable only by `service_role`; private tables
+and helpers retain no runtime-role grants. Existing lectures and masters are
+not adopted. Legacy master/child/direct grant paths are permanently fenced for
+an owned lecture, including after master revoke or expiry.
+
+The B2/B2.2a/B2.2b/C1 source/static contracts are implemented. From-zero
+migration, all pgTAP, real database concurrency, populated Phase
+7.29/B1/B2/B2.2a/B2.2b-head upgrade, generated types and DB lint remain
+exact-head CI verification requirements. The all-operational Admin verifier,
+child/provider authority and Hosted/Human activation remain C2/later HOLD.

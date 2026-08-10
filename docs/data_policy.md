@@ -315,6 +315,15 @@ factor, pre/post set and expiry metadata. The window is at most 30 minutes and
 never exceeds the application/Auth eight-hour cap. TOTP code, secret and QR
 material are not persisted in that recovery record.
 
+C1 adds only content-free private ownership and AI-master evidence. Ownership
+is represented by an optional row; migration does not infer or backfill one for
+an existing lecture. Admission receipts bind request, Admin/Auth session,
+lecture, scope, policy/version, factor/version and a PIN-attempt or browser-
+challenge identifier. Control receipts bind downgrade/revoke requests and the
+recorded master result. They contain no raw PIN, TOTP, browser private key,
+lecture code, prompt, provider response or recovery credential. The raw lecture
+code remains transient input to the established code/hash verifier.
+
 B2 cleanup is bounded and retention-cutoff-driven. Expired or superseded child
 state remains non-authorizing while awaiting deletion. The Hosted retention
 schedule, privacy notice, operator export/deletion procedure and real-account
@@ -346,6 +355,12 @@ evidence remain unproven.
   the anchor and drains old authority only when the live post-set matches.
   Remove-to-zero is rejected. The transition path is default OFF and its Local
   Edge, Hosted and Human evidence remains HOLD.
+- C1 creates ownership only for a lecture created in the same verified Admin
+  transaction and atomically exchanges one PIN/browser proof for a dormant
+  full-provenance master plus immutable receipt. Exact replay/status/free
+  downgrade/revoke remain available gate-OFF. Existing lectures and masters
+  receive no inferred ownership or receipt, and child/provider authority is
+  fenced until C2.
 - A five-minute TOTP step-up record exists only for rare owner/principal,
   role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
   and AI PIN factor enrollment/rotation/revoke/reset control-plane actions. It is

@@ -180,7 +180,7 @@ jobs:
       - name: Verify populated Phase 7.28 upgrade through Phase 7.29
         run: npm run test:phase7-29-upgrade
 
-      - name: Verify populated Phase 7.29, B1, B2-head and B2.2a-head states through Phase 7.30 B2.2b
+      - name: Verify populated Phase 7.29, B1, B2-head, B2.2a-head and B2.2b-head states through Phase 7.30 C1
         run: npm run test:phase7-30-upgrade
 
       - name: Lint the local database
@@ -259,7 +259,7 @@ jobs:
       - name: Wait for Admin-identity-enabled local Edge Functions
         run: node scripts/ci/wait-for-local-edge.mjs
 
-      - name: Run local GoTrue TOTP and signed Google identity through Edge and database, then admin-ai-unlock source-OFF checks
+      - name: Run local GoTrue TOTP and signed Google identity through Edge and database, then admin-ai-unlock B2.2b/C1 source-OFF checks
         run: npm run test:phase7-30b1-local-edge
 
       - name: Restore dormant Admin identity configuration

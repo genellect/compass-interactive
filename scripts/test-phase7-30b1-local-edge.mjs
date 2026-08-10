@@ -123,9 +123,7 @@ function decodeJwtPayload(token) {
 
 function latestTotpAmrTimestamp(claims) {
   const timestamps = (claims.amr ?? [])
-    .filter(
-      (entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp',
-    )
+    .filter((entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp')
     .map((entry) => entry.timestamp)
     .filter(Number.isSafeInteger)
   return timestamps.length > 0 ? Math.max(...timestamps) : null
@@ -484,6 +482,24 @@ try {
   )
   assert.equal(sourceOffFactorPrepare.code, 'feature_disabled')
 
+  const sourceOffC1Admission = await invoke(
+    status,
+    aal2,
+    'admin-ai-unlock',
+    {
+      action: 'authorizeMasterWithPin',
+      appSessionToken: completed.appSessionToken,
+      lectureSessionId: randomUUID(),
+      pin: '1234',
+      policyId: randomUUID(),
+      policyVersion: 1,
+      requestId: randomUUID(),
+      requestedScope: 'all_except_captions',
+    },
+    503,
+  )
+  assert.equal(sourceOffC1Admission.code, 'feature_disabled')
+
   const controlRequestId = randomUUID()
   const controlIntentDigest = randomBytes(32).toString('hex')
   const controlBegunAt = Math.floor(Date.now() / 1_000)
@@ -543,7 +559,9 @@ try {
   )
   assert.equal(controlCompleted.controlIntentDigest, controlIntentDigest)
   assert.equal(controlCompleted.controlRequestId, controlRequestId)
-  assert.ok(Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000)
+  assert.ok(
+    Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
+  )
 
   const legacyCrossMode = await invoke(
     status,

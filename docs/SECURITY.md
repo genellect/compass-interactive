@@ -1,7 +1,7 @@
 # COMPASS Interactive Security Contract
 
 Last reviewed: 2026-08-10
-Status: source-implemented controls through Phase 7.30A-B2.2b; B2 runtime DB,
+Status: source-implemented controls through Phase 7.30A-C1; B2-C1 runtime DB,
 native, Hosted, Human and Production evidence remains separate
 
 ## 1. Security objectives
@@ -471,11 +471,13 @@ the unified verifier across every operational Admin Edge/RPC path.
   add/remove transitions without exposing them to operational Admin authority. Bounded
   cleanup uses nonblocking membership serialization plus `SKIP LOCKED`, returns
   `has_more` and permits only safe terminal child states.
-- Lecture-master provenance columns are additive and nullable. B2 does not yet
-  implement lecture ownership, the all-Admin verifier or atomic proof-to-master
-  issuance; those remain Phase 7.30C blockers.
+- Lecture-master provenance columns are additive and nullable. C1 now stores
+  new-lecture ownership privately with no inferred backfill and atomically
+  consumes a PIN/browser proof into a full-provenance dormant master. It fences
+  legacy conversion and all child/provider authority; the all-operational Admin
+  verifier and provider/child path remain C2 blockers.
 
-The B2/B2.2a/B2.2b source/static contracts and B2.2b Chromium/WebKit storage
+The B2/B2.2a/B2.2b/C1 source/static contracts and B2.2b Chromium/WebKit storage
 tests are implemented. From-zero migration, populated upgrade, all pgTAP, real
 two-transaction concurrency, generated types and DB lint remain exact-head
 runtime CI requirements. All runtime gates are OFF; Local Edge, Hosted/Human

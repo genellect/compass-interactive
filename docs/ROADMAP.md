@@ -3,8 +3,8 @@
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
 Last reconciled: 2026-08-10
-Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B2.2b
-source implemented; B2 exact-head runtime DB/Local Edge CI, Phase 7.30C onward and
+Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-C1
+source implemented; B2-C1 exact-head runtime DB/Local Edge CI, Phase 7.30C2 onward and
 Hosted/Human gates remain HOLD
 
 ## 1. Numbering decision
@@ -660,17 +660,19 @@ anchors the cap to `auth.sessions.created_at + 8 hours`, requires the backing
 Auth session, adds nine private AI-unlock/policy/rate/receipt/browser tables and
 expands lecture-master provenance. It is default OFF. Source/static evidence is
 PASS; clean/populated upgrade, pgTAP, real database concurrency, generated types
-  and lint await exact-head CI. B2.2a source adds a principal-approved TOTP
-  factor-set trust anchor, completed JWT/AMR evidence for session issuance,
-  changed-factor-set invalidation and single-use rare-control grants; its runtime
+and lint await exact-head CI. B2.2a source adds a principal-approved TOTP
+factor-set trust anchor, completed JWT/AMR evidence for session issuance,
+changed-factor-set invalidation and single-use rare-control grants; its runtime
 DB and Local Edge evidence await exact-head CI. B2.2b source adds the dedicated
 raw-PIN/HMAC Edge, PIN lifecycle UI, non-extractable IndexedDB P-256 key and
 dormant ES256 assertion, plus approved TOTP add/remove transitions with bounded
 hash-only recovery. Chromium/WebKit storage E2E passes locally; Docker-backed
-DB/Local Edge evidence is still pending. Phase 7.30C still has to complete the
-unified verifier across every operational Admin Edge/RPC path. Lecture
-ownership, proof-to-master admission, AI Passkey, real OAuth and Hosted/Human
-evidence remain HOLD. See `docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`.
+DB/Local Edge evidence is still pending. Phase 7.30C1 source adds private,
+no-backfill lecture ownership and atomic PIN/browser-proof-to-master admission,
+while deliberately fencing provider/child authority. Phase 7.30C2 still has to
+complete the unified verifier across every operational Admin Edge/RPC path.
+AI Passkey, real OAuth and Hosted/Human evidence remain HOLD. See
+`docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`.
 
 ### 7.30A - asset, IAM and threat inventory
 
@@ -720,11 +722,20 @@ master provenance; its exact-head runtime DB gate remains pending.
   principal-approved/live/session factor sets, completed JWT/AMR issuance
   evidence and rare-control grants. B2.2b adds default-OFF PIN/browser Edge/UI
   and approved factor add/remove transitions without issuing a lecture master;
-  runtime DB/Local Edge exact-head CI is pending. Phase 7.30C then completes the unified
-  verifier across all operational Admin Edge/RPC paths. Dedicated AI Passkey is
+  runtime DB/Local Edge exact-head CI is pending. Phase 7.30C1 adds private
+  no-backfill ownership plus atomic dormant master admission. Phase 7.30C2 then
+  completes the unified verifier across all operational Admin Edge/RPC paths.
+  Dedicated AI Passkey is
   deferred from the initial implementation.
 
 ### 7.30C - RBAC, ownership and all server authorization
+
+C1 source now covers private ownership for newly created lectures and atomic
+personal-PIN/remembered-browser proof to dormant master admission. Exact replay,
+status, free downgrade and revoke remain available gate-OFF. C1 never adopts an
+existing lecture/master and fences child/provider authority. The remaining
+all-operational-path migration, shared-PIN removal and provider/child verifier
+are C2 scope and remain HOLD.
 
 - Minimum roles are `owner` and `instructor`; `can_use_ai` remains a separate
   environment-scoped entitlement. Lecture ownership binds to either role's
