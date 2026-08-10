@@ -52,8 +52,10 @@ exact singleton factor before issuing the first session. Once bound, login
 requires the live set to equal the approved set and the challenged factor to be
 a verified member. A newly added factor is rejected even if an old/stolen AAL2
 bearer has already verified it upstream. Adding, removing or replacing a factor
-requires B2.2b rare-control with fresh proof from the approved set and remains
-HOLD.
+requires B2.2b rare-control with fresh proof from the approved set. That
+successor source path is now recorded in
+`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`; its runtime/activation evidence
+remains HOLD.
 
 An unbound principal that already has a verified factor set fails closed with
 `factor_set_adoption_required`; the browser cannot adopt it. A separate
@@ -70,8 +72,9 @@ explicit operator-adoption HOLD before a fresh Google-to-TOTP login.
 
 Enrolled remembered-browser credentials are intentionally not deleted merely
 because an application session ends. Pending enrollment/assertion proof is
-drained. Binding an existing credential to the new session factor-set contract
-is a B2.2b concern and remains HOLD.
+drained. B2.2b now binds an existing credential to each new valid current
+session and approved factor-set context while preserving enrollment provenance;
+its Local Edge/Hosted/Human activation remains HOLD.
 
 ## Single-use rare-control authority
 

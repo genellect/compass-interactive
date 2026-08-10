@@ -73,9 +73,9 @@ try {
         ))
       ),
       (
-        'ai-master-rpc',
-        md5(pg_get_functiondef(
-          'public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure
+        'ai-master-private-body',
+        md5((select prosrc from pg_proc where oid =
+          'private.authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure
         ))
       ),
       (
@@ -123,12 +123,20 @@ try {
 
       select contract_fingerprint into expected
       from public.phase729_upgrade_contract_probe
-      where contract_name = 'ai-master-rpc';
-      actual := md5(pg_get_functiondef(
-        'public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure
+      where contract_name = 'ai-master-private-body';
+      actual := md5((select prosrc from pg_proc where oid =
+        'private.authorize_ai_master_pre_c1(uuid,uuid,text,text,boolean)'::regprocedure
       ));
       if actual is distinct from expected then
-        raise exception 'Phase 7.29 rewrote the AI master RPC';
+        raise exception 'C1 did not preserve the pre-C1 AI master body';
+      end if;
+      if pg_get_functiondef(
+        'public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure
+      ) not like '%private.authorize_ai_master(%'
+         or pg_get_functiondef(
+           'private.authorize_ai_master(uuid,uuid,text,text,boolean)'::regprocedure
+         ) not like '%google_master_requires_c2%' then
+        raise exception 'C1 AI master compatibility facade is missing';
       end if;
 
       select contract_fingerprint into expected

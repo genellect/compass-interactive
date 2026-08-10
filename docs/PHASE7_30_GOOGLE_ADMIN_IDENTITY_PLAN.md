@@ -1,8 +1,8 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Implemented, verification pending
-Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-B2.2a source; Phase 7.30C-F HOLD
+Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a/B2.2b/C1 source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-C1 source; Phase 7.30C2-F HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-10
@@ -10,7 +10,10 @@ Last verified: 2026-08-10
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
 [`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md) and
-[`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md).
+[`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md) and
+[`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md).
+The narrow C1 ownership and atomic dormant-master integration record is
+[`PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`](PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md).
 
 ## Implementation checkpoint
 
@@ -47,8 +50,10 @@ Changed sets are reason-revoked and drain pending AI authority. The only
 automatic approval is an unbound `pending_mfa` principal's exact first 0-to-1
 factor during fresh completion. Existing verified but unbound sets require an
 Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
-never infers approval. Adding/replacing a factor beside an approved set requires
-B2.2b rare-control with fresh existing-factor proof and remains HOLD.
+never infers approval. B2.2b now implements default-OFF add/remove rare-control:
+one aggregate live snapshot, a fresh existing-set control grant and an exact
+expected post-set advance the principal anchor while draining old authority.
+Its maximum 30-minute hash-only recovery is capped by the same Auth session.
 Phase 7.30C still applies the unified verifier to every operational
 Admin Edge/RPC path.
 
@@ -64,12 +69,14 @@ types and DB lint must still pass exact-head CI.
 
 No Google Cloud OAuth client, Supabase Hosted provider/database/Edge setting,
 callback allowlist, secret, or real account was created or changed. Real Google
-OAuth, Hosted and Human evidence is not executed and remains HOLD. B2 does not
-implement the Edge raw-PIN/HMAC path, real browser CryptoKey/signature flow,
-all-Admin verifier, lecture ownership, atomic proof-to-master admission, Edge
-raw-PIN/HMAC, UI or AI Passkey. Those B2.2b/C and later boundaries,
-Phase 7.30C-F and every activation remain HOLD. The source implementation adds
-no recurring fixed-cost dependency.
+OAuth, Hosted and Human evidence is not executed and remains HOLD. B2.2b adds
+the default-OFF Edge raw-PIN/HMAC path, real non-extractable browser
+CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1 then
+adds private optional-row lecture ownership and atomic PIN/browser-proof to
+dormant-master admission without inferred backfill or child/provider authority.
+It does not implement the all-Admin verifier, operational Edge/RPC migration or
+AI Passkey. Those C2 and later boundaries, Phase 7.30C2-F and every activation
+remain HOLD. The source implementation adds no recurring fixed-cost dependency.
 
 ## Outcome
 
@@ -264,9 +271,10 @@ enforcement:
   admissions and do not become reviewer delegation tokens;
 - nullable `principal_id`, `membership_id`, authentication method, AAL and
   server-recorded `step_up_verified_at` on `admin_sessions`;
-- Phase 7.30C later adds nullable owning-membership references on lectures and
-  completes their owner-only assignment/backfill path. Verified TOTP factor-set
-  fingerprinting is also not implemented in B2.
+- Phase 7.30C1 now adds private optional-row lecture ownership without exposing
+  principal/membership UUIDs on `lecture_sessions`. It performs no inferred
+  backfill or owner claim for existing lectures. Verified TOTP factor-set
+  fingerprinting is implemented by B2.2a and rechecked by C1 admission.
 
 An `admin_environments` row is defense in depth inside one deployment. It does
 not authorize Production, staging or contest to share a Supabase project. Each
@@ -274,16 +282,14 @@ real environment has a separate project and authoritative host/audience mapping;
 principal, membership, invitation, session, AI policy, unlock factor, browser
 credential and master-authorization records never cross project boundaries.
 
-New lectures require an owning Admin membership after the Phase 7.30C cutover.
-That membership may have role `owner` or `instructor` and must belong to the
-exact environment; it does not mean the `owner` role is required to create a
-lecture. Existing unowned rows use an explicit owner-claim/backfill procedure;
-they are never assigned implicitly from request input. Tables use RLS, revoke browser grants and expose
-only minimum service-role operations. Public control RPCs remain
-`SECURITY INVOKER` and service-role-only. Any unavoidable private
-`SECURITY DEFINER` helper uses an empty fixed `search_path`, explicit
-principal/membership/session/AAL2 checks and minimum grants. Every
-parent/expiry/ownership query receives an Advisor-verified index.
+New C1 lectures require an active owner/instructor membership in the exact
+environment and are created with their private ownership row in the same
+transaction. Existing unowned lectures remain unowned; owner-claim/backfill UX
+is C2 HOLD and cannot infer ownership from request input. The nine C1 public
+facades are fixed-empty-`search_path` `SECURITY DEFINER`, executable only by
+`service_role`; C1 private tables and helpers have no runtime-role grants.
+B2/B2.2a/B2.2b wrappers retain their separately documented contracts. Every
+parent/expiry/ownership query receives an Advisor-verified leading index.
 
 Audit UPDATE and DELETE are rejected. Metadata never contains TOTP secret or
 challenge code, passkey material, OAuth/provider token, session token, PIN,
@@ -603,8 +609,10 @@ Admin client, Google identity binding, tracked session and mandatory TOTP AAL2;
 after that boundary, **B2** adds the default-OFF four-digit AI PIN database
 factor, remembered-browser state, AI policy, rate/receipt state,
 master-provenance expansion and continuous-session lifetime/invalidation
-migration. B2 source/static is implemented; its exact-head runtime DB gate is
-pending. Phase 7.30C then completes the unified verifier across every
+migration. B2.2a then hardens factor-set trust and rare-control grants; B2.2b
+adds the dedicated dormant Edge/browser proof paths and approved factor
+transitions. Source/static and Chromium/WebKit storage evidence is implemented;
+exact-head runtime DB/Local Edge gates are pending. Phase 7.30C then completes the unified verifier across every
 operational Admin Edge/RPC path. AI Passkey is not part of the initial B2
 implementation.
 

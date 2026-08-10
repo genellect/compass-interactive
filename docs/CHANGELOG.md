@@ -3,6 +3,40 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-10 - Phase 7.30C1 dormant lecture AI-master admission
+
+- Added private optional-row lecture ownership without inferred backfill or
+  public principal/membership identifiers.
+- Added atomic personal-PIN and remembered-browser proof consumption into a
+  full-provenance dormant lecture master plus immutable exact-replay receipt.
+- Added gate-independent status, free downgrade and revoke receipts, and a
+  default-OFF Edge/client transport which never issues provider/child authority.
+- Permanently fenced owned lectures and C1 masters from legacy master,
+  `BILLING_PIN`, direct-grant and child-consume paths, including after revoke or
+  expiry. C2 operational migration and shared-PIN removal remain HOLD.
+- Added static, pgTAP and populated B2.2b-head no-backfill upgrade contracts.
+  Docker/Local Edge/exact-head CI/Hosted/Human evidence remains HOLD.
+
+## 2026-08-10 - Phase 7.30B2.2b default-OFF AI-unlock Edge and browser readiness
+
+- Added the dedicated Admin-only `admin-ai-unlock` Edge/client transport for
+  personal AI PIN lifecycle and ordinary verification. Raw PIN input is limited
+  to a bounded TLS body, then domain-separated Edge HMAC plus the existing
+  database bcrypt/rate/receipt path; configuration failures remain fail closed.
+- Added opt-in remembered-browser WebCrypto P-256 non-extractable keys in
+  identity-scoped IndexedDB, exact-retry enrollment state and dormant ES256
+  assertion verification. Logout preserves the credential, while factor or
+  provenance mismatch drains it; no lecture master or paid authority is issued.
+- Added approved TOTP factor add/remove rare-control transitions with one
+  aggregate pre-set snapshot, five-minute control proof, payload-bound durable
+  authorization, hash-only recovery credential and maximum 30-minute recovery
+  capped by the backing eight-hour Auth session. Finalize atomically advances
+  the principal anchor and drains old session/AI authority.
+- Added B2.2a-head populated upgrade, pgTAP/static/concurrency contracts and
+  Chromium/WebKit IndexedDB/CryptoKey tests. All new gates remain default OFF;
+  Docker/Local Edge/exact-head CI/Hosted/Human evidence and C/E authority
+  integration remain HOLD.
+
 ## 2026-08-10 - Phase 7.30B2.2a dormant Admin control hardening
 
 - Bound new Google/TOTP Admin sessions to a principal-approved, domain-separated

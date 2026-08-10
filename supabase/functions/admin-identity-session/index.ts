@@ -47,6 +47,8 @@ type AdminControlAction =
   | 'ai_pin_revoke'
   | 'ai_pin_rotate'
   | 'environment_ai_policy_change'
+  | 'totp_factor_add'
+  | 'totp_factor_remove'
 
 type EnvironmentConfig = {
   audience?: string
@@ -80,6 +82,12 @@ const ADMIN_CONTROL_ACTIONS = new Set<AdminControlAction>([
   'ai_pin_revoke',
   'ai_pin_rotate',
   'environment_ai_policy_change',
+  'totp_factor_add',
+  'totp_factor_remove',
+])
+const TOTP_FACTOR_CONTROL_ACTIONS = new Set<AdminControlAction>([
+  'totp_factor_add',
+  'totp_factor_remove',
 ])
 
 const UUID_PATTERN =
@@ -390,6 +398,20 @@ async function handleRequest(request: Request) {
       'request_invalid',
       'Request is invalid.',
       400,
+    )
+  }
+  if (
+    (body.action === 'beginControlStepUp' ||
+      body.action === 'completeControlStepUp') &&
+    body.controlAction &&
+    TOTP_FACTOR_CONTROL_ACTIONS.has(body.controlAction) &&
+    Deno.env.get('PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED') !== 'true'
+  ) {
+    return errorResponse(
+      jsonResponse,
+      'feature_disabled',
+      'Authenticator changes are not enabled.',
+      503,
     )
   }
 

@@ -24,6 +24,8 @@ const requiredDocuments = [
   'docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
   'docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md',
   'docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md',
+  'docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md',
+  'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
@@ -65,8 +67,12 @@ const contestPlan = read(
 )
 const googleAdminPlan = read('docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md')
 const adminAiUnlockRecord = read('docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md')
-const adminControlRecord = read(
-  'docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md',
+const adminControlRecord = read('docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md')
+const adminAiUnlockEdgeRecord = read(
+  'docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md',
+)
+const googleAiMasterC1Record = read(
+  'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
 )
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
@@ -194,9 +200,66 @@ assert.match(
   'Google Admin contract must remove the transitional B1 idle expiry in B2',
 )
 assert.match(docsIndex, /PHASE7_30B22A_ADMIN_CONTROL_HARDENING\.md/)
+assert.match(docsIndex, /PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER\.md/)
+assert.match(docsIndex, /PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION\.md/)
+assert.match(docsIndex, /102 documents/)
+assert.match(
+  databaseSchema,
+  /Phase 7\.30C1 adds four RLS-enabled private tables/,
+)
+assert.match(databaseSchema, /admin_ai_master_reuse_receipts/)
+assert.match(
+  architecture,
+  /All B2\/B2\.2 public wrappers are service-role-only `SECURITY INVOKER`/,
+)
+assert.match(
+  architecture,
+  /C1 adds four RLS-enabled private evidence tables[\s\S]*nine public[\s\S]*`SECURITY DEFINER`/,
+)
+assert.match(
+  googleAdminPlan,
+  /no inferred[\s\S]*backfill or owner claim[\s\S]*nine C1 public[\s\S]*`SECURITY DEFINER`/,
+)
+assert.doesNotMatch(
+  googleAdminPlan,
+  /nullable owning-membership references on lectures|explicit owner-claim\/backfill procedure|Public control RPCs remain\s+`SECURITY INVOKER`/,
+)
 assert.match(
   adminControlRecord,
   /factor-history-free initial PIN enrollment can reuse the tracked fresh TOTP/,
+)
+for (const requiredText of [
+  'Status: Implemented in source, non-Docker verification pending',
+  'VITE_PHASE7_30_ADMIN_AI_UNLOCK=false',
+  'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION=false',
+  'non-extractable WebCrypto P-256',
+  'aggregate `auth.mfa_factors` snapshot',
+  'at most 30 minutes',
+  'issues no master',
+  'Local Edge',
+]) {
+  assert.ok(
+    adminAiUnlockEdgeRecord.includes(requiredText),
+    `B2.2b implementation record missing: ${requiredText}`,
+  )
+}
+for (const requiredText of [
+  'Status: source implemented',
+  'no inferred backfill',
+  'google_ai_master_admission_enabled',
+  'admin_ai_master_reuse_receipts',
+  'held `FOR SHARE`',
+  'current state of the recorded master row',
+  'C2 HOLD',
+]) {
+  assert.ok(
+    googleAiMasterC1Record.includes(requiredText),
+    `C1 implementation record missing: ${requiredText}`,
+  )
+}
+assert.match(
+  adminAiUnlockEdgeRecord,
+  /local claim[\s\S]*never itself treated as authority[\s\S]*exact DB `authorized` transition[\s\S]*cannot trigger[\s\S]*unenrollment/,
 )
 assert.match(adminControlRecord, /canonical mutation[- ]intent/)
 assert.match(
@@ -205,7 +268,7 @@ assert.match(
 )
 assert.match(
   adminControlRecord,
-  /Adding, removing or replacing a factor\s+requires B2\.2b rare-control[\s\S]{0,80}remains\s+HOLD/,
+  /Adding, removing or replacing a factor\s+requires B2\.2b rare-control[\s\S]{0,220}successor source path is now recorded/,
 )
 assert.match(
   adminControlRecord,
@@ -438,8 +501,8 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /67 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(67 groups\)/,
-    `${name} must record the 67-group non-live suite`,
+    /69 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(69 groups\)/,
+    `${name} must record the 69-group non-live suite`,
   )
 }
 assert.match(

@@ -123,9 +123,7 @@ function decodeJwtPayload(token) {
 
 function latestTotpAmrTimestamp(claims) {
   const timestamps = (claims.amr ?? [])
-    .filter(
-      (entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp',
-    )
+    .filter((entry) => entry?.method === 'totp' || entry?.method === 'mfa/totp')
     .map((entry) => entry.timestamp)
     .filter(Number.isSafeInteger)
   return timestamps.length > 0 ? Math.max(...timestamps) : null
@@ -341,6 +339,7 @@ try {
     );
     update private.admin_identity_runtime_gate
     set google_session_issue_enabled = true,
+        totp_factor_mutation_enabled = true,
         updated_at = statement_timestamp()
     where singleton;
     update private.admin_ai_unlock_runtime_gate
@@ -438,6 +437,69 @@ try {
   )
   assert.equal(restored.session?.id, completed.session.id)
 
+  const sourceOffFactorBegin = await invoke(
+    status,
+    aal2,
+    'admin-identity-session',
+    {
+      action: 'beginControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'totp_factor_add',
+      controlIntentDigest: randomBytes(32).toString('hex'),
+      controlRequestId: randomUUID(),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorBegin.code, 'feature_disabled')
+
+  const sourceOffFactorComplete = await invoke(
+    status,
+    aal2,
+    'admin-identity-session',
+    {
+      action: 'completeControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'totp_factor_add',
+      controlIntentDigest: randomBytes(32).toString('hex'),
+      controlRequestId: randomUUID(),
+      controlStepUpNonce: randomBytes(32).toString('base64url'),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorComplete.code, 'feature_disabled')
+
+  const sourceOffFactorPrepare = await invoke(
+    status,
+    aal2,
+    'admin-ai-unlock',
+    {
+      action: 'prepareTotpTransition',
+      appSessionToken: completed.appSessionToken,
+      factorAction: 'totp_factor_add',
+      targetFactorId: randomUUID(),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorPrepare.code, 'feature_disabled')
+
+  const sourceOffC1Admission = await invoke(
+    status,
+    aal2,
+    'admin-ai-unlock',
+    {
+      action: 'authorizeMasterWithPin',
+      appSessionToken: completed.appSessionToken,
+      lectureSessionId: randomUUID(),
+      pin: '1234',
+      policyId: randomUUID(),
+      policyVersion: 1,
+      requestId: randomUUID(),
+      requestedScope: 'all_except_captions',
+    },
+    503,
+  )
+  assert.equal(sourceOffC1Admission.code, 'feature_disabled')
+
   const controlRequestId = randomUUID()
   const controlIntentDigest = randomBytes(32).toString('hex')
   const controlBegunAt = Math.floor(Date.now() / 1_000)
@@ -497,7 +559,9 @@ try {
   )
   assert.equal(controlCompleted.controlIntentDigest, controlIntentDigest)
   assert.equal(controlCompleted.controlRequestId, controlRequestId)
-  assert.ok(Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000)
+  assert.ok(
+    Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
+  )
 
   const legacyCrossMode = await invoke(
     status,
@@ -566,6 +630,7 @@ try {
       begin;
       update private.admin_identity_runtime_gate
       set google_session_issue_enabled = false,
+          totp_factor_mutation_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
       update private.admin_ai_unlock_runtime_gate

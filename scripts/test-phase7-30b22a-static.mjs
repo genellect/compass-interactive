@@ -695,13 +695,25 @@ for (const barrier of [
   assert.match(concurrency, new RegExp(barrier))
 }
 assert.match(concurrency, /wait_event_type = 'Lock'/)
+const b22bConcurrencyStart = concurrency.indexOf(
+  '// B2.2b: two different requests for one principal',
+)
+const b22bConcurrencyEnd = concurrency.indexOf(
+  'const factorReconcile =',
+  b22bConcurrencyStart,
+)
+assert.notEqual(b22bConcurrencyStart, -1)
+assert.notEqual(b22bConcurrencyEnd, -1)
+const b22aConcurrency =
+  concurrency.slice(0, b22bConcurrencyStart) +
+  concurrency.slice(b22bConcurrencyEnd)
 assert.equal(
-  concurrency.match(/wait_event_type = 'Lock'/g)?.length,
+  b22aConcurrency.match(/wait_event_type = 'Lock'/g)?.length,
   3,
   'each holder must observe its fixed waiter without a third release process',
 )
 assert.equal(
-  concurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
+  b22aConcurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
   3,
   'each holder must refresh its statistics snapshot before observing the waiter',
 )
@@ -721,6 +733,11 @@ assert.match(
 assert.match(
   concurrency,
   /PHASE730B22A_FACTOR_RECONCILE_LOCKS_READY[\s\S]*?phase730b22a-factor-touch-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?reconcile_admin_totp_factor_set_v1[\s\S]*?factor-touch-race[\s\S]*?coalesce\(to_jsonb\(outcome\.value\), 'null'::jsonb\)/,
+)
+assert.match(
+  concurrency,
+  /const expiredBrowserFixture =[\s\S]*?insert into private\.admin_ai_browser_credentials[\s\S]*?statement_timestamp\(\) \+ interval '1 day'[\s\S]*?insert into private\.admin_ai_browser_assertion_challenges[\s\S]*?update private\.admin_ai_browser_credentials[\s\S]*?expires_at = statement_timestamp\(\) - interval '1 day'/,
+  'cleanup fixtures must bind assertions while credentials are valid, then expire the credentials',
 )
 assert.match(
   concurrency,

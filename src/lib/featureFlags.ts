@@ -90,6 +90,18 @@ export const isPhase729PowerPointSyncEnabled =
 export const isPhase730AdminIdentityEnabled =
   import.meta.env.VITE_PHASE7_30_ADMIN_IDENTITY === 'true'
 
+// B2.2b is an identity-shell preview only. It never bridges a browser proof to
+// the legacy operational workspace or to lecture AI master authority.
+export const isPhase730AdminAiUnlockEnabled =
+  isPhase730AdminIdentityEnabled &&
+  import.meta.env.VITE_PHASE7_30_ADMIN_AI_UNLOCK === 'true'
+
+// Authenticator factor changes are identity recovery controls, not AI
+// authority. Keep their source gate independent from AI eligibility.
+export const isPhase730AdminTotpFactorMutationEnabled =
+  isPhase730AdminIdentityEnabled &&
+  import.meta.env.VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION === 'true'
+
 // Expand-first rollback stays available unless explicitly disabled. The Edge
 // and database gates remain authoritative even when this UI branch is shown.
 export const isLegacyAdminPinLoginEnabled =

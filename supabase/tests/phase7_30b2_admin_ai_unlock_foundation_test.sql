@@ -874,6 +874,180 @@ INSERT INTO public.lecture_sessions (
 INSERT INTO public.lecture_ai_control (lecture_session_id)
 VALUES ('00000000-0000-4000-8000-000000007329'::uuid);
 
+-- Phase 7.30B2.2b latest-schema browser fixtures must carry the same approved
+-- TOTP and Google Admin-session binding that production enrollment enforces.
+INSERT INTO auth.users (
+  instance_id,
+  id,
+  aud,
+  role,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-4000-8000-000000007322'::uuid,
+  'authenticated',
+  'authenticated',
+  'phase730b2-owner@example.test',
+  '',
+  statement_timestamp() - interval '1 hour',
+  '{"provider":"google","providers":["google"]}'::jsonb,
+  '{}'::jsonb,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+VALUES (
+  '00000000-0000-4000-8000-000000007340'::uuid,
+  '00000000-0000-4000-8000-000000007322'::uuid,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.mfa_factors (
+  id,
+  user_id,
+  friendly_name,
+  factor_type,
+  status,
+  created_at,
+  updated_at
+) VALUES (
+  '00000000-0000-4000-8000-000000007342'::uuid,
+  '00000000-0000-4000-8000-000000007322'::uuid,
+  'phase730b2-main-totp',
+  'totp',
+  'verified',
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+) ON CONFLICT (id) DO NOTHING;
+
+UPDATE private.admin_principals
+SET
+  approved_totp_factor_set_hash =
+    private.current_verified_totp_factor_set_hash_v1(
+      '00000000-0000-4000-8000-000000007322'::uuid
+    ),
+  approved_totp_factor_set_version = 1,
+  approved_totp_factor_count = 1,
+  approved_totp_factor_set_at = statement_timestamp(),
+  approved_totp_factor_set_request_id =
+    '00000000-0000-4000-8000-00000000733a'::uuid,
+  approved_totp_factor_set_source = 'operator_adoption',
+  approved_totp_factor_set_actor = 'fixture:phase7_30b2',
+  approved_totp_factor_set_reason = 'latest_schema_browser_fixture'
+WHERE id = '00000000-0000-4000-8000-000000007321'::uuid;
+
+INSERT INTO private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  challenged_totp_factor_id,
+  prechallenge_verified_totp_factor_set_hash,
+  verified_totp_factor_set_hash,
+  factor_set_bootstrap_allowed,
+  approved_totp_factor_set_version,
+  completion_jwt_hash,
+  verified_totp_amr_at,
+  issued_at,
+  expires_at
+) VALUES (
+  '00000000-0000-4000-8000-000000007338'::uuid,
+  encode(extensions.digest('phase7.30b2-browser-login-nonce', 'sha256'), 'hex'),
+  '00000000-0000-4000-8000-000000007339'::uuid,
+  '00000000-0000-4000-8000-000000007320'::uuid,
+  '00000000-0000-4000-8000-000000007321'::uuid,
+  '00000000-0000-4000-8000-000000007323'::uuid,
+  '00000000-0000-4000-8000-000000007340'::uuid,
+  'admin_login',
+  '00000000-0000-4000-8000-00000000733b'::uuid,
+  encode(extensions.digest('phase7.30b2-browser-prechallenge', 'sha256'), 'hex'),
+  statement_timestamp() - interval '1 minute',
+  '00000000-0000-4000-8000-000000007342'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
+  false,
+  1,
+  encode(extensions.digest('phase7.30b2-browser-postchallenge', 'sha256'), 'hex'),
+  statement_timestamp(),
+  statement_timestamp() - interval '1 minute',
+  statement_timestamp() + interval '4 minutes'
+);
+
+UPDATE private.admin_identity_runtime_gate
+SET google_session_issue_enabled = true
+WHERE singleton;
+
+INSERT INTO public.admin_sessions (
+  id,
+  token_hash,
+  auth_user_id,
+  pin_version_hash,
+  authentication_method,
+  aal,
+  principal_id,
+  membership_id,
+  environment_id,
+  supabase_auth_session_id,
+  step_up_verified_at,
+  step_up_nonce_id,
+  verified_totp_factor_set_hash,
+  issued_at,
+  last_seen_at,
+  idle_expires_at,
+  expires_at
+) VALUES (
+  '00000000-0000-4000-8000-000000007339'::uuid,
+  repeat('9', 64),
+  '00000000-0000-4000-8000-000000007322'::uuid,
+  null,
+  'google_totp',
+  2,
+  '00000000-0000-4000-8000-000000007321'::uuid,
+  '00000000-0000-4000-8000-000000007323'::uuid,
+  '00000000-0000-4000-8000-000000007320'::uuid,
+  '00000000-0000-4000-8000-000000007340'::uuid,
+  statement_timestamp(),
+  '00000000-0000-4000-8000-000000007338'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-000000007322'::uuid
+  ),
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() + interval '12 hours',
+  statement_timestamp() + interval '12 hours'
+);
+
+UPDATE private.admin_step_up_nonces
+SET
+  status = 'consumed',
+  consumed_at = statement_timestamp() - interval '1 hour',
+  completed_admin_session_id = '00000000-0000-4000-8000-000000007339'::uuid,
+  updated_at = statement_timestamp() - interval '1 hour'
+WHERE id = '00000000-0000-4000-8000-000000007338'::uuid;
+
+UPDATE private.admin_identity_runtime_gate
+SET google_session_issue_enabled = false
+WHERE singleton;
+
 INSERT INTO private.admin_ai_browser_enrollment_nonces (
   id,
   nonce_hash,
@@ -899,7 +1073,7 @@ INSERT INTO private.admin_ai_browser_enrollment_nonces (
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007321'::uuid,
   '00000000-0000-4000-8000-000000007323'::uuid,
-  '00000000-0000-4000-8000-000000007324'::uuid,
+  '00000000-0000-4000-8000-000000007339'::uuid,
   '00000000-0000-4000-8000-000000007325'::uuid,
   1,
   statement_timestamp(),
@@ -940,7 +1114,7 @@ INSERT INTO private.admin_ai_browser_credentials (
     'y', repeat('B', 43)
   ),
   'dd7ef224fe88ca6549161590c561f7a348c3f7482ec9c635e7cfa527f8a55d10',
-  '00000000-0000-4000-8000-000000007324'::uuid,
+  '00000000-0000-4000-8000-000000007339'::uuid,
   '00000000-0000-4000-8000-000000007330'::uuid,
   statement_timestamp() + interval '1 day'
 );
@@ -969,7 +1143,7 @@ INSERT INTO private.admin_ai_browser_assertion_challenges (
   '00000000-0000-4000-8000-000000007320'::uuid,
   '00000000-0000-4000-8000-000000007321'::uuid,
   '00000000-0000-4000-8000-000000007323'::uuid,
-  '00000000-0000-4000-8000-000000007324'::uuid,
+  '00000000-0000-4000-8000-000000007339'::uuid,
   '00000000-0000-4000-8000-000000007325'::uuid,
   1,
   '00000000-0000-4000-8000-000000007329'::uuid,
