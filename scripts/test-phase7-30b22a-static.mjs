@@ -681,6 +681,24 @@ for (const barrier of [
   assert.match(concurrency, new RegExp(barrier))
 }
 assert.match(concurrency, /wait_event_type = 'Lock'/)
+assert.equal(
+  concurrency.match(/wait_event_type = 'Lock'/g)?.length,
+  2,
+  'each holder must observe its fixed waiter without a third release process',
+)
+assert.doesNotMatch(
+  concurrency,
+  /login-begin-lock-order-release|session-factor-assertion-lock-release/,
+  'lock-order holders must not depend on external release-marker inserts',
+)
+assert.match(
+  concurrency,
+  /PHASE730B22A_LOGIN_BEGIN_LOCKS_READY[\s\S]*?phase730b22a-login-complete-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?from private\.admin_step_up_nonces[\s\S]*?for update nowait[\s\S]*?public\.begin_admin_totp_step_up_v2/,
+)
+assert.match(
+  concurrency,
+  /PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY[\s\S]*?phase730b22a-session-revoke-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?from private\.admin_ai_browser_enrollment_nonces as nonce[\s\S]*?for update nowait/,
+)
 assert.match(
   concurrency,
   /from private\.admin_step_up_nonces[\s\S]*?for update nowait/,

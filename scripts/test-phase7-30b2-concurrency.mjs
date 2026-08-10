@@ -580,16 +580,22 @@ const loginBeginLockOrder = startSqlUntilReady(
     begin
       while not exists (
         select 1
-        from public.phase7_30b2_concurrency_results
-        where scenario = 'login-begin-lock-order-release'
+        from pg_catalog.pg_stat_activity
+          where application_name = 'phase730b22a-login-complete-waiter'
+            and wait_event_type = 'Lock'
+            and pid <> pg_catalog.pg_backend_pid()
       ) loop
         if clock_timestamp() > wait_started_at + interval '10 seconds' then
-          raise exception 'timed out waiting to release login begin locks';
+          raise exception 'login complete did not reach the principal lock barrier';
         end if;
-        perform pg_sleep(0.01);
+        perform pg_catalog.pg_sleep(0.01);
       end loop;
     end;
     $$;
+    select id
+    from private.admin_step_up_nonces
+    where reserved_admin_session_id = ${literal(id.loginRaceReservedOld)}::uuid
+    for update nowait;
     with outcome as (
       select public.begin_admin_totp_step_up_v2(
         ${literal(id.environment)}::uuid,
@@ -637,35 +643,6 @@ const loginCompleteLockOrder = runSql(
     from outcome;
   `),
 )
-await runSql(`
-  do $$
-  declare
-    wait_started_at timestamptz := clock_timestamp();
-  begin
-    while not exists (
-      select 1
-      from pg_stat_activity
-      where application_name = 'phase730b22a-login-complete-waiter'
-        and wait_event_type = 'Lock'
-    ) loop
-      if clock_timestamp() > wait_started_at + interval '10 seconds' then
-        raise exception 'login complete did not reach the principal lock barrier';
-      end if;
-      perform pg_sleep(0.01);
-    end loop;
-  end;
-  $$;
-
-  begin;
-  select id
-  from private.admin_step_up_nonces
-  where reserved_admin_session_id = ${literal(id.loginRaceReservedOld)}::uuid
-  for update nowait;
-  rollback;
-
-  insert into public.phase7_30b2_concurrency_results (scenario, outcome)
-  values ('login-begin-lock-order-release', 'true'::jsonb);
-`)
 await Promise.all([loginBeginLockOrder.done, loginCompleteLockOrder])
 
 await runSql(`
@@ -1254,14 +1231,20 @@ await runSql(`
       begin
         while not exists (
           select 1
-          from public.phase7_30b2_concurrency_results
-          where scenario = 'session-factor-assertion-lock-release'
+          from pg_catalog.pg_stat_activity
+          where application_name = 'phase730b22a-session-revoke-waiter'
+            and wait_event_type = 'Lock'
+            and pid <> pg_catalog.pg_backend_pid()
         ) loop
           if clock_timestamp() > wait_started_at + interval '10 seconds' then
-            raise exception 'timed out waiting to release assertion lock';
+            raise exception 'session revoke did not reach the assertion lock barrier';
           end if;
           perform pg_catalog.pg_sleep(0.01);
         end loop;
+        perform nonce.id
+        from private.admin_ai_browser_enrollment_nonces as nonce
+        where nonce.id = ${literal(id.enrollmentFour)}::uuid
+        for update nowait;
       end;
     elsif old.id in (${literal(id.challengeOne)}::uuid, ${literal(id.challengeTwo)}::uuid, ${literal(id.challengeThree)}::uuid)
        and old.status = 'pending'
@@ -1510,8 +1493,8 @@ await seedControlGrant(
 )
 const sessionFactorRotation = startSqlUntilReady(
   recordServiceResult(
-      'session-drain-factor-rotation',
-      `public.enroll_admin_ai_pin_v1(${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA1)}::uuid, ${literal(sessionDrainRotatedPinHmac)}, 4, ${literal(id.sessionDrainRotationRequest)}::uuid)`,
+    'session-drain-factor-rotation',
+    `public.enroll_admin_ai_pin_v1(${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA1)}::uuid, ${literal(sessionDrainRotatedPinHmac)}, 4, ${literal(id.sessionDrainRotationRequest)}::uuid)`,
   ),
   'PHASE730B22A_SESSION_FACTOR_ASSERTION_LOCK_READY',
 )
@@ -1531,35 +1514,6 @@ const sessionSelfRevoke = runSql(
     from outcome;
   `),
 )
-await runSql(`
-  do $$
-  declare
-    wait_started_at timestamptz := clock_timestamp();
-  begin
-    while not exists (
-      select 1
-      from pg_stat_activity
-      where application_name = 'phase730b22a-session-revoke-waiter'
-        and wait_event_type = 'Lock'
-    ) loop
-      if clock_timestamp() > wait_started_at + interval '10 seconds' then
-        raise exception 'session revoke did not reach the assertion lock barrier';
-      end if;
-      perform pg_sleep(0.01);
-    end loop;
-  end;
-  $$;
-
-  begin;
-  select id
-  from private.admin_ai_browser_enrollment_nonces
-  where id = ${literal(id.enrollmentFour)}::uuid
-  for update nowait;
-  rollback;
-
-  insert into public.phase7_30b2_concurrency_results (scenario, outcome)
-  values ('session-factor-assertion-lock-release', 'true'::jsonb);
-`)
 await Promise.all([sessionFactorRotation.done, sessionSelfRevoke])
 await runSql(`
   do $$
