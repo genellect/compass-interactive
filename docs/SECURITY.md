@@ -1,7 +1,7 @@
 # COMPASS Interactive Security Contract
 
 Last reviewed: 2026-08-10
-Status: source-implemented controls through Phase 7.30A-B2; B2 runtime DB,
+Status: source-implemented controls through Phase 7.30A-B2.2b; B2 runtime DB,
 native, Hosted, Human and Production evidence remains separate
 
 ## 1. Security objectives
@@ -115,8 +115,12 @@ An unverified login candidate is accepted only for a `pending_mfa`, unbound,
 empty set's first 0-to-1 enrollment and is approved atomically after fresh
 completion. Existing verified but unbound sets require an Edge-unwired,
 default-OFF operator adoption while Google issuance is OFF; migration never
-infers that approval. Adding/replacing a factor beside an approved set is a
-B2.2b fresh-existing-factor rare-control HOLD.
+infers that approval. Adding or removing a factor beside an approved set now
+uses the default-OFF B2.2b fresh-existing-set rare-control transition. It binds
+the exact pre-set, target, expected post-set and canonical intent before the
+Supabase Auth change, then advances the principal anchor and drains old
+authority atomically. Its recovery credential is hash-only, Auth-user/session
+bound and valid for at most 30 minutes within the eight-hour cap.
 Phase 7.30C applies that verifier to every operational Admin Edge/RPC path. Role
 changes are enforced live without session termination; `can_use_ai=false`
 drains AI authority while preserving the Admin session.
@@ -442,7 +446,8 @@ the unified verifier across every operational Admin Edge/RPC path.
   membership, Admin session and backing `auth.sessions` state.
 - The database accepts only a versioned 64-hex Edge-peppered HMAC and stores a
   bcrypt cost-12 verifier. It never accepts or stores the raw four-digit PIN.
-  Edge validation/HMAC and raw-input clearing remain a later HOLD boundary.
+  B2.2b Edge validation/HMAC and immediate client input clearing implement that
+  source boundary; Local Edge and Human evidence remain HOLD.
 - Bcrypt admission uses nonblocking environment-four/network-two advisory
   semaphores. Membership, pepper-hashed coarse-network and environment limits
   are locked and updated atomically after verification; immutable receipts make
@@ -455,20 +460,23 @@ the unified verifier across every operational Admin Edge/RPC path.
 - Browser state accepts only ES256/P-256 public JWKs, rejects private `d` and
   JSON-null substitutions, verifies the RFC 7638 fingerprint, and binds nonce,
   credential and one-time challenge state to exact identity, session, factor,
-  Origin, lecture, scope and policy provenance. Actual browser CryptoKey and
-  Edge signature verification remain HOLD.
+  Origin, lecture, scope and policy provenance. B2.2b creates a non-extractable
+  P-256 private key in identity-scoped IndexedDB and verifies ES256/P1363 at the
+  Edge. It returns only a dormant proof and never a lecture master.
 - Factor rotation, policy and browser transitions drain their derived AI
   authority while preserving the Admin session where the contract requires.
   B2.2a adds explicit factor revoke/reset RPCs whose mutation transaction
   consumes an action/request/session/factor-set/JWT/AMR and canonical-intent
-  bound grant. Raw-PIN Edge wiring remains B2.2b/C. Bounded
+  bound grant. B2.2b implements the raw-PIN Edge/client path and approved TOTP
+  add/remove transitions without exposing them to operational Admin authority. Bounded
   cleanup uses nonblocking membership serialization plus `SKIP LOCKED`, returns
   `has_more` and permits only safe terminal child states.
 - Lecture-master provenance columns are additive and nullable. B2 does not yet
   implement lecture ownership, the all-Admin verifier or atomic proof-to-master
   issuance; those remain Phase 7.30C blockers.
 
-The B2 source/static gate is PASS. From-zero migration, populated upgrade, all
-pgTAP, real two-transaction concurrency, generated types and DB lint remain
-exact-head runtime CI requirements. All B2 runtime gates are OFF; Hosted/Human
+The B2/B2.2a/B2.2b source/static contracts and B2.2b Chromium/WebKit storage
+tests are implemented. From-zero migration, populated upgrade, all pgTAP, real
+two-transaction concurrency, generated types and DB lint remain exact-head
+runtime CI requirements. All runtime gates are OFF; Local Edge, Hosted/Human
 and activation evidence remains HOLD.

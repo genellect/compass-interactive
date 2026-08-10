@@ -4621,6 +4621,19 @@ export type Database = {
         }
         Returns: Json
       }
+      authorize_admin_totp_factor_transition_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_factor_id: string
+          target_intent_digest: string
+          target_mutation_request_id: string
+          target_recovery_token_hash: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       begin_admin_ai_browser_assertion_v1: {
         Args: {
           target_auth_user_id: string
@@ -4648,6 +4661,18 @@ export type Database = {
           target_public_key_fingerprint: string
           target_request_id: string
           target_reserved_browser_credential_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      get_admin_ai_browser_credential_status_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_browser_credential_id: string
+          target_credential_hash: string
+          target_origin: string
+          target_public_key_fingerprint: string
           target_supabase_auth_session_id: string
           target_token_hash: string
         }
@@ -4949,6 +4974,19 @@ export type Database = {
         }
         Returns: boolean
       }
+      finalize_admin_totp_factor_transition_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_factor_id: string
+          target_finalize_request_id: string
+          target_intent_digest: string
+          target_mutation_request_id: string
+          target_recovery_token_hash: string
+          target_supabase_auth_session_id: string
+        }
+        Returns: Json
+      }
       finish_realtime_provider_hangup: {
         Args: {
           target_error?: string
@@ -4982,6 +5020,16 @@ export type Database = {
         Returns: Json
       }
       get_admin_identity_runtime_gate_v1: { Args: never; Returns: Json }
+      get_admin_totp_factor_transition_intent_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_factor_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       get_lecture_archive_v2: {
         Args: { target_lecture_session_id: string }
         Returns: Json

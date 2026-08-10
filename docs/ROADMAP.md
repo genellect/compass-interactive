@@ -3,8 +3,8 @@
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
 Last reconciled: 2026-08-10
-Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B2
-source implemented; B2 exact-head runtime DB CI, Phase 7.30C onward and
+Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-B2.2b
+source implemented; B2 exact-head runtime DB/Local Edge CI, Phase 7.30C onward and
 Hosted/Human gates remain HOLD
 
 ## 1. Numbering decision
@@ -663,11 +663,14 @@ PASS; clean/populated upgrade, pgTAP, real database concurrency, generated types
   and lint await exact-head CI. B2.2a source adds a principal-approved TOTP
   factor-set trust anchor, completed JWT/AMR evidence for session issuance,
   changed-factor-set invalidation and single-use rare-control grants; its runtime
-DB and Local Edge evidence await exact-head CI. Phase 7.30C still has to complete
-the unified verifier across every operational Admin Edge/RPC path. Edge raw-PIN
-handling, real browser cryptography, lecture ownership,
-proof-to-master admission, UI, AI Passkey, real OAuth and Hosted/Human evidence
-remain HOLD. See `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
+DB and Local Edge evidence await exact-head CI. B2.2b source adds the dedicated
+raw-PIN/HMAC Edge, PIN lifecycle UI, non-extractable IndexedDB P-256 key and
+dormant ES256 assertion, plus approved TOTP add/remove transitions with bounded
+hash-only recovery. Chromium/WebKit storage E2E passes locally; Docker-backed
+DB/Local Edge evidence is still pending. Phase 7.30C still has to complete the
+unified verifier across every operational Admin Edge/RPC path. Lecture
+ownership, proof-to-master admission, AI Passkey, real OAuth and Hosted/Human
+evidence remain HOLD. See `docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`.
 
 ### 7.30A - asset, IAM and threat inventory
 
@@ -715,8 +718,9 @@ master provenance; its exact-head runtime DB gate remains pending.
   remembered-browser state, AI policy, rate/receipt state, master-provenance
   expansion and continuous-session migration. B2.2a source additionally binds
   principal-approved/live/session factor sets, completed JWT/AMR issuance
-  evidence and rare-control grants; runtime DB/Local Edge exact-head
-  CI is pending. Phase 7.30C then completes the unified
+  evidence and rare-control grants. B2.2b adds default-OFF PIN/browser Edge/UI
+  and approved factor add/remove transitions without issuing a lecture master;
+  runtime DB/Local Edge exact-head CI is pending. Phase 7.30C then completes the unified
   verifier across all operational Admin Edge/RPC paths. Dedicated AI Passkey is
   deferred from the initial implementation.
 

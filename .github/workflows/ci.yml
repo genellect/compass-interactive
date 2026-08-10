@@ -102,6 +102,7 @@ jobs:
       - run: npm run test:e2e:phase7-29
       - run: npm run test:e2e:phase7-30:flag-off
       - run: npm run test:e2e:phase7-30
+      - run: npm run test:e2e:phase7-30b22b-browser
       - name: Upload demo E2E evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -179,7 +180,7 @@ jobs:
       - name: Verify populated Phase 7.28 upgrade through Phase 7.29
         run: npm run test:phase7-29-upgrade
 
-      - name: Verify populated Phase 7.29, B1 and B2-head states through Phase 7.30 B2.2a
+      - name: Verify populated Phase 7.29, B1, B2-head and B2.2a-head states through Phase 7.30 B2.2b
         run: npm run test:phase7-30-upgrade
 
       - name: Lint the local database
@@ -226,9 +227,15 @@ jobs:
           PHASE7_28_AI_MASTER_AUTH_ENABLED=true
           PHASE729_POWERPOINT_SYNC_ENABLED=false
           PHASE730_ADMIN_IDENTITY_ENABLED=false
+          PHASE730_ADMIN_AI_UNLOCK_ENABLED=false
+          PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED=false
           PHASE730_LEGACY_ADMIN_PIN_ENABLED=true
           PHASE730_ADMIN_ENVIRONMENT_ID=00000000-0000-4000-8000-000000000730
           ADMIN_IDENTITY_PEPPER_VERSION=1
+          ADMIN_AI_PIN_PEPPER_VERSION=1
+          ADMIN_AI_PIN_PEPPER=compass-ci-only-admin-ai-pin-pepper-at-least-32-bytes
+          ADMIN_AI_NETWORK_PEPPER=compass-ci-only-admin-ai-network-pepper-at-least-32-bytes
+          ADMIN_AI_BROWSER_CHALLENGE_SECRET=compass-ci-only-browser-challenge-secret-at-least-32-bytes
           PRESENTER_BRIDGE_TOKEN_SECRET=compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
           PRESENTER_BRIDGE_GATEWAY_SECRET=compass-ci-only-presenter-gateway-secret-at-least-32-bytes
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
@@ -252,7 +259,7 @@ jobs:
       - name: Wait for Admin-identity-enabled local Edge Functions
         run: node scripts/ci/wait-for-local-edge.mjs
 
-      - name: Run local GoTrue TOTP and signed Google identity through Edge and database
+      - name: Run local GoTrue TOTP and signed Google identity through Edge and database, then admin-ai-unlock source-OFF checks
         run: npm run test:phase7-30b1-local-edge
 
       - name: Restore dormant Admin identity configuration

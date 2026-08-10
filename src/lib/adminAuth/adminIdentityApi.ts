@@ -19,6 +19,8 @@ export type AdminControlAction =
   | 'ai_pin_revoke'
   | 'ai_pin_rotate'
   | 'environment_ai_policy_change'
+  | 'totp_factor_add'
+  | 'totp_factor_remove'
 
 export class AdminIdentityError extends Error {
   readonly code: string
@@ -188,7 +190,7 @@ export async function beginAdminControlStepUp(
   appSessionToken: string,
   controlAction: AdminControlAction,
   controlIntentDigest: string | null,
-  controlRequestId = crypto.randomUUID(),
+  controlRequestId: string = crypto.randomUUID(),
 ) {
   const result = await invoke({
     action: 'beginControlStepUp',

@@ -170,8 +170,12 @@ session and drain pending AI authority. Only an unbound `pending_mfa` principal
 with no verified factors may atomically approve the exact first factor during
 fresh completion. Existing verified but unbound sets require an Edge-unwired,
 default-OFF operator adoption while issuance is OFF; migration never infers an
-approval. Factor addition/replacement beside an approved set remains a B2.2b
-rare-control HOLD.
+approval. B2.2b adds a default-OFF add/remove transition: one aggregate Auth
+snapshot establishes the approved pre-set, the B2.2a five-minute grant binds
+the target and expected post-set, and finalize advances the principal anchor
+and drains old authority. Supabase Auth mutation remains outside the database
+transaction, so a hash-only Auth-session-bound recovery credential provides a
+maximum 30-minute retry window within the eight-hour cap.
 Role changes apply live; `can_use_ai=false`
 drains AI authority without logging the teacher out.
 
@@ -420,8 +424,9 @@ rate updates.
 
 Remembered-browser rows constrain ES256/P-256 public JWK and RFC 7638
 fingerprint state and bind nonce/challenge state to identity, session, factor,
-Origin, lecture, scope and policy. They do not implement a real browser
-CryptoKey or Edge signature verifier. Policy, factor-rotation/revoke/reset and browser
+Origin, lecture, scope and policy. B2.2b stores a non-extractable browser private
+`CryptoKey` only in identity-scoped IndexedDB and verifies its ES256/P1363
+assertion in the dedicated Admin Edge. Policy, factor-rotation/revoke/reset and browser
 transitions plus bounded cleanup drain derived AI authority while preserving
 the Admin session where required. B2.2a adds service-only factor revoke/reset,
 safe profile and single-use rare-control APIs whose grants bind a DB-recomputed
@@ -433,6 +438,8 @@ helpers use a fixed empty `search_path`, minimum grants and database context
 revalidation. The source/static gate is PASS, while exact-head from-zero/
 populated upgrade, pgTAP, database concurrency, generated types and lint remain
 pending. B2.2a implements the TOTP factor-set fingerprint and dormant identity
-Edge begin/complete/reconcile transport. Raw-PIN/AI mutation Edge/UI, all Admin authorization, lecture
-ownership, proof-to-master admission, AI Passkey, Hosted/Human and activation
+Edge begin/complete/reconcile transport. B2.2b implements default-OFF raw-PIN,
+AI mutation, browser proof and approved factor-transition source paths, but
+issues no master. All operational Admin authorization, lecture ownership,
+proof-to-master admission, AI Passkey, Local Edge, Hosted/Human and activation
 are later HOLD boundaries.

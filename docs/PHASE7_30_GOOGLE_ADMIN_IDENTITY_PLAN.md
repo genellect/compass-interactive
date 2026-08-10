@@ -1,8 +1,8 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Implemented, verification pending
-Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-B2.2a source; Phase 7.30C-F HOLD
+Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a/B2.2b source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-B2.2b source; Phase 7.30C-F HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-10
@@ -10,7 +10,8 @@ Last verified: 2026-08-10
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
 [`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md) and
-[`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md).
+[`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md) and
+[`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md).
 
 ## Implementation checkpoint
 
@@ -47,8 +48,10 @@ Changed sets are reason-revoked and drain pending AI authority. The only
 automatic approval is an unbound `pending_mfa` principal's exact first 0-to-1
 factor during fresh completion. Existing verified but unbound sets require an
 Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
-never infers approval. Adding/replacing a factor beside an approved set requires
-B2.2b rare-control with fresh existing-factor proof and remains HOLD.
+never infers approval. B2.2b now implements default-OFF add/remove rare-control:
+one aggregate live snapshot, a fresh existing-set control grant and an exact
+expected post-set advance the principal anchor while draining old authority.
+Its maximum 30-minute hash-only recovery is capped by the same Auth session.
 Phase 7.30C still applies the unified verifier to every operational
 Admin Edge/RPC path.
 
@@ -64,10 +67,11 @@ types and DB lint must still pass exact-head CI.
 
 No Google Cloud OAuth client, Supabase Hosted provider/database/Edge setting,
 callback allowlist, secret, or real account was created or changed. Real Google
-OAuth, Hosted and Human evidence is not executed and remains HOLD. B2 does not
-implement the Edge raw-PIN/HMAC path, real browser CryptoKey/signature flow,
-all-Admin verifier, lecture ownership, atomic proof-to-master admission, Edge
-raw-PIN/HMAC, UI or AI Passkey. Those B2.2b/C and later boundaries,
+OAuth, Hosted and Human evidence is not executed and remains HOLD. B2.2b adds
+the default-OFF Edge raw-PIN/HMAC path, real non-extractable browser
+CryptoKey/signature flow, PIN/factor UI and approved factor transitions. It does
+not implement the all-Admin verifier, lecture ownership, atomic proof-to-master
+admission or AI Passkey. Those C and later boundaries,
 Phase 7.30C-F and every activation remain HOLD. The source implementation adds
 no recurring fixed-cost dependency.
 
@@ -603,8 +607,10 @@ Admin client, Google identity binding, tracked session and mandatory TOTP AAL2;
 after that boundary, **B2** adds the default-OFF four-digit AI PIN database
 factor, remembered-browser state, AI policy, rate/receipt state,
 master-provenance expansion and continuous-session lifetime/invalidation
-migration. B2 source/static is implemented; its exact-head runtime DB gate is
-pending. Phase 7.30C then completes the unified verifier across every
+migration. B2.2a then hardens factor-set trust and rare-control grants; B2.2b
+adds the dedicated dormant Edge/browser proof paths and approved factor
+transitions. Source/static and Chromium/WebKit storage evidence is implemented;
+exact-head runtime DB/Local Edge gates are pending. Phase 7.30C then completes the unified verifier across every
 operational Admin Edge/RPC path. AI Passkey is not part of the initial B2
 implementation.
 

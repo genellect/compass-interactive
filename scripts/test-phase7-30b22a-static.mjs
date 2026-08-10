@@ -695,13 +695,25 @@ for (const barrier of [
   assert.match(concurrency, new RegExp(barrier))
 }
 assert.match(concurrency, /wait_event_type = 'Lock'/)
+const b22bConcurrencyStart = concurrency.indexOf(
+  '// B2.2b: two different requests for one principal',
+)
+const b22bConcurrencyEnd = concurrency.indexOf(
+  'const factorReconcile =',
+  b22bConcurrencyStart,
+)
+assert.notEqual(b22bConcurrencyStart, -1)
+assert.notEqual(b22bConcurrencyEnd, -1)
+const b22aConcurrency =
+  concurrency.slice(0, b22bConcurrencyStart) +
+  concurrency.slice(b22bConcurrencyEnd)
 assert.equal(
-  concurrency.match(/wait_event_type = 'Lock'/g)?.length,
+  b22aConcurrency.match(/wait_event_type = 'Lock'/g)?.length,
   3,
   'each holder must observe its fixed waiter without a third release process',
 )
 assert.equal(
-  concurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
+  b22aConcurrency.match(/pg_catalog\.pg_stat_clear_snapshot\(\)/g)?.length,
   3,
   'each holder must refresh its statistics snapshot before observing the waiter',
 )

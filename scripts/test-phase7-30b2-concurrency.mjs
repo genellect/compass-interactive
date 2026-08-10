@@ -72,6 +72,12 @@ const id = Object.fromEntries(
     'sessionDrainRotationRequest',
     'sessionDrainRevokeRequest',
     'factorReconcileRequest',
+    'transitionCandidateA',
+    'transitionCandidateB',
+    'transitionRequestA',
+    'transitionRequestB',
+    'transitionFinalizeRequestA',
+    'transitionCleanupRequest',
   ].map((name) => [name, randomUUID()]),
 )
 const hex = () => randomBytes(32).toString('hex')
@@ -102,6 +108,8 @@ const loginRacePrechallengeOld = hex()
 const loginRacePrechallengeNew = hex()
 const loginRaceCompletionJwt = hex()
 const loginRaceToken = hex()
+const transitionRecoveryHashA = hex()
+const transitionRecoveryHashB = hex()
 const policyValidFrom = new Date(Date.now() - 5 * 60_000).toISOString()
 const policyValidUntil = new Date(Date.now() + 24 * 60 * 60_000).toISOString()
 const networkRace = hex()
@@ -283,6 +291,13 @@ const recordServiceResult = (scenario, expression) =>
     select ${literal(scenario)}, to_jsonb(outcome.value)
     from outcome;
   `)
+const recordNullableServiceResult = (scenario, expression) =>
+  asServiceRole(`
+    with outcome as (select ${expression} as value)
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select ${literal(scenario)}, coalesce(to_jsonb(outcome.value), 'null'::jsonb)
+    from outcome;
+  `)
 const recordDelayedServiceResult = (scenario, expression) =>
   asServiceRole(`
     select pg_sleep(0.10);
@@ -367,6 +382,7 @@ const seedControlGrant = async (
     from public.admin_sessions as session
     where session.id = ${literal(adminSessionId)}::uuid;
   `)
+  return { grantId, nonceId }
 }
 
 await runSql(`
@@ -1383,6 +1399,307 @@ await runSql(`
   $$;
 `)
 
+// B2.2b: two different requests for one principal must not race through the
+// partial unique index. The winner is held after it acquires the principal
+// advisory slot; the loser must return a bounded generic null before consuming
+// its otherwise-valid control grant.
+await runSql(`
+  update private.admin_identity_runtime_gate
+  set totp_factor_mutation_enabled = true
+  where singleton;
+
+  insert into auth.mfa_factors (
+    id, user_id, friendly_name, factor_type, status, created_at, updated_at
+  ) values
+    (${literal(id.transitionCandidateA)}::uuid, ${literal(id.authUserA)}::uuid,
+      'phase730b22b-transition-a', 'totp', 'unverified',
+      statement_timestamp(), statement_timestamp()),
+    (${literal(id.transitionCandidateB)}::uuid, ${literal(id.authUserA)}::uuid,
+      'phase730b22b-transition-b', 'totp', 'unverified',
+      statement_timestamp(), statement_timestamp());
+`)
+await runSql(
+  recordServiceResult(
+    'transition-intent-a',
+    `public.get_admin_totp_factor_transition_intent_v1(${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA1)}::uuid, 'totp_factor_add', ${literal(id.transitionCandidateA)}::uuid)`,
+  ),
+)
+await runSql(
+  recordServiceResult(
+    'transition-intent-b',
+    `public.get_admin_totp_factor_transition_intent_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid, 'totp_factor_add', ${literal(id.transitionCandidateB)}::uuid)`,
+  ),
+)
+const transitionControlA = await seedControlGrant(
+  id.adminSessionA1,
+  'totp_factor_add',
+  id.transitionRequestA,
+  `(select outcome ->> 'intent_digest' from public.phase7_30b2_concurrency_results where scenario = 'transition-intent-a')`,
+)
+const transitionControlB = await seedControlGrant(
+  id.adminSessionA2,
+  'totp_factor_add',
+  id.transitionRequestB,
+  `(select outcome ->> 'intent_digest' from public.phase7_30b2_concurrency_results where scenario = 'transition-intent-b')`,
+)
+await runSql(`
+  create function private.phase7_30b22b_transition_barrier_v1()
+  returns trigger
+  language plpgsql
+  set search_path = ''
+  as $$
+  declare
+    wait_started_at timestamptz := clock_timestamp();
+  begin
+    if new.mutation_request_id = ${literal(id.transitionRequestA)}::uuid then
+      raise notice 'PHASE730B22B_TRANSITION_SLOT_READY';
+      while not exists (
+        select 1 from public.phase7_30b2_concurrency_results
+        where scenario = 'transition-authorize-release'
+      ) loop
+        if clock_timestamp() > wait_started_at + interval '10 seconds' then
+          raise exception 'timed out waiting for transition release';
+        end if;
+        perform pg_sleep(0.01);
+      end loop;
+    end if;
+    return new;
+  end;
+  $$;
+  revoke all on function private.phase7_30b22b_transition_barrier_v1()
+    from public, anon, authenticated, service_role;
+  create trigger phase7_30b22b_transition_barrier
+  before insert on private.admin_totp_factor_transitions
+  for each row execute function private.phase7_30b22b_transition_barrier_v1();
+`)
+const transitionWinner = startSqlUntilReady(
+  recordServiceResult(
+    'transition-authorize-winner',
+    `public.authorize_admin_totp_factor_transition_v1(${literal(tokenA1)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA1)}::uuid, 'totp_factor_add', ${literal(id.transitionCandidateA)}::uuid, (select outcome ->> 'intent_digest' from public.phase7_30b2_concurrency_results where scenario = 'transition-intent-a'), ${literal(transitionRecoveryHashA)}, ${literal(id.transitionRequestA)}::uuid)`,
+  ),
+  'PHASE730B22B_TRANSITION_SLOT_READY',
+)
+await transitionWinner.ready
+await runSql(
+  recordNullableServiceResult(
+    'transition-authorize-busy',
+    `public.authorize_admin_totp_factor_transition_v1(${literal(tokenA2)}, ${literal(id.authUserA)}::uuid, ${literal(id.authSessionA2)}::uuid, 'totp_factor_add', ${literal(id.transitionCandidateB)}::uuid, (select outcome ->> 'intent_digest' from public.phase7_30b2_concurrency_results where scenario = 'transition-intent-b'), ${literal(transitionRecoveryHashB)}, ${literal(id.transitionRequestB)}::uuid)`,
+  ),
+)
+await runSql(`
+  do $$
+  begin
+    if (select outcome from public.phase7_30b2_concurrency_results
+        where scenario = 'transition-authorize-busy') <> 'null'::jsonb
+       or (select status from private.admin_control_step_up_grants
+           where mutation_request_id = ${literal(id.transitionRequestB)}::uuid) <> 'available' then
+      raise exception 'competing transition did not return busy without consuming its grant';
+    end if;
+  end;
+  $$;
+  insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+  values ('transition-authorize-release', 'true'::jsonb);
+`)
+await transitionWinner.done
+await runSql(`
+  do $$
+  begin
+    if (select outcome ->> 'status'
+        from public.phase7_30b2_concurrency_results
+        where scenario = 'transition-authorize-winner') <> 'authorized'
+       or (select status from private.admin_control_step_up_grants
+           where mutation_request_id = ${literal(id.transitionRequestA)}::uuid) <> 'consumed'
+       or (select status from private.admin_control_step_up_grants
+           where mutation_request_id = ${literal(id.transitionRequestB)}::uuid) <> 'available'
+       or (select count(*) from private.admin_totp_factor_transitions
+           where principal_id = ${literal(id.principalA)}::uuid
+             and status = 'authorized') <> 1 then
+      raise exception 'principal transition serialization did not converge';
+    end if;
+  end;
+  $$;
+  drop trigger phase7_30b22b_transition_barrier
+    on private.admin_totp_factor_transitions;
+  drop function private.phase7_30b22b_transition_barrier_v1();
+`)
+
+// At the exact expiry boundary, authorize already owns the canonical
+// principal/membership/session/advisory chain before it updates the old
+// transition. Finalize must wait on the principal without first owning the
+// transition row; otherwise these two real calls form a cycle.
+await runSql(`
+  update private.admin_totp_factor_transitions
+  set authorized_at = statement_timestamp() - interval '29 minutes',
+      expires_at = statement_timestamp() - interval '1 second'
+  where mutation_request_id = ${literal(id.transitionRequestA)}::uuid;
+
+  create function private.phase7_30b22b_transition_expiry_barrier_v1()
+  returns trigger
+  language plpgsql
+  set search_path = ''
+  as $$
+  declare
+    wait_started_at timestamptz := clock_timestamp();
+  begin
+    if current_setting('application_name', true) =
+       'phase730b22b-transition-authorize-expiry' then
+      raise notice 'PHASE730B22B_TRANSITION_EXPIRY_AUTHORIZE_READY';
+      loop
+        perform pg_catalog.pg_stat_clear_snapshot();
+        exit when exists (
+          select 1 from pg_catalog.pg_stat_activity
+          where application_name =
+                'phase730b22b-transition-finalize-waiter'
+            and wait_event_type = 'Lock'
+            and pid <> pg_catalog.pg_backend_pid()
+        );
+        if clock_timestamp() > wait_started_at + interval '10 seconds' then
+          raise exception 'finalizer did not wait at the canonical principal lock';
+        end if;
+        perform pg_catalog.pg_sleep(0.01);
+      end loop;
+    end if;
+    return null;
+  end;
+  $$;
+  revoke all on function private.phase7_30b22b_transition_expiry_barrier_v1()
+    from public, anon, authenticated, service_role;
+  create trigger phase7_30b22b_transition_expiry_barrier
+  before update on private.admin_totp_factor_transitions
+  for each statement
+  execute function private.phase7_30b22b_transition_expiry_barrier_v1();
+`)
+const expiryAuthorize = startSqlUntilReady(
+  asServiceRole(`
+    set local application_name =
+      'phase730b22b-transition-authorize-expiry';
+    with outcome as (
+      select public.authorize_admin_totp_factor_transition_v1(
+        ${literal(tokenA2)}, ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA2)}::uuid, 'totp_factor_add',
+        ${literal(id.transitionCandidateB)}::uuid,
+        (select outcome ->> 'intent_digest'
+         from public.phase7_30b2_concurrency_results
+         where scenario = 'transition-intent-b'),
+        ${literal(transitionRecoveryHashB)},
+        ${literal(id.transitionRequestB)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'transition-authorize-after-expiry', to_jsonb(outcome.value)
+    from outcome;
+  `),
+  'PHASE730B22B_TRANSITION_EXPIRY_AUTHORIZE_READY',
+)
+await expiryAuthorize.ready
+const expiryFinalize = runSql(
+  asServiceRole(`
+    set local application_name =
+      'phase730b22b-transition-finalize-waiter';
+    with outcome as (
+      select public.finalize_admin_totp_factor_transition_v1(
+        ${literal(transitionRecoveryHashA)},
+        ${literal(id.authUserA)}::uuid,
+        ${literal(id.authSessionA1)}::uuid,
+        'totp_factor_add', ${literal(id.transitionCandidateA)}::uuid,
+        (select outcome ->> 'intent_digest'
+         from public.phase7_30b2_concurrency_results
+         where scenario = 'transition-intent-a'),
+        ${literal(id.transitionRequestA)}::uuid,
+        ${literal(id.transitionFinalizeRequestA)}::uuid
+      ) as value
+    )
+    insert into public.phase7_30b2_concurrency_results (scenario, outcome)
+    select 'transition-finalize-at-expiry',
+      coalesce(to_jsonb(outcome.value), 'null'::jsonb)
+    from outcome;
+  `),
+)
+await Promise.all([expiryAuthorize.done, expiryFinalize])
+await runSql(`
+  do $$
+  begin
+    if (select outcome from public.phase7_30b2_concurrency_results
+        where scenario = 'transition-finalize-at-expiry') <> 'null'::jsonb
+       or (select outcome ->> 'status'
+           from public.phase7_30b2_concurrency_results
+           where scenario = 'transition-authorize-after-expiry') <>
+          'authorized'
+       or (select status from private.admin_totp_factor_transitions
+           where mutation_request_id =
+             ${literal(id.transitionRequestA)}::uuid) <> 'expired'
+       or (select status from private.admin_totp_factor_transitions
+           where mutation_request_id =
+             ${literal(id.transitionRequestB)}::uuid) <> 'authorized'
+       or (select status from private.admin_control_step_up_grants
+           where id = ${literal(transitionControlB.grantId)}::uuid) <>
+          'consumed' then
+      raise exception 'authorize/finalize expiry-boundary race did not converge';
+    end if;
+  end;
+  $$;
+  drop trigger phase7_30b22b_transition_expiry_barrier
+    on private.admin_totp_factor_transitions;
+  drop function private.phase7_30b22b_transition_expiry_barrier_v1();
+
+  update private.admin_totp_factor_transitions
+  set status = 'expired', updated_at = statement_timestamp() - interval '31 days'
+  where mutation_request_id in (
+    ${literal(id.transitionRequestA)}::uuid,
+    ${literal(id.transitionRequestB)}::uuid
+  );
+  update private.admin_control_step_up_grants
+  set status = 'consumed', updated_at = statement_timestamp() - interval '31 days'
+  where id in (
+    ${literal(transitionControlA.grantId)}::uuid,
+    ${literal(transitionControlB.grantId)}::uuid
+  );
+  update private.admin_control_step_up_nonces
+  set status = 'consumed', updated_at = statement_timestamp() - interval '31 days'
+  where id in (
+    ${literal(transitionControlA.nonceId)}::uuid,
+    ${literal(transitionControlB.nonceId)}::uuid
+  );
+`)
+await runSql(
+  recordServiceResult(
+    'transition-retention-cleanup',
+    `public.cleanup_admin_control_step_up_ephemera_v1(statement_timestamp() - interval '1 day', ${literal(id.transitionCleanupRequest)}::uuid)`,
+  ),
+)
+await runSql(`
+  do $$
+  begin
+    if coalesce((select (outcome ->> 'transitions_deleted')::integer
+                 from public.phase7_30b2_concurrency_results
+                 where scenario = 'transition-retention-cleanup'), 0) < 2
+       or exists (
+         select 1 from private.admin_totp_factor_transitions
+         where mutation_request_id in (
+           ${literal(id.transitionRequestA)}::uuid,
+           ${literal(id.transitionRequestB)}::uuid
+         )
+       )
+       or exists (
+         select 1 from private.admin_control_step_up_grants
+         where id in (
+           ${literal(transitionControlA.grantId)}::uuid,
+           ${literal(transitionControlB.grantId)}::uuid
+         )
+       )
+       or exists (
+         select 1 from private.admin_control_step_up_nonces
+         where id in (
+           ${literal(transitionControlA.nonceId)}::uuid,
+           ${literal(transitionControlB.nonceId)}::uuid
+         )
+       ) then
+      raise exception 'transition/grant/nonce retention order did not converge';
+    end if;
+  end;
+  $$;
+`)
+
 await runSql(
   expiredBrowserFixture(
     id.enrollmentTwo,
@@ -1664,5 +1981,5 @@ await runSql(`
 `)
 
 console.log(
-  'Phase 7.30B2/B2.2a exact request, single-use control, factor reconciliation, bounded bcrypt, independent-rate, owner DELETE and cleanup races converged without deadlock.',
+  'Phase 7.30B2/B2.2a/B2.2b exact request, transition expiry/retention, single-use control, factor reconciliation, bounded bcrypt, independent-rate, owner DELETE and cleanup races converged without deadlock.',
 )

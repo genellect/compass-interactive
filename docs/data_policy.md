@@ -301,9 +301,19 @@ prompt, lecture body or provider response.
 Remembered-browser tables store a public ES256/P-256 JWK, RFC 7638 fingerprint,
 opaque credential digest and digest-only nonce/challenge state bound to
 identity, Admin session, factor, Origin, lecture, scope, policy and expiry. They
-store neither the browser private key nor raw signature proof. Actual
-non-extractable CryptoKey creation/storage and Edge signature verification are
-not implemented by B2 and remain Hosted/Human boundaries.
+store neither the browser private key nor raw signature proof. B2.2b creates the
+non-extractable private `CryptoKey` only in identity-scoped IndexedDB and sends
+only a bounded signature to the dedicated Edge verifier. Pending enrollment
+stores an opaque nonce and request IDs for at most the server five-minute
+window; it stores no PIN. Other teachers' same-origin records are hidden rather
+than treated as current identity authority.
+
+TOTP factor-transition recovery stores a random raw recovery credential only in
+Auth-user/Auth-session-scoped IndexedDB and only for the bounded transition
+window. Postgres stores its SHA-256 hash plus content-free request, action,
+factor, pre/post set and expiry metadata. The window is at most 30 minutes and
+never exceeds the application/Auth eight-hour cap. TOTP code, secret and QR
+material are not persisted in that recovery record.
 
 B2 cleanup is bounded and retention-cutoff-driven. Expired or superseded child
 state remains non-authorizing while awaiting deletion. The Hosted retention
@@ -331,6 +341,11 @@ evidence remain unproven.
   Migration infers neither an approval nor a session hash. First-factor approval
   is atomic only for an unbound `pending_mfa` 0-to-1 completion; existing sets
   require the Edge-unwired, default-OFF operator-adoption HOLD.
+- B2.2b changes an approved factor set only after a fresh existing-set control
+  proof binds the exact pre-set, target and expected post-set. Finalize advances
+  the anchor and drains old authority only when the live post-set matches.
+  Remove-to-zero is rejected. The transition path is default OFF and its Local
+  Edge, Hosted and Human evidence remains HOLD.
 - A five-minute TOTP step-up record exists only for rare owner/principal,
   role/status, verified TOTP-factor-set, environment AI-policy, global-revoke
   and AI PIN factor enrollment/rotation/revoke/reset control-plane actions. It is

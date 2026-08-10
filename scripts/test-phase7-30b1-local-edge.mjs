@@ -341,6 +341,7 @@ try {
     );
     update private.admin_identity_runtime_gate
     set google_session_issue_enabled = true,
+        totp_factor_mutation_enabled = true,
         updated_at = statement_timestamp()
     where singleton;
     update private.admin_ai_unlock_runtime_gate
@@ -437,6 +438,51 @@ try {
     200,
   )
   assert.equal(restored.session?.id, completed.session.id)
+
+  const sourceOffFactorBegin = await invoke(
+    status,
+    aal2,
+    'admin-identity-session',
+    {
+      action: 'beginControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'totp_factor_add',
+      controlIntentDigest: randomBytes(32).toString('hex'),
+      controlRequestId: randomUUID(),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorBegin.code, 'feature_disabled')
+
+  const sourceOffFactorComplete = await invoke(
+    status,
+    aal2,
+    'admin-identity-session',
+    {
+      action: 'completeControlStepUp',
+      appSessionToken: completed.appSessionToken,
+      controlAction: 'totp_factor_add',
+      controlIntentDigest: randomBytes(32).toString('hex'),
+      controlRequestId: randomUUID(),
+      controlStepUpNonce: randomBytes(32).toString('base64url'),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorComplete.code, 'feature_disabled')
+
+  const sourceOffFactorPrepare = await invoke(
+    status,
+    aal2,
+    'admin-ai-unlock',
+    {
+      action: 'prepareTotpTransition',
+      appSessionToken: completed.appSessionToken,
+      factorAction: 'totp_factor_add',
+      targetFactorId: randomUUID(),
+    },
+    503,
+  )
+  assert.equal(sourceOffFactorPrepare.code, 'feature_disabled')
 
   const controlRequestId = randomUUID()
   const controlIntentDigest = randomBytes(32).toString('hex')
@@ -566,6 +612,7 @@ try {
       begin;
       update private.admin_identity_runtime_gate
       set google_session_issue_enabled = false,
+          totp_factor_mutation_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
       update private.admin_ai_unlock_runtime_gate

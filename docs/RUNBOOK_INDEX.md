@@ -161,7 +161,7 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (A-B2.2a source; runtime/activation HOLD)
+## 6. Google Admin identity and MFA (A-B2.2b source; runtime/activation HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
@@ -169,6 +169,10 @@ Local writer while browser mode is active.
   rollback: `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
 - Implemented B2 default-OFF database boundary and pending verification:
   `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
+- Implemented B2.2a trust-anchor/control hardening:
+  `docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`.
+- Implemented B2.2b AI-unlock Edge/browser and factor-transition source:
+  `docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
 - Google session issuance is authorized only when the database runtime control
@@ -196,8 +200,10 @@ Local writer while browser mode is active.
   automatic approval is an unbound `pending_mfa` principal's exact first 0-to-1
   factor during fresh completion. Existing verified but unbound sets require
   Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
-  performs no inferred backfill. Factor add/replace remains B2.2b rare-control
-  HOLD. Phase 7.30C applies the verifier to every operational Admin Edge/RPC path.
+  performs no inferred backfill. B2.2b adds default-OFF factor add/remove
+  rare-control with an exact pre/post-set transition and hash-only recovery;
+  its Docker/Local Edge/Hosted/Human evidence remains HOLD. Phase 7.30C applies
+  the verifier to every operational Admin Edge/RPC path.
   Role changes take effect live; `can_use_ai=false` drains AI authority without
   ending the Admin session.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
@@ -208,7 +214,7 @@ Local writer while browser mode is active.
   initial implementation. The standard flow supports Google Authenticator;
   COMPASS configures no email MFA or custom MFA.
 - No real Google/Supabase Hosted mutation or Human MFA evidence was executed in
-  A-B2. B2 runtime exact-head DB CI, Phase 7.30C-F and Production activation
+  A-B2.2b. B2 runtime exact-head DB/Local Edge CI, Phase 7.30C-F and Production activation
   remain HOLD. Run the clean migration, all pgTAP, B2 two-transaction
   concurrency, populated Phase 7.29/B1 upgrade, generated types and DB lint in
   the local/CI database gate before claiming runtime verification.

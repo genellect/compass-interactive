@@ -349,9 +349,26 @@ only invoker wrappers. The old PIN-enroll and policy function signatures are
 replaced by grant-enforcing facades, while the renamed bodies have no executable
 privilege.
 
-The B2/B2.2a source/static contract is implemented. From-zero migration, all pgTAP,
-real database concurrency, populated Phase 7.29/B1 upgrade, generated types and
-DB lint remain exact-head CI verification requirements. Edge raw-PIN/HMAC,
-actual browser key/signature verification, unified
-Admin authorization, lecture ownership, atomic master issuance and Hosted/
-Human activation are not database-schema claims of this phase.
+Phase 7.30B2.2b adds one RLS-enabled private durable transition table and
+binding columns on remembered-browser state:
+
+| Table                            | Responsibility                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `admin_totp_factor_transitions`  | One active principal-scoped add/remove authorization, expected post-set and hash-only recovery provenance |
+
+Transition prepare derives verified IDs, target status, count and hash from one
+aggregate `auth.mfa_factors` statement snapshot. Authorize consumes one exact
+B2.2a grant, caps recovery at the app/Auth session limit and stores no raw
+recovery credential. Finalize requires the exact expected live post-set before
+advancing the principal approval version and draining old session/AI authority.
+Remembered-browser credential/enrollment/assertion rows gain approved factor-set
+version, current Auth-session and completion provenance so a new valid AAL2
+session may use the same credential without treating enrollment-session identity
+as current authority.
+
+The B2/B2.2a/B2.2b source/static contracts are implemented. From-zero migration,
+all pgTAP, real database concurrency, populated Phase 7.29/B1/B2/B2.2a-head
+upgrade, generated types and DB lint remain exact-head CI verification
+requirements. B2.2b includes raw-PIN/HMAC and actual browser key/signature source
+paths, but unified Admin authorization, lecture ownership, atomic master issuance
+and Hosted/Human activation are not database-schema claims of this phase.
