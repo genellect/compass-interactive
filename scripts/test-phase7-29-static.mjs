@@ -67,6 +67,7 @@ const supabaseConfig = read('supabase', 'config.toml')
 const displayPage = read('src', 'pages', 'DisplayPage.tsx')
 const lecturePage = read('src', 'pages', 'LecturePage.tsx')
 const adaptiveSync = read('src', 'hooks', 'useAdaptiveLiveSync.ts')
+const concurrency = read('scripts', 'test-phase7-29-concurrency.mjs')
 const nativeCoordinator = read(
   'presenter-bridge',
   'src',
@@ -331,6 +332,47 @@ for (const studentOrDisplaySource of [displayPage, lecturePage, adaptiveSync]) {
   )
 }
 assert.doesNotMatch(lecturePage, /supabase\.channel\(/)
+
+assert.equal((concurrency.match(/startSqlUntilReady\(/g) ?? []).length, 4)
+for (const readyMarker of [
+  'PHASE729_ISSUE_FIRST_GATE_READY',
+  'PHASE729_KILL_FIRST_GATE_READY',
+  'PHASE729_PAGE_FIRST_GATE_READY',
+]) {
+  assert.equal(
+    (concurrency.match(new RegExp(readyMarker, 'g')) ?? []).length,
+    2,
+  )
+}
+for (const applicationName of [
+  'phase729-issue-first-kill-waiter',
+  'phase729-kill-first-issue-waiter',
+  'phase729-page-first-manual-waiter',
+]) {
+  assert.equal(
+    (concurrency.match(new RegExp(applicationName, 'g')) ?? []).length,
+    2,
+  )
+}
+for (const releaseMarker of [
+  'issue-first-kill-release',
+  'kill-first-issue-release',
+  'page-first-manual-release',
+]) {
+  assert.equal(
+    (concurrency.match(new RegExp(releaseMarker, 'g')) ?? []).length,
+    2,
+  )
+}
+assert.equal((concurrency.match(/wait_event_type = 'Lock'/g) ?? []).length, 3)
+assert.equal((concurrency.match(/interval '10 seconds'/g) ?? []).length, 6)
+assert.match(concurrency, /lock_timeout = '5s'/)
+assert.match(concurrency, /statement_timeout = '15s'/)
+assert.doesNotMatch(
+  concurrency,
+  /pg_sleep\(0\.(?:1|5)0*\)/,
+  'Presenter race ordering must never depend on 0.1s or 0.5s sleeps',
+)
 
 assert.match(nativePowerPoint, /hiddenSlideIds\.Add\(slideId\)/)
 assert.match(nativePowerPoint, /hidden:\{string\.Join\(',', hiddenSlideIds\)\}/)
