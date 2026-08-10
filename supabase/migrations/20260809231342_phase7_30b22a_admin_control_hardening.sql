@@ -2649,15 +2649,15 @@ begin
   end if;
 
   if nonce_row.status = 'consumed' then
-    select grant.*
+    select control_grant.*
     into grant_row
-    from private.admin_control_step_up_grants as grant
-    where grant.control_nonce_id = nonce_row.id
-      and grant.mutation_request_id = target_mutation_request_id
-      and grant.intended_action = target_action
-      and grant.intent_digest = target_intent_digest
-      and grant.completion_jwt_hash = target_current_jwt_hash
-      and grant.verified_totp_amr_at is not distinct from target_totp_amr_at;
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.control_nonce_id = nonce_row.id
+      and control_grant.mutation_request_id = target_mutation_request_id
+      and control_grant.intended_action = target_action
+      and control_grant.intent_digest = target_intent_digest
+      and control_grant.completion_jwt_hash = target_current_jwt_hash
+      and control_grant.verified_totp_amr_at is not distinct from target_totp_amr_at;
     if not found then
       return null;
     end if;
@@ -2864,10 +2864,10 @@ begin
     return null;
   end if;
 
-  select grant.*
+  select control_grant.*
   into grant_row
-  from private.admin_control_step_up_grants as grant
-  where grant.mutation_request_id = target_mutation_request_id
+  from private.admin_control_step_up_grants as control_grant
+  where control_grant.mutation_request_id = target_mutation_request_id
   for update;
 
   if found then
@@ -3101,16 +3101,16 @@ begin
        and existing_factor.membership_id = (context_value ->> 'membership_id')::uuid
        and existing_factor.enrolled_by_admin_session_id =
           (context_value ->> 'admin_session_id')::uuid then
-      select grant.*
+      select control_grant.*
       into retry_grant
-      from private.admin_control_step_up_grants as grant
-      where grant.mutation_request_id = target_request_id
-        and grant.status = 'consumed'
-        and grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
-        and grant.environment_id = existing_factor.environment_id
-        and grant.principal_id = existing_factor.principal_id
-        and grant.membership_id = existing_factor.membership_id
-        and grant.intended_action in ('ai_pin_enroll', 'ai_pin_rotate');
+      from private.admin_control_step_up_grants as control_grant
+      where control_grant.mutation_request_id = target_request_id
+        and control_grant.status = 'consumed'
+        and control_grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
+        and control_grant.environment_id = existing_factor.environment_id
+        and control_grant.principal_id = existing_factor.principal_id
+        and control_grant.membership_id = existing_factor.membership_id
+        and control_grant.intended_action in ('ai_pin_enroll', 'ai_pin_rotate');
       intent_digest_value := private.admin_ai_pin_control_intent_digest_v1(
         retry_grant.intended_action,
         target_pin_pepper_version,
@@ -3278,17 +3278,17 @@ begin
     from private.admin_ai_policies as policy
     where policy.request_id = target_request_id
   ) then
-    select grant.*
+    select control_grant.*
     into retry_grant
-    from private.admin_control_step_up_grants as grant
-    where grant.mutation_request_id = target_request_id
-      and grant.status = 'consumed'
-      and grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
-      and grant.environment_id = (context_value ->> 'environment_id')::uuid
-      and grant.principal_id = (context_value ->> 'principal_id')::uuid
-      and grant.membership_id = (context_value ->> 'membership_id')::uuid
-      and grant.intended_action = 'environment_ai_policy_change'
-      and grant.intent_digest = intent_digest_value;
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.mutation_request_id = target_request_id
+      and control_grant.status = 'consumed'
+      and control_grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
+      and control_grant.environment_id = (context_value ->> 'environment_id')::uuid
+      and control_grant.principal_id = (context_value ->> 'principal_id')::uuid
+      and control_grant.membership_id = (context_value ->> 'membership_id')::uuid
+      and control_grant.intended_action = 'environment_ai_policy_change'
+      and control_grant.intent_digest = intent_digest_value;
     if not found then
       return null;
     end if;
@@ -3459,17 +3459,17 @@ begin
         factor_row.id,
         factor_row.factor_version
       );
-      select grant.*
+      select control_grant.*
       into retry_grant
-      from private.admin_control_step_up_grants as grant
-      where grant.mutation_request_id = target_request_id
-        and grant.status = 'consumed'
-        and grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
-        and grant.environment_id = factor_row.environment_id
-        and grant.principal_id = factor_row.principal_id
-        and grant.membership_id = factor_row.membership_id
-        and grant.intended_action = control_action
-        and grant.intent_digest = intent_digest_value;
+      from private.admin_control_step_up_grants as control_grant
+      where control_grant.mutation_request_id = target_request_id
+        and control_grant.status = 'consumed'
+        and control_grant.admin_session_id = (context_value ->> 'admin_session_id')::uuid
+        and control_grant.environment_id = factor_row.environment_id
+        and control_grant.principal_id = factor_row.principal_id
+        and control_grant.membership_id = factor_row.membership_id
+        and control_grant.intended_action = control_action
+        and control_grant.intent_digest = intent_digest_value;
       if not found then
         return null;
       end if;
@@ -3743,33 +3743,33 @@ begin
   get diagnostics expired_nonces = row_count;
 
   with candidates as (
-    select grant.id
-    from private.admin_control_step_up_grants as grant
-    where grant.status = 'available' and grant.expires_at <= effective_now
-    order by grant.expires_at, grant.id
-    for update of grant skip locked
+    select control_grant.id
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.status = 'available' and control_grant.expires_at <= effective_now
+    order by control_grant.expires_at, control_grant.id
+    for update of control_grant skip locked
     limit 500
   )
-  update private.admin_control_step_up_grants as grant
+  update private.admin_control_step_up_grants as control_grant
   set status = 'expired', updated_at = effective_now
   from candidates
-  where grant.id = candidates.id;
+  where control_grant.id = candidates.id;
   get diagnostics expired_grants = row_count;
 
   -- Delete child grants before their control nonces. The reverse completion
   -- identifier is deliberately not an FK, so this order is deterministic.
   with candidates as (
-    select grant.id
-    from private.admin_control_step_up_grants as grant
-    where grant.status in ('consumed', 'superseded', 'expired')
-      and grant.updated_at < target_retention_before
-    order by grant.updated_at, grant.id
-    for update of grant skip locked
+    select control_grant.id
+    from private.admin_control_step_up_grants as control_grant
+    where control_grant.status in ('consumed', 'superseded', 'expired')
+      and control_grant.updated_at < target_retention_before
+    order by control_grant.updated_at, control_grant.id
+    for update of control_grant skip locked
     limit 500
   )
-  delete from private.admin_control_step_up_grants as grant
+  delete from private.admin_control_step_up_grants as control_grant
   using candidates
-  where grant.id = candidates.id;
+  where control_grant.id = candidates.id;
   get diagnostics deleted_grants = row_count;
 
   with candidates as (
@@ -3779,8 +3779,8 @@ begin
       and nonce.updated_at < target_retention_before
       and not exists (
         select 1
-        from private.admin_control_step_up_grants as grant
-        where grant.control_nonce_id = nonce.id
+        from private.admin_control_step_up_grants as control_grant
+        where control_grant.control_nonce_id = nonce.id
       )
     order by nonce.updated_at, nonce.id
     for update of nonce skip locked
@@ -3799,14 +3799,14 @@ begin
     )
     or exists (
       select 1
-      from private.admin_control_step_up_grants as grant
-      where grant.status = 'available' and grant.expires_at <= effective_now
+      from private.admin_control_step_up_grants as control_grant
+      where control_grant.status = 'available' and control_grant.expires_at <= effective_now
     )
     or exists (
       select 1
-      from private.admin_control_step_up_grants as grant
-      where grant.status in ('consumed', 'superseded', 'expired')
-        and grant.updated_at < target_retention_before
+      from private.admin_control_step_up_grants as control_grant
+      where control_grant.status in ('consumed', 'superseded', 'expired')
+        and control_grant.updated_at < target_retention_before
     )
     or exists (
       select 1
@@ -3815,8 +3815,8 @@ begin
         and nonce.updated_at < target_retention_before
         and not exists (
           select 1
-          from private.admin_control_step_up_grants as grant
-          where grant.control_nonce_id = nonce.id
+          from private.admin_control_step_up_grants as control_grant
+          where control_grant.control_nonce_id = nonce.id
         )
     )
   into has_more;

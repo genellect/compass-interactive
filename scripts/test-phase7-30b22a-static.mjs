@@ -48,6 +48,15 @@ assert.match(b1, /google_session_issue_enabled boolean not null default false/)
 assert.match(b2, /ai_unlock_enabled boolean not null default false/)
 assert.match(b2, /remembered_browser_enabled boolean not null default false/)
 assert.doesNotMatch(migration, /create extension|pg_cron|net\.http|vault\./i)
+assert.doesNotMatch(
+  migration,
+  /\bas grant\b|\bgrant\.\*|\bgrant\./,
+  'reserved GRANT must never be reused as a table alias',
+)
+assert.match(
+  migration,
+  /from private\.admin_control_step_up_grants as control_grant/,
+)
 assert.match(
   migration,
   /operator_totp_factor_set_adoption_enabled boolean not null\s+default false/,
@@ -579,6 +588,21 @@ assert.match(edge, /begin_admin_totp_step_up_v2/)
 assert.match(edge, /target_challenged_factor_id: body\.challengedFactorId/)
 assert.match(edge, /errorCode === 'P7332'/)
 assert.match(edge, /factor_set_adoption_required/)
+assert.match(
+  client,
+  /factor_set_adoption_required:\s*'認証アプリの登録状態を運用担当者が承認する必要があります。再試行せず運用担当者に連絡してください。'/,
+  'factor-set adoption must remain an explicit frontend allowlisted recovery message',
+)
+assert.match(
+  client,
+  /typeof data\?\.code === 'string' && data\.code in ADMIN_IDENTITY_MESSAGES/,
+  'allowlisted identity response codes must not collapse into the generic error',
+)
+assert.match(
+  client,
+  /typeof body\.code === 'string' && body\.code in ADMIN_IDENTITY_MESSAGES/,
+  'allowlisted identity HTTP error codes must not collapse into the generic error',
+)
 assert.doesNotMatch(
   edge,
   /adopt_existing_admin_totp_factor_set_v1/,

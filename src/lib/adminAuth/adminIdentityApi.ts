@@ -53,6 +53,8 @@ const ADMIN_IDENTITY_MESSAGES: Record<string, string> = {
   app_session_invalid:
     '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
   feature_disabled: 'Google管理者ログインは現在利用できません。',
+  factor_set_adoption_required:
+    '認証アプリの登録状態を運用担当者が承認する必要があります。再試行せず運用担当者に連絡してください。',
   identity_invalid:
     'Googleアカウントを確認できませんでした。もう一度ログインしてください。',
   membership_unavailable:
