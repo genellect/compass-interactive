@@ -619,7 +619,7 @@ const loginCompleteLockOrder = runSql(
           ${literal(loginRaceNonceOld)},
           ${literal(id.authUserA)}::uuid,
           ${literal(id.authSessionA1)}::uuid,
-          2,
+          2::smallint,
           ${literal(loginRaceCompletionJwt)},
           statement_timestamp(),
           'totp',

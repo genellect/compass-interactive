@@ -769,6 +769,14 @@ assert.equal(b22aLoginCompleteCalls.length, 2)
 for (const call of b22aLoginCompleteCalls) {
   assert.match(call, /\n\s+2::smallint,\n/)
 }
+const b22aConcurrencyLoginCompleteCalls =
+  concurrency.match(
+    /public\.complete_admin_totp_step_up_v1\([\s\S]*?\n\s{8}\)/g,
+  ) ?? []
+assert.equal(b22aConcurrencyLoginCompleteCalls.length, 1)
+for (const call of b22aConcurrencyLoginCompleteCalls) {
+  assert.match(call, /\n\s+2::smallint,\n/)
+}
 for (const delegatedContract of [
   'require_admin_ai_context_pre_b22a_v1',
   'verify_and_touch_google_admin_session_pre_b22a_v1',
