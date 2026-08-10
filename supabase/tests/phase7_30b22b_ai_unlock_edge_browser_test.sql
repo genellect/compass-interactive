@@ -165,13 +165,13 @@ SELECT ok(
     pg_get_functiondef(
       'private.cleanup_admin_control_step_up_ephemera_v1(timestamptz,uuid)'::regprocedure
     ),
-    'delete from private.admin_control_step_up_grants as grant'
+    'delete from private.admin_control_step_up_grants as control_grant'
   )
   AND strpos(
     pg_get_functiondef(
       'private.cleanup_admin_control_step_up_ephemera_v1(timestamptz,uuid)'::regprocedure
     ),
-    'delete from private.admin_control_step_up_grants as grant'
+    'delete from private.admin_control_step_up_grants as control_grant'
   ) < strpos(
     pg_get_functiondef(
       'private.cleanup_admin_control_step_up_ephemera_v1(timestamptz,uuid)'::regprocedure
