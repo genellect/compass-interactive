@@ -5,6 +5,33 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
+const directPrivateReadsAsServiceRole = (sql) => {
+  const sanitized = sql
+    .replace(/\$\$[\s\S]*?\$\$/g, ' ')
+    .replace(/'(?:''|[^'])*'/g, ' ')
+    .replace(/--[^\r\n]*/g, ' ')
+  const reads = []
+  let serviceRole = false
+  for (const rawStatement of sanitized.split(';')) {
+    const statement = rawStatement.replace(/\s+/g, ' ').trim()
+    if (!statement) continue
+    if (/^RESET ROLE$/i.test(statement)) {
+      serviceRole = false
+      continue
+    }
+    if (/^SET ROLE service_role$/i.test(statement)) {
+      serviceRole = true
+      continue
+    }
+    if (
+      serviceRole &&
+      /\b(?:FROM|JOIN)\s+private\.[a-z_][a-z0-9_]*/i.test(statement)
+    ) {
+      reads.push(statement)
+    }
+  }
+  return reads
+}
 
 const migration = read(
   'supabase/migrations/20260809231342_phase7_30b22a_admin_control_hardening.sql',
@@ -809,6 +836,18 @@ assert.match(pgTap, /non-admin and no-op reconciliation add no audit rows/)
 assert.match(pgTap, /reconciliation writes one audit row only for a committed revoke/)
 assert.match(pgTap, /exact control-begin retry is returned before rate accounting/)
 assert.match(pgTap, /rate rejection creates neither a nonce nor an audit row/)
+assert.deepEqual(
+  directPrivateReadsAsServiceRole(pgTap),
+  [],
+  'B2.2a pgTAP must not grant service_role a direct private-table read path',
+)
+for (const intentGuc of [
+  'compass.test.admin_ai_pin_revoke_intent_digest',
+  'compass.test.admin_ai_pin_reset_intent_digest',
+]) {
+  assert.match(pgTap, new RegExp(`set_config\\(\\s*'${intentGuc}'`))
+  assert.match(pgTap, new RegExp(`current_setting\\(\\s*'${intentGuc}'`))
+}
 assert.match(edge, /reconcile_admin_totp_factor_set_v1/)
 assert.ok(
   edge.indexOf("body.action === 'reconcileTotpFactorSet'") <

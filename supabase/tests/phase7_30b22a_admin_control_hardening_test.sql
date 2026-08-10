@@ -663,6 +663,7 @@ SELECT is(
   '1',
   'factor-history-free initial PIN enrollment reuses the fresh login TOTP'
 );
+RESET ROLE;
 SELECT ok(
   (
     SELECT source_kind = 'admin_login'
@@ -674,6 +675,7 @@ SELECT ok(
   ),
   'initial enrollment records one consumed login-source grant'
 );
+SET ROLE service_role;
 SELECT is(
   public.enroll_admin_ai_pin_v1(
     repeat('9', 64),
@@ -712,14 +714,18 @@ SELECT is(
 );
 
 SELECT ok(
-  public.begin_admin_control_step_up_v1(
-    repeat('9', 64),
-    '00000000-0000-4000-8000-000000007820'::uuid,
-    '00000000-0000-4000-8000-000000007821'::uuid,
-    'ai_pin_revoke',
-    '00000000-0000-4000-8000-00000000782e'::uuid,
-    encode(extensions.digest('phase730b22a-revoke-nonce', 'sha256'), 'hex'),
-    encode(extensions.digest('phase730b22a-revoke-prejwt', 'sha256'), 'hex')
+  set_config(
+    'compass.test.admin_ai_pin_revoke_intent_digest',
+    public.begin_admin_control_step_up_v1(
+      repeat('9', 64),
+      '00000000-0000-4000-8000-000000007820'::uuid,
+      '00000000-0000-4000-8000-000000007821'::uuid,
+      'ai_pin_revoke',
+      '00000000-0000-4000-8000-00000000782e'::uuid,
+      encode(extensions.digest('phase730b22a-revoke-nonce', 'sha256'), 'hex'),
+      encode(extensions.digest('phase730b22a-revoke-prejwt', 'sha256'), 'hex')
+    ) ->> 'intent_digest',
+    false
   ) IS NOT NULL,
   'terminal PIN revoke begins with a DB-derived factor-scoped intent'
 );
@@ -729,11 +735,8 @@ SELECT ok(
     '00000000-0000-4000-8000-000000007820'::uuid,
     '00000000-0000-4000-8000-000000007821'::uuid,
     'ai_pin_revoke',
-    (
-      SELECT intent_digest
-      FROM private.admin_control_step_up_nonces
-      WHERE mutation_request_id =
-        '00000000-0000-4000-8000-00000000782e'::uuid
+    current_setting(
+      'compass.test.admin_ai_pin_revoke_intent_digest'
     ),
     '00000000-0000-4000-8000-00000000782e'::uuid,
     encode(extensions.digest('phase730b22a-revoke-nonce', 'sha256'), 'hex'),
@@ -794,14 +797,18 @@ INSERT INTO private.admin_ai_unlock_factors (
 );
 SET ROLE service_role;
 SELECT ok(
-  public.begin_admin_control_step_up_v1(
-    repeat('9', 64),
-    '00000000-0000-4000-8000-000000007820'::uuid,
-    '00000000-0000-4000-8000-000000007821'::uuid,
-    'ai_pin_reset',
-    '00000000-0000-4000-8000-000000007837'::uuid,
-    encode(extensions.digest('phase730b22a-reset-nonce', 'sha256'), 'hex'),
-    encode(extensions.digest('phase730b22a-reset-prejwt', 'sha256'), 'hex')
+  set_config(
+    'compass.test.admin_ai_pin_reset_intent_digest',
+    public.begin_admin_control_step_up_v1(
+      repeat('9', 64),
+      '00000000-0000-4000-8000-000000007820'::uuid,
+      '00000000-0000-4000-8000-000000007821'::uuid,
+      'ai_pin_reset',
+      '00000000-0000-4000-8000-000000007837'::uuid,
+      encode(extensions.digest('phase730b22a-reset-nonce', 'sha256'), 'hex'),
+      encode(extensions.digest('phase730b22a-reset-prejwt', 'sha256'), 'hex')
+    ) ->> 'intent_digest',
+    false
   ) IS NOT NULL,
   'terminal PIN reset independently begins with its exact active factor'
 );
@@ -811,11 +818,8 @@ SELECT ok(
     '00000000-0000-4000-8000-000000007820'::uuid,
     '00000000-0000-4000-8000-000000007821'::uuid,
     'ai_pin_reset',
-    (
-      SELECT intent_digest
-      FROM private.admin_control_step_up_nonces
-      WHERE mutation_request_id =
-        '00000000-0000-4000-8000-000000007837'::uuid
+    current_setting(
+      'compass.test.admin_ai_pin_reset_intent_digest'
     ),
     '00000000-0000-4000-8000-000000007837'::uuid,
     encode(extensions.digest('phase730b22a-reset-nonce', 'sha256'), 'hex'),
@@ -871,6 +875,7 @@ SELECT is(
   null,
   'an existing verified set rejects an unverified login candidate'
 );
+RESET ROLE;
 SELECT is(
   (
     SELECT count(*)::integer
@@ -881,7 +886,6 @@ SELECT is(
   0,
   'rejected post-enrollment factor addition writes no login nonce'
 );
-RESET ROLE;
 
 -- A stale proof for factor A must not be laundered into a session bound only
 -- to surviving factor B.
