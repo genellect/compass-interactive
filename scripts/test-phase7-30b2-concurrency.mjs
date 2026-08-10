@@ -1323,7 +1323,7 @@ const expiredBrowserFixture = (
     'http://127.0.0.1:5173', ${literal(JSON.stringify(jwk))}::jsonb,
     ${literal(jwkFingerprint)}, ${literal(adminSessionId)}::uuid,
     ${literal(enrollmentId)}::uuid, statement_timestamp() - interval '2 days',
-    statement_timestamp() - interval '1 day'
+    statement_timestamp() + interval '1 day'
   from private.admin_ai_unlock_factors as factor
   where factor.membership_id = ${literal(id.membershipA)}::uuid and factor.status = 'active';
 
@@ -1344,6 +1344,15 @@ const expiredBrowserFixture = (
   join private.admin_ai_policies as policy
     on policy.membership_id = factor.membership_id and policy.status = 'active'
   where factor.membership_id = ${literal(id.membershipA)}::uuid and factor.status = 'active';
+
+  -- The assertion must be created while its remembered-browser credential is
+  -- valid. Expire the credential only after the binding trigger has verified
+  -- that chain, then exercise cleanup against the resulting historical state.
+  update private.admin_ai_browser_credentials
+  set
+    expires_at = statement_timestamp() - interval '1 day',
+    updated_at = statement_timestamp() - interval '1 day'
+  where id = ${literal(credentialId)}::uuid;
 `
 
 await runSql(

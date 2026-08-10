@@ -736,6 +736,11 @@ assert.match(
 )
 assert.match(
   concurrency,
+  /const expiredBrowserFixture =[\s\S]*?insert into private\.admin_ai_browser_credentials[\s\S]*?statement_timestamp\(\) \+ interval '1 day'[\s\S]*?insert into private\.admin_ai_browser_assertion_challenges[\s\S]*?update private\.admin_ai_browser_credentials[\s\S]*?expires_at = statement_timestamp\(\) - interval '1 day'/,
+  'cleanup fixtures must bind assertions while credentials are valid, then expire the credentials',
+)
+assert.match(
+  concurrency,
   /verify_and_touch_google_admin_session_v1\([\s\S]*?literal\(tokenA1\)[\s\S]*?id\.authSessionA1[\s\S]*?factor-touch-race'/,
 )
 assert.match(
