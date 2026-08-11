@@ -1709,7 +1709,6 @@ declare
   operation_key_value text;
   resolved_lecture_session_id uuid;
   context_value jsonb;
-  binding_row private.admin_google_pdf_publication_bindings%rowtype;
   publication_row public.lecture_pdf_publications%rowtype;
   result_value jsonb;
 begin
@@ -1762,8 +1761,8 @@ begin
   );
 
   if target_action = 'discover' then
-    select binding, publication
-    into binding_row, publication_row
+    select publication.*
+    into publication_row
     from private.admin_google_pdf_publication_bindings as binding
     join public.lecture_pdf_publications as publication
       on publication.id = binding.publication_id
@@ -1780,8 +1779,8 @@ begin
       return jsonb_build_object('found', false, 'ok', true);
     end if;
   else
-    select binding, publication
-    into binding_row, publication_row
+    select publication.*
+    into publication_row
     from private.admin_google_pdf_publication_bindings as binding
     join public.lecture_pdf_publications as publication
       on publication.id = binding.publication_id
@@ -2022,8 +2021,8 @@ begin
         using errcode = 'P7335';
     end if;
 
-    select ticket, binding, publication
-    into ticket_row, binding_row, publication_row
+    select ticket.*
+    into ticket_row
     from private.admin_google_pdf_publication_tickets as ticket
     join private.admin_google_pdf_publication_bindings as binding
       on binding.publication_id = ticket.publication_id
@@ -2038,6 +2037,15 @@ begin
        or ticket_row.ticket_jti_hash <> target_ticket_jti_hash
        or ticket_row.key_version <> target_ticket_key_version then
       raise exception 'PDF ticket evidence is incomplete or misbound'
+        using errcode = 'P7335';
+    end if;
+
+    select publication.*
+    into publication_row
+    from public.lecture_pdf_publications as publication
+    where publication.id = ticket_row.publication_id;
+    if not found then
+      raise exception 'PDF publication evidence is unavailable'
         using errcode = 'P7335';
     end if;
 

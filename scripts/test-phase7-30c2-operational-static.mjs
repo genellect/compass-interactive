@@ -376,6 +376,11 @@ const pdfAbortSql = functionBlock(
   migration,
   'private.abort_google_admin_pdf_publication_v1',
 )
+assert.doesNotMatch(
+  migration,
+  /select\s+[a-z_]+\s*,\s*[a-z_]+(?:\s*,\s*[a-z_]+)?\s+into\s+[a-z_]+_row\s*,/i,
+  'PL/pgSQL must not assign multiple composite records in one INTO list',
+)
 for (const [label, block] of [
   ['issue', pdfIssueSql],
   ['prepare', pdfPrepareSql],
