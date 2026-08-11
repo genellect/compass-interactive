@@ -1509,15 +1509,31 @@ const providerFixtureC = pgTap.slice(
   ),
 )
 assert.equal(
-  [...providerFixtureC.matchAll(/repeat\('c',64\)/g)].length,
+  [...providerFixtureC.matchAll(/repeat\('8',63\)\s*\|\|\s*'2'/g)].length,
   2,
   'the third provider fixture reuses one fresh nonce only for its issue/start pair',
 )
 assert.doesNotMatch(
   providerFixtureC,
-  /repeat\('8',64\)/,
-  'the third provider fixture never collides with the legacy grant nonce',
+  /repeat\('c',64\)|repeat\('8',64\)/,
+  'the third provider fixture never collides with summary or legacy grant nonces',
 )
+for (const [suffix, expectedCount, contract] of [
+  ['1', 2, 'Academic cancellation'],
+  ['2', 2, 'provider completion'],
+  ['3', 3, 'Realtime activation'],
+  ['4', 2, 'Realtime unclaimed recovery'],
+]) {
+  const noncePattern = new RegExp(
+    `repeat\\('8',\\s*63\\)\\s*\\|\\|\\s*'${suffix}'`,
+    'g',
+  )
+  assert.equal(
+    [...pgTap.matchAll(noncePattern)].length,
+    expectedCount,
+    `${contract} keeps one globally unique child nonce across its exact bindings`,
+  )
+}
 
 assert.match(
   realtimeProviderMigration,

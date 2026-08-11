@@ -3512,7 +3512,7 @@ issued AS MATERIALIZED (
     prepared.result AS prepared_result,
     pg_temp.issue_academic_child(
       '00000000-0000-4000-8000-00000000e2c1'::uuid,
-      repeat('5', 64),
+      repeat('8', 63) || '1',
       (prepared.result ->> 'academicRequestId')::uuid,
       '00000000-0000-4000-8000-00000000e2c0'::uuid,
       prepared.result ->> 'providerContextDigest',
@@ -3531,7 +3531,7 @@ started AS MATERIALIZED (
     pg_temp.start_academic_operation(
       '00000000-0000-4000-8000-00000000e2c2'::uuid,
       (issued.child_result ->> 'grant_id')::uuid,
-      repeat('5', 64),
+      repeat('8', 63) || '1',
       (issued.prepared_result ->> 'academicRequestId')::uuid,
       '00000000-0000-4000-8000-00000000e2c0'::uuid,
       issued.prepared_result ->> 'providerContextDigest',
@@ -3738,7 +3738,7 @@ SELECT ok(
     FROM (
       SELECT pg_temp.issue_provider_child(
         '00000000-0000-4000-8000-00000000e235'::uuid,
-        repeat('c',64), 'https://accounts.google.com', repeat('a',64),
+        repeat('8',63) || '2', 'https://accounts.google.com', repeat('a',64),
         'material_analysis', 'test-model', true
       ) AS result
     ) AS issued
@@ -3756,7 +3756,8 @@ SELECT ok(
       SELECT pg_temp.start_provider_operation(
         '00000000-0000-4000-8000-00000000e236'::uuid,
         current_setting('compass.test.c2_provider_child_c')::uuid,
-        repeat('c',64), current_setting('compass.test.c2_provider_digest_c'),
+        repeat('8',63) || '2',
+        current_setting('compass.test.c2_provider_digest_c'),
         'https://accounts.google.com', repeat('a',64), 'test-model', true
       ) AS result
     ) AS started
@@ -3842,7 +3843,7 @@ SELECT ok(
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
         'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
-        60, 60, 60, repeat('d',64), 1,
+        60, 60, 60, repeat('8',63) || '3', 1,
         '00000000-0000-4000-8000-00000000e2b0'::uuid, true
       ) AS result
     ) AS issued
@@ -3865,7 +3866,7 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_realtime_child')::uuid,
-        repeat('d',64),
+        repeat('8',63) || '3',
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
         'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
         60, 60, 60,
@@ -3888,7 +3889,7 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_realtime_child')::uuid,
-        repeat('d',64),
+        repeat('8',63) || '3',
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
         'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
         60, 60, 60,
@@ -4078,7 +4079,7 @@ SELECT ok(
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
         'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
-        60, 60, 60, repeat('c',64), 1,
+        60, 60, 60, repeat('8',63) || '4', 1,
         '00000000-0000-4000-8000-00000000e2b7'::uuid, true
       ) AS result
     ) AS issued
@@ -4099,7 +4100,7 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_realtime_unclaimed_child')::uuid,
-        repeat('c',64),
+        repeat('8',63) || '4',
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
         'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
         60, 60, 60,
