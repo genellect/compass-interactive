@@ -114,21 +114,66 @@ Deno.serve(async (request) => {
     return jsonResponse({ message: 'Authentication required.', ok: false }, 401)
   }
 
-  const { data, error } = await service.rpc(
-    'claim_display_realtime_session_v1',
-    {
+  const tokenJtiHash = await sha256Hex(displayClaims.jti)
+  const { data: googleBindingData, error: googleBindingError } =
+    await service.rpc('verify_and_claim_google_display_session_v1', {
       target_display_auth_user_id: authData.user.id,
       target_lecture_session_id: body.lectureSessionId,
-      target_token_jti_hash: await sha256Hex(displayClaims.jti),
-    },
-  )
-  if (error) {
+      target_token_jti_hash: tokenJtiHash,
+    })
+  if (googleBindingError) {
     return jsonResponse(
       { message: 'Display Realtime claim failed.', ok: false },
       500,
     )
   }
-  const result = (data ?? {}) as ClaimResult
+  const googleBinding = googleBindingData as {
+    reason?: unknown
+    recognized?: unknown
+    realtime?: ClaimResult | null
+    realtimeAvailable?: unknown
+    realtimeEnabled?: unknown
+    valid?: unknown
+  } | null
+  if (googleBinding?.recognized === true) {
+    if (googleBinding.reason === 'claimed_by_other') {
+      return jsonResponse(
+        { message: 'This Display link is already in use.', ok: false },
+        409,
+      )
+    }
+    if (
+      googleBinding.valid !== true ||
+      googleBinding.realtimeEnabled !== true ||
+      googleBinding.realtimeAvailable !== true ||
+      !googleBinding.realtime
+    ) {
+      return jsonResponse(
+        { message: 'Display Realtime session is unavailable.', ok: false },
+        503,
+      )
+    }
+  }
+
+  let result = googleBinding?.realtime as ClaimResult | null
+  if (googleBinding?.recognized !== true) {
+    const { data, error } = await service.rpc(
+      'claim_display_realtime_session_v1',
+      {
+        target_display_auth_user_id: authData.user.id,
+        target_lecture_session_id: body.lectureSessionId,
+        target_token_jti_hash: tokenJtiHash,
+      },
+    )
+    if (error) {
+      return jsonResponse(
+        { message: 'Display Realtime claim failed.', ok: false },
+        500,
+      )
+    }
+    result = (data ?? {}) as ClaimResult
+  }
+  result ??= {}
   if (result.status === 'claimed_by_other') {
     return jsonResponse(
       { message: 'This Display link is already in use.', ok: false },

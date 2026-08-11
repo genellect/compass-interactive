@@ -366,6 +366,15 @@ assert.deepEqual(
 assert.match(pgTap, /every C1 evidence foreign key has a full leading index/)
 assert.doesNotMatch(pgTap, /SELECT like\(/)
 assert.match(pgTap, /SELECT alike\(/)
+assert.equal(
+  (
+    runtimePgTap.match(
+      /C2 owned lecture child authority requires Google evidence/g,
+    ) ?? []
+  ).length,
+  2,
+  'runtime expectations follow the final C2 grant-evidence fence',
+)
 assert.match(
   migration,
   /create index admin_ai_master_admission_receipts_browser_idx\s+on private\.admin_ai_master_admission_receipts \(browser_credential_id\);/,

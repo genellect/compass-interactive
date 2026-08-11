@@ -214,85 +214,138 @@ Deno.serve(async (request) => {
       )
     }
     const tokenJtiHash = await sha256Hex(liveDisplayClaims.jti)
-    const { data: bindingValid, error: bindingError } = await supabase.rpc(
-      'verify_display_realtime_session_v1',
-      {
+    const { data: googleDisplayBindingData, error: googleDisplayBindingError } =
+      await supabase.rpc('verify_and_claim_google_display_session_v1', {
         target_display_auth_user_id: authData.user.id,
         target_lecture_session_id: body.lectureSessionId,
         target_token_jti_hash: tokenJtiHash,
-      },
-    )
-    if (bindingError) {
+      })
+    if (googleDisplayBindingError) {
       return jsonResponse(
         { ok: false, message: 'Display session verification failed.' },
         503,
       )
     }
-    if (bindingValid !== true) {
-      const { data: realtimeBinding, error: realtimeBindingError } =
-        await supabase
-          .from('display_realtime_sessions')
-          .select('id, display_auth_user_id, revoke_reason')
-          .eq('lecture_session_id', body.lectureSessionId)
-          .eq('token_jti_hash', tokenJtiHash)
-          .maybeSingle()
-      if (realtimeBindingError) {
+    const googleDisplayBinding = googleDisplayBindingData as {
+      reason?: unknown
+      recognized?: unknown
+      valid?: unknown
+    } | null
+    if (
+      googleDisplayBinding?.recognized === true &&
+      googleDisplayBinding.valid !== true
+    ) {
+      if (googleDisplayBinding.reason === 'claimed_by_other') {
+        return jsonResponse(
+          { ok: false, message: 'Invalid Display session.' },
+          401,
+        )
+      }
+      const { data: terminalData, error: terminalError } = await supabase.rpc(
+        'admin_get_lecture_operator_access_v1',
+        { target_lecture_session_id: body.lectureSessionId },
+      )
+      const terminalAccess = terminalData as OperatorAccess | null
+      if (
+        !terminalError &&
+        terminalAccess?.mode === 'terminal' &&
+        terminalAccess.terminal
+      ) {
+        return jsonResponse({
+          credentialExpired: true,
+          credentialKind: 'display',
+          ok: true,
+          result: { mode: 'terminal', terminal: terminalAccess.terminal },
+        })
+      }
+      return jsonResponse({
+        credentialExpired: true,
+        credentialKind: 'display',
+        message: 'Display session has ended.',
+        ok: false,
+      })
+    }
+    if (googleDisplayBinding?.recognized !== true) {
+      const { data: bindingValid, error: bindingError } = await supabase.rpc(
+        'verify_display_realtime_session_v1',
+        {
+          target_display_auth_user_id: authData.user.id,
+          target_lecture_session_id: body.lectureSessionId,
+          target_token_jti_hash: tokenJtiHash,
+        },
+      )
+      if (bindingError) {
         return jsonResponse(
           { ok: false, message: 'Display session verification failed.' },
           503,
         )
       }
-      // Tokens issued to an old client have no Realtime binding and preserve
-      // their established five-second snapshot path during staged rollout.
-      // A registered token may downgrade only when the DB runtime gate is OFF
-      // and a service-only RPC revalidates its exact browser, lecture, binding,
-      // and issuing Admin session on this request.
-      let snapshotFallbackValid = false
-      if (realtimeBinding) {
-        const { data: fallbackValid, error: fallbackError } =
-          await supabase.rpc('verify_display_snapshot_fallback_v1', {
-            target_display_auth_user_id: authData.user.id,
-            target_lecture_session_id: body.lectureSessionId,
-            target_token_jti_hash: tokenJtiHash,
-          })
-        if (fallbackError) {
+      if (bindingValid !== true) {
+        const { data: realtimeBinding, error: realtimeBindingError } =
+          await supabase
+            .from('display_realtime_sessions')
+            .select('id, display_auth_user_id, revoke_reason')
+            .eq('lecture_session_id', body.lectureSessionId)
+            .eq('token_jti_hash', tokenJtiHash)
+            .maybeSingle()
+        if (realtimeBindingError) {
           return jsonResponse(
             { ok: false, message: 'Display session verification failed.' },
             503,
           )
         }
-        snapshotFallbackValid = fallbackValid === true
-      }
-      if (realtimeBinding && !snapshotFallbackValid) {
-        const { data: terminalData, error: terminalError } = await supabase.rpc(
-          'admin_get_lecture_operator_access_v1',
-          { target_lecture_session_id: body.lectureSessionId },
-        )
-        const terminalAccess = terminalData as OperatorAccess | null
-        if (
-          !terminalError &&
-          terminalAccess?.mode === 'terminal' &&
-          terminalAccess.terminal
-        ) {
-          return jsonResponse({
-            credentialExpired: true,
-            credentialKind: 'display',
-            ok: true,
-            result: { mode: 'terminal', terminal: terminalAccess.terminal },
-          })
+        // Tokens issued to an old client have no Realtime binding and preserve
+        // their established five-second snapshot path during staged rollout.
+        // A registered token may downgrade only when the DB runtime gate is OFF
+        // and a service-only RPC revalidates its exact browser, lecture, binding,
+        // and issuing Admin session on this request.
+        let snapshotFallbackValid = false
+        if (realtimeBinding) {
+          const { data: fallbackValid, error: fallbackError } =
+            await supabase.rpc('verify_display_snapshot_fallback_v1', {
+              target_display_auth_user_id: authData.user.id,
+              target_lecture_session_id: body.lectureSessionId,
+              target_token_jti_hash: tokenJtiHash,
+            })
+          if (fallbackError) {
+            return jsonResponse(
+              { ok: false, message: 'Display session verification failed.' },
+              503,
+            )
+          }
+          snapshotFallbackValid = fallbackValid === true
         }
-        if (realtimeBinding.display_auth_user_id === authData.user.id) {
-          return jsonResponse({
-            credentialExpired: true,
-            credentialKind: 'display',
-            message: 'Display session has ended.',
-            ok: false,
-          })
+        if (realtimeBinding && !snapshotFallbackValid) {
+          const { data: terminalData, error: terminalError } =
+            await supabase.rpc('admin_get_lecture_operator_access_v1', {
+              target_lecture_session_id: body.lectureSessionId,
+            })
+          const terminalAccess = terminalData as OperatorAccess | null
+          if (
+            !terminalError &&
+            terminalAccess?.mode === 'terminal' &&
+            terminalAccess.terminal
+          ) {
+            return jsonResponse({
+              credentialExpired: true,
+              credentialKind: 'display',
+              ok: true,
+              result: { mode: 'terminal', terminal: terminalAccess.terminal },
+            })
+          }
+          if (realtimeBinding.display_auth_user_id === authData.user.id) {
+            return jsonResponse({
+              credentialExpired: true,
+              credentialKind: 'display',
+              message: 'Display session has ended.',
+              ok: false,
+            })
+          }
+          return jsonResponse(
+            { ok: false, message: 'Invalid Display session.' },
+            401,
+          )
         }
-        return jsonResponse(
-          { ok: false, message: 'Invalid Display session.' },
-          401,
-        )
       }
     }
   }

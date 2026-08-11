@@ -27,6 +27,34 @@ function bytesToBase64Url(bytes: Uint8Array) {
     .replaceAll('=', '')
 }
 
+function assertUuid(value: string, label: string) {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  ) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value.toLowerCase()
+}
+
+function getGoogleAiChildGrantKeyVersion() {
+  const raw = Deno.env.get('ADMIN_AI_CHILD_GRANT_SECRET_VERSION')?.trim() ?? '1'
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) {
+    throw new Error('Google AI child authorization key version is invalid.')
+  }
+  return value
+}
+
+function getGoogleAiChildGrantSecret() {
+  const value = Deno.env.get('ADMIN_AI_CHILD_GRANT_SECRET')?.trim() ?? ''
+  if (textEncoder.encode(value).byteLength < 32 || value.length > 4096) {
+    throw new Error('Google AI child authorization is not configured.')
+  }
+  return value
+}
+
 export async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest(
     'SHA-256',
@@ -57,6 +85,41 @@ export function normalizeAiFeatures(value: unknown): AiFeature[] {
 export function createBillingGrantNonce() {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   return bytesToBase64Url(bytes)
+}
+
+/**
+ * Recreates one raw nonce for a single Google Admin provider attempt. The
+ * database stores only its SHA-256 hash and the version. A lost HTTP response
+ * can therefore converge on the same short-lived child without persisting or
+ * returning server secrets.
+ */
+export async function deriveGoogleAiChildGrantNonce(input: {
+  feature: AiFeature
+  lectureSessionId: string
+  requestId: string
+}) {
+  const feature = normalizeAiFeatures([input.feature])[0]
+  const lectureSessionId = assertUuid(input.lectureSessionId, 'Lecture ID')
+  const requestId = assertUuid(input.requestId, 'AI authorization request ID')
+  const keyVersion = getGoogleAiChildGrantKeyVersion()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    textEncoder.encode(getGoogleAiChildGrantSecret()),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    textEncoder.encode(
+      `compass:phase7.30c2:google-ai-child-nonce:v1|version=${keyVersion}|request=${requestId}|lecture=${lectureSessionId}|feature=${feature}`,
+    ),
+  )
+  return {
+    keyVersion,
+    nonce: bytesToBase64Url(new Uint8Array(signature)),
+  }
 }
 
 export function formatBillingGrantToken(grantId: string, nonce: string) {

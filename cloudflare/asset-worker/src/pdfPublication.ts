@@ -2037,11 +2037,18 @@ export async function handlePdfPublicationRequest(input: {
   const url = new URL(input.request.url)
   const match = PUBLICATION_PATH.exec(url.pathname)
   if (!match) return null
-  if (input.env.PHASE726_BROWSER_PDF_UPLOAD_ENABLED !== 'true') {
-    return jsonResponse({ message: 'Not found.' }, 404, input.origin)
-  }
   const publicationId = match[1]!
   const operation = match[2] ?? 'upload'
+  // The runtime switch stops issuing new upload authority. Already-issued,
+  // short-lived status/commit/activate/rollback capabilities must remain
+  // usable so an in-flight publication can converge or be cleaned up without
+  // restoring the legacy shared-PIN path.
+  if (
+    input.env.PHASE726_BROWSER_PDF_UPLOAD_ENABLED !== 'true' &&
+    operation === 'upload'
+  ) {
+    return jsonResponse({ message: 'Not found.' }, 404, input.origin)
+  }
   const claims = await verifyPdfPublicationToken({
     nowSeconds: Math.floor(input.now.getTime() / 1000),
     publicJwk: parsePublicJwk(input.env),

@@ -1,14 +1,16 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminTokenClaims,
   getAdminTokenSecret,
   sha256Hex,
 } from '../_shared/adminToken.ts'
 import { getAllowedCorsOrigin, handleCors } from '../_shared/cors.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 import {
   createPresenterPairingToken,
+  derivePresenterManualCode,
   getPresenterTokenSecret,
   hashPresenterContext,
 } from '../_shared/presenterToken.ts'
@@ -16,8 +18,10 @@ import {
 type RequestBody = {
   action?: 'confirm' | 'issue' | 'revoke' | 'status'
   adminToken?: string
+  appSessionToken?: string
   connectionId?: string
   lectureSessionId?: string
+  requestId?: string
 }
 
 type IssueResult = {
@@ -34,6 +38,19 @@ type IssueResult = {
 type StatusResult = {
   connection: null | Record<string, unknown>
   runtime_enabled: boolean
+}
+
+type GoogleIssueResult = {
+  connectionId: string
+  hardStopAt: string
+  manualExpiresAt: string
+  ok: true
+  pairingIssuedAtEpoch: number
+  pairingTicketExpiresAt: string
+  pdfDocumentId: string
+  pdfDocumentVersion: string
+  pdfManifestVersion: number
+  pdfPageCount: number
 }
 
 function camelCaseConnection(connection: Record<string, unknown>) {
@@ -62,7 +79,7 @@ function camelCaseConnection(connection: Record<string, unknown>) {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const MANUAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const MANUAL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const PRESENTER_ACTIONS = new Set(['confirm', 'issue', 'revoke', 'status'])
 const RPC_TIMEOUT_MS = 3_500
 const TRANSIENT_DATABASE_CODES = new Set([
@@ -82,7 +99,7 @@ function randomManualCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(8))
   return Array.from(
     bytes,
-    (value) => MANUAL_ALPHABET[value % MANUAL_ALPHABET.length],
+    (value) => MANUAL_CODE_ALPHABET[value % MANUAL_CODE_ALPHABET.length],
   ).join('')
 }
 
@@ -95,10 +112,19 @@ function bearerToken(request: Request) {
 
 function presenterErrorStatus(code?: string) {
   if (code === '42501') return 401
-  if (code === 'P7290') return 503
+  if (code === 'P7290' || code === 'P7337') return 503
   if (code?.startsWith('P729')) return 409
+  if (code === 'P7335') return 409
   if (code === '22023') return 400
   return 503
+}
+
+function presenterTokenSecret() {
+  try {
+    return getPresenterTokenSecret()
+  } catch {
+    return ''
+  }
 }
 
 Deno.serve(async (request) => {
@@ -108,13 +134,6 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return jsonResponse({ ok: false, message: 'Method not allowed.' }, 405)
   }
-  if (Deno.env.get('PHASE729_POWERPOINT_SYNC_ENABLED') !== 'true') {
-    return jsonResponse(
-      { ok: false, message: 'PowerPoint synchronization is disabled.' },
-      503,
-    )
-  }
-
   let body: RequestBody
   try {
     body = await readJsonBody<RequestBody>(request, 8 * 1024)
@@ -125,17 +144,13 @@ Deno.serve(async (request) => {
       bodyError.status,
     )
   }
-  if (!isPresenterAction(body.action) || !body.adminToken) {
+  const hasLegacyCredential = Boolean(body.adminToken)
+  const hasGoogleCredential = Boolean(body.appSessionToken)
+  if (
+    !isPresenterAction(body.action) ||
+    hasLegacyCredential === hasGoogleCredential
+  ) {
     return jsonResponse({ ok: false, message: 'Request is incomplete.' }, 400)
-  }
-
-  const claims = await getAdminTokenClaims(
-    body.adminToken,
-    getAdminTokenSecret(),
-    request,
-  ).catch(() => null)
-  if (!claims?.sid) {
-    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -162,6 +177,241 @@ Deno.serve(async (request) => {
       return { data: null, error: null, unavailable: true }
     }
   }
+
+  if (hasGoogleCredential) {
+    const googleContext = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!googleContext.ok) {
+      return jsonResponse(
+        {
+          code: googleContext.code,
+          message: googleContext.message,
+          ok: false,
+        },
+        googleContext.status,
+      )
+    }
+
+    const requestRequired = body.action !== 'status'
+    if (requestRequired && !UUID_PATTERN.test(body.requestId ?? '')) {
+      return jsonResponse({ ok: false, message: 'requestId is required.' }, 400)
+    }
+    if (
+      (body.action === 'issue' || body.action === 'status') &&
+      !UUID_PATTERN.test(body.lectureSessionId ?? '')
+    ) {
+      return jsonResponse({ ok: false, message: 'Lecture is invalid.' }, 400)
+    }
+    if (
+      (body.action === 'confirm' || body.action === 'revoke') &&
+      !UUID_PATTERN.test(body.connectionId ?? '')
+    ) {
+      return jsonResponse({ ok: false, message: 'Connection is invalid.' }, 400)
+    }
+
+    const presenterTransportEnabled =
+      Deno.env.get('PHASE729_POWERPOINT_SYNC_ENABLED') === 'true'
+    const commonParameters = {
+      target_action: body.action,
+      target_auth_user_id: googleContext.authUserId,
+      target_connection_id:
+        body.action === 'confirm' || body.action === 'revoke'
+          ? body.connectionId
+          : null,
+      target_google_issuer: googleContext.googleIssuer,
+      target_lecture_session_id:
+        body.action === 'issue' || body.action === 'status'
+          ? body.lectureSessionId
+          : null,
+      target_manual_code_hmac: null as string | null,
+      target_origin: null as string | null,
+      target_presenter_transport_enabled: presenterTransportEnabled,
+      target_provider_subject_hmac: googleContext.googleSubjectHmac,
+      target_request_id: requestRequired ? body.requestId : null,
+      target_subject_pepper_version: googleContext.subjectPepperVersion,
+      target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+      target_ticket_jti_hash: null as string | null,
+      target_token_hash: googleContext.appSessionTokenHash,
+      target_transport_enabled: googleContext.transportEnabled,
+    }
+
+    if (body.action === 'issue') {
+      const origin = getAllowedCorsOrigin(request)
+      if (!origin) {
+        return jsonResponse({ ok: false, message: 'Origin is required.' }, 403)
+      }
+      const tokenSecret = presenterTokenSecret()
+      if (!tokenSecret) {
+        return jsonResponse(
+          { ok: false, message: 'Presenter service is not configured.' },
+          503,
+        )
+      }
+      const ticketJti = body.requestId!
+      const manualCode = await derivePresenterManualCode(
+        body.requestId!,
+        tokenSecret,
+      )
+      const { data, error, unavailable } = await rpc(
+        'manage_google_admin_presenter_connection_v1',
+        {
+          ...commonParameters,
+          target_manual_code_hmac: await hashPresenterContext(
+            manualCode,
+            'manual-code',
+            tokenSecret,
+          ),
+          target_origin: origin,
+          target_ticket_jti_hash: await sha256Hex(ticketJti),
+        },
+      )
+      const issued = data as GoogleIssueResult | null
+      if (unavailable) {
+        return jsonResponse(
+          {
+            ok: false,
+            message: 'PowerPoint connection preparation timed out.',
+          },
+          504,
+        )
+      }
+      if (
+        error ||
+        !issued?.ok ||
+        !UUID_PATTERN.test(issued.connectionId) ||
+        !Number.isSafeInteger(issued.pairingIssuedAtEpoch) ||
+        !Number.isFinite(Date.parse(issued.pairingTicketExpiresAt)) ||
+        !Number.isFinite(Date.parse(issued.manualExpiresAt)) ||
+        typeof issued.hardStopAt !== 'string' ||
+        typeof issued.pdfDocumentId !== 'string' ||
+        typeof issued.pdfDocumentVersion !== 'string' ||
+        !Number.isSafeInteger(issued.pdfManifestVersion) ||
+        !Number.isSafeInteger(issued.pdfPageCount)
+      ) {
+        return jsonResponse(
+          {
+            ok: false,
+            message: 'PowerPoint connection could not be prepared.',
+          },
+          presenterErrorStatus(error?.code),
+        )
+      }
+      if (Date.parse(issued.manualExpiresAt) <= Date.now()) {
+        return jsonResponse(
+          {
+            code: 'presenter_session_refresh_required',
+            message: 'PowerPoint接続をもう一度開始してください。',
+            ok: false,
+          },
+          409,
+        )
+      }
+      const expiresAt = Math.floor(
+        new Date(issued.pairingTicketExpiresAt).getTime() / 1000,
+      )
+      const pairingTicket = await createPresenterPairingToken({
+        connectionId: issued.connectionId,
+        expiresAt,
+        issuedAt: issued.pairingIssuedAtEpoch,
+        jti: ticketJti,
+        lectureSessionId: body.lectureSessionId!,
+        origin,
+        secret: tokenSecret,
+      })
+      return jsonResponse({
+        connectionId: issued.connectionId,
+        hardStopAt: issued.hardStopAt,
+        manualCode,
+        ok: true,
+        pairingTicketExpiresAt: issued.pairingTicketExpiresAt,
+        pairingTicket,
+        pdf: {
+          documentId: issued.pdfDocumentId,
+          documentVersion: issued.pdfDocumentVersion,
+          manifestVersion: issued.pdfManifestVersion,
+          pageCount: issued.pdfPageCount,
+        },
+        ticketExpiresAt: issued.manualExpiresAt,
+      })
+    }
+
+    const { data, error, unavailable } = await rpc(
+      'manage_google_admin_presenter_connection_v1',
+      commonParameters,
+    )
+    if (unavailable) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            body.action === 'status'
+              ? 'PowerPoint status loading timed out.'
+              : body.action === 'confirm'
+                ? 'PowerPoint confirmation timed out.'
+                : 'PowerPoint synchronization stop timed out.',
+        },
+        504,
+      )
+    }
+    const result = data as Record<string, unknown> | null
+    if (error || result?.ok !== true) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            body.action === 'status'
+              ? 'PowerPoint status could not be loaded.'
+              : body.action === 'confirm'
+                ? 'PowerPoint could not be confirmed.'
+                : 'PowerPoint synchronization could not be stopped.',
+        },
+        presenterErrorStatus(error?.code),
+      )
+    }
+    if (body.action === 'status') {
+      return jsonResponse({
+        connection:
+          result.connection && typeof result.connection === 'object'
+            ? camelCaseConnection(result.connection as Record<string, unknown>)
+            : null,
+        ok: true,
+        runtimeEnabled: result.runtime_enabled === true,
+      })
+    }
+    return body.action === 'confirm'
+      ? jsonResponse({
+          connectionId: result.connectionId,
+          ok: true,
+          pdfPageCount: result.pdfPageCount,
+          state: result.state,
+        })
+      : jsonResponse({
+          connectionId: result.connectionId,
+          ok: true,
+          revokeReason: result.revokeReason,
+          revokedAt: result.revokedAt,
+          state: result.state,
+        })
+  }
+
+  if (Deno.env.get('PHASE729_POWERPOINT_SYNC_ENABLED') !== 'true') {
+    return jsonResponse(
+      { ok: false, message: 'PowerPoint synchronization is disabled.' },
+      503,
+    )
+  }
+
+  const claims = await getAdminTokenClaims(
+    body.adminToken!,
+    getAdminTokenSecret(),
+    request,
+  ).catch(() => null)
+  if (!claims?.sid) {
+    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+  }
+
   const userJwt = bearerToken(request)
   const { data: userData, error: userError } = userJwt
     ? await service.auth.getUser(userJwt)
@@ -183,23 +433,31 @@ Deno.serve(async (request) => {
     }
     const ticketJti = crypto.randomUUID()
     const manualCode = randomManualCode()
-    const tokenSecret = getPresenterTokenSecret()
+    const tokenSecret = presenterTokenSecret()
+    if (!tokenSecret) {
+      return jsonResponse(
+        { ok: false, message: 'Presenter service is not configured.' },
+        503,
+      )
+    }
     const pairingTicketExpiresAt = new Date(Date.now() + 55_000)
     const manualCodeExpiresAt = new Date(Date.now() + 5 * 60_000)
-    const { data, error, unavailable } = await rpc('issue_presenter_connection_v2', {
-      target_admin_auth_user_id: userData.user.id,
-      target_admin_session_id: claims.sid,
-      target_lecture_session_id: body.lectureSessionId,
-      target_manual_code_hmac: await hashPresenterContext(
-        manualCode,
-        'manual-code',
-        tokenSecret,
-      ),
-      target_manual_code_expires_at: manualCodeExpiresAt.toISOString(),
-      target_pairing_ticket_expires_at:
-        pairingTicketExpiresAt.toISOString(),
-      target_ticket_jti_hash: await sha256Hex(ticketJti),
-    })
+    const { data, error, unavailable } = await rpc(
+      'issue_presenter_connection_v2',
+      {
+        target_admin_auth_user_id: userData.user.id,
+        target_admin_session_id: claims.sid,
+        target_lecture_session_id: body.lectureSessionId,
+        target_manual_code_hmac: await hashPresenterContext(
+          manualCode,
+          'manual-code',
+          tokenSecret,
+        ),
+        target_manual_code_expires_at: manualCodeExpiresAt.toISOString(),
+        target_pairing_ticket_expires_at: pairingTicketExpiresAt.toISOString(),
+        target_ticket_jti_hash: await sha256Hex(ticketJti),
+      },
+    )
     if (unavailable) {
       return jsonResponse(
         { ok: false, message: 'PowerPoint connection preparation timed out.' },

@@ -1209,9 +1209,9 @@ assert.equal(
   'node scripts/test-phase7-30c2-static.mjs',
 )
 assert.match(nonlive, /'test:phase7-30c2-static'/)
-assert.match(docsTest, /70 non-live/)
-assert.match(ciDocs, /70 non-live/)
-assert.match(gateDocs, /test:ci:nonlive` \(70 groups\)/)
-assert.match(readme, /70 non-live groups/)
+assert.match(docsTest, /72 non-live/)
+assert.match(ciDocs, /72 non-live/)
+assert.match(gateDocs, /test:ci:nonlive` \(72 groups\)/)
+assert.match(readme, /72 non-live groups/)
 
 console.log('Phase 7.30C2 static checks passed.')

@@ -244,75 +244,130 @@ Deno.serve(async (request) => {
         )
       }
       const tokenJtiHash = await sha256Hex(displayClaims.jti)
-      const { data: bindingValid, error: bindingError } =
-        await serviceClient.rpc('verify_display_realtime_session_v1', {
+      const {
+        data: googleDisplayBindingData,
+        error: googleDisplayBindingError,
+      } = await serviceClient.rpc(
+        'verify_and_claim_google_display_session_v1',
+        {
           target_display_auth_user_id: authData.user.id,
           target_lecture_session_id: body.lectureSessionId,
           target_token_jti_hash: tokenJtiHash,
-        })
-      if (bindingError) {
+        },
+      )
+      if (googleDisplayBindingError) {
         return jsonResponse(
           { message: 'Display session verification failed.', ok: false },
           503,
         )
       }
-      if (bindingValid !== true) {
-        const { data: realtimeBinding, error: realtimeBindingError } =
-          await serviceClient
-            .from('display_realtime_sessions')
-            .select('id, display_auth_user_id, revoke_reason')
-            .eq('lecture_session_id', body.lectureSessionId)
-            .eq('token_jti_hash', tokenJtiHash)
-            .maybeSingle()
-        if (realtimeBindingError) {
+      const googleDisplayBinding = googleDisplayBindingData as {
+        reason?: unknown
+        recognized?: unknown
+        valid?: unknown
+      } | null
+      if (
+        googleDisplayBinding?.recognized === true &&
+        googleDisplayBinding.valid !== true
+      ) {
+        if (googleDisplayBinding.reason === 'claimed_by_other') {
+          return jsonResponse(
+            { message: 'Invalid Display session.', ok: false },
+            401,
+          )
+        }
+        const { data: accessData, error: accessError } =
+          await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
+            target_lecture_session_id: body.lectureSessionId,
+          })
+        const access = accessData as {
+          mode?: unknown
+          terminal?: unknown
+        } | null
+        if (accessError || access?.mode !== 'terminal' || !access.terminal) {
+          return jsonResponse({
+            credentialExpired: true,
+            message: 'Display session has ended.',
+            ok: false,
+          })
+        }
+        terminalAccessVerified = true
+      }
+      if (googleDisplayBinding?.recognized !== true) {
+        const { data: bindingValid, error: bindingError } =
+          await serviceClient.rpc('verify_display_realtime_session_v1', {
+            target_display_auth_user_id: authData.user.id,
+            target_lecture_session_id: body.lectureSessionId,
+            target_token_jti_hash: tokenJtiHash,
+          })
+        if (bindingError) {
           return jsonResponse(
             { message: 'Display session verification failed.', ok: false },
             503,
           )
         }
-        // Legacy clients have no binding and intentionally keep the pre-7.28
-        // signed-token PDF path during staged rollout. A registered token may
-        // downgrade only when the DB runtime gate is OFF and a service-only RPC
-        // revalidates its browser, lecture, binding, and issuing Admin session.
-        let snapshotFallbackValid = false
-        if (realtimeBinding) {
-          const { data: fallbackValid, error: fallbackError } =
-            await serviceClient.rpc('verify_display_snapshot_fallback_v1', {
-              target_display_auth_user_id: authData.user.id,
-              target_lecture_session_id: body.lectureSessionId,
-              target_token_jti_hash: tokenJtiHash,
-            })
-          if (fallbackError) {
+        if (bindingValid !== true) {
+          const { data: realtimeBinding, error: realtimeBindingError } =
+            await serviceClient
+              .from('display_realtime_sessions')
+              .select('id, display_auth_user_id, revoke_reason')
+              .eq('lecture_session_id', body.lectureSessionId)
+              .eq('token_jti_hash', tokenJtiHash)
+              .maybeSingle()
+          if (realtimeBindingError) {
             return jsonResponse(
               { message: 'Display session verification failed.', ok: false },
               503,
             )
           }
-          snapshotFallbackValid = fallbackValid === true
-        }
-        if (realtimeBinding && !snapshotFallbackValid) {
-          const { data: accessData, error: accessError } =
-            await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
-              target_lecture_session_id: body.lectureSessionId,
-            })
-          const access = accessData as {
-            mode?: unknown
-            terminal?: unknown
-          } | null
-          if (accessError || access?.mode !== 'terminal' || !access.terminal) {
-            if (realtimeBinding.display_auth_user_id === authData.user.id) {
-              return jsonResponse({
-                credentialExpired: true,
-                message: 'Display session has ended.',
-                ok: false,
+          // Legacy clients have no binding and intentionally keep the pre-7.28
+          // signed-token PDF path during staged rollout. A registered token may
+          // downgrade only when the DB runtime gate is OFF and a service-only RPC
+          // revalidates its browser, lecture, binding, and issuing Admin session.
+          let snapshotFallbackValid = false
+          if (realtimeBinding) {
+            const { data: fallbackValid, error: fallbackError } =
+              await serviceClient.rpc('verify_display_snapshot_fallback_v1', {
+                target_display_auth_user_id: authData.user.id,
+                target_lecture_session_id: body.lectureSessionId,
+                target_token_jti_hash: tokenJtiHash,
               })
+            if (fallbackError) {
+              return jsonResponse(
+                { message: 'Display session verification failed.', ok: false },
+                503,
+              )
             }
-            return jsonResponse(
-              { message: 'Invalid Display session.', ok: false },
-              401,
-            )
+            snapshotFallbackValid = fallbackValid === true
           }
-          terminalAccessVerified = true
+          if (realtimeBinding && !snapshotFallbackValid) {
+            const { data: accessData, error: accessError } =
+              await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
+                target_lecture_session_id: body.lectureSessionId,
+              })
+            const access = accessData as {
+              mode?: unknown
+              terminal?: unknown
+            } | null
+            if (
+              accessError ||
+              access?.mode !== 'terminal' ||
+              !access.terminal
+            ) {
+              if (realtimeBinding.display_auth_user_id === authData.user.id) {
+                return jsonResponse({
+                  credentialExpired: true,
+                  message: 'Display session has ended.',
+                  ok: false,
+                })
+              }
+              return jsonResponse(
+                { message: 'Invalid Display session.', ok: false },
+                401,
+              )
+            }
+            terminalAccessVerified = true
+          }
         }
       }
     }
