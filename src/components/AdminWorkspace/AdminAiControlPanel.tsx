@@ -5,12 +5,9 @@ import {
 } from '../../lib/adminAuth/adminOperationCredential'
 
 import { AppIcon } from '../AppIcon'
-import {
-  LectureSummaryControl,
-  MaterialAnalysisControl,
-  RealtimeCaptionControl,
-  AiMasterAuthorizationControl,
-} from '../AdminAiControl'
+import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
+import { MaterialAnalysisControl } from '../AdminAiControl/MaterialAnalysisControl'
+import { RealtimeCaptionControl } from '../AdminAiControl/RealtimeCaptionControl'
 import type {
   AiMasterAuthorization,
   AdminLecture,
@@ -23,6 +20,12 @@ import { isPhase728AiMasterAuthorizationEnabled } from '../../lib/featureFlags'
 const AcademicAnswerControl = lazy(() =>
   import('../AdminAiControl/AcademicAnswerControl').then((module) => ({
     default: module.AcademicAnswerControl,
+  })),
+)
+
+const AiMasterAuthorizationControl = lazy(() =>
+  import('../AdminAiControl/AiMasterAuthorizationControl').then((module) => ({
+    default: module.AiMasterAuthorizationControl,
   })),
 )
 
@@ -99,12 +102,16 @@ export function AdminAiControlPanel({
         isGoogleAdminOperationCredential(adminToken)) &&
       adminToken &&
       activeLectureSessionId ? (
-        <AiMasterAuthorizationControl
-          adminToken={adminToken}
-          lectureSessionId={activeLectureSessionId}
-          lectureStatus={status}
-          onAuthorizationChange={setMasterAuthorization}
-        />
+        <Suspense
+          fallback={<p className="note">AI利用許可を確認しています…</p>}
+        >
+          <AiMasterAuthorizationControl
+            adminToken={adminToken}
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={status}
+            onAuthorizationChange={setMasterAuthorization}
+          />
+        </Suspense>
       ) : null}
       {adminToken && activeLectureSessionId ? (
         <RealtimeCaptionControl
