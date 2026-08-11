@@ -5088,6 +5088,61 @@ export type Database = {
         }
         Returns: Json
       }
+      get_google_admin_material_analysis_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_operations_activation_preflight_v1: {
+        Args: never
+        Returns: Json
+      }
+      get_google_admin_operator_live_snapshot_v1: {
+        Args: {
+          target_academic_answers_enabled: boolean
+          target_action: string
+          target_auth_user_id: string
+          target_comment_cursor_created_at: string
+          target_comment_cursor_id: string
+          target_google_issuer: string
+          target_known_caption_version: number
+          target_known_comments_version: number
+          target_known_lecture_version: number
+          target_known_likes_version: number
+          target_known_metrics_version: number
+          target_known_pdf_version: number
+          target_known_polls_version: number
+          target_known_summaries_version: number
+          target_lecture_session_id: string
+          target_limit: number
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_sessions_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       get_google_ai_master_status_v1: {
         Args: {
           target_auth_user_id: string
@@ -5335,6 +5390,20 @@ export type Database = {
         Returns: boolean
       }
       is_poll_open: { Args: { target_poll_id: string }; Returns: boolean }
+      issue_google_admin_pdf_access_claims_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       issue_presenter_connection_v1: {
         Args: {
           target_admin_auth_user_id: string
@@ -5379,6 +5448,146 @@ export type Database = {
           status: string
           title: string
         }[]
+      }
+      manage_google_admin_comments_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_comment_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_display_state_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_current_pdf_page: number
+          target_display_mode: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_pdf_document_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_lectures_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_code?: string
+          target_code_hash?: string
+          target_ends_at?: string
+          target_google_issuer: string
+          target_include_history?: boolean
+          target_lecture_session_id?: string
+          target_provider_subject_hmac: string
+          target_request_id?: string
+          target_run_kind?: string
+          target_starts_at?: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_title?: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_material_analysis_v1: {
+        Args: {
+          target_action: string
+          target_analysis_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_option_labels: string[]
+          target_poll_type: string
+          target_proposal_id: string
+          target_provider_subject_hmac: string
+          target_question: string
+          target_request_id: string
+          target_review_state: string
+          target_subject_pepper_version: number
+          target_summary_body: Json
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_pdf_documents_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_byte_size: number
+          target_display_name: string
+          target_document_id: string
+          target_document_version: string
+          target_download_enabled: boolean
+          target_expected_access_version: number
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_manifest_etag: string
+          target_manifest_version: number
+          target_page_count: number
+          target_pdf_sha256: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_text_char_count: number
+          target_text_sha256: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_polls_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_include_history: boolean
+          target_lecture_session_id: string
+          target_option_labels: string[]
+          target_poll_id: string
+          target_poll_type: string
+          target_provider_subject_hmac: string
+          target_question: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_sessions_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_session_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
       }
       mark_realtime_provider_creation_uncertain: {
         Args: {

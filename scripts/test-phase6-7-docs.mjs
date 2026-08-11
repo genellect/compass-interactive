@@ -501,7 +501,7 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /69 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(69 groups\)/,
+    /70 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(70 groups\)/,
     `${name} must record the 69-group non-live suite`,
   )
 }
@@ -571,6 +571,32 @@ for (const featureFlag of featureFlags) {
     `.env.local.example missing flag: ${featureFlag}`,
   )
 }
+
+assert.match(
+  readme,
+  /安全性と講義継続性を同時に守る/,
+  'README must make lecture continuity a shared development principle',
+)
+assert.match(
+  readme,
+  /公開UIをCOMPASSの製品品質へ統一する/,
+  'README must reject development-looking public UI',
+)
+assert.match(
+  googleAdminPlan,
+  /Cross-phase lecture UX acceptance[\s\S]*without\s+a\s+repeated TOTP challenge[\s\S]*students can join[\s\S]*COMPASS design system/,
+  'the identity plan must carry instructor, student and UI success criteria through F',
+)
+assert.match(
+  googleAdminPlan,
+  /advisory database preflight[\s\S]*zero\s+unowned draft\/open lectures[\s\S]*zero active legacy sessions[\s\S]*same transaction/,
+  'Google-only rollout must close every unowned active lecture before cutover',
+)
+assert.match(
+  gateRouting,
+  /Cross-cutting lecture UX gate[\s\S]*lecture open[\s\S]*authorized PDF access[\s\S]*close, stop, revoke and[\s\S]*COMPASS\s+color, typography/,
+  'Gate routing must test lecture success and safe rollback, not denial alone',
+)
 
 const canonicalDocuments = requiredDocuments
 const secretPatterns = [

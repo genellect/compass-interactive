@@ -23,7 +23,7 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 69 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 70 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
@@ -38,7 +38,9 @@ Dependency Review and CodeQL jobs:
 3. **Local Supabase, pgTAP and live browser E2E** applies every migration from
    zero, verifies generated types, runs every pgTAP file plus the real-DB
    concurrency suites, proves populated Phase 7.29, B1, B2-head and B2.2a-head
-   states upgrade through Phase 7.30B2.2b, and runs DB lint. The B2/B2.2a/B2.2b database step includes the
+   states upgrade through Phase 7.30B2.2b, and the populated C1 head upgrades
+   through the default-OFF C2.1 migration without inferred ownership or
+   fabricated receipts, then runs DB lint. The B2/B2.2a/B2.2b database step includes the
    from-zero migration/pgTAP, a real two-transaction replay/lock-order/
    cleanup and principal-transition concurrency runner plus populated
    Phase 7.29/B1/B2-head/B2.2a-head-to-B2.2b upgrades. It

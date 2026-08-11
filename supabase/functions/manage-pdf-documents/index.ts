@@ -1,10 +1,14 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminTokenClaims,
   getAdminTokenSecret,
   trackedAdminSessionsEnabled,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -26,6 +30,7 @@ type PdfDocument = {
 type RequestBody = {
   action?: 'list' | 'register'
   adminToken?: string
+  appSessionToken?: string
   byteSize?: number
   displayName?: string
   documentId?: string
@@ -37,6 +42,7 @@ type RequestBody = {
   manifestVersion?: number
   pageCount?: number
   pdfSha256?: string
+  requestId?: string
   textCharCount?: number
   textSha256?: string
 }
@@ -65,6 +71,9 @@ function containsControlCharacters(value: string) {
   })
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
@@ -82,35 +91,17 @@ Deno.serve(async (request) => {
       bodyError.status,
     )
   }
-  if (!body.action || !body.lectureSessionId || !body.adminToken) {
+  if (
+    !['list', 'register'].includes(body.action ?? '') ||
+    !body.lectureSessionId
+  ) {
     return jsonResponse(
       {
-        message: 'action, lectureSessionId and adminToken are required.',
+        message: 'action and lectureSessionId are required.',
         ok: false,
       },
       400,
     )
-  }
-
-  let adminSecret: string
-  try {
-    adminSecret = getAdminTokenSecret()
-  } catch (error) {
-    return jsonResponse(
-      {
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
-        ok: false,
-      },
-      500,
-    )
-  }
-  const adminClaims = await getAdminTokenClaims(
-    body.adminToken,
-    adminSecret,
-    request,
-  )
-  if (!adminClaims) {
-    return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -121,14 +112,116 @@ Deno.serve(async (request) => {
       500,
     )
   }
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasGoogleCredential === hasLegacyCredential) {
+    return jsonResponse(
+      { message: 'Exactly one Admin credential is required.', ok: false },
+      401,
+    )
+  }
+  if (
+    hasGoogleCredential &&
+    body.action === 'register' &&
+    !UUID_PATTERN.test(body.requestId ?? '')
+  ) {
+    return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
+  }
+
+  let googleContext: GoogleAdminOperationContext | null = null
+  let adminClaims: Awaited<ReturnType<typeof getAdminTokenClaims>> = null
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
 
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    let adminSecret: string
+    try {
+      adminSecret = getAdminTokenSecret()
+    } catch (error) {
+      return jsonResponse(
+        {
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+          ok: false,
+        },
+        500,
+      )
+    }
+    adminClaims = await getAdminTokenClaims(
+      body.adminToken!,
+      adminSecret,
+      request,
+    )
+    if (!adminClaims) {
+      return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
+    }
+  }
+
+  const googleRpcIdentity = googleContext
+    ? {
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      }
+    : null
+
+  async function listGooglePdfDocuments() {
+    const { data, error } = await supabase.rpc(
+      'manage_google_admin_pdf_documents_v1',
+      {
+        ...googleRpcIdentity!,
+        target_action: 'list',
+        target_byte_size: null,
+        target_display_name: null,
+        target_document_id: null,
+        target_document_version: null,
+        target_download_enabled: null,
+        target_expected_access_version: null,
+        target_lecture_session_id: body.lectureSessionId,
+        target_manifest_etag: null,
+        target_manifest_version: null,
+        target_page_count: null,
+        target_pdf_sha256: null,
+        target_request_id: null,
+        target_text_char_count: null,
+        target_text_sha256: null,
+      },
+    )
+    if (error) throw new Error(error.message)
+    const result = data as { documents?: unknown; ok?: boolean } | null
+    if (result?.ok !== true || !Array.isArray(result.documents)) {
+      throw new Error('Google Admin PDF list is unavailable.')
+    }
+    return result
+  }
+
   if (body.action === 'register') {
-    if (
-      Deno.env.get('PHASE726_BROWSER_PDF_PUBLICATION_ENABLED') === 'true'
-    ) {
+    if (Deno.env.get('PHASE726_BROWSER_PDF_PUBLICATION_ENABLED') === 'true') {
       return jsonResponse(
         {
           message:
@@ -156,7 +249,8 @@ Deno.serve(async (request) => {
       )
     }
     const hasLocalPublicationReceipt =
-      body.expectedAccessVersion !== undefined || body.manifestEtag !== undefined
+      body.expectedAccessVersion !== undefined ||
+      body.manifestEtag !== undefined
     if (
       hasLocalPublicationReceipt &&
       (!Number.isSafeInteger(body.expectedAccessVersion) ||
@@ -184,9 +278,56 @@ Deno.serve(async (request) => {
       target_text_char_count: body.textCharCount,
       target_text_sha256: body.textSha256,
     }
+    if (googleRpcIdentity) {
+      const { data, error } = await supabase.rpc(
+        'manage_google_admin_pdf_documents_v1',
+        {
+          ...googleRpcIdentity,
+          target_action: 'register',
+          target_expected_access_version: body.expectedAccessVersion ?? null,
+          target_manifest_etag: body.manifestEtag ?? null,
+          target_request_id: body.requestId,
+          ...registration,
+        },
+      )
+      if (error) {
+        return jsonResponse({ message: error.message, ok: false }, 409)
+      }
+      const result = data as {
+        documents?: unknown
+        ok?: boolean
+        refreshRequired?: boolean
+      } | null
+      if (
+        result?.ok !== true ||
+        !Array.isArray(result.documents) ||
+        typeof result.refreshRequired !== 'boolean'
+      ) {
+        return jsonResponse(
+          {
+            message: 'PDF registration could not be confirmed.',
+            ok: false,
+          },
+          409,
+        )
+      }
+      if (result.refreshRequired) {
+        try {
+          return jsonResponse({
+            ...result,
+            ...(await listGooglePdfDocuments()),
+            refreshRequired: false,
+          })
+        } catch {
+          return jsonResponse(result)
+        }
+      }
+      return jsonResponse(result)
+    }
+
     let registrationError: { message: string } | null = null
     if (hasLocalPublicationReceipt) {
-      if (!trackedAdminSessionsEnabled() || !adminClaims.sid) {
+      if (!trackedAdminSessionsEnabled() || !adminClaims!.sid) {
         return jsonResponse(
           { message: 'Tracked Admin sessions are required.', ok: false },
           503,
@@ -204,13 +345,16 @@ Deno.serve(async (request) => {
           401,
         )
       }
-      const result = await supabase.rpc('admin_register_local_pdf_document_v2', {
-        ...registration,
-        target_admin_auth_user_id: userData.user.id,
-        target_admin_session_id: adminClaims.sid,
-        target_expected_access_version: body.expectedAccessVersion,
-        target_manifest_etag: body.manifestEtag,
-      })
+      const result = await supabase.rpc(
+        'admin_register_local_pdf_document_v2',
+        {
+          ...registration,
+          target_admin_auth_user_id: userData.user.id,
+          target_admin_session_id: adminClaims!.sid,
+          target_expected_access_version: body.expectedAccessVersion,
+          target_manifest_etag: body.manifestEtag,
+        },
+      )
       registrationError = result.error
     } else {
       const result = await supabase.rpc(
@@ -223,6 +367,20 @@ Deno.serve(async (request) => {
       return jsonResponse(
         { message: registrationError.message, ok: false },
         409,
+      )
+    }
+  }
+
+  if (googleRpcIdentity) {
+    try {
+      return jsonResponse(await listGooglePdfDocuments())
+    } catch (error) {
+      return jsonResponse(
+        {
+          message: error instanceof Error ? error.message : 'PDF list failed.',
+          ok: false,
+        },
+        500,
       )
     }
   }

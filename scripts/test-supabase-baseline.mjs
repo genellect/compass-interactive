@@ -70,6 +70,8 @@ const phase730b22bAiUnlockEdgeBrowserMigrationName =
   '20260810113000_phase7_30b22b_ai_unlock_edge_browser.sql'
 const phase730c1GoogleAiMasterMigrationName =
   '20260810160000_phase7_30c1_google_ai_master.sql'
+const phase730c2UnifiedAdminAuthorizationMigrationName =
+  '20260811012111_phase7_30c2_unified_admin_authorization.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -116,6 +118,7 @@ assert.deepEqual(
     phase730b22aAdminControlMigrationName,
     phase730b22bAiUnlockEdgeBrowserMigrationName,
     phase730c1GoogleAiMasterMigrationName,
+    phase730c2UnifiedAdminAuthorizationMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

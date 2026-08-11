@@ -1,6 +1,10 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -11,24 +15,30 @@ type ManagePollsRequest =
   | {
       action: 'list'
       adminToken?: string
+      appSessionToken?: string
       includeHistory?: boolean
       lectureSessionId?: string
+      requestId?: string
     }
   | {
       action: 'create'
       adminToken?: string
+      appSessionToken?: string
       includeHistory?: boolean
       lectureSessionId?: string
       optionLabels?: string[]
       question?: string
+      requestId?: string
       type?: PollType
     }
   | {
       action: 'open' | 'close'
       adminToken?: string
+      appSessionToken?: string
       includeHistory?: boolean
       lectureSessionId?: string
       pollId?: string
+      requestId?: string
     }
 
 type PollRow = {
@@ -60,6 +70,8 @@ type JournalClubPollSlotRow = {
 
 const DEFAULT_RECENT_POLL_LIMIT = 5
 const HISTORY_RECENT_POLL_LIMIT = 100
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
@@ -92,26 +104,6 @@ Deno.serve(async (request) => {
     )
   }
 
-  let tokenSecret: string
-  try {
-    tokenSecret = getAdminTokenSecret()
-  } catch (error) {
-    return jsonResponse(
-      {
-        ok: false,
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
-      },
-      500,
-    )
-  }
-
-  if (
-    !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret, request))
-  ) {
-    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
-  }
-
   if (!body.lectureSessionId) {
     return jsonResponse(
       { ok: false, message: 'lectureSessionId is required.' },
@@ -119,11 +111,110 @@ Deno.serve(async (request) => {
     )
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasGoogleCredential === hasLegacyCredential) {
+    return jsonResponse(
+      { ok: false, message: 'Exactly one Admin credential is required.' },
+      401,
+    )
+  }
+  if (
+    hasGoogleCredential &&
+    body.action !== 'list' &&
+    !UUID_PATTERN.test(body.requestId ?? '')
+  ) {
+    return jsonResponse({ ok: false, message: 'requestId is required.' }, 400)
+  }
+
+  let googleContext: GoogleAdminOperationContext | null = null
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
 
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    let tokenSecret: string
+    try {
+      tokenSecret = getAdminTokenSecret()
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+        },
+        500,
+      )
+    }
+    if (!(await verifyAdminToken(body.adminToken!, tokenSecret, request))) {
+      return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+    }
+  }
+
+  const googleRpcIdentity = googleContext
+    ? {
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      }
+    : null
+
   async function listPolls(lectureSessionId: string, includeHistory = false) {
+    if (googleRpcIdentity) {
+      const { data, error } = await supabase.rpc(
+        'manage_google_admin_polls_v1',
+        {
+          ...googleRpcIdentity,
+          target_action: 'list',
+          target_include_history: includeHistory,
+          target_lecture_session_id: lectureSessionId,
+          target_option_labels: null,
+          target_poll_id: null,
+          target_poll_type: null,
+          target_question: null,
+          target_request_id: null,
+        },
+      )
+      if (error) throw new Error(error.message)
+      const result = data as {
+        hasMore?: unknown
+        ok?: boolean
+        polls?: unknown
+      }
+      if (
+        result?.ok !== true ||
+        typeof result.hasMore !== 'boolean' ||
+        !Array.isArray(result.polls)
+      ) {
+        throw new Error('Google Admin poll list is unavailable.')
+      }
+      return { hasMore: result.hasMore, polls: result.polls }
+    }
+
     const recentLimit = includeHistory
       ? HISTORY_RECENT_POLL_LIMIT
       : DEFAULT_RECENT_POLL_LIMIT
@@ -275,38 +366,114 @@ Deno.serve(async (request) => {
         )
       }
 
-      const { error } = await supabase.rpc('admin_create_poll', {
-        option_labels: optionLabels,
-        poll_question: question,
-        poll_type: body.type,
-        target_lecture_session_id: body.lectureSessionId,
-      })
+      const { data, error } = googleRpcIdentity
+        ? await supabase.rpc('manage_google_admin_polls_v1', {
+            ...googleRpcIdentity,
+            target_action: 'create',
+            target_include_history: body.includeHistory ?? false,
+            target_lecture_session_id: body.lectureSessionId,
+            target_option_labels: optionLabels,
+            target_poll_id: null,
+            target_poll_type: body.type,
+            target_question: question,
+            target_request_id: body.requestId,
+          })
+        : await supabase.rpc('admin_create_poll', {
+            option_labels: optionLabels,
+            poll_question: question,
+            poll_type: body.type,
+            target_lecture_session_id: body.lectureSessionId,
+          })
 
       if (error) {
         throw new Error(error.message)
+      }
+      if (googleRpcIdentity) {
+        const result = data as {
+          hasMore?: unknown
+          ok?: boolean
+          polls?: unknown
+          refreshRequired?: boolean
+        } | null
+        if (
+          result?.ok !== true ||
+          typeof result.hasMore !== 'boolean' ||
+          !Array.isArray(result.polls)
+        ) {
+          throw new Error('Google Admin poll creation was not confirmed.')
+        }
+        if (result.refreshRequired === true) {
+          try {
+            return jsonResponse({
+              ...result,
+              ...(await listPolls(
+                body.lectureSessionId,
+                body.includeHistory ?? false,
+              )),
+              refreshRequired: false,
+            })
+          } catch {
+            return jsonResponse({ ...result, refreshRequired: true })
+          }
+        }
+        return jsonResponse(result)
       }
     } else if (body.action === 'open' || body.action === 'close') {
       if (!body.pollId) {
         return jsonResponse({ ok: false, message: 'pollId is required.' }, 400)
       }
 
-      const { data: changed, error } = await supabase.rpc(
-        'admin_set_poll_status',
-        {
-          target_lecture_session_id: body.lectureSessionId,
-          target_poll_id: body.pollId,
-          target_status: body.action === 'open' ? 'open' : 'closed',
-        },
-      )
+      const { data: changed, error } = googleRpcIdentity
+        ? await supabase.rpc('manage_google_admin_polls_v1', {
+            ...googleRpcIdentity,
+            target_action: body.action,
+            target_include_history: body.includeHistory ?? false,
+            target_lecture_session_id: body.lectureSessionId,
+            target_option_labels: null,
+            target_poll_id: body.pollId,
+            target_poll_type: null,
+            target_question: null,
+            target_request_id: body.requestId,
+          })
+        : await supabase.rpc('admin_set_poll_status', {
+            target_lecture_session_id: body.lectureSessionId,
+            target_poll_id: body.pollId,
+            target_status: body.action === 'open' ? 'open' : 'closed',
+          })
 
       if (error) {
         throw new Error(error.message)
       }
-      if (!changed) {
+      if (
+        !changed ||
+        (googleRpcIdentity &&
+          ((changed as { ok?: boolean }).ok !== true ||
+            !Array.isArray((changed as { polls?: unknown }).polls)))
+      ) {
         return jsonResponse(
           { ok: false, message: 'Poll status transition is not allowed.' },
           409,
         )
+      }
+      if (googleRpcIdentity) {
+        if ((changed as { refreshRequired?: boolean }).refreshRequired) {
+          try {
+            return jsonResponse({
+              ...(changed as Record<string, unknown>),
+              ...(await listPolls(
+                body.lectureSessionId,
+                body.includeHistory ?? false,
+              )),
+              refreshRequired: false,
+            })
+          } catch {
+            return jsonResponse({
+              ...(changed as Record<string, unknown>),
+              refreshRequired: true,
+            })
+          }
+        }
+        return jsonResponse(changed)
       }
     } else {
       return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)

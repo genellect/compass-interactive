@@ -357,7 +357,8 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   expect(
     functionCalls.filter(
       ({ action, name }) =>
-        /authorize-ai|caption|generate-lecture-summary|material/i.test(name) ||
+        (/authorize-ai|caption|generate-lecture-summary|material/i.test(name) &&
+          !(name === 'manage-material-analysis' && action === 'list')) ||
         (name === 'generate-academic-answer' &&
           ['generate', 'generateAuto'].includes(action)),
     ),

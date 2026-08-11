@@ -994,8 +994,6 @@ export const supabaseAdminRepository = {
           adminToken: string
           analysisId: string
           lectureSessionId: string
-          reviewState: AdminMaterialPublication['reviewState']
-          summaryBody: AdminMaterialSummaryBody
         },
   ): Promise<{ pollId: string | null; results: AdminMaterialResults }> {
     const { data, error } = await invokeEdgeFunction<MaterialFunctionResponse>(

@@ -316,6 +316,9 @@ jobs:
       - name: Restore a clean database before general lifecycle E2E
         run: npx supabase db reset --local --no-seed
 
+      - name: Restart local Auth after database reset
+        run: node scripts/ci/restart-local-auth.mjs
+
       - name: Wait for local Auth after database reset
         run: node scripts/ci/wait-for-local-auth.mjs
 

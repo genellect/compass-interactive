@@ -1,11 +1,11 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
-Status: Implemented, verification pending
-Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a/B2.2b/C1 source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-C1 source; Phase 7.30C2-F HOLD
+Status: Incremental implementation, verification pending
+Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a/B2.2b/C1 and C2.1 default-OFF source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-C1 plus C2.1 foundation and 9 of 20 operational Edge adapters; remaining C2 domains and D-F HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
-Last verified: 2026-08-10
+Last verified: 2026-08-11
 
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
@@ -54,8 +54,14 @@ never infers approval. B2.2b now implements default-OFF add/remove rare-control:
 one aggregate live snapshot, a fresh existing-set control grant and an exact
 expected post-set advance the principal anchor while draining old authority.
 Its maximum 30-minute hash-only recovery is capped by the same Auth session.
-Phase 7.30C still applies the unified verifier to every operational
-Admin Edge/RPC path.
+C2.1 now adds the shared Google-only Edge verifier, a closed 75-action policy
+matrix and same-transaction database facades for lecture lifecycle, comments,
+polls, Admin self-session controls, PDF documents and Admin access claims,
+Admin operator snapshots, Display state and material-analysis curation. Nine of
+the exact 20 operational Admin Edge functions have a default-OFF dual transport;
+the remaining eleven AI/provider, Presenter, Display-admission and PDF-
+publication paths remain C2 HOLD. The legacy workspace client remains explicit
+compatibility-only until D connects a distinct Google credential transport.
 
 The B2 source additionally implements nine private AI-unlock tables, service-
 role-only public wrappers, fixed-search-path private helpers, bcrypt cost-12 of
@@ -74,9 +80,11 @@ the default-OFF Edge raw-PIN/HMAC path, real non-extractable browser
 CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1 then
 adds private optional-row lecture ownership and atomic PIN/browser-proof to
 dormant-master admission without inferred backfill or child/provider authority.
-It does not implement the all-Admin verifier, operational Edge/RPC migration or
-AI Passkey. Those C2 and later boundaries, Phase 7.30C2-F and every activation
-remain HOLD. The source implementation adds no recurring fixed-cost dependency.
+It does not by itself implement the all-Admin verifier, complete operational
+Edge/RPC migration or AI Passkey. C2.1 has begun that migration for nine
+default-OFF operational paths, but the remaining C2 domains, D-F and every
+activation remain HOLD. The source implementation adds no recurring fixed-cost
+dependency.
 
 ## Outcome
 
@@ -105,6 +113,33 @@ and owner-managed AI policy. It unlocks the existing lecture-wide master once,
 after which each provider start uses the existing short-lived single-use child
 grant and repeats all live cost and lifecycle checks without another PIN prompt.
 
+### Cross-phase lecture UX acceptance
+
+Security acceptance does not permit a technically safe but unusable lecture.
+Phases C2 through F must prove the complete happy path as well as denial paths:
+
+- an eligible instructor signs in once with Google plus TOTP, opens an owned
+  lecture, views its material and activates each permitted feature without a
+  repeated TOTP challenge during the lecture;
+- personal AI proof is requested only for a new lecture master or explicit
+  scope expansion, then mock-provider/local evidence proves child activation,
+  status, stop and recovery without a paid external call;
+- students can join, follow and reopen authorized PDF material across Admin
+  gate changes, while cross-lecture and revoked access remain denied;
+- disabling admission or losing a paid capability still leaves status plus
+  close, stop, revoke and downgrade available, with actionable recovery copy;
+- Desktop and Mobile Chromium/WebKit E2E cover instructor and student success,
+  source-OFF denial, rollback and reload/recovery without console errors,
+  horizontal overflow or an authentication loop; and
+- Production-bound UI contains no developer, experimental, placeholder or
+  internal gate/error wording. Color, typography, spacing, states and copy use
+  the established COMPASS design system and remain consistent across Admin,
+  Student, Display and Review surfaces.
+
+These are release blockers, not visual polish deferred until after activation.
+Hosted/Human evidence must repeat the same success matrix with real identity and
+browser profiles before any Production or contest enablement.
+
 The legacy `BILLING_PIN` remains only in the current pre-migration source while
 the personal AI PIN path is incomplete. It is never a Google-mode factor,
 browser-persisted or available to a reviewer. After personal-AI-PIN E2E, it and
@@ -125,6 +160,11 @@ remain solely for foreign-key and audit integrity.
 - AAL1 returns no lecture ledger, roster, audit or paid-control data.
 - New authorization is server authoritative. UI role branching is never the
   enforcement boundary.
+- Lecture continuity is a security and product invariant. Ordinary lecture
+  controls, student material access and already-authorized classroom delivery
+  must not acquire periodic TOTP prompts. Admission gates may deny new or
+  expanded authority, but they must not remove safe read/status paths or
+  gate-independent close, stop, revoke and downgrade controls.
 - The four-digit AI PIN is a low-entropy intent factor, not authentication. The
   server accepts it only after AAL2, keeps only a slow verifier protected by a
   server-only pepper, and enforces atomic attempt limits and lockout. A raw PIN
@@ -694,11 +734,16 @@ Rollout is additive and default OFF:
 4. configure separate OAuth clients/callbacks and Supabase provider manually;
 5. create-only bootstrap the two owner principals;
 6. prove AAL1 denial and AAL2 success in staging;
-7. explicitly claim/backfill legacy lecture ownership, enable the Google-only
-   Phase 7.30C authorization path for one owner canary, then both owners and
-   instructors, revoke all active legacy application sessions and remove the
-   `ADMIN_PIN` issuer, UI, flags and secret. Revoked historical rows may remain
-   only where FK/audit integrity requires; and
+7. explicitly claim legacy lecture ownership from approved evidence without
+   inference, then use the advisory database preflight to reach zero
+   unowned draft/open lectures, zero active legacy sessions and a disabled
+   legacy login issuer. The preflight snapshot never authorizes cutover: after
+   tombstoning legacy writers, Phase E must repeat and lock these checks in the
+   same transaction that commits the fence. Close or cancel any unresolved
+   active lecture before enabling the Google-only Phase 7.30C path for one owner canary, then both
+   owners and instructors, and remove the `ADMIN_PIN` issuer, UI, flags and
+   secret. Revoked historical rows may remain only where FK/audit integrity
+   requires; and
 8. after personal-AI-PIN E2E, remove `BILLING_PIN`, its compatibility RPC, UI,
    flag and secret configuration before Production.
 

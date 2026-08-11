@@ -97,6 +97,22 @@ try {
     'scripts/fixtures/phase7-30c1-b22b-head-upgrade-probe-test.sql',
     '--local',
   ])
+  runSupabase([
+    'db',
+    'reset',
+    '--local',
+    '--version',
+    '20260810160000',
+    '--sql-paths',
+    '../scripts/fixtures/phase7-30c2-c1-head-upgrade-probe.sql',
+  ])
+  runSupabase(['migration', 'up', '--local'])
+  runSupabase([
+    'test',
+    'db',
+    'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
+    '--local',
+  ])
 } catch (error) {
   failure = error
 } finally {
@@ -109,5 +125,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Populated legacy, B1, B2, B2.2a-head and B2.2b-head states upgrade through Phase 7.30 C1 with explicit trust anchors, no ownership/browser inference, eight-hour cap and dormant gates intact.',
+  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head and C1-head states upgrade through Phase 7.30 C2 with explicit trust anchors, no ownership/browser/receipt inference, eight-hour cap and dormant gates intact.',
 )

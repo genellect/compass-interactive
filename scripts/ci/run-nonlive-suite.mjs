@@ -73,6 +73,7 @@ const safeTestScripts = [
   'test:phase7-30b22a-static',
   'test:phase7-30b22b-static',
   'test:phase7-30c1-static',
+  'test:phase7-30c2-static',
   'test:production-gate:static',
   'test:production-env',
   'test:admin-lifecycle',

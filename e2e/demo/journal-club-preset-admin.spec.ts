@@ -346,7 +346,10 @@ async function installNetworkMocks(
       })
       return
     }
-    if (/ai|academic|caption|material|realtime|summar/i.test(functionName)) {
+    if (
+      /ai|academic|caption|material|realtime|summar/i.test(functionName) &&
+      !(functionName === 'manage-material-analysis' && body.action === 'list')
+    ) {
       state.aiFunctionCalls.push(functionName)
     }
     await fulfillJson(route, { ok: true })

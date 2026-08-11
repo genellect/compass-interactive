@@ -1,9 +1,13 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminTokenClaims,
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import {
   runRealtimeProviderHangupSweep,
@@ -13,28 +17,44 @@ import { createJsonResponse } from '../_shared/responses.ts'
 
 type LectureStatus = 'draft' | 'open' | 'closed'
 
+type GoogleAdminCredential = {
+  appSessionToken?: string
+  requestId?: string
+}
+
 type ManageLecturesRequest =
-  | { action: 'list'; adminToken?: string; includeHistory?: boolean }
+  | ({
+      action: 'list'
+      adminToken?: string
+      includeHistory?: boolean
+    } & GoogleAdminCredential)
   | {
       action: 'create'
       adminToken?: string
+      appSessionToken?: string
       endsAt?: string | null
+      requestId?: string
       startsAt?: string | null
       title?: string
     }
   | {
-      action: 'start' | 'close'
+      action: 'start' | 'close' | 'emergencyStop'
       adminToken?: string
+      appSessionToken?: string
       lectureSessionId?: string
+      requestId?: string
     }
   | {
       action: 'duplicate'
       adminToken?: string
+      appSessionToken?: string
       lectureSessionId?: string
+      requestId?: string
     }
   | {
       action: 'createJournalClubRun'
       adminToken?: string
+      appSessionToken?: string
       clientRequestId?: string
       runKind?: 'production' | 'rehearsal'
     }
@@ -171,29 +191,76 @@ Deno.serve(async (request) => {
     )
   }
 
-  let tokenSecret: string
-  try {
-    tokenSecret = getAdminTokenSecret()
-  } catch (error) {
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasGoogleCredential === hasLegacyCredential) {
     return jsonResponse(
-      {
-        ok: false,
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
-      },
-      500,
+      { ok: false, message: 'Exactly one Admin credential is required.' },
+      401,
     )
   }
 
-  const adminClaims = body.adminToken
-    ? await getAdminTokenClaims(body.adminToken, tokenSecret, request)
-    : null
-  if (!adminClaims) {
-    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
-  }
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  let googleContext: GoogleAdminOperationContext | null = null
+  let adminClaims: Awaited<ReturnType<typeof getAdminTokenClaims>> = null
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
+
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    let tokenSecret: string
+    try {
+      tokenSecret = getAdminTokenSecret()
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+        },
+        500,
+      )
+    }
+    adminClaims = await getAdminTokenClaims(
+      body.adminToken!,
+      tokenSecret,
+      request,
+    )
+    if (!adminClaims) {
+      return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+    }
+  }
+
+  const googleRpcIdentity = googleContext
+    ? {
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      }
+    : null
 
   async function sweepRealtimeProviderCalls(lectureSessionId: string) {
     const openAiApiKey = Deno.env.get('OPENAI_API_KEY')?.trim()
@@ -237,6 +304,23 @@ Deno.serve(async (request) => {
   }
 
   async function listLectures(limit = 30) {
+    if (googleRpcIdentity) {
+      const { data, error } = await supabase.rpc(
+        'manage_google_admin_lectures_v1',
+        {
+          ...googleRpcIdentity,
+          target_action: 'list',
+          target_include_history: limit > 3,
+        },
+      )
+      if (error) throw new Error(error.message)
+      const result = data as { lectures?: unknown } | null
+      if (!result || !Array.isArray(result.lectures)) {
+        throw new Error('Google Admin lecture list is unavailable.')
+      }
+      return result.lectures
+    }
+
     const { data: lectureRows, error: lectureError } = await supabase
       .from('lecture_sessions')
       .select(
@@ -323,20 +407,52 @@ Deno.serve(async (request) => {
         )
       }
 
+      if (googleRpcIdentity && !UUID_PATTERN.test(body.requestId ?? '')) {
+        return jsonResponse(
+          { ok: false, message: 'requestId is required.' },
+          400,
+        )
+      }
+
       let created = false
       for (let attempt = 0; attempt < 16; attempt += 1) {
         const lectureCode = generateLectureCode()
-        const { error } = await supabase.rpc('admin_create_lecture_v2', {
-          lecture_code: lectureCode,
-          lecture_code_hash: await sha256Hex(lectureCode),
-          lecture_ends_at: endsAt,
-          lecture_starts_at: startsAt,
-          lecture_title: title,
-        })
+        const lectureCodeHash = await sha256Hex(lectureCode)
+        const { data, error } = googleRpcIdentity
+          ? await supabase.rpc('manage_google_admin_lectures_v1', {
+              ...googleRpcIdentity,
+              target_action: 'create',
+              target_code: lectureCode,
+              target_code_hash: lectureCodeHash,
+              target_ends_at: endsAt,
+              target_request_id: body.requestId,
+              target_starts_at: startsAt,
+              target_title: title,
+            })
+          : await supabase.rpc('admin_create_lecture_v2', {
+              lecture_code: lectureCode,
+              lecture_code_hash: lectureCodeHash,
+              lecture_ends_at: endsAt,
+              lecture_starts_at: startsAt,
+              lecture_title: title,
+            })
 
-        if (!error) {
+        if (
+          !error &&
+          (!googleRpcIdentity ||
+            ((data as { lectureSessionId?: string; ok?: boolean } | null)
+              ?.ok === true &&
+              UUID_PATTERN.test(
+                (data as { lectureSessionId?: string } | null)
+                  ?.lectureSessionId ?? '',
+              )))
+        ) {
           created = true
           break
+        }
+
+        if (!error) {
+          throw new Error('Google Admin lecture creation was not accepted.')
         }
 
         if (error.code !== '23505') {
@@ -359,9 +475,8 @@ Deno.serve(async (request) => {
         )
       }
       if (
-        Deno.env.get(
-          'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED',
-        ) !== 'true'
+        Deno.env.get('PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED') !==
+        'true'
       ) {
         return jsonResponse(
           { ok: false, message: 'Journal Club preset creation is retired.' },
@@ -369,7 +484,7 @@ Deno.serve(async (request) => {
         )
       }
       if (
-        !adminClaims.sid ||
+        (!googleRpcIdentity && !adminClaims?.sid) ||
         !body.clientRequestId ||
         !UUID_PATTERN.test(body.clientRequestId) ||
         !['production', 'rehearsal'].includes(body.runKind ?? '')
@@ -380,15 +495,22 @@ Deno.serve(async (request) => {
         )
       }
 
-      const bearerToken =
-        request.headers
-          .get('Authorization')
-          ?.replace(/^Bearer\s+/i, '')
-          .trim() ?? ''
-      const { data: authData, error: authError } =
-        await supabase.auth.getUser(bearerToken)
-      if (authError || !authData.user) {
-        return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+      let legacyAuthUserId: string | null = null
+      if (!googleRpcIdentity) {
+        const bearerToken =
+          request.headers
+            .get('Authorization')
+            ?.replace(/^Bearer\s+/i, '')
+            .trim() ?? ''
+        const { data: authData, error: authError } =
+          await supabase.auth.getUser(bearerToken)
+        if (authError || !authData.user) {
+          return jsonResponse(
+            { ok: false, message: 'Invalid Admin session.' },
+            401,
+          )
+        }
+        legacyAuthUserId = authData.user.id
       }
 
       let createdResult: {
@@ -397,20 +519,47 @@ Deno.serve(async (request) => {
       } | null = null
       for (let attempt = 0; attempt < 16; attempt += 1) {
         const lectureCode = generateLectureCode()
-        const { data, error } = await supabase.rpc(
-          'admin_create_phase727_journal_club_run_v1',
-          {
-            target_admin_auth_user_id: authData.user.id,
-            target_admin_session_id: adminClaims.sid,
-            target_client_request_id: body.clientRequestId,
-            target_lecture_code: lectureCode,
-            target_lecture_code_hash: await sha256Hex(lectureCode),
-            target_run_kind: body.runKind,
-          },
-        )
+        const lectureCodeHash = await sha256Hex(lectureCode)
+        const { data, error } = googleRpcIdentity
+          ? await supabase.rpc('manage_google_admin_lectures_v1', {
+              ...googleRpcIdentity,
+              target_action: 'createJournalClubRun',
+              target_code: lectureCode,
+              target_code_hash: lectureCodeHash,
+              target_request_id: body.clientRequestId,
+              target_run_kind: body.runKind,
+            })
+          : await supabase.rpc('admin_create_phase727_journal_club_run_v1', {
+              target_admin_auth_user_id: legacyAuthUserId,
+              target_admin_session_id: adminClaims!.sid,
+              target_client_request_id: body.clientRequestId,
+              target_lecture_code: lectureCode,
+              target_lecture_code_hash: lectureCodeHash,
+              target_run_kind: body.runKind,
+            })
 
         if (!error) {
-          createdResult = data as typeof createdResult
+          if (googleRpcIdentity) {
+            const googleResult = data as {
+              idempotentReplay?: boolean
+              lectureSessionId?: string
+              ok?: boolean
+            } | null
+            if (
+              googleResult?.ok !== true ||
+              !UUID_PATTERN.test(googleResult.lectureSessionId ?? '')
+            ) {
+              throw new Error(
+                'Google Admin Journal Club creation was not accepted.',
+              )
+            }
+            createdResult = {
+              idempotent_replay: googleResult.idempotentReplay === true,
+              lecture_session_id: googleResult.lectureSessionId,
+            }
+          } else {
+            createdResult = data as typeof createdResult
+          }
           break
         }
         if (error.code === '23505') continue
@@ -421,7 +570,10 @@ Deno.serve(async (request) => {
           )
         }
         if (error.code === '42501') {
-          return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+          return jsonResponse(
+            { ok: false, message: 'Invalid Admin session.' },
+            401,
+          )
         }
         throw new Error(error.message)
       }
@@ -444,19 +596,48 @@ Deno.serve(async (request) => {
           400,
         )
       }
+      if (googleRpcIdentity && !UUID_PATTERN.test(body.requestId ?? '')) {
+        return jsonResponse(
+          { ok: false, message: 'requestId is required.' },
+          400,
+        )
+      }
 
       let duplicated = false
       for (let attempt = 0; attempt < 16; attempt += 1) {
         const lectureCode = generateLectureCode()
-        const { error } = await supabase.rpc('admin_duplicate_lecture_v1', {
-          lecture_code: lectureCode,
-          lecture_code_hash: await sha256Hex(lectureCode),
-          source_lecture_session_id: body.lectureSessionId,
-        })
+        const lectureCodeHash = await sha256Hex(lectureCode)
+        const { data, error } = googleRpcIdentity
+          ? await supabase.rpc('manage_google_admin_lectures_v1', {
+              ...googleRpcIdentity,
+              target_action: 'duplicate',
+              target_code: lectureCode,
+              target_code_hash: lectureCodeHash,
+              target_lecture_session_id: body.lectureSessionId,
+              target_request_id: body.requestId,
+            })
+          : await supabase.rpc('admin_duplicate_lecture_v1', {
+              lecture_code: lectureCode,
+              lecture_code_hash: lectureCodeHash,
+              source_lecture_session_id: body.lectureSessionId,
+            })
 
-        if (!error) {
+        if (
+          !error &&
+          (!googleRpcIdentity ||
+            ((data as { lectureSessionId?: string; ok?: boolean } | null)
+              ?.ok === true &&
+              UUID_PATTERN.test(
+                (data as { lectureSessionId?: string } | null)
+                  ?.lectureSessionId ?? '',
+              )))
+        ) {
           duplicated = true
           break
+        }
+
+        if (!error) {
+          throw new Error('Google Admin lecture duplication was not accepted.')
         }
 
         if (error.code === 'P0001') {
@@ -481,27 +662,50 @@ Deno.serve(async (request) => {
       return jsonResponse({ lectures: await listLectures(), ok: true })
     }
 
-    if (body.action === 'start' || body.action === 'close') {
+    if (
+      body.action === 'start' ||
+      body.action === 'close' ||
+      body.action === 'emergencyStop'
+    ) {
       if (!body.lectureSessionId) {
         return jsonResponse(
           { ok: false, message: 'lectureSessionId is required.' },
           400,
         )
       }
+      if (googleRpcIdentity && !UUID_PATTERN.test(body.requestId ?? '')) {
+        return jsonResponse(
+          { ok: false, message: 'requestId is required.' },
+          400,
+        )
+      }
+      if (!googleRpcIdentity && body.action === 'emergencyStop') {
+        return jsonResponse(
+          { ok: false, message: 'Emergency stop requires Google Admin.' },
+          401,
+        )
+      }
 
-      const { data: changed, error } = await supabase.rpc(
-        'admin_set_lecture_status',
-        {
-          target_action: body.action,
-          target_lecture_session_id: body.lectureSessionId,
-        },
-      )
+      const { data: changed, error } = googleRpcIdentity
+        ? await supabase.rpc('manage_google_admin_lectures_v1', {
+            ...googleRpcIdentity,
+            target_action: body.action,
+            target_lecture_session_id: body.lectureSessionId,
+            target_request_id: body.requestId,
+          })
+        : await supabase.rpc('admin_set_lecture_status', {
+            target_action: body.action,
+            target_lecture_session_id: body.lectureSessionId,
+          })
 
       if (error) {
         throw new Error(error.message)
       }
 
-      if (!changed) {
+      if (
+        !changed ||
+        (googleRpcIdentity && !(changed as { ok?: boolean }).ok)
+      ) {
         return jsonResponse(
           { ok: false, message: 'Lecture status transition is not allowed.' },
           409,
@@ -509,7 +713,7 @@ Deno.serve(async (request) => {
       }
 
       const providerHangup =
-        body.action === 'close'
+        body.action === 'close' || body.action === 'emergencyStop'
           ? await sweepRealtimeProviderCalls(body.lectureSessionId)
           : null
       return jsonResponse({

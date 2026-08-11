@@ -17,25 +17,37 @@ function journalClubBranch(source: string) {
 
 test('Journal Club Edge action is behind tracked Admin auth and two default-off server flags', () => {
   const branch = journalClubBranch(manageLectures)
-  const globalClaims = manageLectures.indexOf(
-    'const adminClaims = body.adminToken',
+  const credentialBoundary = manageLectures.indexOf(
+    'if (hasGoogleCredential === hasLegacyCredential)',
   )
-  const globalRejection = manageLectures.indexOf('if (!adminClaims)', globalClaims)
+  const googleVerification = manageLectures.indexOf(
+    'verifyGoogleAdminOperationRequest',
+    credentialBoundary,
+  )
+  const legacyVerification = manageLectures.indexOf(
+    'adminClaims = await getAdminTokenClaims',
+    googleVerification,
+  )
   const action = manageLectures.indexOf(
     "if (body.action === 'createJournalClubRun')",
   )
-  assert.ok(globalClaims >= 0 && globalRejection > globalClaims && action > globalRejection)
+  assert.ok(
+    credentialBoundary >= 0 &&
+      googleVerification > credentialBoundary &&
+      legacyVerification > googleVerification &&
+      action > legacyVerification,
+  )
   assert.match(
     branch,
     /Deno\.env\.get\('PHASE7_27_JOURNAL_CLUB_ENABLED'\) !== 'true'/,
   )
   assert.match(
     branch,
-    /Deno\.env\.get\([\s\S]*?'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED'[\s\S]*?\) !== 'true'/,
+    /Deno\.env\.get\('PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED'\)\s*!==\s*'true'/,
   )
   assert.match(branch, /Journal Club preset creation is retired\./)
   assert.match(branch, /410/)
-  assert.match(branch, /!adminClaims\.sid/)
+  assert.match(branch, /!googleRpcIdentity && !adminClaims\?\.sid/)
   assert.match(branch, /UUID_PATTERN\.test\(body\.clientRequestId\)/)
   assert.match(branch, /\['production', 'rehearsal'\]\.includes/)
 })
@@ -60,11 +72,9 @@ test('Journal Club Edge action binds the tracked token to the current Supabase u
   assert.match(branch, /request\.headers[\s\S]*?\.get\('Authorization'\)/)
   assert.match(branch, /await supabase\.auth\.getUser\(bearerToken\)/)
   assert.match(branch, /if \(authError \|\| !authData\.user\)/)
-  assert.match(
-    branch,
-    /target_admin_auth_user_id: authData\.user\.id/,
-  )
-  assert.match(branch, /target_admin_session_id: adminClaims\.sid/)
+  assert.match(branch, /legacyAuthUserId = authData\.user\.id/)
+  assert.match(branch, /target_admin_auth_user_id: legacyAuthUserId/)
+  assert.match(branch, /target_admin_session_id: adminClaims!\.sid/)
   assert.match(branch, /target_client_request_id: body\.clientRequestId/)
   assert.match(branch, /target_run_kind: body\.runKind/)
   assert.match(branch, /error\.code === '42501'/)
@@ -73,6 +83,7 @@ test('Journal Club Edge action binds the tracked token to the current Supabase u
 test('Journal Club creation delegates one atomic RPC and never starts billable or live work', () => {
   const branch = journalClubBranch(manageLectures)
   assert.match(branch, /admin_create_phase727_journal_club_run_v1/)
+  assert.match(branch, /manage_google_admin_lectures_v1/)
   assert.match(branch, /error\.code === '23505'/)
   assert.match(branch, /error\.code === 'P0001'/)
   assert.doesNotMatch(branch, /admin_set_lecture_status|start_lecture_core/)
@@ -99,10 +110,7 @@ test('Journal Club metadata and Poll ordering add no query when the server flag 
     managePolls,
     /templateOrder: templateOrderByPollId\.get\(poll\.id\) \?\? null/,
   )
-  assert.match(
-    managePolls,
-    /return left\.templateOrder - right\.templateOrder/,
-  )
+  assert.match(managePolls, /return left\.templateOrder - right\.templateOrder/)
   assert.doesNotMatch(
     listBranch,
     /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/,
