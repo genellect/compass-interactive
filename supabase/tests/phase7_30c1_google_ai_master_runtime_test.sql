@@ -558,7 +558,7 @@ SELECT throws_ok(
     current_setting('compass.test.c1_lecture_id')
   ),
   'P7335',
-  'C1 owned lecture child authority is deferred to C2',
+  'C2 owned lecture child authority requires Google evidence',
   'owned lecture rejects direct null-master grants after revoke'
 );
 
@@ -601,7 +601,7 @@ SELECT throws_ok(
     WHERE id = '00000000-0000-4000-8000-00000000c141'::uuid
   $$,
   'P7335',
-  'C1 owned lecture child authority is deferred to C2',
+  'C2 owned lecture child authority requires Google evidence',
   'preissued direct grant cannot cross a concurrent C1 ownership boundary'
 );
 

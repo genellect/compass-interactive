@@ -4796,6 +4796,21 @@ export type Database = {
         Args: { job_limit?: number; target_worker_id?: string }
         Returns: Json[]
       }
+      claim_google_ai_provider_dispatch_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_family: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       claim_lecture_archive_exports: {
         Args: { job_limit?: number }
         Returns: {
@@ -5809,6 +5824,10 @@ export type Database = {
           target_transport_enabled: boolean
         }
         Returns: Json
+      }
+      reap_stale_google_ai_provider_dispatches_v1: {
+        Args: { job_limit?: number }
+        Returns: number
       }
       reconcile_admin_totp_factor_set_v1: {
         Args: { target_auth_user_id: string; target_request_id: string }

@@ -15,7 +15,8 @@ SELECT ok(
     FROM (VALUES
       ('admin_google_ai_child_grant_receipts'),
       ('admin_google_ai_provider_start_intents'),
-      ('admin_google_ai_provider_start_receipts')
+      ('admin_google_ai_provider_start_receipts'),
+      ('admin_google_ai_provider_dispatch_receipts')
     ) AS expected(table_name)
     JOIN pg_class AS class ON class.relname = expected.table_name
     JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
@@ -27,6 +28,12 @@ SELECT ok(
         )
         OR has_table_privilege(
           'service_role', format('private.%I', expected.table_name), 'UPDATE'
+        )
+        OR has_table_privilege(
+          'service_role', format('private.%I', expected.table_name), 'INSERT'
+        )
+        OR has_table_privilege(
+          'service_role', format('private.%I', expected.table_name), 'DELETE'
         )
         OR has_table_privilege(
           'anon', format('private.%I', expected.table_name), 'SELECT'
@@ -46,7 +53,8 @@ SELECT ok(
       AND foreign_key.conrelid IN (
         'private.admin_google_ai_child_grant_receipts'::regclass,
         'private.admin_google_ai_provider_start_intents'::regclass,
-        'private.admin_google_ai_provider_start_receipts'::regclass
+        'private.admin_google_ai_provider_start_receipts'::regclass,
+        'private.admin_google_ai_provider_dispatch_receipts'::regclass
       )
       AND NOT EXISTS (
         SELECT 1
@@ -82,14 +90,54 @@ SELECT ok(
     'public.fail_google_admin_material_ai_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,bigint,bigint,bigint,text,text)',
     'EXECUTE'
   )
+  AND has_function_privilege(
+    'service_role',
+    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.reap_stale_google_ai_provider_dispatches_v1(integer)',
+    'EXECUTE'
+  )
   AND NOT has_function_privilege(
     'authenticated',
     'public.issue_google_material_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,text,text,integer,uuid,text,text,text,uuid,integer,integer,text,text,bigint,bigint,integer,bigint,bigint,bigint,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
+    'authenticated',
+    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.reap_stale_google_ai_provider_dispatches_v1(integer)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
     'service_role',
     'private.issue_google_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,text,text,text,integer,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.settle_stale_google_ai_provider_dispatch_v1(uuid)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.reap_stale_google_ai_provider_dispatches_v1(integer)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.require_google_ai_dispatch_receipt_on_terminal_v1()',
     'EXECUTE'
   ),
   'only typed public provider facades are executable by service_role'
@@ -102,7 +150,8 @@ SELECT ok(
       AND table_name IN (
         'admin_google_ai_child_grant_receipts',
         'admin_google_ai_provider_start_intents',
-        'admin_google_ai_provider_start_receipts'
+        'admin_google_ai_provider_start_receipts',
+        'admin_google_ai_provider_dispatch_receipts'
       )
       AND column_name ~ '(raw|bearer|secret|payload|response)'
   ),
@@ -270,7 +319,12 @@ INSERT INTO private.admin_ai_policies (
   '00000000-0000-4000-8000-00000000e20a'::uuid,
   '00000000-0000-4000-8000-00000000e201'::uuid,
   '00000000-0000-4000-8000-00000000e206'::uuid,
-  array['material_analysis', 'poll_suggestions']::text[],
+  array[
+    'academic_answers',
+    'material_analysis',
+    'poll_suggestions',
+    'summaries'
+  ]::text[],
   array['test-model']::text[],
   10, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
   90, 900, 2,
@@ -329,7 +383,7 @@ SELECT lives_ok(
       jsonb_build_object(
         'material_analysis_enabled', false,
         'poll_suggestions_enabled', false,
-        'material_analysis_call_limit', 10,
+        'material_analysis_call_limit', 5,
         'poll_generation_limit', 10,
         'budget_limit_microusd', 2500000,
         'input_token_limit', 200000,
@@ -587,6 +641,79 @@ SELECT ok(
   'intent, consumed child, usage and completion receipt share exact provenance'
 );
 
+SET ROLE service_role;
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e231'::uuid,
+    current_setting('compass.test.c2_provider_operation_a')::uuid,
+    null::text,
+    '00000000-0000-4000-8000-00000000e231'::uuid
+  )::text,
+  null,
+  'NULL provider family cannot create a dispatch claim'
+);
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e231'::uuid,
+    current_setting('compass.test.c2_provider_operation_a')::uuid,
+    'openai_responses_v1', null::uuid
+  )::text,
+  null,
+  'NULL provider request identity cannot create a dispatch claim'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'dispatchAllowed' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'clientRequestId' =
+        '00000000-0000-4000-8000-00000000e231'
+      AND result ->> 'operationId' =
+        current_setting('compass.test.c2_provider_operation_a')
+    FROM (
+      SELECT public.claim_google_ai_provider_dispatch_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e231'::uuid,
+        current_setting('compass.test.c2_provider_operation_a')::uuid,
+        'openai_responses_v1',
+        '00000000-0000-4000-8000-00000000e231'::uuid
+      ) AS result
+    ) AS claimed
+  ),
+  'a committed provider start can be claimed exactly once for dispatch'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT receipt.operation_id =
+        current_setting('compass.test.c2_provider_operation_a')::uuid
+      AND receipt.provider_family = 'openai_responses_v1'
+      AND receipt.client_request_id =
+        '00000000-0000-4000-8000-00000000e231'::uuid
+      AND receipt.lease_expires_at =
+        receipt.claimed_at + interval '90 seconds'
+      AND usage.provider_dispatched_at = receipt.claimed_at
+      AND usage.provider_request_id = receipt.client_request_id::text
+    FROM private.admin_google_ai_provider_dispatch_receipts AS receipt
+    JOIN public.ai_usage_ledger AS usage
+      ON usage.id = receipt.operation_id
+    WHERE receipt.start_request_id =
+      '00000000-0000-4000-8000-00000000e231'::uuid
+  ),
+  'the dispatch claim stores bounded immutable provenance without provider data'
+);
+
 UPDATE private.admin_identity_runtime_gate
 SET google_operational_authorization_enabled = false
 WHERE singleton;
@@ -594,6 +721,42 @@ UPDATE private.admin_ai_unlock_runtime_gate
 SET google_ai_child_grant_enabled = false
 WHERE singleton;
 SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'dispatchAllowed' = 'false'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'staleRecovered' = 'false'
+    FROM (
+      SELECT public.claim_google_ai_provider_dispatch_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e231'::uuid,
+        current_setting('compass.test.c2_provider_operation_a')::uuid,
+        'openai_responses_v1',
+        '00000000-0000-4000-8000-00000000e231'::uuid
+      ) AS result
+    ) AS replayed
+  ),
+  'dispatch replay stays gate-independent but can never dispatch twice'
+);
+SELECT throws_ok(
+  $$SELECT public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e231'::uuid,
+    current_setting('compass.test.c2_provider_operation_a')::uuid,
+    'openai_responses_v1',
+    '00000000-0000-4000-8000-00000000e237'::uuid
+  )$$,
+  'P7335',
+  'Google AI provider dispatch binding changed on retry',
+  'dispatch replay cannot substitute another provider request identity'
+);
 SELECT is(
   pg_temp.start_provider_operation(
     '00000000-0000-4000-8000-00000000e231'::uuid,
@@ -747,6 +910,93 @@ SELECT ok(
   (
     SELECT
       set_config(
+        'compass.test.c2_provider_child_d', result ->> 'grant_id', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_provider_digest_d',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+    FROM (
+      SELECT pg_temp.issue_provider_child(
+        '00000000-0000-4000-8000-00000000e238'::uuid,
+        repeat('9',64), 'https://accounts.google.com', repeat('a',64),
+        'material_analysis', 'test-model', true
+      ) AS result
+    ) AS issued
+  ),
+  'a fourth child is available for stale-dispatch recovery evidence'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_provider_operation_d', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_provider_operation(
+        '00000000-0000-4000-8000-00000000e239'::uuid,
+        current_setting('compass.test.c2_provider_child_d')::uuid,
+        repeat('9',64), current_setting('compass.test.c2_provider_digest_d'),
+        'https://accounts.google.com', repeat('a',64), 'test-model', true
+      ) AS result
+    ) AS started
+  ),
+  'one additional operation models a dispatch response lost after commit'
+);
+RESET ROLE;
+
+UPDATE public.ai_usage_ledger
+SET
+  status = 'cancelled',
+  result_accepted = false,
+  error_code = 'admin_stop',
+  finished_at = statement_timestamp() - interval '1 minute',
+  provider_dispatched_at = statement_timestamp() - interval '2 minutes',
+  provider_request_id = '00000000-0000-4000-8000-00000000e239'
+WHERE id = current_setting('compass.test.c2_provider_operation_d')::uuid;
+INSERT INTO private.admin_google_ai_provider_dispatch_receipts (
+  start_request_id,
+  operation_id,
+  provider_family,
+  client_request_id,
+  claimed_at,
+  lease_expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e239'::uuid,
+  current_setting('compass.test.c2_provider_operation_d')::uuid,
+  'openai_responses_v1',
+  '00000000-0000-4000-8000-00000000e239'::uuid,
+  statement_timestamp() - interval '2 minutes',
+  statement_timestamp() - interval '30 seconds'
+);
+
+SET ROLE service_role;
+SELECT is(
+  public.reap_stale_google_ai_provider_dispatches_v1(10),
+  1,
+  'bounded cleanup settles one abandoned dispatch even after stop cancelled it'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.error_code = 'provider_dispatch_lease_expired_ambiguous'
+      AND usage.settlement_status = 'conservative'
+      AND NOT usage.result_accepted
+    FROM public.ai_usage_ledger AS usage
+    WHERE usage.id =
+      current_setting('compass.test.c2_provider_operation_d')::uuid
+  ),
+  'stale cancelled dispatch charges its reservation and releases the batch lane'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT
+      set_config(
         'compass.test.c2_provider_child_c', result ->> 'grant_id', false
       ) IS NOT NULL
       AND set_config(
@@ -782,6 +1032,17 @@ SELECT ok(
   'provider work starts while the Google Admin session is live'
 );
 RESET ROLE;
+SELECT throws_ok(
+  format(
+    $$UPDATE public.ai_usage_ledger
+      SET status = 'succeeded', result_accepted = true
+      WHERE id = %L::uuid$$,
+    current_setting('compass.test.c2_provider_operation_c')
+  ),
+  'P7335',
+  'Google AI provider result lacks dispatch evidence',
+  'a Google provider result cannot bypass the dispatch receipt'
+);
 
 UPDATE public.admin_sessions
 SET

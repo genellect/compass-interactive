@@ -14,6 +14,9 @@ const functionBlock = (sql, qualifiedName) =>
 const migration = read(
   'supabase/migrations/20260811180000_phase7_30c2_google_ai_provider.sql',
 )
+const dispatchMigration = read(
+  'supabase/migrations/20260811203000_phase7_30c2_google_ai_provider_dispatch.sql',
+)
 const aiBilling = read('supabase/functions/_shared/aiBilling.ts')
 const analyzeMaterial = read(
   'supabase/functions/analyze-lecture-material/index.ts',
@@ -41,6 +44,104 @@ assert.match(
   migration,
   /add column google_ai_child_grant_enabled boolean not null default false/,
   'Google AI child authority must remain database-default OFF',
+)
+
+assert.match(
+  dispatchMigration,
+  /create table private\.admin_google_ai_provider_dispatch_receipts/,
+)
+assert.match(
+  dispatchMigration,
+  /alter table private\.admin_google_ai_provider_dispatch_receipts[\s\S]*enable row level security;[\s\S]*revoke all on private\.admin_google_ai_provider_dispatch_receipts[\s\S]*from public, anon, authenticated, service_role/,
+)
+assert.match(
+  dispatchMigration,
+  /before update or delete on private\.admin_google_ai_provider_dispatch_receipts[\s\S]*reject_admin_c1_evidence_mutation_v1/,
+)
+assert.match(
+  dispatchMigration,
+  /create function private\.require_google_ai_dispatch_receipt_on_terminal_v1\(\)[\s\S]*new\.status = 'succeeded'[\s\S]*admin_google_ai_provider_start_receipts[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*Google AI provider result lacks dispatch evidence[\s\S]*create trigger ai_usage_google_dispatch_terminal_guard/,
+  'a Google provider result cannot be published without an immutable dispatch receipt',
+)
+assert.match(
+  dispatchMigration,
+  /lease_expires_at timestamptz not null[\s\S]*lease_expires_at <= claimed_at \+ interval '2 minutes'[\s\S]*admin_google_ai_dispatch_lease_idx/,
+  'provider dispatch ambiguity is bounded by an indexed lease',
+)
+const staleDispatchSettlement = functionBlock(
+  dispatchMigration,
+  'private.settle_stale_google_ai_provider_dispatch_v1',
+)
+assert.match(
+  staleDispatchSettlement,
+  /serialize_admin_ai_request_v1[\s\S]*from private\.admin_google_ai_provider_dispatch_receipts as receipt[\s\S]*from public\.lecture_sessions as lecture[\s\S]*for update[\s\S]*from public\.ai_usage_ledger as usage[\s\S]*for update[\s\S]*accounting_settled_at is not null[\s\S]*provider_dispatched_at is null[\s\S]*fail_material_ai_operation[\s\S]*provider_dispatch_lease_expired_ambiguous/,
+  'stale dispatch recovery serializes the request and settles conservatively in lecture -> usage order',
+)
+const staleDispatchReaper = functionBlock(
+  dispatchMigration,
+  'private.reap_stale_google_ai_provider_dispatches_v1',
+)
+assert.match(
+  staleDispatchReaper,
+  /lease_expires_at <= statement_timestamp\(\)[\s\S]*accounting_settled_at is null[\s\S]*limit job_limit[\s\S]*settle_stale_google_ai_provider_dispatch_v1/,
+  'bounded cleanup converges abandoned dispatch claims without another provider call',
+)
+const dispatchClaim = functionBlock(
+  dispatchMigration,
+  'private.claim_google_ai_provider_dispatch_v1',
+)
+const dispatchEvidence = dispatchClaim.indexOf(
+  'require_google_ai_provider_settlement_context_v1',
+)
+const dispatchReplay = dispatchClaim.indexOf(
+  'from private.admin_google_ai_provider_dispatch_receipts as receipt',
+)
+const dispatchLive = dispatchClaim.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const dispatchPolicy = dispatchClaim.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const dispatchLecture = dispatchClaim.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const dispatchMaster = dispatchClaim.indexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const dispatchUsage = dispatchClaim.indexOf(
+  'from public.ai_usage_ledger as usage',
+)
+const dispatchInsert = dispatchClaim.indexOf(
+  'insert into private.admin_google_ai_provider_dispatch_receipts',
+)
+assert.ok(
+  dispatchEvidence >= 0 &&
+    dispatchEvidence < dispatchReplay &&
+    dispatchReplay < dispatchLive &&
+    dispatchLive < dispatchPolicy &&
+    dispatchPolicy < dispatchLecture &&
+    dispatchLecture < dispatchMaster &&
+    dispatchMaster < dispatchUsage &&
+    dispatchUsage < dispatchInsert,
+  'provider dispatch is immutable-evidence replay first, then live policy -> lecture -> master -> usage before one claim',
+)
+assert.match(
+  dispatchClaim.slice(dispatchReplay, dispatchLive),
+  /lease_expires_at <= effective_now[\s\S]*settle_stale_google_ai_provider_dispatch_v1[\s\S]*dispatchAllowed'[\s\S]*false[\s\S]*idempotentReplay'[\s\S]*true[\s\S]*staleRecovered'/,
+  'a lost dispatch response never authorizes a second request and becomes recoverable after its lease',
+)
+assert.match(
+  dispatchClaim,
+  /update public\.ai_usage_ledger as usage[\s\S]*provider_dispatched_at = effective_now[\s\S]*provider_request_id = target_client_request_id::text[\s\S]*insert into private\.admin_google_ai_provider_dispatch_receipts[\s\S]*effective_now \+ interval '90 seconds'/,
+  'claim commit marks provider ambiguity and its bounded lease atomically',
+)
+assert.match(
+  dispatchMigration,
+  /revoke all on function public\.claim_google_ai_provider_dispatch_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.claim_google_ai_provider_dispatch_v1\([\s\S]*to service_role/,
+)
+assert.match(
+  dispatchMigration,
+  /revoke all on function public\.reap_stale_google_ai_provider_dispatches_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.reap_stale_google_ai_provider_dispatches_v1\([\s\S]*to service_role/,
 )
 
 for (const table of [
@@ -362,8 +463,8 @@ assert.match(analyzeMaterial, /complete_google_admin_material_ai_operation_v1/)
 assert.match(analyzeMaterial, /fail_google_admin_material_ai_operation_v1/)
 assert.match(
   analyzeMaterial,
-  /if \(started\.idempotentReplay\)[\s\S]*operation_in_progress[\s\S]*return jsonResponse/,
-  'running replay stops before provider dispatch',
+  /if \(started\.idempotentReplay\)[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*if \(!claim\.dispatchAllowed\)[\s\S]*operation_in_progress/,
+  'a committed start may recover one missing dispatch claim, but an existing claim cannot dispatch twice',
 )
 assert.match(
   analyzeMaterial,
@@ -377,8 +478,18 @@ assert.match(
 )
 assert.match(
   analyzeMaterial,
-  /if \(started\.idempotentReplay\)[\s\S]*ownsNewOperation = true/,
-  'Google failure compensation is armed only after a fresh start',
+  /ownsNewOperation = !started\.idempotentReplay[\s\S]*if \(started\.idempotentReplay\)[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*providerRequestId = claim\.clientRequestId[\s\S]*ownsNewOperation = true/,
+  'a fresh start is compensable before dispatch while a replay is armed only after winning the provider claim',
+)
+assert.match(
+  analyzeMaterial,
+  /let providerWasDispatched = false[\s\S]*providerWasDispatched &&[\s\S]*providerWasDispatched = true[\s\S]*fetch\(/,
+  'pre-dispatch failures settle without charging an ambiguous provider reservation',
+)
+assert.match(
+  analyzeMaterial,
+  /reap_stale_google_ai_provider_dispatches_v1[\s\S]*provider_dispatch_cleanup_failed[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*if \(claim\.staleRecovered\)[\s\S]*provider_dispatch_recovered/,
+  'each Google provider attempt first reaps abandoned leases and returns an explicit retry path',
 )
 assert.ok(
   analyzeMaterial.indexOf('if (started.idempotentReplay)') <
@@ -416,6 +527,14 @@ assert.match(
   databaseTypes,
   /fail_google_admin_material_ai_operation_v1: \{[\s\S]*target_operation_id: string[\s\S]*target_start_request_id: string[\s\S]*Returns: Json/,
 )
+assert.match(
+  databaseTypes,
+  /claim_google_ai_provider_dispatch_v1: \{[\s\S]*target_client_request_id: string[\s\S]*target_operation_id: string[\s\S]*target_start_request_id: string[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /reap_stale_google_ai_provider_dispatches_v1: \{[\s\S]*job_limit\?: number[\s\S]*Returns: number/,
+)
 assert.match(envExample, /^ADMIN_AI_CHILD_GRANT_SECRET=$/m)
 assert.match(envExample, /^ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1$/m)
 
@@ -438,6 +557,16 @@ for (const contract of [
   )
 }
 assert.match(pgTap, /SELECT no_plan\(\)/)
+assert.match(
+  pgTap,
+  /array\[\s*'academic_answers',\s*'material_analysis',\s*'poll_suggestions',\s*'summaries'\s*\]::text\[\]/,
+  'the reusable master policy covers the complete all-except-captions scope',
+)
+assert.match(
+  pgTap,
+  /'material_analysis_call_limit', 5/,
+  'the provider fixture remains inside the database call-limit constraint',
+)
 assert.match(
   pgTap,
   /NOT EXISTS \([\s\S]*admin_google_ai_provider_start_intents[\s\S]*admin_google_ai_provider_start_receipts[\s\S]*status = 'issued'/,
