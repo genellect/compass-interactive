@@ -17,6 +17,7 @@ import {
 type MaterialAnalysisControlProps = {
   adminToken: string
   documents: AdminPdfDocument[]
+  generationEnabled: boolean
   lectureSessionId: string
   lectureStatus: string
   masterAuthorization: AiMasterAuthorization | null
@@ -67,6 +68,7 @@ function createDefaultSummaryBody(
 export function MaterialAnalysisControl({
   adminToken,
   documents,
+  generationEnabled,
   lectureSessionId,
   lectureStatus,
   masterAuthorization,
@@ -154,6 +156,12 @@ export function MaterialAnalysisControl({
   }, [adminToken, lectureSessionId])
 
   async function runAnalysis(action: 'material_analysis' | 'poll_suggestions') {
+    if (!generationEnabled) {
+      setMessage(
+        'AI生成は現在停止中です。既存結果の確認・非表示・非採用は引き続き利用できます。',
+      )
+      return
+    }
     if (
       !selectedDocument ||
       (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
@@ -313,7 +321,31 @@ export function MaterialAnalysisControl({
   }
 
   async function setMaterialSummaryVisibility(visibility: 'hidden' | 'public') {
-    if (!results.analysis || !summaryDraft) return
+    if (!results.analysis) return
+    if (visibility === 'hidden') {
+      setBusy(true)
+      try {
+        const response = await supabaseAdminRepository.manageMaterialAnalysis({
+          action: 'hideSummary',
+          adminToken,
+          analysisId: results.analysis.id,
+          lectureSessionId,
+        })
+        setResults(response.results)
+        setSummaryDraft(response.results.publication?.body ?? summaryDraft)
+        setMessage('講義資料の要点を学生画面から非表示にしました。')
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? `講義資料の要点を更新できませんでした: ${error.message}`
+            : '講義資料の要点を更新できませんでした。',
+        )
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    if (!summaryDraft) return
     const normalized: AdminMaterialSummaryBody = {
       lead: summaryDraft.lead.trim(),
       points: summaryDraft.points.map((point) => ({
@@ -350,7 +382,7 @@ export function MaterialAnalysisControl({
     setBusy(true)
     try {
       const response = await supabaseAdminRepository.manageMaterialAnalysis({
-        action: visibility === 'public' ? 'publishSummary' : 'hideSummary',
+        action: 'publishSummary',
         adminToken,
         analysisId: results.analysis.id,
         lectureSessionId,
@@ -359,11 +391,7 @@ export function MaterialAnalysisControl({
       })
       setResults(response.results)
       setSummaryDraft(response.results.publication?.body ?? normalized)
-      setMessage(
-        visibility === 'public'
-          ? '確認済みの要点を学生画面に公開しました。'
-          : '講義資料の要点を学生画面から非表示にしました。',
-      )
+      setMessage('確認済みの要点を学生画面に公開しました。')
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -375,7 +403,8 @@ export function MaterialAnalysisControl({
     }
   }
 
-  const disabled = busy || lectureStatus === 'closed'
+  const generationDisabled =
+    busy || !generationEnabled || lectureStatus === 'closed'
   return (
     <section className="material-analysis-control">
       <div className="material-analysis-heading">
@@ -389,7 +418,7 @@ export function MaterialAnalysisControl({
         <label className="field compact-field">
           <span>分析対象PDF</span>
           <select
-            disabled={disabled || documents.length === 0}
+            disabled={generationDisabled || documents.length === 0}
             onChange={(event) => setSelectedDocumentId(event.target.value)}
             value={selectedDocumentId}
           >
@@ -400,7 +429,11 @@ export function MaterialAnalysisControl({
             ))}
           </select>
         </label>
-        {masterHeldByOther ? (
+        {!generationEnabled ? (
+          <p className="note">
+            AI生成は停止中です。既存の分析結果と公開状態は確認・整理できます。
+          </p>
+        ) : masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
           <p className="note">講義中のAPI許可を使用します。</p>
@@ -409,7 +442,7 @@ export function MaterialAnalysisControl({
             <span>API利用PIN（毎回）</span>
             <input
               autoComplete="off"
-              disabled={disabled}
+              disabled={generationDisabled}
               inputMode="numeric"
               onChange={(event) => setBillingPin(event.target.value)}
               type="password"
@@ -420,7 +453,7 @@ export function MaterialAnalysisControl({
         <button
           className="primary-button"
           disabled={
-            disabled ||
+            generationDisabled ||
             masterHeldByOther ||
             !selectedDocument ||
             (!publisherSessionToken &&
@@ -503,7 +536,7 @@ export function MaterialAnalysisControl({
           <label className="field">
             <span>最初に伝える要点</span>
             <textarea
-              disabled={disabled}
+              disabled={busy}
               maxLength={1_200}
               onChange={(event) =>
                 setSummaryDraft((current) =>
@@ -522,7 +555,7 @@ export function MaterialAnalysisControl({
                 <label className="field compact-field">
                   <span>参照ページ</span>
                   <input
-                    disabled={disabled}
+                    disabled={busy}
                     maxLength={30}
                     onChange={(event) =>
                       setSummaryDraft((current) =>
@@ -548,7 +581,7 @@ export function MaterialAnalysisControl({
                 <label className="field">
                   <span>見出し</span>
                   <input
-                    disabled={disabled}
+                    disabled={busy}
                     maxLength={160}
                     onChange={(event) =>
                       setSummaryDraft((current) =>
@@ -574,7 +607,7 @@ export function MaterialAnalysisControl({
                 <label className="field">
                   <span>補足（任意）</span>
                   <textarea
-                    disabled={disabled}
+                    disabled={busy}
                     maxLength={500}
                     onChange={(event) =>
                       setSummaryDraft((current) =>
@@ -605,7 +638,7 @@ export function MaterialAnalysisControl({
           <label className="field">
             <span>資料を読むための問い（任意）</span>
             <input
-              disabled={disabled}
+              disabled={busy}
               maxLength={300}
               onChange={(event) =>
                 setSummaryDraft((current) =>
@@ -624,7 +657,7 @@ export function MaterialAnalysisControl({
           <div className="proposal-card-actions">
             <button
               className="primary-button compact"
-              disabled={disabled}
+              disabled={busy || !generationEnabled}
               onClick={() => void setMaterialSummaryVisibility('public')}
               type="button"
             >
@@ -635,7 +668,7 @@ export function MaterialAnalysisControl({
             {results.publication?.visibility === 'public' ? (
               <button
                 className="secondary-button"
-                disabled={disabled}
+                disabled={busy}
                 onClick={() => void setMaterialSummaryVisibility('hidden')}
                 type="button"
               >
@@ -659,7 +692,7 @@ export function MaterialAnalysisControl({
           <label className="field compact-field">
             <span>開始</span>
             <input
-              disabled={disabled}
+              disabled={generationDisabled}
               max={selectedDocument.pageCount}
               min={1}
               onChange={(event) => setPageStart(event.target.value)}
@@ -670,7 +703,7 @@ export function MaterialAnalysisControl({
           <label className="field compact-field">
             <span>終了</span>
             <input
-              disabled={disabled}
+              disabled={generationDisabled}
               max={selectedDocument.pageCount}
               min={1}
               onChange={(event) => setPageEnd(event.target.value)}
@@ -681,7 +714,7 @@ export function MaterialAnalysisControl({
           <button
             className="secondary-button"
             disabled={
-              disabled ||
+              generationDisabled ||
               masterHeldByOther ||
               (!masterAuthorized && !billingPin.trim())
             }
@@ -767,7 +800,7 @@ export function MaterialAnalysisControl({
                   <div className="proposal-card-actions">
                     <button
                       className="primary-button compact"
-                      disabled={busy}
+                      disabled={busy || !generationEnabled}
                       onClick={() => void adoptProposal(proposal.id)}
                       type="button"
                     >
@@ -786,7 +819,7 @@ export function MaterialAnalysisControl({
                 <div className="proposal-card-actions">
                   <button
                     className="secondary-button"
-                    disabled={disabled || proposal.status !== 'draft'}
+                    disabled={generationDisabled || proposal.status !== 'draft'}
                     onClick={() => beginEditing(proposal)}
                     type="button"
                   >
@@ -794,7 +827,7 @@ export function MaterialAnalysisControl({
                   </button>
                   <button
                     className="secondary-button"
-                    disabled={disabled || proposal.status !== 'draft'}
+                    disabled={busy || proposal.status !== 'draft'}
                     onClick={() => void rejectProposal(proposal.id)}
                     type="button"
                   >

@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminActorId,
   getAdminTokenClaims,
@@ -11,10 +11,15 @@ import {
   UnsupportedJsonContentTypeError,
 } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 
 type RequestBody = {
   action?: 'list' | 'adopt' | 'reject' | 'publishSummary' | 'hideSummary'
   adminToken?: string
+  appSessionToken?: string
   analysisId?: string
   lectureSessionId?: string
   optionLabels?: string[]
@@ -22,6 +27,7 @@ type RequestBody = {
   proposalId?: string
   question?: string
   reviewState?: 'admin_confirmed' | 'admin_revised'
+  requestId?: string
   summaryBody?: {
     lead?: string
     points?: Array<{
@@ -32,6 +38,9 @@ type RequestBody = {
     reflectionQuestion?: string
   }
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function normalizeMaterialSummaryBody(value: RequestBody['summaryBody']) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
@@ -70,18 +79,19 @@ function normalizeMaterialSummaryBody(value: RequestBody['summaryBody']) {
   }
 }
 
+function hasUnexpectedFields(
+  body: RequestBody,
+  keys: Array<keyof RequestBody>,
+) {
+  return keys.some((key) => body[key] != null)
+}
+
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
   if (corsResponse) return corsResponse
   if (request.method !== 'POST') {
     return jsonResponse({ message: 'Method not allowed.', ok: false }, 405)
-  }
-  if (Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') !== 'true') {
-    return jsonResponse(
-      { message: 'Material analysis is disabled.', ok: false },
-      503,
-    )
   }
   let body: RequestBody
   try {
@@ -98,7 +108,14 @@ Deno.serve(async (request) => {
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
-  if (!body.action || !body.adminToken || !body.lectureSessionId) {
+  if (
+    !body.action ||
+    !['list', 'adopt', 'reject', 'publishSummary', 'hideSummary'].includes(
+      body.action,
+    ) ||
+    !body.lectureSessionId ||
+    !UUID_PATTERN.test(body.lectureSessionId)
+  ) {
     return jsonResponse(
       {
         message: 'Admin session, lecture, and action are required.',
@@ -108,27 +125,63 @@ Deno.serve(async (request) => {
     )
   }
 
-  let actorId: string
-  let actorSessionId: string | null
-  try {
-    const claims = await getAdminTokenClaims(
-      body.adminToken,
-      getAdminTokenSecret(),
-      request,
+  if (
+    ['adopt', 'publishSummary'].includes(body.action) &&
+    Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') !== 'true'
+  ) {
+    return jsonResponse(
+      { message: 'Material analysis is disabled.', ok: false },
+      503,
     )
-    if (!claims) {
-      return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
-    }
-    actorId = getAdminActorId(claims)
-    actorSessionId =
-      claims.sid &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        claims.sid,
+  }
+
+  const hasGoogleCredential = Boolean(body.appSessionToken)
+  const hasLegacyCredential = Boolean(body.adminToken)
+  if (hasGoogleCredential === hasLegacyCredential) {
+    return jsonResponse(
+      { message: 'Exactly one Admin credential is required.', ok: false },
+      400,
+    )
+  }
+
+  let actorId = ''
+  let actorSessionId: string | null = null
+  let googleContext: GoogleAdminOperationContext | null = null
+  if (body.appSessionToken) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
       )
-        ? claims.sid
-        : null
-  } catch {
-    return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
+    }
+    googleContext = verification
+  } else {
+    try {
+      const claims = await getAdminTokenClaims(
+        body.adminToken ?? '',
+        getAdminTokenSecret(),
+        request,
+      )
+      if (!claims) {
+        return jsonResponse(
+          { message: 'Invalid Admin session.', ok: false },
+          401,
+        )
+      }
+      actorId = getAdminActorId(claims)
+      actorSessionId =
+        claims.sid && UUID_PATTERN.test(claims.sid) ? claims.sid : null
+    } catch {
+      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
+    }
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -139,9 +192,189 @@ Deno.serve(async (request) => {
       503,
     )
   }
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
+  const supabase =
+    googleContext?.serviceClient ??
+    createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    })
+
+  if (googleContext) {
+    if (body.action === 'list') {
+      const { data, error } = await supabase.rpc(
+        'get_google_admin_material_analysis_v1',
+        {
+          target_auth_user_id: googleContext.authUserId,
+          target_google_issuer: googleContext.googleIssuer,
+          target_lecture_session_id: body.lectureSessionId,
+          target_provider_subject_hmac: googleContext.googleSubjectHmac,
+          target_subject_pepper_version: googleContext.subjectPepperVersion,
+          target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+          target_token_hash: googleContext.appSessionTokenHash,
+          target_transport_enabled: googleContext.transportEnabled,
+        },
+      )
+      if (error || !data) {
+        return jsonResponse(
+          { message: 'Material analysis could not be loaded.', ok: false },
+          error ? 503 : 404,
+        )
+      }
+      return jsonResponse({ ok: true, pollId: null, results: data })
+    }
+
+    if (!body.requestId || !UUID_PATTERN.test(body.requestId)) {
+      return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
+    }
+    const normalizedSummary = normalizeMaterialSummaryBody(body.summaryBody)
+    if (body.action === 'adopt') {
+      const options = body.optionLabels?.map((option) => option.trim())
+      if (
+        !body.proposalId ||
+        !UUID_PATTERN.test(body.proposalId) ||
+        !body.question?.trim() ||
+        !body.pollType ||
+        !options ||
+        options.length < 2 ||
+        hasUnexpectedFields(body, ['analysisId', 'reviewState', 'summaryBody'])
+      ) {
+        return jsonResponse(
+          { message: 'Edited Poll draft fields are required.', ok: false },
+          400,
+        )
+      }
+    } else if (body.action === 'reject') {
+      if (
+        !body.proposalId ||
+        !UUID_PATTERN.test(body.proposalId) ||
+        hasUnexpectedFields(body, [
+          'analysisId',
+          'optionLabels',
+          'pollType',
+          'question',
+          'reviewState',
+          'summaryBody',
+        ])
+      ) {
+        return jsonResponse(
+          { message: 'proposalId is required.', ok: false },
+          400,
+        )
+      }
+    } else if (body.action === 'publishSummary') {
+      if (
+        !body.analysisId ||
+        !UUID_PATTERN.test(body.analysisId) ||
+        !normalizedSummary ||
+        !body.reviewState ||
+        hasUnexpectedFields(body, [
+          'optionLabels',
+          'pollType',
+          'proposalId',
+          'question',
+        ])
+      ) {
+        return jsonResponse(
+          {
+            message: 'Reviewed material summary fields are required.',
+            ok: false,
+          },
+          400,
+        )
+      }
+    } else if (
+      !body.analysisId ||
+      !UUID_PATTERN.test(body.analysisId) ||
+      hasUnexpectedFields(body, [
+        'optionLabels',
+        'pollType',
+        'proposalId',
+        'question',
+        'reviewState',
+        'summaryBody',
+      ])
+    ) {
+      return jsonResponse(
+        { message: 'analysisId is required.', ok: false },
+        400,
+      )
+    }
+
+    const { data, error } = await supabase.rpc(
+      'manage_google_admin_material_analysis_v1',
+      {
+        target_action: body.action,
+        target_analysis_id:
+          body.action === 'publishSummary' || body.action === 'hideSummary'
+            ? (body.analysisId ?? null)
+            : null,
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_lecture_session_id: body.lectureSessionId,
+        target_option_labels:
+          body.action === 'adopt' ? (body.optionLabels ?? null) : null,
+        target_poll_type:
+          body.action === 'adopt' ? (body.pollType ?? null) : null,
+        target_proposal_id:
+          body.action === 'adopt' || body.action === 'reject'
+            ? (body.proposalId ?? null)
+            : null,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_question:
+          body.action === 'adopt' ? (body.question ?? null) : null,
+        target_request_id: body.requestId,
+        target_review_state:
+          body.action === 'publishSummary' ? (body.reviewState ?? null) : null,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_summary_body:
+          body.action === 'publishSummary' ? normalizedSummary : null,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      },
+    )
+    const result = data as {
+      ok?: boolean
+      pollId?: string | null
+      refreshRequired?: boolean
+      results?: unknown
+    } | null
+    if (error) {
+      return jsonResponse(
+        { message: 'Material analysis operation failed.', ok: false },
+        error.code === '22023' || error.code === 'P7335' ? 400 : 409,
+      )
+    }
+    if (result?.ok !== true) {
+      return jsonResponse(
+        {
+          message: 'Material analysis operation was not confirmed.',
+          ok: false,
+        },
+        409,
+      )
+    }
+
+    let results = result.results ?? null
+    if (result.refreshRequired === true) {
+      const refreshed = await supabase.rpc(
+        'get_google_admin_material_analysis_v1',
+        {
+          target_auth_user_id: googleContext.authUserId,
+          target_google_issuer: googleContext.googleIssuer,
+          target_lecture_session_id: body.lectureSessionId,
+          target_provider_subject_hmac: googleContext.googleSubjectHmac,
+          target_subject_pepper_version: googleContext.subjectPepperVersion,
+          target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+          target_token_hash: googleContext.appSessionTokenHash,
+          target_transport_enabled: googleContext.transportEnabled,
+        },
+      )
+      if (!refreshed.error && refreshed.data) {
+        results = refreshed.data
+      }
+    }
+    return jsonResponse({ ok: true, pollId: result.pollId ?? null, results })
+  }
 
   try {
     let pollId: string | null = null
@@ -190,7 +423,7 @@ Deno.serve(async (request) => {
       if (!actorSessionId) {
         return jsonResponse(
           {
-            message: '要点を公開する前に、管理画面へ再ログインしてください。',
+            message: '続行するには、管理画面へ再度ログインしてください。',
             ok: false,
           },
           401,
@@ -199,9 +432,10 @@ Deno.serve(async (request) => {
       const summaryBody = normalizeMaterialSummaryBody(body.summaryBody)
       if (
         !body.analysisId ||
-        !summaryBody ||
-        !body.reviewState ||
-        !['admin_confirmed', 'admin_revised'].includes(body.reviewState)
+        (body.action === 'publishSummary' &&
+          (!summaryBody ||
+            !body.reviewState ||
+            !['admin_confirmed', 'admin_revised'].includes(body.reviewState)))
       ) {
         return jsonResponse(
           {
@@ -216,9 +450,9 @@ Deno.serve(async (request) => {
         {
           target_actor_id: actorSessionId,
           target_analysis_id: body.analysisId,
-          target_body: summaryBody,
+          target_body: summaryBody ?? null,
           target_lecture_session_id: body.lectureSessionId,
-          target_review_state: body.reviewState,
+          target_review_state: body.reviewState ?? null,
           target_visibility:
             body.action === 'publishSummary' ? 'public' : 'hidden',
         },

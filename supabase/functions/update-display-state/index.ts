@@ -1,19 +1,25 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getAdminTokenSecret, verifyAdminToken } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { getPdfAsset } from '../_shared/pdfAssets.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
 
 type UpdateDisplayStateRequest = {
   action?: 'next' | 'previous' | 'goToPage' | 'setDisplayMode' | 'setDocument'
   adminToken?: string
+  appSessionToken?: string
   currentPdfPage?: number
   displayMode?: DisplayMode
   lectureSessionId?: string
   pdfDocumentId?: string | null
+  requestId?: string
 }
 
 type DisplayStateRow = {
@@ -34,6 +40,9 @@ type RegisteredPdfRow = {
   manifest_version: number
   page_count: number
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function normalizePage(page: number | undefined) {
   if (!Number.isInteger(page) || !page || page < 1) {
@@ -76,36 +85,150 @@ Deno.serve(async (request) => {
     )
   }
 
-  let tokenSecret: string
-  try {
-    tokenSecret = getAdminTokenSecret()
-  } catch (error) {
-    return jsonResponse(
-      {
-        ok: false,
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
-      },
-      500,
-    )
-  }
-
   if (
-    !body.adminToken ||
-    !(await verifyAdminToken(body.adminToken, tokenSecret, request))
+    !body.lectureSessionId ||
+    !UUID_PATTERN.test(body.lectureSessionId) ||
+    !body.action ||
+    !['next', 'previous', 'goToPage', 'setDisplayMode', 'setDocument'].includes(
+      body.action,
+    )
   ) {
-    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
-  }
-
-  if (!body.lectureSessionId || !body.action) {
     return jsonResponse(
       { ok: false, message: 'lectureSessionId and action are required.' },
       400,
     )
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
+  const hasGoogleCredential = Boolean(body.appSessionToken)
+  const hasLegacyCredential = Boolean(body.adminToken)
+  if (hasGoogleCredential === hasLegacyCredential) {
+    return jsonResponse(
+      { ok: false, message: 'Exactly one Admin credential is required.' },
+      400,
+    )
+  }
+
+  let googleContext: GoogleAdminOperationContext | null = null
+  if (body.appSessionToken) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+  } else {
+    let tokenSecret: string
+    try {
+      tokenSecret = getAdminTokenSecret()
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+        },
+        500,
+      )
+    }
+    if (
+      !body.adminToken ||
+      !(await verifyAdminToken(body.adminToken, tokenSecret, request))
+    ) {
+      return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+    }
+  }
+
+  const supabase =
+    googleContext?.serviceClient ??
+    createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    })
+
+  if (googleContext) {
+    if (!body.requestId || !UUID_PATTERN.test(body.requestId)) {
+      return jsonResponse({ ok: false, message: 'requestId is required.' }, 400)
+    }
+    if (body.action === 'goToPage') {
+      try {
+        normalizePage(body.currentPdfPage)
+      } catch (error) {
+        return jsonResponse(
+          {
+            ok: false,
+            message:
+              error instanceof Error ? error.message : 'Invalid request.',
+          },
+          400,
+        )
+      }
+    }
+    if (
+      body.action === 'setDisplayMode' &&
+      (!body.displayMode ||
+        !['normal', 'presentation', 'slideOnly'].includes(body.displayMode))
+    ) {
+      return jsonResponse(
+        { ok: false, message: 'A valid displayMode is required.' },
+        400,
+      )
+    }
+
+    const { data, error } = await supabase.rpc(
+      'manage_google_admin_display_state_v1',
+      {
+        target_action: body.action,
+        target_auth_user_id: googleContext.authUserId,
+        target_current_pdf_page: body.currentPdfPage ?? null,
+        target_display_mode: body.displayMode ?? null,
+        target_google_issuer: googleContext.googleIssuer,
+        target_lecture_session_id: body.lectureSessionId,
+        target_pdf_document_id: body.pdfDocumentId ?? null,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_request_id: body.requestId,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      },
+    )
+    const result = data as {
+      displayState?: DisplayStateRow
+      ok?: boolean
+    } | null
+    if (error) {
+      if (error.code === 'P7291') {
+        return jsonResponse(
+          {
+            code: 'PRESENTER_SYNC_ACTIVE',
+            message:
+              'PowerPoint synchronization is active. Switch to manual control first.',
+            ok: false,
+          },
+          409,
+        )
+      }
+      return jsonResponse(
+        { ok: false, message: 'Display state could not be updated.' },
+        error.code === '22023' || error.code === 'P7335' ? 400 : 503,
+      )
+    }
+    if (result?.ok !== true || !result.displayState) {
+      return jsonResponse(
+        { ok: false, message: 'Display state could not be confirmed.' },
+        409,
+      )
+    }
+    return jsonResponse({ displayState: result.displayState, ok: true })
+  }
   const { data: lecture, error: lectureError } = await supabase
     .from('lecture_sessions')
     .select('status')

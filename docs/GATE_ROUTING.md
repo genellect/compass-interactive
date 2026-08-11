@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (69 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (70 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |
@@ -56,6 +56,7 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | Phase 7.30B2.2a factor-set and rare-control identity hardening                | `test:phase7-30b22a-static`, from-zero/populated upgrade, all pgTAP, B2 concurrency, generated types and DB lint; Local Edge must prove AAL2-to-AAL2 `challengeAndVerify` yields a new TOTP AMR timestamp before activation                                                      | Source/static only; Local Edge, exact-head CI and Hosted/Human activation remain HOLD                   |
 | Phase 7.30B2.2b AI-unlock Edge/browser and TOTP factor transitions            | `test:phase7-30b22b-static`, Chromium/WebKit `test:e2e:phase7-30b22b-browser`, from-zero/all pgTAP, deterministic B2 concurrency, populated B2.2a-head upgrade, generated types, Local Edge and exact-head CI; authority/master activation remains C/E                           | Browser/static are cloud-runnable; database, Local Edge, Hosted and Human evidence remain HOLD          |
 | Phase 7.30C1 private lecture ownership and atomic Google AI-master admission  | `test:phase7-30c1-static`, from-zero/all pgTAP, populated B2.2b-head upgrade, generated types, Local Edge `admin-ai-unlock` source-OFF/fail-closed transport check and exact-head CI; real PIN/browser proof rollback and child/provider authority remain fenced/HOLD through C2 | Source/static only; database, proof rollback, Local Edge runtime, Hosted and Human evidence remain HOLD |
+| Phase 7.30C2.1 unified Google Admin authorization and first 9 Edge adapters   | `test:phase7-30c2-static`, from-zero/all pgTAP, populated C1-head no-backfill upgrade, generated types/DB lint, dual-transport Edge contract and one exact-head CI run; the remaining 11 operational domains and workspace client stay HOLD                                      | Source/static only; database, Local Edge, remaining C2, Hosted/Human and activation remain HOLD         |
 | GitHub rulesets, repository visibility, license or public artifacts           | Phase 7.31A/B supply-chain, full-history secret/PII/rights audit and a separate user approval immediately before visibility change                                                                                                                                               | Partly; current-plan inventory is read-only, enforcement and publication are Hosted/Human               |
 | Contest reviewer identity, environment or paid-AI access                      | Phase 7.30 identity/TOTP AAL2, AI PIN/browser enrollment, atomic abuse-limit, scope-escalation and revoke-matrix gates plus Phase 7.31C lecture-master, dedicated R2, cross-principal/environment, budget/expiry/cleanup and Human reviewer gates                                | Partly; real OAuth, Supabase, R2 and AI require isolated Hosted evidence                                |
 | Tenant, commercial billing, retention/privacy, SLO or support operations      | Phase 7.32 DB/Edge/UI/load/accessibility/restore/incident gates, followed only by the unified Phase 7.33 Production Gate                                                                                                                                                         | Partly; commercial Hosted/Human/legal evidence cannot be proved by Cloud tests                          |
@@ -150,3 +151,17 @@ Repeated from `docs/CLOUD_DEVELOPMENT.md` because gate routing is meaningless wi
 | Hosted Supabase / R2 / Cloudflare | No                  | Hosted / Production state    |
 
 Local, CI, hosted, device, human and Production acceptance are separate gates and never substitute for one another. A gate you could not run is **not executed**, never "passed".
+
+## Cross-cutting lecture UX gate
+
+Every Phase 7.30 C2-F authorization change must test both denial and the usable
+success path. Local and browser evidence must prove one Google+TOTP login can
+carry an instructor through lecture open, material access, permitted feature
+activation and safe stop without periodic reauthentication. Student join and
+authorized PDF access must remain intact. Runtime/source gate OFF must reject
+new authority while preserving exact replay, status, close, stop, revoke and
+downgrade. Desktop/Mobile Chromium/WebKit must also remain free of authentication
+loops, console errors and horizontal overflow. Before public enablement, Human
+review must reject developer/experimental/placeholder wording and verify the
+existing COMPASS color, typography, spacing, state and copy system across Admin,
+Student, Display and Review.

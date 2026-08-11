@@ -102,6 +102,12 @@ export const isPhase730AdminTotpFactorMutationEnabled =
   isPhase730AdminIdentityEnabled &&
   import.meta.env.VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION === 'true'
 
+// C2 operational authority is a separate dormant transport. It never falls
+// back to the legacy shared-PIN credential when the Google path is selected.
+export const isPhase730GoogleAdminOperationsEnabled =
+  isPhase730AdminIdentityEnabled &&
+  import.meta.env.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS === 'true'
+
 // Expand-first rollback stays available unless explicitly disabled. The Edge
 // and database gates remain authoritative even when this UI branch is shown.
 export const isLegacyAdminPinLoginEnabled =

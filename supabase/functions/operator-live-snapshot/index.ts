@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminTokenSecret,
   sha256Hex,
@@ -12,10 +12,15 @@ import {
   getDisplayTerminalTokenClaims,
 } from '../_shared/displayToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 
 type OperatorSnapshotRequest = {
   action?: 'commentHistory' | 'snapshot'
   adminToken?: string
+  appSessionToken?: string
   commentCursorCreatedAt?: string | null
   commentCursorId?: string | null
   displayToken?: string
@@ -81,7 +86,10 @@ Deno.serve(async (request) => {
       400,
     )
   }
-  if (Boolean(body.adminToken) === Boolean(body.displayToken)) {
+  if (
+    [body.adminToken, body.appSessionToken, body.displayToken].filter(Boolean)
+      .length !== 1
+  ) {
     return jsonResponse(
       {
         ok: false,
@@ -98,7 +106,9 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)
   }
 
+  const action = body.action ?? 'snapshot'
   let credentialKind: 'admin' | 'display' | null = null
+  let googleContext: GoogleAdminOperationContext | null = null
   let terminalOnly = false
   let liveDisplayClaims: LiveDisplayClaims | null = null
   try {
@@ -110,6 +120,23 @@ Deno.serve(async (request) => {
       ))
         ? 'admin'
         : null
+    } else if (body.appSessionToken) {
+      const verification = await verifyGoogleAdminOperationRequest(
+        request,
+        body.appSessionToken,
+      )
+      if (!verification.ok) {
+        return jsonResponse(
+          {
+            code: verification.code,
+            message: verification.message,
+            ok: false,
+          },
+          verification.status,
+        )
+      }
+      credentialKind = 'admin'
+      googleContext = verification
     } else if (body.displayToken) {
       const liveClaims = await getDisplayTokenClaims(
         body.displayToken,
@@ -146,7 +173,6 @@ Deno.serve(async (request) => {
       401,
     )
   }
-  const action = body.action ?? 'snapshot'
   if (action === 'commentHistory' && credentialKind !== 'admin') {
     return jsonResponse(
       { ok: false, message: 'Comment history requires an Admin session.' },
@@ -156,16 +182,18 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceRoleKey) {
+  if (!googleContext && (!supabaseUrl || !serviceRoleKey)) {
     return jsonResponse(
       { ok: false, message: 'Operator snapshot is not configured.' },
       500,
     )
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
+  const supabase =
+    googleContext?.serviceClient ??
+    createClient(supabaseUrl ?? '', serviceRoleKey ?? '', {
+      auth: { persistSession: false },
+    })
   if (credentialKind === 'display' && liveDisplayClaims) {
     const authorization = request.headers.get('Authorization') ?? ''
     const bearerToken = authorization.startsWith('Bearer ')
@@ -311,8 +339,36 @@ Deno.serve(async (request) => {
     )
   }
 
-  const { data, error } =
-    action === 'commentHistory'
+  const { data, error } = googleContext
+    ? await supabase.rpc('get_google_admin_operator_live_snapshot_v1', {
+        target_academic_answers_enabled:
+          Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') === 'true',
+        target_action: action,
+        target_auth_user_id: googleContext.authUserId,
+        target_comment_cursor_created_at: body.commentCursorCreatedAt ?? null,
+        target_comment_cursor_id: body.commentCursorId ?? null,
+        target_google_issuer: googleContext.googleIssuer,
+        target_known_caption_version: boundedVersion(body.knownCaptionVersion),
+        target_known_comments_version: boundedVersion(
+          body.knownCommentsVersion,
+        ),
+        target_known_lecture_version: boundedVersion(body.knownLectureVersion),
+        target_known_likes_version: boundedVersion(body.knownLikesVersion),
+        target_known_metrics_version: boundedVersion(body.knownMetricsVersion),
+        target_known_pdf_version: boundedVersion(body.knownPdfVersion),
+        target_known_polls_version: boundedVersion(body.knownPollsVersion),
+        target_known_summaries_version: boundedVersion(
+          body.knownSummariesVersion,
+        ),
+        target_lecture_session_id: body.lectureSessionId,
+        target_limit: historyLimit,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      })
+    : action === 'commentHistory'
       ? await supabase.rpc('admin_get_lecture_operator_comment_history_v1', {
           before_comment_id: body.commentCursorId,
           before_created_at: body.commentCursorCreatedAt,

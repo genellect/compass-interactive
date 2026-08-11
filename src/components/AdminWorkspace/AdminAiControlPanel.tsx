@@ -138,10 +138,11 @@ export function AdminAiControlPanel({
           />
         </Suspense>
       ) : null}
-      {materialEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <MaterialAnalysisControl
           adminToken={adminToken}
           documents={documents}
+          generationEnabled={materialEnabled}
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
           onPollDraftCreated={onPollDraftCreated}

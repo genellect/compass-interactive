@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminTokenSecret,
   sha256Hex,
@@ -10,6 +10,7 @@ import {
   getDisplayTokenSecret,
   getDisplayTerminalTokenClaims,
 } from '../_shared/displayToken.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { signPdfAccessToken } from '../_shared/pdfAccessToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
@@ -17,8 +18,10 @@ import { createJsonResponse } from '../_shared/responses.ts'
 type RequestBody = {
   action?: 'admin' | 'display' | 'member'
   adminToken?: string
+  appSessionToken?: string
   displayToken?: string
   lectureSessionId?: string
+  requestId?: string
 }
 
 type AccessClaimRow = {
@@ -37,6 +40,9 @@ function seconds(value: string) {
     throw new Error('PDF access time is invalid.')
   return Math.floor(timestamp / 1000)
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
@@ -66,12 +72,20 @@ Deno.serve(async (request) => {
       400,
     )
   }
-  const hasAdminToken = typeof body.adminToken === 'string'
-  const hasDisplayToken = typeof body.displayToken === 'string'
+  const hasAdminToken =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasDisplayToken =
+    typeof body.displayToken === 'string' && body.displayToken.trim().length > 0
   if (
-    (body.action === 'admin' && (!hasAdminToken || hasDisplayToken)) ||
-    (body.action === 'display' && (!hasDisplayToken || hasAdminToken)) ||
-    (body.action === 'member' && (hasAdminToken || hasDisplayToken))
+    (body.action === 'admin' &&
+      (hasAdminToken === hasGoogleCredential || hasDisplayToken)) ||
+    (body.action === 'display' &&
+      (!hasDisplayToken || hasAdminToken || hasGoogleCredential)) ||
+    (body.action === 'member' &&
+      (hasAdminToken || hasGoogleCredential || hasDisplayToken))
   ) {
     return jsonResponse(
       {
@@ -80,6 +94,13 @@ Deno.serve(async (request) => {
       },
       400,
     )
+  }
+  if (
+    body.action === 'admin' &&
+    hasGoogleCredential &&
+    !UUID_PATTERN.test(body.requestId ?? '')
+  ) {
+    return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -94,34 +115,78 @@ Deno.serve(async (request) => {
 
   let claims: AccessClaimRow | null = null
   if (body.action === 'admin') {
-    let adminSecret: string
-    try {
-      adminSecret = getAdminTokenSecret()
-    } catch (error) {
-      return jsonResponse(
-        {
-          message:
-            error instanceof Error ? error.message : 'Admin auth failed.',
-          ok: false,
-        },
-        500,
+    if (hasGoogleCredential) {
+      const verification = await verifyGoogleAdminOperationRequest(
+        request,
+        body.appSessionToken!,
       )
+      if (!verification.ok) {
+        return jsonResponse(
+          {
+            code: verification.code,
+            message: verification.message,
+            ok: false,
+          },
+          verification.status,
+        )
+      }
+      const { data, error } = await verification.serviceClient.rpc(
+        'issue_google_admin_pdf_access_claims_v1',
+        {
+          target_auth_user_id: verification.authUserId,
+          target_google_issuer: verification.googleIssuer,
+          target_lecture_session_id: body.lectureSessionId,
+          target_provider_subject_hmac: verification.googleSubjectHmac,
+          target_request_id: body.requestId,
+          target_subject_pepper_version: verification.subjectPepperVersion,
+          target_supabase_auth_session_id: verification.supabaseAuthSessionId,
+          target_token_hash: verification.appSessionTokenHash,
+          target_transport_enabled: verification.transportEnabled,
+        },
+      )
+      if (error) {
+        return jsonResponse({ message: error.message, ok: false }, 500)
+      }
+      const result = data as { claims?: unknown; ok?: boolean } | null
+      if (result?.ok !== true || !result.claims) {
+        return jsonResponse(
+          { message: 'PDF access is unavailable.', ok: false },
+          403,
+        )
+      }
+      claims = result.claims as AccessClaimRow
+    } else {
+      let adminSecret: string
+      try {
+        adminSecret = getAdminTokenSecret()
+      } catch (error) {
+        return jsonResponse(
+          {
+            message:
+              error instanceof Error ? error.message : 'Admin auth failed.',
+            ok: false,
+          },
+          500,
+        )
+      }
+      if (!(await verifyAdminToken(body.adminToken!, adminSecret, request))) {
+        return jsonResponse(
+          { message: 'Invalid Admin session.', ok: false },
+          401,
+        )
+      }
+      const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false },
+      })
+      const { data, error } = await serviceClient.rpc(
+        'admin_get_pdf_access_claims_v1',
+        { target_lecture_session_id: body.lectureSessionId },
+      )
+      if (error) {
+        return jsonResponse({ message: error.message, ok: false }, 500)
+      }
+      claims = data as AccessClaimRow | null
     }
-    if (
-      !body.adminToken ||
-      !(await verifyAdminToken(body.adminToken, adminSecret, request))
-    ) {
-      return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
-    }
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    })
-    const { data, error } = await serviceClient.rpc(
-      'admin_get_pdf_access_claims_v1',
-      { target_lecture_session_id: body.lectureSessionId },
-    )
-    if (error) return jsonResponse({ message: error.message, ok: false }, 500)
-    claims = data as AccessClaimRow | null
   } else if (body.action === 'display') {
     let displayClaims
     let terminalOnly = false

@@ -1,18 +1,24 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   getAdminActorId,
   getAdminTokenClaims,
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type ManageCommentsRequest = {
   action?: 'togglePin' | 'toggleVisibility'
   adminToken?: string
+  appSessionToken?: string
   commentId?: string
   lectureSessionId?: string
+  requestId?: string
 }
 
 const uuidPattern =
@@ -41,8 +47,7 @@ Deno.serve(async (request) => {
   }
 
   if (
-    !body.adminToken ||
-    !body.action ||
+    !['togglePin', 'toggleVisibility'].includes(body.action ?? '') ||
     !body.commentId ||
     !body.lectureSessionId ||
     !uuidPattern.test(body.commentId) ||
@@ -54,24 +59,19 @@ Deno.serve(async (request) => {
     )
   }
 
-  let claims
-  try {
-    claims = await getAdminTokenClaims(
-      body.adminToken,
-      getAdminTokenSecret(),
-      request,
-    )
-  } catch (error) {
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasGoogleCredential === hasLegacyCredential) {
     return jsonResponse(
-      {
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
-        ok: false,
-      },
-      500,
+      { message: 'Exactly one Admin credential is required.', ok: false },
+      401,
     )
   }
-  if (!claims) {
-    return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
+  if (hasGoogleCredential && !uuidPattern.test(body.requestId ?? '')) {
+    return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -83,16 +83,72 @@ Deno.serve(async (request) => {
     )
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  let googleContext: GoogleAdminOperationContext | null = null
+  let claims: Awaited<ReturnType<typeof getAdminTokenClaims>> = null
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
-  const { data, error } = await supabase.rpc('admin_moderate_lecture_comment', {
-    target_action:
-      body.action === 'togglePin' ? 'toggle_pin' : 'toggle_visibility',
-    target_actor_id: getAdminActorId(claims),
-    target_comment_id: body.commentId,
-    target_lecture_session_id: body.lectureSessionId,
-  })
+
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    try {
+      claims = await getAdminTokenClaims(
+        body.adminToken!,
+        getAdminTokenSecret(),
+        request,
+      )
+    } catch (error) {
+      return jsonResponse(
+        {
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+          ok: false,
+        },
+        500,
+      )
+    }
+    if (!claims) {
+      return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
+    }
+  }
+
+  const { data, error } = googleContext
+    ? await supabase.rpc('manage_google_admin_comments_v1', {
+        target_action: body.action,
+        target_auth_user_id: googleContext.authUserId,
+        target_comment_id: body.commentId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_lecture_session_id: body.lectureSessionId,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_request_id: body.requestId,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      })
+    : await supabase.rpc('admin_moderate_lecture_comment', {
+        target_action:
+          body.action === 'togglePin' ? 'toggle_pin' : 'toggle_visibility',
+        target_actor_id: getAdminActorId(claims!),
+        target_comment_id: body.commentId,
+        target_lecture_session_id: body.lectureSessionId,
+      })
 
   if (error) {
     const denied = error.code === '42501'
@@ -107,5 +163,23 @@ Deno.serve(async (request) => {
     )
   }
 
-  return jsonResponse({ comment: data, ok: true })
+  if (googleContext && (data as { ok?: boolean } | null)?.ok !== true) {
+    return jsonResponse(
+      {
+        message: 'Comment moderation could not be confirmed.',
+        ok: false,
+      },
+      409,
+    )
+  }
+
+  return jsonResponse({
+    comment: googleContext
+      ? ((data as { comment?: unknown }).comment ?? null)
+      : data,
+    ok: true,
+    refreshRequired:
+      googleContext &&
+      (data as { refreshRequired?: boolean }).refreshRequired === true,
+  })
 })
