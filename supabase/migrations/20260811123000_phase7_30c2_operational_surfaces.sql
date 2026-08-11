@@ -525,8 +525,9 @@ begin
        and receipt_row.supabase_auth_session_id =
          target_supabase_auth_session_id
        and receipt_row.lecture_session_id = target_lecture_session_id
-       and receipt_row.target_id =
+       and receipt_row.target_id = (
          case when target_enable_realtime then 'realtime' else 'snapshot' end
+       )
        and receipt_row.result_id = target_request_id::text then
       return receipt_row.result_metadata || jsonb_build_object(
         'idempotentReplay', true,
