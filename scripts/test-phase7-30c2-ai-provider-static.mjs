@@ -23,6 +23,9 @@ const summaryMigration = read(
 const summaryProviderMigration = read(
   'supabase/migrations/20260811223000_phase7_30c2_google_summary_provider.sql',
 )
+const academicMigration = read(
+  'supabase/migrations/20260811233000_phase7_30c2_google_academic_provider.sql',
+)
 const aiBilling = read('supabase/functions/_shared/aiBilling.ts')
 const analyzeMaterial = read(
   'supabase/functions/analyze-lecture-material/index.ts',
@@ -33,9 +36,18 @@ const manageSummaries = read(
 const generateSummary = read(
   'supabase/functions/generate-lecture-summary/index.ts',
 )
+const generateAcademicAnswer = read(
+  'supabase/functions/generate-academic-answer/index.ts',
+)
 const databaseTypes = read('src/types/database.ts')
 const envExample = read('.env.local.example')
 const pgTap = read('supabase/tests/phase7_30c2_google_ai_provider_test.sql')
+const c1HeadUpgradeFixture = read(
+  'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe.sql',
+)
+const c1HeadUpgradeProbe = read(
+  'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
+)
 
 assert.match(
   summaryMigration,
@@ -128,13 +140,13 @@ assert.match(
 )
 assert.match(
   manageSummaries,
-  /Exactly one Admin credential is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*deriveGoogleSummaryRunNonce[\s\S]*manage_google_admin_summary_run_v1/,
+  /Exactly one Admin credential is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*deriveGoogleSummaryRunNonce[\s\S]*manage_google_admin_summary_run_v2/,
   'the summary Edge keeps legacy and Google credentials mutually exclusive',
 )
 assert.match(
   manageSummaries,
-  /automatic_academic_answers_unavailable[\s\S]*Start lecture summaries without automatic reference answers/,
-  'Google scheduling fails closed until automatic academic answers use per-call children',
+  /manage_google_admin_summary_run_v2[\s\S]*target_auto_academic_answers_enabled:[\s\S]*body\.autoAcademicAnswers === true/,
+  'Google summary automation uses the grant-free scheduler while each answer receives a per-call child',
 )
 assert.match(
   manageSummaries,
@@ -1066,6 +1078,335 @@ assert.match(
   databaseTypes,
   /reap_stale_google_ai_provider_dispatches_v1: \{[\s\S]*job_limit\?: number[\s\S]*Returns: number/,
 )
+
+for (const table of [
+  'admin_google_summary_auto_receipts',
+  'admin_google_academic_answer_preflight_receipts',
+  'admin_google_academic_answer_start_bindings',
+]) {
+  assert.match(academicMigration, new RegExp(`create table private\\.${table}`))
+  assert.match(
+    academicMigration,
+    new RegExp(
+      `alter table private\\.${table}[\\s\\S]*enable row level security;[\\s\\S]*` +
+        `revoke all on private\\.${table}[\\s\\S]*` +
+        `from public, anon, authenticated, service_role`,
+    ),
+  )
+  assert.match(
+    academicMigration,
+    new RegExp(
+      `before update or delete on private\\.${table}[\\s\\S]*` +
+        `reject_admin_c1_evidence_mutation_v1`,
+    ),
+  )
+}
+assert.doesNotMatch(
+  academicMigration.slice(
+    academicMigration.indexOf(
+      'create table private.admin_google_academic_answer_preflight_receipts',
+    ),
+    academicMigration.indexOf(
+      'create function private.manage_google_admin_summary_run_v2',
+    ),
+  ),
+  /^\s*(?:raw|bearer|secret|question|search_query|source_abstract|provider_payload)(?!_sha256)\w*\s+\w+/im,
+  'academic evidence stores hashes and identifiers rather than source or credential content',
+)
+assert.match(
+  academicMigration,
+  /admin_google_summary_auto_(?:environment|principal|membership|session|lecture|master|run)_idx[\s\S]*admin_google_academic_preflight_(?:environment|principal|membership|session|lecture|request|run|summary)_idx[\s\S]*admin_google_academic_bindings_(?:operation|preflight|lecture|request|run)_idx/,
+  'every Academic and automatic-summary evidence foreign key has a leading index',
+)
+assert.match(
+  academicMigration,
+  /academic_authority_mode text not null default 'none'[\s\S]*legacy_run_grant[\s\S]*google_per_call[\s\S]*lecture_summary_runs_academic_authorization_check/,
+  'summary automation distinguishes legacy run grants from Google per-call authority',
+)
+
+const academicPreflight = functionBlock(
+  academicMigration,
+  'private.prepare_google_admin_academic_answer_v1',
+)
+const academicPreflightRequest = academicPreflight.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const academicPreflightContext = academicPreflight.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const academicPreflightReplay = academicPreflight.indexOf(
+  'from private.admin_google_academic_answer_preflight_receipts as receipt',
+)
+const academicPreflightAuthority = academicPreflight.indexOf(
+  'require_google_academic_live_authority_v1',
+  academicPreflightReplay,
+)
+assert.ok(
+  academicPreflightRequest >= 0 &&
+    academicPreflightRequest < academicPreflightContext &&
+    academicPreflightContext < academicPreflightReplay &&
+    academicPreflightReplay < academicPreflightAuthority,
+  'Academic preflight serializes one request before Google context, exact replay and live authority',
+)
+assert.match(
+  academicPreflight,
+  /status = 'evidence_checking'[\s\S]*lease_until <= statement_timestamp\(\)[\s\S]*require_google_academic_live_authority_v1[\s\S]*academic_authority_mode = 'google_per_call'[\s\S]*for update[\s\S]*claim_recovered := true/,
+  'an expired preflight lease is recovered only after current gates, authority and automatic-run evidence pass',
+)
+assert.doesNotMatch(
+  academicPreflight.slice(
+    academicPreflightReplay,
+    academicPreflight.indexOf('select gate.*', academicPreflightAuthority),
+  ),
+  /phase7_25_admin_results_json|target_question(?!_sha256)|source_abstract/,
+  'Academic exact replay returns receipt state without answer or source content',
+)
+
+const academicChild = functionBlock(
+  academicMigration,
+  'private.issue_google_academic_answer_ai_child_grant_v1',
+)
+assert.match(
+  academicChild,
+  /where receipt\.request_id = target_grant_request_id/,
+  'Academic child evidence is keyed by its immutable request UUID',
+)
+assert.match(
+  academicChild,
+  /request_row\.status = 'running'[\s\S]*child_replay[\s\S]*admin_google_academic_answer_start_bindings[\s\S]*admin_google_ai_provider_start_intents[\s\S]*admin_google_ai_provider_start_receipts[\s\S]*running replay evidence is incomplete/,
+  'a lost start response may recover only through complete immutable child/start evidence',
+)
+
+const academicStart = functionBlock(
+  academicMigration,
+  'private.start_google_admin_academic_answer_operation_v1',
+)
+const academicStartRequest = academicStart.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const academicStartGrant = academicStart.indexOf(
+  'from public.ai_billing_grants as grant_record',
+)
+const academicStartContext = academicStart.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const academicStartAuthority = academicStart.indexOf(
+  'require_google_academic_live_authority_v1',
+)
+const academicStartPolicy = academicStart.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const academicStartMaster = academicStart.indexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const academicStartControl = academicStart.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const academicStartRequestRow = academicStart.lastIndexOf(
+  'from public.academic_answer_requests as request',
+)
+const academicStartUsage = academicStart.indexOf(
+  'from public.ai_usage_ledger as usage',
+  academicStartRequestRow,
+)
+assert.ok(
+  academicStartRequest >= 0 &&
+    academicStartRequest < academicStartGrant &&
+    academicStartGrant < academicStartContext &&
+    academicStartContext < academicStartAuthority &&
+    academicStartAuthority < academicStartPolicy &&
+    academicStartPolicy < academicStartMaster &&
+    academicStartMaster < academicStartControl &&
+    academicStartControl < academicStartRequestRow &&
+    academicStartRequestRow < academicStartUsage,
+  'Academic start preserves request advisory -> child grant -> Google context -> live authority -> policy -> master -> control -> request -> usage order',
+)
+const academicAuthority = functionBlock(
+  academicMigration,
+  'private.require_google_academic_live_authority_v1',
+)
+assert.ok(
+  academicAuthority.indexOf('from private.admin_ai_policies as policy') <
+    academicAuthority.indexOf('from public.lecture_sessions as lecture') &&
+    academicAuthority.indexOf('from public.lecture_sessions as lecture') <
+      academicAuthority.lastIndexOf(
+        'from public.lecture_ai_master_authorizations as master',
+      ),
+  'Academic live authority locks policy -> lecture -> master after its nonlocking master discovery',
+)
+assert.doesNotMatch(
+  academicStart,
+  /private\.start_(?:academic_answer_operation|auto_academic_answer_operation)/,
+  'Google Academic start does not enter the legacy inverse-lock start path',
+)
+const academicFreshIntent = academicStart.indexOf(
+  'insert into private.admin_google_ai_provider_start_intents',
+)
+const academicFreshOperation = academicStart.indexOf(
+  'result_value := private.start_lecture_ai_operation',
+  academicFreshIntent,
+)
+const academicFreshRequest = academicStart.indexOf(
+  'update public.academic_answer_requests as request',
+  academicFreshOperation,
+)
+const academicFreshGrant = academicStart.indexOf(
+  'update public.ai_billing_grants as grant_record',
+  academicFreshRequest,
+)
+const academicFreshReceipt = academicStart.indexOf(
+  'insert into private.admin_google_ai_provider_start_receipts',
+  academicFreshGrant,
+)
+const academicFreshBinding = academicStart.indexOf(
+  'insert into private.admin_google_academic_answer_start_bindings',
+  academicFreshReceipt,
+)
+assert.ok(
+  academicFreshIntent >= 0 &&
+    academicFreshIntent < academicFreshOperation &&
+    academicFreshOperation < academicFreshRequest &&
+    academicFreshRequest < academicFreshGrant &&
+    academicFreshGrant < academicFreshReceipt &&
+    academicFreshReceipt < academicFreshBinding,
+  'Academic fresh start atomically records intent -> operation -> request -> consumed child -> start receipt -> immutable binding',
+)
+assert.match(
+  academicStart.slice(academicFreshGrant, academicFreshBinding),
+  /status = 'consumed'[\s\S]*operation_ids = array\[operation_id_value\]::uuid\[\][\s\S]*start_request_id, child_grant_id, operation_id/,
+  'Academic start binds the consumed singleton child to the exact provider operation',
+)
+
+const academicFailure = functionBlock(
+  academicMigration,
+  'private.fail_google_admin_academic_answer_operation_v1',
+)
+assert.match(
+  academicFailure,
+  /target_status not in \('failed', 'cancelled'\)[\s\S]*error_code[\s\S]*like '%ambiguous%'[\s\S]*dispatch evidence/,
+  'Academic failure validates terminal status and requires dispatch evidence for ambiguous accounting',
+)
+assert.match(
+  academicFailure,
+  /target_status = 'failed'[\s\S]*fail_academic_answer_operation[\s\S]*finish_lecture_ai_operation\([\s\S]*'cancelled'[\s\S]*status = 'discarded'/,
+  'failed and cancelled Academic settlements remain distinct and content-free',
+)
+
+const academicCompletion = functionBlock(
+  academicMigration,
+  'private.complete_google_admin_academic_answer_operation_v1',
+)
+assert.match(
+  academicCompletion,
+  /require_google_ai_provider_settlement_context_v1[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*require_google_ai_provider_context_v1[\s\S]*require_google_academic_live_authority_v1[\s\S]*complete_academic_answer_operation/,
+  'Academic completion rechecks dispatch evidence and live Google authority before saving provider content',
+)
+assert.match(
+  academicCompletion,
+  /if not authority_is_live then[\s\S]*fail_google_admin_academic_answer_operation_v1|if not authority_is_live then[\s\S]*fail_academic_answer_operation/,
+  'revoked Academic completion is settled and discarded rather than published',
+)
+assert.match(
+  academicMigration,
+  /intent_row\.feature = 'academic_answers'[\s\S]*fail_academic_answer_operation[\s\S]*provider_dispatch_lease_expired_ambiguous/,
+  'the shared stale-dispatch reaper accounts and releases abandoned Academic work',
+)
+assert.match(
+  academicMigration,
+  /create or replace function private\.start_academic_answer_operation\([\s\S]*from public\.ai_billing_grants[\s\S]*from public\.lecture_sessions[\s\S]*from public\.lecture_ai_control[\s\S]*from public\.academic_answer_requests/,
+  'legacy manual Academic start is normalized to grant -> lecture -> control -> request order',
+)
+assert.match(
+  academicMigration,
+  /create or replace function private\.start_auto_academic_answer_operation\([\s\S]*academic_authority_mode = 'legacy_run_grant'[\s\S]*academic_authorization_grant_id is not null/,
+  'legacy automatic start cannot consume Google per-call scheduler authority',
+)
+
+for (const facade of [
+  'manage_google_admin_summary_run_v2',
+  'prepare_google_admin_academic_answer_v1',
+  'mark_google_admin_academic_answer_insufficient_v1',
+  'issue_google_academic_answer_ai_child_grant_v1',
+  'start_google_admin_academic_answer_operation_v1',
+  'fail_google_admin_academic_answer_operation_v1',
+  'complete_google_admin_academic_answer_operation_v1',
+]) {
+  assert.match(
+    academicMigration,
+    new RegExp(
+      `revoke all on function public\\.${facade}\\([\\s\\S]*` +
+        `from public, anon, authenticated;[\\s\\S]*` +
+        `grant execute on function public\\.${facade}\\([\\s\\S]*` +
+        `to service_role`,
+    ),
+    `${facade} is service-role-only`,
+  )
+  assert.match(
+    academicMigration,
+    new RegExp(
+      `revoke all on function private\\.${facade}\\([\\s\\S]*` +
+        `from public, anon, authenticated, service_role`,
+    ),
+    `${facade} private worker is unavailable to runtime roles`,
+  )
+}
+
+assert.match(
+  generateAcademicAnswer,
+  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*preflightRequestId[\s\S]*grantRequestId[\s\S]*startRequestId/,
+  'Academic Edge keeps Google and legacy authority exclusive and requires three stable request IDs',
+)
+assert.match(
+  generateAcademicAnswer,
+  /prepare_google_admin_academic_answer_v1[\s\S]*issue_google_academic_answer_ai_child_grant_v1[\s\S]*start_google_admin_academic_answer_operation_v1[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*complete_google_admin_academic_answer_operation_v1/,
+  'Google Academic provider work uses only typed preflight, child, start, dispatch and completion facades',
+)
+assert.match(
+  generateAcademicAnswer,
+  /let ownsNewOperation = !started\.idempotentReplay[\s\S]*if \(!claim\.dispatchAllowed\)[\s\S]*ownsNewOperation = true[\s\S]*providerDispatched = true[\s\S]*fetch\(/,
+  'response-loss replay can win one missing dispatch claim but cannot dispatch an existing claim twice',
+)
+assert.match(
+  generateAcademicAnswer,
+  /providerDispatched[\s\S]*_ambiguous[\s\S]*fail_google_admin_academic_answer_operation_v1/,
+  'Academic provider failure conservatively accounts only work that crossed dispatch',
+)
+assert.match(
+  generateAcademicAnswer,
+  /admin_authority_changed[\s\S]*result was safely discarded/,
+  'late output after authority loss is discarded with actionable lecture UX copy',
+)
+
+for (const generatedRpc of [
+  'manage_google_admin_summary_run_v2',
+  'prepare_google_admin_academic_answer_v1',
+  'mark_google_admin_academic_answer_insufficient_v1',
+  'issue_google_academic_answer_ai_child_grant_v1',
+  'start_google_admin_academic_answer_operation_v1',
+  'fail_google_admin_academic_answer_operation_v1',
+  'complete_google_admin_academic_answer_operation_v1',
+]) {
+  assert.match(
+    databaseTypes,
+    new RegExp(`${generatedRpc}: \\{[\\s\\S]*Returns: Json`),
+    `${generatedRpc} is present in generated database types`,
+  )
+}
+assert.match(
+  databaseTypes,
+  /lecture_summary_runs: \{[\s\S]*academic_authority_mode: string/,
+  'generated summary-run types include the per-call Academic authority mode',
+)
+assert.match(
+  c1HeadUpgradeFixture,
+  /auto_academic_answers_enabled,[\s\S]*academic_authorization_grant_id[\s\S]*true, 'auto',[\s\S]*false, 'auto', null/,
+  'the populated C1-head fixture carries both legacy automatic and non-automatic summary authority',
+)
+assert.match(
+  c1HeadUpgradeProbe,
+  /academic_authority_mode = 'legacy_run_grant'[\s\S]*academic_authority_mode = 'none'[\s\S]*admin_google_summary_auto_receipts[\s\S]*admin_google_academic_answer_preflight_receipts[\s\S]*admin_google_academic_answer_start_bindings/,
+  'the populated upgrade proves authority-mode normalization without fabricated Google evidence',
+)
 assert.match(envExample, /^ADMIN_AI_CHILD_GRANT_SECRET=$/m)
 assert.match(envExample, /^ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1$/m)
 
@@ -1090,6 +1431,16 @@ for (const contract of [
   'unclaimed recovery settles zero cost and leaves no dispatch authority',
   'a recovered authorized retry saves its result without another MFA prompt',
   'the recovered happy path settles accounting and publishes one result',
+  'default-OFF rejects Academic preflight before evidence or paid authority exists',
+  'an expired unstarted Academic lease is recovered by the same exact request',
+  'lost child response recovers the consumed child through immutable start evidence',
+  'lost Academic start response converges on the same operation before dispatch',
+  'the recovered Academic operation receives exactly one provider dispatch claim',
+  'Academic completion rechecks live Google authority and discards revoked output',
+  'Google automatic summary scheduling is grant-free until each provider call',
+  'each automatic Academic answer receives its own single-use child',
+  'bounded cleanup settles one abandoned automatic Academic dispatch',
+  'stale automatic Academic dispatch is conservatively accounted and releases its request lane',
   'completion rechecks live Google authority without prompting for another MFA',
   'revoked completion accounts and closes work without saving provider content',
 ]) {
@@ -1121,7 +1472,9 @@ assert.match(
 )
 const providerFixtureC = pgTap.slice(
   pgTap.indexOf("'compass.test.c2_provider_child_c'"),
-  pgTap.indexOf("'provider work starts while the Google Admin session is live'"),
+  pgTap.indexOf(
+    "'provider work starts while the Google Admin session is live'",
+  ),
 )
 assert.equal(
   [...providerFixtureC.matchAll(/repeat\('c',64\)/g)].length,

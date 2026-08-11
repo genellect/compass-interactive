@@ -39,8 +39,9 @@ Dependency Review and CodeQL jobs:
    zero, verifies generated types, runs every pgTAP file plus the real-DB
    concurrency suites, proves populated Phase 7.29, B1, B2-head and B2.2a-head
    states upgrade through Phase 7.30B2.2b, and the populated C1 head upgrades
-   through the default-OFF C2.1 migration without inferred ownership or
-   fabricated receipts, then runs DB lint. The B2/B2.2a/B2.2b database step includes the
+   through the current default-OFF C2 operational and provider migrations
+   without inferred ownership or fabricated receipts, then runs DB lint. The
+   B2/B2.2a/B2.2b database step includes the
    from-zero migration/pgTAP, a real two-transaction replay/lock-order/
    cleanup and principal-transition concurrency runner plus populated
    Phase 7.29/B1/B2-head/B2.2a-head-to-B2.2b upgrades. It

@@ -19,3 +19,39 @@ insert into public.lecture_sessions (
   statement_timestamp() + interval '1 hour',
   statement_timestamp() + interval '1 hour'
 );
+
+insert into public.ai_billing_grants (
+  id, lecture_session_id, actor_id, actions, nonce_hash, expires_at
+) values (
+  '73032000-0000-4000-8000-000000000002'::uuid,
+  '73032000-0000-4000-8000-000000000001'::uuid,
+  'legacy-upgrade-fixture',
+  array['academic_answers', 'summaries']::text[],
+  repeat('d', 64),
+  statement_timestamp() + interval '30 minutes'
+);
+
+insert into public.lecture_summary_runs (
+  id, lecture_session_id, actor_id, token_hash, status, started_at,
+  expires_at, stopped_at, stop_reason, auto_academic_answers_enabled,
+  academic_source_policy, academic_authorization_grant_id
+) values
+  (
+    '73032000-0000-4000-8000-000000000003'::uuid,
+    '73032000-0000-4000-8000-000000000001'::uuid,
+    'legacy-upgrade-fixture', repeat('e', 64), 'stopped',
+    statement_timestamp() - interval '10 minutes',
+    statement_timestamp() + interval '20 minutes',
+    statement_timestamp() - interval '5 minutes', 'upgrade_fixture',
+    true, 'auto',
+    '73032000-0000-4000-8000-000000000002'::uuid
+  ),
+  (
+    '73032000-0000-4000-8000-000000000004'::uuid,
+    '73032000-0000-4000-8000-000000000001'::uuid,
+    'legacy-upgrade-fixture', repeat('f', 64), 'stopped',
+    statement_timestamp() - interval '10 minutes',
+    statement_timestamp() + interval '20 minutes',
+    statement_timestamp() - interval '5 minutes', 'upgrade_fixture',
+    false, 'auto', null
+  );

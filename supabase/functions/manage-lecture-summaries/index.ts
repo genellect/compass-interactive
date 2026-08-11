@@ -221,17 +221,6 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'start') {
-      if (googleContext && body.autoAcademicAnswers === true) {
-        return jsonResponse(
-          {
-            code: 'automatic_academic_answers_unavailable',
-            message:
-              'Start lecture summaries without automatic reference answers.',
-            ok: false,
-          },
-          409,
-        )
-      }
       if (!body.billingGrant) {
         if (!googleContext) {
           return jsonResponse(
@@ -282,12 +271,13 @@ Deno.serve(async (request) => {
           )
         }
         const { data, error } = await supabase.rpc(
-          'manage_google_admin_summary_run_v1',
+          'manage_google_admin_summary_run_v2',
           {
             ...googleRpcIdentity,
             target_academic_source_policy: sourcePolicy,
             target_action: 'start',
-            target_auto_academic_answers_enabled: false,
+            target_auto_academic_answers_enabled:
+              body.autoAcademicAnswers === true,
             target_lecture_session_id: body.lectureSessionId,
             target_reason: null,
             target_request_id: body.requestId,
@@ -393,7 +383,7 @@ Deno.serve(async (request) => {
           )
         }
         const { data, error } = await supabase.rpc(
-          'manage_google_admin_summary_run_v1',
+          'manage_google_admin_summary_run_v2',
           {
             ...googleRpcIdentity,
             target_academic_source_policy: null,
@@ -474,7 +464,7 @@ Deno.serve(async (request) => {
       const reason = body.reason?.trim() || 'admin_manual_stop'
       if (googleContext && googleRpcIdentity) {
         const { data, error } = await supabase.rpc(
-          'manage_google_admin_summary_run_v1',
+          'manage_google_admin_summary_run_v2',
           {
             ...googleRpcIdentity,
             target_academic_source_policy: null,

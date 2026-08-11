@@ -40,7 +40,10 @@ SELECT ok(
       ('admin_google_ai_provider_dispatch_receipts'),
       ('admin_google_summary_run_receipts'),
       ('admin_google_summary_window_preflight_receipts'),
-      ('admin_google_summary_window_start_bindings')
+      ('admin_google_summary_window_start_bindings'),
+      ('admin_google_summary_auto_receipts'),
+      ('admin_google_academic_answer_preflight_receipts'),
+      ('admin_google_academic_answer_start_bindings')
     ) AS expected(table_name)
     JOIN pg_class AS class ON class.relname = expected.table_name
     JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
@@ -81,7 +84,10 @@ SELECT ok(
         'private.admin_google_ai_provider_dispatch_receipts'::regclass,
         'private.admin_google_summary_run_receipts'::regclass,
         'private.admin_google_summary_window_preflight_receipts'::regclass,
-        'private.admin_google_summary_window_start_bindings'::regclass
+        'private.admin_google_summary_window_start_bindings'::regclass,
+        'private.admin_google_summary_auto_receipts'::regclass,
+        'private.admin_google_academic_answer_preflight_receipts'::regclass,
+        'private.admin_google_academic_answer_start_bindings'::regclass
       )
       AND NOT EXISTS (
         SELECT 1
@@ -247,6 +253,39 @@ SELECT ok(
 SELECT ok(
   NOT EXISTS (
     SELECT 1
+    FROM unnest(ARRAY[
+      'public.manage_google_admin_summary_run_v2(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+      'public.prepare_google_admin_academic_answer_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,uuid,text,text,text,text,uuid,boolean)',
+      'public.mark_google_admin_academic_answer_insufficient_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,boolean)',
+      'public.issue_google_academic_answer_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
+      'public.start_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
+      'public.fail_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,bigint,bigint,bigint,text,text)',
+      'public.complete_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint,bigint,text)'
+    ]::text[]) AS facade(signature)
+    WHERE NOT has_function_privilege('service_role', facade.signature, 'EXECUTE')
+       OR has_function_privilege('authenticated', facade.signature, 'EXECUTE')
+       OR has_function_privilege('anon', facade.signature, 'EXECUTE')
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM unnest(ARRAY[
+      'private.manage_google_admin_summary_run_v2(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+      'private.prepare_google_admin_academic_answer_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,uuid,text,text,text,text,uuid,boolean)',
+      'private.mark_google_admin_academic_answer_insufficient_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,boolean)',
+      'private.issue_google_academic_answer_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
+      'private.start_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
+      'private.fail_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,bigint,bigint,bigint,text,text)',
+      'private.complete_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,jsonb,jsonb,bigint,bigint,bigint,text)'
+    ]::text[]) AS helper(signature)
+    WHERE has_function_privilege('service_role', helper.signature, 'EXECUTE')
+       OR has_function_privilege('authenticated', helper.signature, 'EXECUTE')
+       OR has_function_privilege('anon', helper.signature, 'EXECUTE')
+  ),
+  'Academic and automatic-summary authority is exposed only through typed service facades'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
     FROM information_schema.columns
     WHERE table_schema = 'private'
       AND table_name IN (
@@ -256,12 +295,50 @@ SELECT ok(
         'admin_google_ai_provider_dispatch_receipts',
         'admin_google_summary_run_receipts',
         'admin_google_summary_window_preflight_receipts',
-        'admin_google_summary_window_start_bindings'
+        'admin_google_summary_window_start_bindings',
+        'admin_google_summary_auto_receipts',
+        'admin_google_academic_answer_preflight_receipts',
+        'admin_google_academic_answer_start_bindings'
       )
       AND column_name ~ '(raw|bearer|secret|payload|response)'
       AND column_name !~ '(_sha256|_digest)$'
   ),
   'provider evidence stores no raw nonce, bearer, secret or provider payload'
+);
+SELECT ok(
+  (
+    SELECT count(*) = 3
+    FROM (VALUES
+      (
+        'admin_google_summary_auto_receipts'::text,
+        'admin_google_summary_auto_receipts_append_only'::text
+      ),
+      (
+        'admin_google_academic_answer_preflight_receipts',
+        'admin_google_academic_preflight_receipts_append_only'
+      ),
+      (
+        'admin_google_academic_answer_start_bindings',
+        'admin_google_academic_start_bindings_append_only'
+      )
+    ) AS expected(table_name, trigger_name)
+    JOIN pg_class AS class ON class.relname = expected.table_name
+    JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
+    JOIN pg_trigger AS trigger
+      ON trigger.tgrelid = class.oid
+     AND trigger.tgname = expected.trigger_name
+     AND NOT trigger.tgisinternal
+    WHERE namespace.nspname = 'private'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'lecture_summary_runs'
+      AND column_name = 'academic_authority_mode'
+      AND is_nullable = 'NO'
+  ),
+  'Academic evidence is append-only and summary runs carry an explicit authority mode'
 );
 
 INSERT INTO auth.users (
@@ -432,7 +509,7 @@ INSERT INTO private.admin_ai_policies (
     'summaries'
   ]::text[],
   array['test-model']::text[],
-  10, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
+  20, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
   90, 900, 2,
   statement_timestamp() - interval '1 minute',
   statement_timestamp() + interval '2 hours',
@@ -644,7 +721,104 @@ LANGUAGE sql VOLATILE SET search_path = '' AS $$
   );
 $$;
 
+CREATE FUNCTION pg_temp.prepare_academic_answer(
+  preflight_request_id uuid,
+  publication_mode text,
+  run_id uuid,
+  run_token_hash text,
+  idempotency_key text,
+  source_kind text,
+  source_summary_id uuid,
+  transport_enabled boolean
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.prepare_google_admin_academic_answer_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    publication_mode, run_id, run_token_hash, idempotency_key, source_kind,
+    source_summary_id, 'What evidence supports this treatment?',
+    encode(
+      extensions.digest(
+        convert_to('What evidence supports this treatment?', 'UTF8'),
+        'sha256'
+      ),
+      'hex'
+    ),
+    repeat('b',64), 'auto', preflight_request_id, transport_enabled
+  );
+$$;
+
+CREATE FUNCTION pg_temp.issue_academic_child(
+  grant_request_id uuid,
+  nonce_hash text,
+  academic_request_id uuid,
+  preflight_request_id uuid,
+  preflight_context_digest text,
+  publication_mode text,
+  run_id uuid,
+  source_set_sha256 text,
+  provider_payload_sha256 text,
+  transport_enabled boolean
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.issue_google_academic_answer_ai_child_grant_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    academic_request_id, preflight_request_id, preflight_context_digest,
+    publication_mode, run_id, source_set_sha256, 'biomedical_pubmed', 1, 1,
+    provider_payload_sha256, 'test-model', 'phase7-25-academic-v1',
+    1000000, 6000000, 1200, 8200, 1000, 1200,
+    nonce_hash, 1, grant_request_id, transport_enabled
+  );
+$$;
+
+CREATE FUNCTION pg_temp.start_academic_operation(
+  start_request_id uuid,
+  grant_id uuid,
+  nonce_hash text,
+  academic_request_id uuid,
+  preflight_request_id uuid,
+  preflight_context_digest text,
+  publication_mode text,
+  run_id uuid,
+  source_set_sha256 text,
+  provider_payload_sha256 text,
+  provider_intent_digest text,
+  transport_enabled boolean
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.start_google_admin_academic_answer_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    grant_id, nonce_hash,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    academic_request_id, preflight_request_id, preflight_context_digest,
+    publication_mode, run_id, source_set_sha256, 'biomedical_pubmed', 1, 1,
+    provider_payload_sha256, 'test-model', 'phase7-25-academic-v1',
+    1000000, 6000000, 1200, 8200, 1000, 1200,
+    start_request_id, provider_intent_digest, transport_enabled
+  );
+$$;
+
 SET ROLE service_role;
+SELECT throws_ok(
+  $$SELECT pg_temp.prepare_academic_answer(
+    '00000000-0000-4000-8000-00000000e2a0'::uuid,
+    'manual_review', null::uuid, null::text,
+    'phase730c2-academic-manual-a', 'teacher_selected', null::uuid, true
+  )$$,
+  'P7338',
+  'Google academic preflight is disabled',
+  'default-OFF rejects Academic preflight before evidence or paid authority exists'
+);
 SELECT is(
   pg_temp.issue_provider_child(
     '00000000-0000-4000-8000-00000000e230'::uuid,
@@ -707,7 +881,7 @@ SELECT ok(
       AND result ->> 'idempotentReplay' = 'false'
       AND result ->> 'refreshRequired' = 'false'
     FROM (
-      SELECT public.manage_google_admin_summary_run_v1(
+      SELECT public.manage_google_admin_summary_run_v2(
         repeat('1',64),
         '00000000-0000-4000-8000-00000000e202'::uuid,
         '00000000-0000-4000-8000-00000000e203'::uuid,
@@ -729,7 +903,7 @@ SELECT ok(
       AND result #>> '{run,id}' =
         current_setting('compass.test.c2_summary_run_id')
     FROM (
-      SELECT public.manage_google_admin_summary_run_v1(
+      SELECT public.manage_google_admin_summary_run_v2(
         repeat('1',64),
         '00000000-0000-4000-8000-00000000e202'::uuid,
         '00000000-0000-4000-8000-00000000e203'::uuid,
@@ -1392,13 +1566,13 @@ SELECT ok(
       AND result ->> 'accepted' = 'true'
       AND result ->> 'idempotentReplay' = 'false'
     FROM (
-      SELECT public.manage_google_admin_summary_run_v1(
+      SELECT public.manage_google_admin_summary_run_v2(
         repeat('1',64),
         '00000000-0000-4000-8000-00000000e202'::uuid,
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
-        'start', repeat('e',64), false, 'auto', null,
+        'start', repeat('e',64), true, 'auto', null,
         '00000000-0000-4000-8000-00000000e263'::uuid, true
       ) AS result
     ) AS started
@@ -1407,13 +1581,20 @@ SELECT ok(
 );
 RESET ROLE;
 SELECT ok(
-  NOT EXISTS (
+  (
+    SELECT run.auto_academic_answers_enabled
+      AND run.academic_authority_mode = 'google_per_call'
+      AND run.academic_authorization_grant_id IS NULL
+    FROM public.lecture_summary_runs AS run
+    WHERE run.id = current_setting('compass.test.c2_summary_provider_run_id')::uuid
+  )
+  AND NOT EXISTS (
     SELECT 1
     FROM private.admin_google_ai_child_grant_receipts AS child
     WHERE child.request_id =
       '00000000-0000-4000-8000-00000000e263'::uuid
   ),
-  'starting a summary scheduler consumes no provider child'
+  'Google automatic summary scheduling is grant-free until each provider call'
 );
 
 SET ROLE service_role;
@@ -1755,13 +1936,13 @@ SELECT ok(
       AND result ->> 'accepted' = 'true'
       AND result ->> 'idempotentReplay' = 'false'
     FROM (
-      SELECT public.manage_google_admin_summary_run_v1(
+      SELECT public.manage_google_admin_summary_run_v2(
         repeat('1',64),
         '00000000-0000-4000-8000-00000000e202'::uuid,
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         current_setting('compass.test.c2_provider_lecture_id')::uuid,
-        'start', repeat('f',64), false, 'auto', null,
+        'start', repeat('f',64), true, 'auto', null,
         '00000000-0000-4000-8000-00000000e278'::uuid, true
       ) AS result
     ) AS restarted
@@ -2165,7 +2346,12 @@ SELECT ok(
         current_setting('compass.test.c2_summary_operation_e')::uuid,
         jsonb_build_object(
           'lecture_recap', jsonb_build_array('Saved summary'),
-          'comment_pulse', '[]'::jsonb
+          'comment_pulse', '[]'::jsonb,
+          'academic_question_candidate', jsonb_build_object(
+            'question', 'What evidence supports this treatment?',
+            'educationalValue', 'Supports evidence review',
+            'qualityScore', 0.9
+          )
         ),
         '{}'::jsonb, false, 1600, 1000, 100,
         '00000000-0000-4000-8000-00000000e27f'
@@ -2225,6 +2411,411 @@ SELECT ok(
       '00000000-0000-4000-8000-00000000e271'::uuid
   ),
   'each provider attempt consumes one child while skipped windows consume none'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_request_a',
+      result ->> 'academicRequestId', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_preflight_digest_a',
+        result ->> 'providerContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'claimAcquired' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'requestStatus' = 'evidence_checking'
+    FROM (
+      SELECT pg_temp.prepare_academic_answer(
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        'manual_review', null::uuid, null::text,
+        'phase730c2-academic-manual-a', 'teacher_selected', null::uuid, true
+      ) AS result
+    ) AS prepared
+  ),
+  'manual Academic preflight creates one content-free request lease'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'academicRequestId' =
+        current_setting('compass.test.c2_academic_request_a')
+      AND result ->> 'claimAcquired' = 'false'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND NOT (result ? 'results')
+    FROM (
+      SELECT pg_temp.prepare_academic_answer(
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        'manual_review', null::uuid, null::text,
+        'phase730c2-academic-manual-a', 'teacher_selected', null::uuid, true
+      ) AS result
+    ) AS replayed
+  ),
+  'Academic preflight exact replay returns receipt metadata without provider content'
+);
+RESET ROLE;
+UPDATE public.academic_answer_requests
+SET lease_until = statement_timestamp() - interval '1 second',
+    updated_at = statement_timestamp()
+WHERE id = current_setting('compass.test.c2_academic_request_a')::uuid;
+SET ROLE service_role;
+SELECT is(
+  pg_temp.prepare_academic_answer(
+    '00000000-0000-4000-8000-00000000e2a0'::uuid,
+    'manual_review', null::uuid, null::text,
+    'phase730c2-academic-manual-a', 'teacher_selected', null::uuid, true
+  ) ->> 'claimAcquired',
+  'true',
+  'an expired unstarted Academic lease is recovered by the same exact request'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_child_a', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_provider_digest_a',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.issue_academic_child(
+        '00000000-0000-4000-8000-00000000e2a1'::uuid,
+        repeat('6',64),
+        current_setting('compass.test.c2_academic_request_a')::uuid,
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_a'),
+        'manual_review', null::uuid, repeat('c',64), repeat('d',64), true
+      ) AS result
+    ) AS issued
+  ),
+  'one manual Academic provider call receives one short-lived child'
+);
+SELECT is(
+  pg_temp.start_academic_operation(
+    '00000000-0000-4000-8000-00000000e2a2'::uuid,
+    current_setting('compass.test.c2_academic_child_a')::uuid,
+    null::text,
+    current_setting('compass.test.c2_academic_request_a')::uuid,
+    '00000000-0000-4000-8000-00000000e2a0'::uuid,
+    current_setting('compass.test.c2_academic_preflight_digest_a'),
+    'manual_review', null::uuid, repeat('c',64), repeat('d',64),
+    current_setting('compass.test.c2_academic_provider_digest_a'), true
+  )::text,
+  null,
+  'NULL Academic child nonce fails closed without consuming authority'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_operation_a', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_academic_operation(
+        '00000000-0000-4000-8000-00000000e2a2'::uuid,
+        current_setting('compass.test.c2_academic_child_a')::uuid,
+        repeat('6',64),
+        current_setting('compass.test.c2_academic_request_a')::uuid,
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_a'),
+        'manual_review', null::uuid, repeat('c',64), repeat('d',64),
+        current_setting('compass.test.c2_academic_provider_digest_a'), true
+      ) AS result
+    ) AS started
+  ),
+  'Academic start atomically consumes one child and reserves one operation'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'grant_id' =
+        current_setting('compass.test.c2_academic_child_a')
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'providerIntentDigest' =
+        current_setting('compass.test.c2_academic_provider_digest_a')
+    FROM (
+      SELECT pg_temp.issue_academic_child(
+        '00000000-0000-4000-8000-00000000e2a1'::uuid,
+        repeat('6',64),
+        current_setting('compass.test.c2_academic_request_a')::uuid,
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_a'),
+        'manual_review', null::uuid, repeat('c',64), repeat('d',64), true
+      ) AS result
+    ) AS replayed
+  ),
+  'lost child response recovers the consumed child through immutable start evidence'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'operationId' =
+        current_setting('compass.test.c2_academic_operation_a')
+      AND result ->> 'idempotentReplay' = 'true'
+    FROM (
+      SELECT pg_temp.start_academic_operation(
+        '00000000-0000-4000-8000-00000000e2a2'::uuid,
+        current_setting('compass.test.c2_academic_child_a')::uuid,
+        repeat('6',64),
+        current_setting('compass.test.c2_academic_request_a')::uuid,
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_a'),
+        'manual_review', null::uuid, repeat('c',64), repeat('d',64),
+        current_setting('compass.test.c2_academic_provider_digest_a'), true
+      ) AS result
+    ) AS replayed
+  ),
+  'lost Academic start response converges on the same operation before dispatch'
+);
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2a2'::uuid,
+    current_setting('compass.test.c2_academic_operation_a')::uuid,
+    'openai_responses_v1',
+    '00000000-0000-4000-8000-00000000e2a2'::uuid,
+    true
+  ) ->> 'dispatchAllowed',
+  'true',
+  'the recovered Academic operation receives exactly one provider dispatch claim'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT grant_record.status = 'consumed'
+      AND grant_record.operation_ids = array[binding.operation_id]::uuid[]
+      AND binding.operation_id =
+        current_setting('compass.test.c2_academic_operation_a')::uuid
+      AND request.status = 'running'
+      AND request.operation_id = binding.operation_id
+    FROM private.admin_google_academic_answer_start_bindings AS binding
+    JOIN private.admin_google_ai_provider_start_receipts AS start_receipt
+      ON start_receipt.start_request_id = binding.start_request_id
+    JOIN public.ai_billing_grants AS grant_record
+      ON grant_record.id = start_receipt.child_grant_id
+    JOIN public.academic_answer_requests AS request
+      ON request.id = binding.academic_request_id
+    WHERE binding.start_request_id =
+      '00000000-0000-4000-8000-00000000e2a2'::uuid
+  ),
+  'Academic preflight, child, operation and request share exact immutable provenance'
+);
+
+UPDATE private.admin_environment_memberships
+SET can_use_ai = false, updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
+SET ROLE service_role;
+SELECT is(
+  public.complete_google_admin_academic_answer_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2a2'::uuid,
+    current_setting('compass.test.c2_academic_operation_a')::uuid,
+    '[]'::jsonb, '{}'::jsonb, '{}'::jsonb, 0, 0, 0,
+    '00000000-0000-4000-8000-00000000e2a2'
+  ) ->> 'authorityRevoked',
+  'true',
+  'Academic completion rechecks live Google authority and discards revoked output'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND NOT usage.result_accepted
+      AND (
+        SELECT request.status IN ('failed', 'discarded')
+        FROM public.academic_answer_requests AS request
+        WHERE request.id =
+          current_setting('compass.test.c2_academic_request_a')::uuid
+      )
+    FROM public.ai_usage_ledger AS usage
+    WHERE usage.id = current_setting('compass.test.c2_academic_operation_a')::uuid
+  ),
+  'revoked Academic output is accounted without persisting an answer'
+);
+UPDATE private.admin_environment_memberships
+SET can_use_ai = true, updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
+SET ROLE service_role;
+SELECT is(
+  public.authorize_google_ai_master_with_pin_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000e20a'::uuid, 1,
+    repeat('b', 64), 1, repeat('e', 64),
+    '00000000-0000-4000-8000-00000000e2a3'::uuid
+  ) ->> 'accepted',
+  'true',
+  'restored membership explicitly creates a fresh Academic-capable master'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_auto_run_id', result #>> '{run,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_auto_run_token_hash', repeat('9',64), false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v2(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'start', repeat('9',64), true, 'auto', null,
+        '00000000-0000-4000-8000-00000000e2a4'::uuid, true
+      ) AS result
+    ) AS started
+  ),
+  'automatic Academic recovery starts a grant-free google_per_call run'
+);
+RESET ROLE;
+SELECT ok(
+  set_config(
+    'compass.test.c2_academic_source_summary_id',
+    (
+      SELECT summary.id::text
+      FROM public.lecture_ai_summaries AS summary
+      WHERE summary.lecture_session_id =
+        current_setting('compass.test.c2_provider_lecture_id')::uuid
+      ORDER BY summary.created_at DESC, summary.id DESC
+      LIMIT 1
+    ),
+    false
+  ) IS NOT NULL,
+  'automatic Academic fixture reuses one retained verified summary candidate'
+);
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_request_b',
+      result ->> 'academicRequestId', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_preflight_digest_b',
+        result ->> 'providerContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'claimAcquired' = 'true'
+    FROM (
+      SELECT pg_temp.prepare_academic_answer(
+        '00000000-0000-4000-8000-00000000e2a5'::uuid,
+        'auto_unreviewed',
+        current_setting('compass.test.c2_academic_auto_run_id')::uuid,
+        current_setting('compass.test.c2_academic_auto_run_token_hash'),
+        'phase730c2-academic-auto-b', 'summary_candidate',
+        current_setting('compass.test.c2_academic_source_summary_id')::uuid,
+        true
+      ) AS result
+    ) AS prepared
+  ),
+  'automatic Academic preflight uses the grant-free summary run but no provider child yet'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_child_b', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_provider_digest_b',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT pg_temp.issue_academic_child(
+        '00000000-0000-4000-8000-00000000e2a6'::uuid,
+        repeat('7',64),
+        current_setting('compass.test.c2_academic_request_b')::uuid,
+        '00000000-0000-4000-8000-00000000e2a5'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_b'),
+        'auto_unreviewed',
+        current_setting('compass.test.c2_academic_auto_run_id')::uuid,
+        repeat('e',64), repeat('f',64), true
+      ) AS result
+    ) AS issued
+  ),
+  'each automatic Academic answer receives its own single-use child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_operation_b', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_academic_operation(
+        '00000000-0000-4000-8000-00000000e2a7'::uuid,
+        current_setting('compass.test.c2_academic_child_b')::uuid,
+        repeat('7',64),
+        current_setting('compass.test.c2_academic_request_b')::uuid,
+        '00000000-0000-4000-8000-00000000e2a5'::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_b'),
+        'auto_unreviewed',
+        current_setting('compass.test.c2_academic_auto_run_id')::uuid,
+        repeat('e',64), repeat('f',64),
+        current_setting('compass.test.c2_academic_provider_digest_b'), true
+      ) AS result
+    ) AS started
+  ),
+  'automatic Academic start consumes only its per-call child'
+);
+RESET ROLE;
+UPDATE public.ai_usage_ledger
+SET provider_dispatched_at = statement_timestamp() - interval '2 minutes',
+    provider_request_id = '00000000-0000-4000-8000-00000000e2a7',
+    last_heartbeat_at = statement_timestamp() - interval '2 minutes'
+WHERE id = current_setting('compass.test.c2_academic_operation_b')::uuid;
+INSERT INTO private.admin_google_ai_provider_dispatch_receipts (
+  start_request_id, operation_id, provider_family, client_request_id,
+  claimed_at, lease_expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e2a7'::uuid,
+  current_setting('compass.test.c2_academic_operation_b')::uuid,
+  'openai_responses_v1',
+  '00000000-0000-4000-8000-00000000e2a7'::uuid,
+  statement_timestamp() - interval '2 minutes',
+  statement_timestamp() - interval '30 seconds'
+);
+SET ROLE service_role;
+SELECT is(
+  public.reap_stale_google_ai_provider_dispatches_v1(10),
+  1,
+  'bounded cleanup settles one abandoned automatic Academic dispatch'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status IN ('failed', 'cancelled')
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.settlement_status = 'conservative'
+      AND NOT usage.result_accepted
+      AND (
+        SELECT request.status IN ('failed', 'discarded')
+        FROM public.academic_answer_requests AS request
+        WHERE request.id =
+          current_setting('compass.test.c2_academic_request_b')::uuid
+      )
+    FROM public.ai_usage_ledger AS usage
+    WHERE usage.id = current_setting('compass.test.c2_academic_operation_b')::uuid
+  ),
+  'stale automatic Academic dispatch is conservatively accounted and releases its request lane'
 );
 
 SET ROLE service_role;
