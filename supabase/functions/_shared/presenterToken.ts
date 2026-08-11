@@ -8,6 +8,7 @@ const CAPABILITY_SCOPE = 'compass-presenter-capability'
 const CAPABILITY_AUDIENCE = 'presenter-page-update'
 const MAX_PAIRING_TTL_SECONDS = 60
 const MAX_CAPABILITY_TTL_SECONDS = 95 * 60
+const MANUAL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 type CommonClaims = {
   aud: string
@@ -115,6 +116,7 @@ export async function hashPresenterContext(
   value: string,
   domain:
     | 'manual-code'
+    | 'presenter-manual-output'
     | 'presenter-rate-global'
     | 'presenter-rate-key'
     | 'presenter-rate-network',
@@ -133,6 +135,24 @@ export async function hashPresenterContext(
     textEncoder.encode(`${domain}:${value}`),
   )
   return bytesToHex(new Uint8Array(signature))
+}
+
+export async function derivePresenterManualCode(
+  requestId: string,
+  secret: string,
+) {
+  if (!isUuid(requestId)) {
+    throw new Error('Invalid Presenter request identifier.')
+  }
+  const digest = await hashPresenterContext(
+    requestId,
+    'presenter-manual-output',
+    secret,
+  )
+  return Array.from({ length: 8 }, (_, index) => {
+    const byte = Number.parseInt(digest.slice(index * 2, index * 2 + 2), 16)
+    return MANUAL_CODE_ALPHABET[byte % MANUAL_CODE_ALPHABET.length]
+  }).join('')
 }
 
 export async function createPresenterPairingToken(input: {

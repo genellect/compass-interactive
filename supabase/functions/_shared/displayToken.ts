@@ -74,17 +74,23 @@ export function getDisplayTokenSecret() {
   return getAdminTokenSecret()
 }
 
-export async function createDisplayToken(
+async function createDisplayTokenForClaims(
   lectureSessionId: string,
+  issuedAt: number,
   expiresAt: number,
+  jti: string,
   secret: string,
 ) {
   const now = Math.floor(Date.now() / 1000)
   if (
     !isUuid(lectureSessionId) ||
+    !isUuid(jti) ||
+    !Number.isInteger(issuedAt) ||
     !Number.isInteger(expiresAt) ||
+    issuedAt > now + 5 ||
     expiresAt <= now ||
-    expiresAt > now + MAX_TOKEN_TTL_SECONDS
+    expiresAt <= issuedAt ||
+    expiresAt > issuedAt + MAX_TOKEN_TTL_SECONDS
   ) {
     throw new Error('Invalid display session claims.')
   }
@@ -93,8 +99,8 @@ export async function createDisplayToken(
     JSON.stringify({
       aud: DISPLAY_TOKEN_AUDIENCE,
       exp: expiresAt,
-      iat: now,
-      jti: crypto.randomUUID(),
+      iat: issuedAt,
+      jti,
       lectureSessionId,
       scope: DISPLAY_TOKEN_SCOPE,
       terminalExp: expiresAt + TERMINAL_TOKEN_TTL_SECONDS,
@@ -103,6 +109,40 @@ export async function createDisplayToken(
   const signature = await signToken(payload, secret)
 
   return `${payload}.${signature}`
+}
+
+export async function createDisplayToken(
+  lectureSessionId: string,
+  expiresAt: number,
+  secret: string,
+) {
+  return createDisplayTokenForClaims(
+    lectureSessionId,
+    Math.floor(Date.now() / 1000),
+    expiresAt,
+    crypto.randomUUID(),
+    secret,
+  )
+}
+
+// Google Admin issuance uses the request UUID as the Display JTI and stores
+// only its hash plus the bounded timestamps in the database transaction. A
+// lost HTTP response can therefore recreate the exact same signed token
+// without persisting bearer material or minting a second capability.
+export async function createBoundDisplayToken(
+  lectureSessionId: string,
+  issuedAt: number,
+  expiresAt: number,
+  jti: string,
+  secret: string,
+) {
+  return createDisplayTokenForClaims(
+    lectureSessionId,
+    issuedAt,
+    expiresAt,
+    jti,
+    secret,
+  )
 }
 
 export async function getDisplayTokenClaims(

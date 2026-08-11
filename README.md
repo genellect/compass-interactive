@@ -111,7 +111,7 @@ flowchart LR
     GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
     Workspace --> Demo["Secret-free /demo"]
     Workspace --> Local["Isolated local Supabase"]
-    Demo --> Gate["Type / lint / 70 non-live groups\nChromium + WebKit E2E"]
+    Demo --> Gate["Type / lint / 72 non-live groups\nChromium + WebKit E2E"]
     Local --> Gate
     Gate --> PR["Commit / Pull Request / CI"]
     PR --> Review["Browser / mobile review"]

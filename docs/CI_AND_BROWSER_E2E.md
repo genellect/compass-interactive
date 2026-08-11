@@ -23,7 +23,7 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 70 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 72 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate

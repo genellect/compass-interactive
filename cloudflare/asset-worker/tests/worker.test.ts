@@ -2440,6 +2440,23 @@ test('hidden commit and activation fence keep publication inaccessible until DB 
   )
   assert.equal(uploaded.status, 201)
 
+  // Runtime disable stops new upload authority, but this already-uploaded,
+  // short-lived continuation must still commit, activate and roll back.
+  value.env.PHASE726_BROWSER_PDF_UPLOAD_ENABLED = 'false'
+  const disabledUpload = await worker.fetch(
+    new Request(`https://pdf.example/v2/pdf-publications/${publicationId}`, {
+      body: pdf,
+      headers: {
+        Authorization: `Bearer ${uploadToken}`,
+        'Content-Type': 'application/pdf',
+        Origin: 'https://compass.example',
+      },
+      method: 'PUT',
+    }),
+    value.env,
+  )
+  assert.equal(disabledUpload.status, 404)
+
   const commitToken = await createPublicationToken(value.keys.privateKey, {
     ...baseClaims,
     download: true,

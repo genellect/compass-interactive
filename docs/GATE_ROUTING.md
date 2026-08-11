@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (70 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (72 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |

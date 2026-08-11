@@ -32,6 +32,60 @@ function base64Url(bytes: Uint8Array) {
     .replaceAll('=', '')
 }
 
+function uuidFromBytes(bytes: Uint8Array) {
+  const value = bytes.slice(0, 16)
+  value[6] = (value[6] & 0x0f) | 0x40
+  value[8] = (value[8] & 0x3f) | 0x80
+  const hex = Array.from(value, (byte) => byte.toString(16).padStart(2, '0'))
+  return [
+    hex.slice(0, 4).join(''),
+    hex.slice(4, 6).join(''),
+    hex.slice(6, 8).join(''),
+    hex.slice(8, 10).join(''),
+    hex.slice(10, 16).join(''),
+  ].join('-')
+}
+
+function assertRequestId(value: string) {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  ) {
+    throw new Error('PDF publication request ID is invalid.')
+  }
+  return value.toLowerCase()
+}
+
+function coordinatorSecret() {
+  const value = Deno.env.get('PDF_PUBLICATION_COORDINATOR_SECRET')?.trim() ?? ''
+  if (value.length < 32 || value.length > 4096) {
+    throw new Error('PDF publication coordinator secret is not configured.')
+  }
+  return value
+}
+
+async function hmacPublicationMaterial(requestId: string, purpose: string) {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(purpose)) {
+    throw new Error('PDF publication derivation purpose is invalid.')
+  }
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(coordinatorSecret()),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(
+      `phase730c2:pdf-publication-output:v1|request=${assertRequestId(requestId)}|purpose=${purpose}`,
+    ),
+  )
+  return new Uint8Array(signature)
+}
+
 function encodeJson(value: unknown) {
   return base64Url(encoder.encode(JSON.stringify(value)))
 }
@@ -71,9 +125,7 @@ export async function signPdfPublicationTicket(
     aud: 'compass-pdf-publication-worker',
     bytes: claims.bytes,
     doc: claims.doc,
-    ...(claims.download === undefined
-      ? {}
-      : { download: claims.download }),
+    ...(claims.download === undefined ? {} : { download: claims.download }),
     exp: claims.expiresAt,
     gen: claims.generation,
     iat: claims.issuedAt,
@@ -98,9 +150,7 @@ export async function signPdfPublicationTicket(
     ...(claims.textCharacters === undefined
       ? {}
       : { text_chars: claims.textCharacters }),
-    ...(claims.textSha256 === undefined
-      ? {}
-      : { text_sha: claims.textSha256 }),
+    ...(claims.textSha256 === undefined ? {} : { text_sha: claims.textSha256 }),
   })
   const signature = await crypto.subtle.sign(
     { hash: 'SHA-256', name: 'ECDSA' },
@@ -114,6 +164,25 @@ export function createPdfPublicationNonce() {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return base64Url(bytes)
+}
+
+/**
+ * Recreates the same raw upload nonce for one server-authorized ticket request.
+ * Only the hash is persisted. Rotating the coordinator secret intentionally
+ * requires an explicit ticket reissue instead of silently changing a retry.
+ */
+export async function derivePdfPublicationNonce(ticketRequestId: string) {
+  return base64Url(
+    await hmacPublicationMaterial(ticketRequestId, 'upload-nonce'),
+  )
+}
+
+/** Produces a deterministic UUID-shaped identifier for a bounded saga stage. */
+export async function derivePdfPublicationUuid(
+  requestId: string,
+  purpose: string,
+) {
+  return uuidFromBytes(await hmacPublicationMaterial(requestId, purpose))
 }
 
 export async function sha256Hex(value: string) {
