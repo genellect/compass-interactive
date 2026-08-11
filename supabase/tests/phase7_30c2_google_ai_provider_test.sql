@@ -270,7 +270,12 @@ INSERT INTO private.admin_ai_policies (
   '00000000-0000-4000-8000-00000000e20a'::uuid,
   '00000000-0000-4000-8000-00000000e201'::uuid,
   '00000000-0000-4000-8000-00000000e206'::uuid,
-  array['material_analysis', 'poll_suggestions']::text[],
+  array[
+    'academic_answers',
+    'material_analysis',
+    'poll_suggestions',
+    'summaries'
+  ]::text[],
   array['test-model']::text[],
   10, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
   90, 900, 2,
@@ -329,7 +334,7 @@ SELECT lives_ok(
       jsonb_build_object(
         'material_analysis_enabled', false,
         'poll_suggestions_enabled', false,
-        'material_analysis_call_limit', 10,
+        'material_analysis_call_limit', 5,
         'poll_generation_limit', 10,
         'budget_limit_microusd', 2500000,
         'input_token_limit', 200000,

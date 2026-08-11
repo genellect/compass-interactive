@@ -531,5 +531,10 @@ assert.match(
   pgTap,
   /PDF cancel remains available while admission is disabled[\s\S]*lost PDF cancel response converges without reactivating admission[\s\S]*PDF receipts contain no raw ticket, nonce, URL, ETag or document content/,
 )
+assert.match(
+  pgTap,
+  /'phase730c2-presenter-doc', repeat\('d', 64\), 1,[\s\S]*'C2 Presenter material', 3, 3000, 300,[\s\S]*repeat\('d', 64\), repeat\('f', 64\), true/,
+  'Presenter fixture binds the PDF version to the registered PDF digest',
+)
 
 console.log('Phase 7.30C2 operational static checks passed.')

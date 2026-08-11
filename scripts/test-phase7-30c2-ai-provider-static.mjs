@@ -440,6 +440,16 @@ for (const contract of [
 assert.match(pgTap, /SELECT no_plan\(\)/)
 assert.match(
   pgTap,
+  /array\[\s*'academic_answers',\s*'material_analysis',\s*'poll_suggestions',\s*'summaries'\s*\]::text\[\]/,
+  'the reusable master policy covers the complete all-except-captions scope',
+)
+assert.match(
+  pgTap,
+  /'material_analysis_call_limit', 5/,
+  'the provider fixture remains inside the database call-limit constraint',
+)
+assert.match(
+  pgTap,
   /NOT EXISTS \([\s\S]*admin_google_ai_provider_start_intents[\s\S]*admin_google_ai_provider_start_receipts[\s\S]*status = 'issued'/,
   'collision regression proves start evidence and child consumption roll back',
 )

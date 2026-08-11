@@ -609,7 +609,7 @@ SELECT lives_ok(
       '00000000-0000-4000-8000-00000000d209'::uuid,
       'phase730c2-presenter-doc', repeat('d', 64), 1,
       'C2 Presenter material', 3, 3000, 300,
-      repeat('e', 64), repeat('f', 64), true
+      repeat('d', 64), repeat('f', 64), true
     )
   $$,
   'Presenter fixture registers bounded PDF metadata'
