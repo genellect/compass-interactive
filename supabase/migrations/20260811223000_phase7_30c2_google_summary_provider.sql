@@ -34,13 +34,19 @@ begin
      or octet_length(target_source_coverage::text) > 1000 then
     return false;
   end if;
-  if pg_catalog.jsonb_object_length(target_source_hashes) <> 7
+  if (
+       select pg_catalog.count(*)
+       from pg_catalog.jsonb_object_keys(target_source_hashes)
+     ) <> 7
      or not target_source_hashes ?& array[
        'pdf_character_count', 'pdf_context_sha256', 'pdf_max_page_number',
        'pdf_page_count', 'transcript_character_count',
        'transcript_segment_count', 'transcript_sha256'
      ]::text[]
-     or pg_catalog.jsonb_object_length(target_source_coverage) <> 3
+     or (
+       select pg_catalog.count(*)
+       from pg_catalog.jsonb_object_keys(target_source_coverage)
+     ) <> 3
      or not target_source_coverage ?& array[
        'comments', 'pdf', 'transcript'
      ]::text[] then

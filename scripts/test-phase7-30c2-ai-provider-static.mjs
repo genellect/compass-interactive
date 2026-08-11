@@ -222,12 +222,12 @@ const summarySourceEvidenceValidator = functionBlock(
 )
 assert.match(
   summarySourceEvidenceValidator,
-  /jsonb_object_length\(target_source_hashes\) <> 7[\s\S]*pdf_character_count[\s\S]*pdf_context_sha256[\s\S]*pdf_max_page_number[\s\S]*pdf_page_count[\s\S]*transcript_character_count[\s\S]*transcript_segment_count[\s\S]*transcript_sha256/,
+  /count\(\*\)[\s\S]*jsonb_object_keys\(target_source_hashes\)[\s\S]*<> 7[\s\S]*pdf_character_count[\s\S]*pdf_context_sha256[\s\S]*pdf_max_page_number[\s\S]*pdf_page_count[\s\S]*transcript_character_count[\s\S]*transcript_segment_count[\s\S]*transcript_sha256/,
   'summary source evidence accepts only the seven canonical hash/count keys',
 )
 assert.match(
   summarySourceEvidenceValidator,
-  /jsonb_object_length\(target_source_coverage\) <> 3[\s\S]*'comments', 'pdf', 'transcript'[\s\S]*is distinct from 'boolean'/,
+  /jsonb_object_keys\(target_source_coverage\)[\s\S]*<> 3[\s\S]*'comments', 'pdf', 'transcript'[\s\S]*is distinct from 'boolean'/,
   'summary source coverage accepts only canonical boolean keys',
 )
 assert.match(

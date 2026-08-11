@@ -881,9 +881,6 @@ SELECT is(
   'expired',
   'pre-C1 remediation leaves no active shared authority'
 );
-DELETE FROM public.lecture_ai_master_authorizations
-WHERE id = '00000000-0000-4000-8000-00000000c160'::uuid;
-
 SET ROLE service_role;
 SELECT is(
   public.complete_google_ai_master_browser_admission_v1(
