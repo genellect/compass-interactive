@@ -341,7 +341,7 @@ SELECT alike(
   '%serialize_admin_ai_request_v1(%require_google_admin_operation_context_v1(%from private.admin_google_lecture_operation_receipts%idempotentReplay%assert_google_admin_operation_gate_v1(%assert_google_admin_operation_lecture_state_v1(%lecture start did not transition to open%lecture close did not transition to closed%insert into private.admin_google_lecture_operation_receipts%insert into private.admin_audit_events%',
   'lecture facade keeps request, context, replay, gate, lifecycle, mutation and evidence atomic'
 );
-SELECT unlike(
+SELECT unalike(
   pg_get_functiondef(
     'private.google_admin_lecture_intent_digest_v1(uuid,uuid,text,uuid,text,timestamptz,timestamptz,text)'::regprocedure
   ),
