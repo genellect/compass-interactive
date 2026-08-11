@@ -3189,6 +3189,12 @@ SELECT ok(
       AND set_config(
         'compass.test.c2_academic_auto_run_token_hash', repeat('9',64), false
       ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_run_id', result #>> '{run,id}', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_run_token_hash', repeat('9',64), false
+      ) IS NOT NULL
       AND result ->> 'accepted' = 'true'
       AND result ->> 'idempotentReplay' = 'false'
     FROM (
@@ -3206,14 +3212,162 @@ SELECT ok(
   'automatic Academic recovery starts a grant-free google_per_call run'
 );
 RESET ROLE;
+UPDATE public.lecture_sessions
+SET
+  starts_at = statement_timestamp() - interval '30 minutes',
+  started_at = statement_timestamp() - interval '30 minutes',
+  updated_at = statement_timestamp()
+WHERE id = current_setting('compass.test.c2_provider_lecture_id')::uuid;
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_auto_summary_window',
+      result #>> '{window,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_auto_summary_attempt',
+        result ->> 'expectedAttempt', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_auto_summary_preflight_digest',
+        result ->> 'preflightContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'resultStatus' = 'prepared'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e2d0'::uuid,
+        5,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('5',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS prepared
+  ),
+  'automatic Academic fixture prepares a summary in the same grant-free run'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_auto_summary_child',
+      result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_academic_auto_summary_provider_digest',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT pg_temp.issue_summary_child(
+        '00000000-0000-4000-8000-00000000e2d1'::uuid,
+        repeat('5',63) || '6',
+        '00000000-0000-4000-8000-00000000e2d0'::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_window')::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_attempt')::integer,
+        current_setting(
+          'compass.test.c2_academic_auto_summary_preflight_digest'
+        ),
+        repeat('6',64)
+      ) AS result
+    ) AS issued
+  ),
+  'automatic Academic fixture issues one summary child for that run'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_auto_summary_operation',
+      result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_summary_operation(
+        '00000000-0000-4000-8000-00000000e2d2'::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_child')::uuid,
+        repeat('5',63) || '6',
+        '00000000-0000-4000-8000-00000000e2d0'::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_window')::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_attempt')::integer,
+        current_setting(
+          'compass.test.c2_academic_auto_summary_preflight_digest'
+        ),
+        repeat('6',64),
+        current_setting(
+          'compass.test.c2_academic_auto_summary_provider_digest'
+        )
+      ) AS result
+    ) AS started
+  ),
+  'automatic Academic fixture starts one summary provider operation'
+);
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2d2'::uuid,
+    current_setting('compass.test.c2_academic_auto_summary_operation')::uuid,
+    'openai_responses_v1',
+    '00000000-0000-4000-8000-00000000e2d2'::uuid,
+    true
+  ) ->> 'dispatchAllowed',
+  'true',
+  'automatic Academic fixture claims its summary dispatch once'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'result_saved' = 'true'
+    FROM (
+      SELECT public.complete_google_admin_summary_window_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e2d2'::uuid,
+        current_setting('compass.test.c2_academic_auto_summary_operation')::uuid,
+        jsonb_build_object(
+          'lecture_recap', jsonb_build_array('Automatic source summary'),
+          'comment_pulse', '[]'::jsonb,
+          'academic_question_candidate', jsonb_build_object(
+            'question', 'What evidence supports this treatment?',
+            'educationalValue', 'Supports evidence review',
+            'qualityScore', 0.9
+          )
+        ),
+        '{}'::jsonb, false, 1600, 1000, 100,
+        '00000000-0000-4000-8000-00000000e2d2'
+      ) AS result
+    ) AS completed
+  ),
+  'automatic Academic fixture saves one same-run verified summary candidate'
+);
+RESET ROLE;
 SELECT ok(
   set_config(
     'compass.test.c2_academic_source_summary_id',
     (
       SELECT summary.id::text
       FROM public.lecture_ai_summaries AS summary
+      JOIN public.lecture_summary_windows AS summary_window
+        ON summary_window.id = summary.window_id
       WHERE summary.lecture_session_id =
         current_setting('compass.test.c2_provider_lecture_id')::uuid
+        AND summary_window.run_id =
+          current_setting('compass.test.c2_academic_auto_run_id')::uuid
       ORDER BY summary.created_at DESC, summary.id DESC
       LIMIT 1
     ),
