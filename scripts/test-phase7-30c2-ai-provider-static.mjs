@@ -1114,5 +1114,24 @@ assert.match(
   /NOT EXISTS \([\s\S]*admin_google_ai_provider_start_intents[\s\S]*admin_google_ai_provider_start_receipts[\s\S]*status = 'issued'/,
   'collision regression proves start evidence and child consumption roll back',
 )
+assert.match(
+  pgTap,
+  /RESET ROLE;\s*SELECT throws_ok\(\s*\$\$UPDATE public\.ai_billing_grants/,
+  'direct child-consumption defense is tested above service_role table ACLs',
+)
+const providerFixtureC = pgTap.slice(
+  pgTap.indexOf("'compass.test.c2_provider_child_c'"),
+  pgTap.indexOf("'provider work starts while the Google Admin session is live'"),
+)
+assert.equal(
+  [...providerFixtureC.matchAll(/repeat\('c',64\)/g)].length,
+  2,
+  'the third provider fixture reuses one fresh nonce only for its issue/start pair',
+)
+assert.doesNotMatch(
+  providerFixtureC,
+  /repeat\('8',64\)/,
+  'the third provider fixture never collides with the legacy grant nonce',
+)
 
 console.log('Phase 7.30C2 AI provider static checks passed.')

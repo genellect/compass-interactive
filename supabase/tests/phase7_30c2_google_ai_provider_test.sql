@@ -1197,6 +1197,7 @@ SELECT ok(
   ),
   'a second independent child can be issued after the first operation ends'
 );
+RESET ROLE;
 SELECT throws_ok(
   $$UPDATE public.ai_billing_grants
     SET status = 'consumed', consumed_at = statement_timestamp()
@@ -2240,7 +2241,7 @@ SELECT ok(
     FROM (
       SELECT pg_temp.issue_provider_child(
         '00000000-0000-4000-8000-00000000e235'::uuid,
-        repeat('8',64), 'https://accounts.google.com', repeat('a',64),
+        repeat('c',64), 'https://accounts.google.com', repeat('a',64),
         'material_analysis', 'test-model', true
       ) AS result
     ) AS issued
@@ -2258,7 +2259,7 @@ SELECT ok(
       SELECT pg_temp.start_provider_operation(
         '00000000-0000-4000-8000-00000000e236'::uuid,
         current_setting('compass.test.c2_provider_child_c')::uuid,
-        repeat('8',64), current_setting('compass.test.c2_provider_digest_c'),
+        repeat('c',64), current_setting('compass.test.c2_provider_digest_c'),
         'https://accounts.google.com', repeat('a',64), 'test-model', true
       ) AS result
     ) AS started
