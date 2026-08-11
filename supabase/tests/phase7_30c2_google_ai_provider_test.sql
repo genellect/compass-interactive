@@ -2407,9 +2407,10 @@ SELECT ok(
     SELECT usage.status = 'cancelled'
       AND usage.accounting_settled_at IS NOT NULL
       AND NOT usage.result_accepted
+      AND usage.error_code = 'google_authority_revoked_ambiguous'
       AND summary_window.status = 'discarded'
       AND summary_window.current_operation_id IS NULL
-      AND summary_window.last_error_code = 'google_authority_revoked_ambiguous'
+      AND summary_window.last_error_code = 'master_authorization_stopped'
     FROM public.ai_usage_ledger AS usage
     JOIN public.lecture_summary_windows AS summary_window
       ON summary_window.id =
@@ -3004,7 +3005,7 @@ SELECT ok(
     FROM (
       SELECT pg_temp.issue_academic_child(
         '00000000-0000-4000-8000-00000000e2a1'::uuid,
-        repeat('6',64),
+        repeat('6',63) || '7',
         current_setting('compass.test.c2_academic_request_a')::uuid,
         '00000000-0000-4000-8000-00000000e2a0'::uuid,
         current_setting('compass.test.c2_academic_preflight_digest_a'),
@@ -3039,7 +3040,7 @@ SELECT ok(
       SELECT pg_temp.start_academic_operation(
         '00000000-0000-4000-8000-00000000e2a2'::uuid,
         current_setting('compass.test.c2_academic_child_a')::uuid,
-        repeat('6',64),
+        repeat('6',63) || '7',
         current_setting('compass.test.c2_academic_request_a')::uuid,
         '00000000-0000-4000-8000-00000000e2a0'::uuid,
         current_setting('compass.test.c2_academic_preflight_digest_a'),
@@ -3060,7 +3061,7 @@ SELECT ok(
     FROM (
       SELECT pg_temp.issue_academic_child(
         '00000000-0000-4000-8000-00000000e2a1'::uuid,
-        repeat('6',64),
+        repeat('6',63) || '7',
         current_setting('compass.test.c2_academic_request_a')::uuid,
         '00000000-0000-4000-8000-00000000e2a0'::uuid,
         current_setting('compass.test.c2_academic_preflight_digest_a'),
@@ -3079,7 +3080,7 @@ SELECT ok(
       SELECT pg_temp.start_academic_operation(
         '00000000-0000-4000-8000-00000000e2a2'::uuid,
         current_setting('compass.test.c2_academic_child_a')::uuid,
-        repeat('6',64),
+        repeat('6',63) || '7',
         current_setting('compass.test.c2_academic_request_a')::uuid,
         '00000000-0000-4000-8000-00000000e2a0'::uuid,
         current_setting('compass.test.c2_academic_preflight_digest_a'),

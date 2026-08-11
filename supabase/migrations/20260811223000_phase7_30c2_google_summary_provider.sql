@@ -696,10 +696,14 @@ begin
                     0, 0, 0, null,
                     'summary_context_changed_before_dispatch'
                   );
-                  unclaimed_start_recovered := coalesce(
-                    (recovery_result ->> 'accepted')::boolean,
-                    false
-                  );
+                  unclaimed_start_recovered := recovery_result is not null
+                    and recovery_result #>> '{operation,status}' = 'failed'
+                    and recovery_result #>> '{operation,accounting_settled_at}'
+                      is not null
+                    and recovery_result #>> '{operation,settlement_status}' =
+                      'released'
+                    and recovery_result #>> '{operation,error_code}' =
+                      'summary_context_changed_before_dispatch';
                 end if;
               end if;
             end if;
