@@ -597,6 +597,99 @@ SELECT is(
 );
 RESET ROLE;
 
+SET ROLE service_role;
+SELECT ok(
+  set_config(
+    'compass.test.c2_master_control_lecture_id',
+    public.create_owned_admin_lecture_v1(
+      repeat('1', 64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'C2 Google master control lecture',
+      encode(extensions.digest(convert_to('654322', 'UTF8'), 'sha256'), 'hex'),
+      '654322', null::timestamptz, null::timestamptz,
+      '00000000-0000-4000-8000-00000000e2f0'::uuid
+    ) ->> 'lecture_session_id',
+    false
+  ) IS NOT NULL,
+  'Google Admin creates a separate lecture for gate-independent master control'
+);
+RESET ROLE;
+SELECT ok(
+  public.admin_set_lecture_status(
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    'start'
+  ),
+  'the master-control lecture opens'
+);
+SET ROLE service_role;
+SELECT is(
+  public.authorize_google_ai_master_with_pin_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000e20a'::uuid, 1,
+    repeat('b', 64), 1, repeat('e', 64),
+    '00000000-0000-4000-8000-00000000e2f1'::uuid
+  ) ->> 'accepted',
+  'true',
+  'the control fixture receives one provenance-bound master'
+);
+SELECT is(
+  public.manage_google_admin_ai_master_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'masterStatus',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    null::uuid, null::text, false
+  ) ->> 'accepted',
+  'true',
+  'master status remains available while operational admission is disabled'
+);
+SELECT is(
+  public.manage_google_admin_ai_master_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'revokeMaster',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f2'::uuid,
+    'teacher_requested_stop', false
+  ) ->> 'accepted',
+  'true',
+  'master revoke remains available while operational admission is disabled'
+);
+SELECT is(
+  public.manage_google_admin_ai_master_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'revokeMaster',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f2'::uuid,
+    'teacher_requested_stop', false
+  ) ->> 'control_replayed',
+  'true',
+  'a lost master-revoke response converges without restoring admission'
+);
+RESET ROLE;
+SELECT is(
+  (
+    SELECT master.status
+    FROM public.lecture_ai_master_authorizations AS master
+    WHERE master.lecture_session_id =
+      current_setting('compass.test.c2_master_control_lecture_id')::uuid
+  ),
+  'revoked',
+  'master revoke drains and terminalizes the exact lecture authority'
+);
+
 CREATE FUNCTION pg_temp.issue_provider_child(
   request_id uuid,
   nonce_hash text,

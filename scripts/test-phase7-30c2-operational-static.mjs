@@ -17,6 +17,12 @@ const migration = read(
 const c2Foundation = read(
   'supabase/migrations/20260811012111_phase7_30c2_unified_admin_authorization.sql',
 )
+const finalOperationsMigration = read(
+  'supabase/migrations/20260812011500_phase7_30c2_google_realtime_control.sql',
+)
+const authorizeAiStart = read(
+  'supabase/functions/authorize-ai-start/index.ts',
+)
 const issueDisplaySession = read(
   'supabase/functions/issue-display-session/index.ts',
 )
@@ -47,6 +53,49 @@ const presenterToken = read('supabase/functions/_shared/presenterToken.ts')
 const pdfWorker = read('cloudflare/asset-worker/src/pdfPublication.ts')
 const databaseTypes = read('src/types/database.ts')
 const pgTap = read('supabase/tests/phase7_30c2_operational_surfaces_test.sql')
+const providerPgTap = read(
+  'supabase/tests/phase7_30c2_google_ai_provider_test.sql',
+)
+
+assert.match(
+  finalOperationsMigration,
+  /set lecture_lock_mode = 'update'[\s\S]*authorize-ai-start\.masterStatus/,
+  'AI master status takes the lecture update lock before expiry reconciliation',
+)
+const aiMasterFacade = functionBlock(
+  finalOperationsMigration,
+  'private.manage_google_admin_ai_master_v1',
+)
+assert.match(
+  aiMasterFacade,
+  /target_action not in \('masterStatus', 'revokeMaster'\)[\s\S]*serialize_admin_ai_request_v1[\s\S]*require_google_admin_operation_context_v1[\s\S]*assert_google_admin_operation_gate_v1[\s\S]*assert_google_admin_operation_lecture_state_v1[\s\S]*get_google_ai_master_status_v1[\s\S]*revoke_google_ai_master_v1/,
+  'the typed Google AI master facade serializes revoke and rechecks current identity, ownership and lifecycle in one transaction',
+)
+assert.match(
+  finalOperationsMigration,
+  /revoke all on function private\.manage_google_admin_ai_master_v1\([\s\S]*from public, anon, authenticated, service_role;[\s\S]*revoke all on function public\.manage_google_admin_ai_master_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.manage_google_admin_ai_master_v1\([\s\S]*to service_role/,
+  'only the reviewed service Edge may enter the public AI master facade',
+)
+assert.match(
+  authorizeAiStart,
+  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*google_ai_master_proof_required[\s\S]*google_ai_provider_start_required[\s\S]*manage_google_admin_ai_master_v1/,
+  'authorize-ai-start keeps credentials exclusive and exposes only status/revoke to the Google browser transport',
+)
+assert.match(
+  authorizeAiStart,
+  /trimmedReason\.length > 120[\s\S]*target_reason: reason[\s\S]*target_request_id:/,
+  'Google revoke rejects oversized reasons instead of collapsing different intents by truncation',
+)
+assert.match(
+  databaseTypes,
+  /manage_google_admin_ai_master_v1: \{[\s\S]*target_action: string[\s\S]*target_request_id: string[\s\S]*Returns: Json/,
+  'generated types include the typed Google AI master facade',
+)
+assert.match(
+  providerPgTap,
+  /master status remains available while operational admission is disabled[\s\S]*master revoke remains available while operational admission is disabled[\s\S]*lost master-revoke response converges without restoring admission/,
+  'pgTAP proves gate-independent master status, revoke and exact replay',
+)
 
 assert.match(
   c2Foundation,
