@@ -1551,6 +1551,15 @@ SET
 WHERE lecture_session_id =
   current_setting('compass.test.c2_provider_lecture_id')::uuid;
 
+SELECT is(
+  set_config(
+    'compass.test.c2_summary_provider_run_token_hash',
+    repeat('e', 64),
+    false
+  ),
+  repeat('e', 64),
+  'the summary provider fixture persists its run token independently of assertion evaluation'
+);
 SET ROLE service_role;
 SELECT ok(
   (
@@ -1559,10 +1568,6 @@ SELECT ok(
       result #>> '{run,id}',
       false
     ) IS NOT NULL
-      AND set_config(
-        'compass.test.c2_summary_provider_run_token_hash',
-        repeat('e',64), false
-      ) IS NOT NULL
       AND result ->> 'accepted' = 'true'
       AND result ->> 'idempotentReplay' = 'false'
     FROM (
@@ -1585,6 +1590,8 @@ SELECT ok(
     SELECT run.auto_academic_answers_enabled
       AND run.academic_authority_mode = 'google_per_call'
       AND run.academic_authorization_grant_id IS NULL
+      AND run.token_hash =
+        current_setting('compass.test.c2_summary_provider_run_token_hash')
     FROM public.lecture_summary_runs AS run
     WHERE run.id = current_setting('compass.test.c2_summary_provider_run_id')::uuid
   )
@@ -1630,46 +1637,117 @@ SELECT ok(
   'rejected raw source metadata leaves no immutable evidence'
 );
 
-SET ROLE service_role;
+SELECT ok(
+  private.google_summary_source_evidence_is_valid_v1(
+    jsonb_build_object(
+      'pdf_character_count', 0,
+      'pdf_context_sha256', null,
+      'pdf_max_page_number', 0,
+      'pdf_page_count', 0,
+      'transcript_character_count', 500,
+      'transcript_segment_count', 1,
+      'transcript_sha256', repeat('1',64)
+    ),
+    jsonb_build_object(
+      'comments', false, 'pdf', false, 'transcript', true
+    )
+  ),
+  'the prepared-window source fixture satisfies the closed evidence schema'
+);
 SELECT ok(
   (
-    SELECT set_config(
+    SELECT lecture.status = 'open'
+      AND lecture.hard_stop_at > statement_timestamp()
+      AND control.summaries_enabled
+      AND control.status in ('ready', 'running')
+      AND run.status = 'running'
+      AND run.expires_at > statement_timestamp()
+      AND run.token_hash =
+        current_setting('compass.test.c2_summary_provider_run_token_hash')
+    FROM public.lecture_summary_runs AS run
+    JOIN public.lecture_sessions AS lecture
+      ON lecture.id = run.lecture_session_id
+    JOIN public.lecture_ai_control AS control
+      ON control.lecture_session_id = run.lecture_session_id
+    WHERE run.id =
+      current_setting('compass.test.c2_summary_provider_run_id')::uuid
+  ),
+  'the summary provider run, lecture and control remain live before preflight'
+);
+SELECT is(
+  private.require_google_admin_operation_context_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    'generate-lecture-summary.generate',
+    current_setting('compass.test.c2_provider_lecture_id')::uuid
+  ) ->> 'lecture_lock_mode',
+  'update',
+  'the due-window operation context preserves Google identity, ownership and lock mode'
+);
+
+SET ROLE service_role;
+WITH captured AS MATERIALIZED (
+  SELECT pg_temp.prepare_summary_window(
+      '00000000-0000-4000-8000-00000000e270'::uuid,
+      1,
+      jsonb_build_object(
+        'pdf_character_count', 0,
+        'pdf_context_sha256', null,
+        'pdf_max_page_number', 0,
+        'pdf_page_count', 0,
+        'transcript_character_count', 500,
+        'transcript_segment_count', 1,
+        'transcript_sha256', repeat('1',64)
+      ),
+      jsonb_build_object(
+        'comments', false, 'pdf', false, 'transcript', true
+      )
+    ) AS result
+), persisted AS MATERIALIZED (
+  SELECT
+    result,
+    set_config(
+      'compass.test.c2_summary_preflight_result_a',
+      coalesce(result::text, 'null'),
+      false
+    ) AS stored_result
+  FROM captured
+)
+SELECT ok(
+  stored_result = coalesce(result::text, 'null')
+    AND set_config(
       'compass.test.c2_summary_preflight_window_a',
       result #>> '{window,id}', false
     ) IS NOT NULL
-      AND set_config(
-        'compass.test.c2_summary_preflight_attempt_a',
-        result ->> 'expectedAttempt', false
-      ) IS NOT NULL
-      AND set_config(
-        'compass.test.c2_summary_preflight_digest_a',
-        result ->> 'preflightContextDigest', false
-      ) IS NOT NULL
-      AND result ->> 'accepted' = 'true'
-      AND result ->> 'idempotentReplay' = 'false'
-      AND result ->> 'refreshRequired' = 'false'
-      AND result ->> 'resultStatus' = 'prepared'
-    FROM (
-      SELECT pg_temp.prepare_summary_window(
-        '00000000-0000-4000-8000-00000000e270'::uuid,
-        1,
-        jsonb_build_object(
-          'pdf_character_count', 0,
-          'pdf_context_sha256', null,
-          'pdf_max_page_number', 0,
-          'pdf_page_count', 0,
-          'transcript_character_count', 500,
-          'transcript_segment_count', 1,
-          'transcript_sha256', repeat('1',64)
-        ),
-        jsonb_build_object(
-          'comments', false, 'pdf', false, 'transcript', true
-        )
-      ) AS result
-    ) AS prepared
-  ),
-  'one due summary window prepares immutable source context without a child'
-);
+    AND set_config(
+      'compass.test.c2_summary_preflight_attempt_a',
+      result ->> 'expectedAttempt', false
+    ) IS NOT NULL
+    AND set_config(
+      'compass.test.c2_summary_preflight_digest_a',
+      result ->> 'preflightContextDigest', false
+    ) IS NOT NULL
+    AND result ->> 'accepted' = 'true'
+    AND result ->> 'idempotentReplay' = 'false'
+    AND result ->> 'refreshRequired' = 'false'
+    AND result ->> 'resultStatus' = 'prepared',
+  format(
+    'one due summary window prepares immutable source context without a child (result=%s)',
+    case when result is null then 'SQL NULL' else jsonb_strip_nulls(
+      jsonb_build_object(
+        'accepted', result -> 'accepted',
+        'idempotentReplay', result -> 'idempotentReplay',
+        'reason', result -> 'reason',
+        'refreshRequired', result -> 'refreshRequired',
+        'resultStatus', result -> 'resultStatus',
+        'windowStatus', result -> 'windowStatus'
+      )
+    )::text end
+  )
+)
+FROM persisted;
 SELECT ok(
   (
     SELECT result ->> 'accepted' = 'true'
@@ -1765,8 +1843,14 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e272'::uuid,
         repeat('a',64),
         '00000000-0000-4000-8000-00000000e270'::uuid,
-        current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
-        current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+        nullif(
+          current_setting('compass.test.c2_summary_preflight_window_a', true),
+          ''
+        )::uuid,
+        nullif(
+          current_setting('compass.test.c2_summary_preflight_attempt_a', true),
+          ''
+        )::integer,
         current_setting('compass.test.c2_summary_preflight_digest_a'),
         repeat('f',64)
       ) AS result
@@ -1784,11 +1868,20 @@ SELECT ok(
     FROM (
       SELECT pg_temp.start_summary_operation(
         '00000000-0000-4000-8000-00000000e273'::uuid,
-        current_setting('compass.test.c2_summary_child_a')::uuid,
+        nullif(
+          current_setting('compass.test.c2_summary_child_a', true),
+          ''
+        )::uuid,
         repeat('a',64),
         '00000000-0000-4000-8000-00000000e270'::uuid,
-        current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
-        current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+        nullif(
+          current_setting('compass.test.c2_summary_preflight_window_a', true),
+          ''
+        )::uuid,
+        nullif(
+          current_setting('compass.test.c2_summary_preflight_attempt_a', true),
+          ''
+        )::integer,
         current_setting('compass.test.c2_summary_preflight_digest_a'),
         repeat('f',64),
         current_setting('compass.test.c2_summary_provider_digest_a')
@@ -1800,11 +1893,20 @@ SELECT ok(
 SELECT is(
   pg_temp.start_summary_operation(
     '00000000-0000-4000-8000-00000000e273'::uuid,
-    current_setting('compass.test.c2_summary_child_a')::uuid,
+    nullif(
+      current_setting('compass.test.c2_summary_child_a', true),
+      ''
+    )::uuid,
     repeat('a',64),
     '00000000-0000-4000-8000-00000000e270'::uuid,
-    current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
-    current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+    nullif(
+      current_setting('compass.test.c2_summary_preflight_window_a', true),
+      ''
+    )::uuid,
+    nullif(
+      current_setting('compass.test.c2_summary_preflight_attempt_a', true),
+      ''
+    )::integer,
     current_setting('compass.test.c2_summary_preflight_digest_a'),
     repeat('f',64),
     current_setting('compass.test.c2_summary_provider_digest_a')
@@ -1819,7 +1921,10 @@ SELECT throws_ok(
     '00000000-0000-4000-8000-00000000e203'::uuid,
     'https://accounts.google.com', repeat('a',64), 1,
     '00000000-0000-4000-8000-00000000e273'::uuid,
-    current_setting('compass.test.c2_summary_operation_a')::uuid,
+    nullif(
+      current_setting('compass.test.c2_summary_operation_a', true),
+      ''
+    )::uuid,
     jsonb_build_object(
       'lecture_recap', jsonb_build_array('discard me'),
       'comment_pulse', '[]'::jsonb
@@ -1843,7 +1948,10 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e203'::uuid,
         'https://accounts.google.com', repeat('a',64), 1,
         '00000000-0000-4000-8000-00000000e273'::uuid,
-        current_setting('compass.test.c2_summary_operation_a')::uuid,
+        nullif(
+          current_setting('compass.test.c2_summary_operation_a', true),
+          ''
+        )::uuid,
         'openai_responses_v1',
         '00000000-0000-4000-8000-00000000e273'::uuid,
         true
