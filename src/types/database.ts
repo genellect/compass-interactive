@@ -5325,7 +5325,7 @@ export type Database = {
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
-          target_transport_enabled: boolean
+          target_transport_enabled?: boolean
         }
         Returns: Json
       }
@@ -5904,18 +5904,18 @@ export type Database = {
         Args: {
           target_action: string
           target_auth_user_id: string
-          target_configuration: Json
-          target_control_intent_digest: string
+          target_configuration?: Json
+          target_control_intent_digest?: string
           target_google_issuer: string
           target_lecture_session_id: string
-          target_operation_id: string
+          target_operation_id?: string
           target_provider_subject_hmac: string
-          target_reason: string
-          target_request_id: string
+          target_reason?: string
+          target_request_id?: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
-          target_transport_enabled: boolean
+          target_transport_enabled?: boolean
         }
         Returns: Json
       }
@@ -5926,12 +5926,12 @@ export type Database = {
           target_google_issuer: string
           target_lecture_session_id: string
           target_provider_subject_hmac: string
-          target_reason: string
-          target_request_id: string
+          target_reason?: string
+          target_request_id?: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
-          target_transport_enabled: boolean
+          target_transport_enabled?: boolean
         }
         Returns: Json
       }

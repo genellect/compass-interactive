@@ -203,7 +203,7 @@ assert.match(
 )
 assert.match(
   databaseTypes,
-  /manage_google_admin_ai_control_v1: \{[\s\S]*target_control_intent_digest: string[\s\S]*target_operation_id: string[\s\S]*Returns: Json/,
+  /manage_google_admin_ai_control_v1: \{[\s\S]*target_control_intent_digest\?: string[\s\S]*target_operation_id\?: string[\s\S]*Returns: Json/,
 )
 
 assert.match(
