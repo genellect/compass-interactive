@@ -522,24 +522,37 @@ Deno.serve(async (request) => {
         semanticAction === 'disableFeatures' ||
         semanticAction === 'setSummaryLanguage'
       ) {
+        const providerHangup =
+          semanticAction === 'disableFeatures' &&
+          configuration?.captions_enabled === false
+            ? await sweepRealtimeProviderCalls({ lectureSessionId })
+            : null
         return jsonResponse({
           control: result.result ?? null,
           idempotentReplay: result.idempotentReplay === true,
           metadata: result.metadata ?? {},
           ok: true,
+          providerHangup,
           refreshRequired: result.refreshRequired === true,
           status: result.status ?? null,
         })
       }
+      const shouldStopRealtime =
+        semanticAction === 'heartbeat' &&
+        (result.status === 'stop' || result.metadata?.should_stop === true)
+      const providerHangup =
+        semanticAction === 'stop' ||
+        semanticAction === 'stopFeature' ||
+        shouldStopRealtime
+          ? await sweepRealtimeProviderCalls(
+              operationId ? { operationId } : { lectureSessionId },
+            )
+          : (result.result?.providerHangup ?? null)
       return jsonResponse({
         idempotentReplay: result.idempotentReplay === true,
         metadata: result.metadata ?? {},
         ok: true,
-        providerHangup:
-          result.result?.providerHangup ??
-          (semanticAction === 'stop' || semanticAction === 'stopFeature'
-            ? { pending: true }
-            : null),
+        providerHangup,
         refreshRequired: result.refreshRequired === true,
         result: result.result ?? result.metadata ?? null,
         status: result.status ?? null,

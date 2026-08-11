@@ -59,6 +59,61 @@ create trigger admin_google_operation_policies_immutable
 before update or delete on private.admin_google_operation_policies
 for each row execute function private.reject_admin_c1_evidence_mutation_v1();
 
+-- Realtime provider creation is a separate, append-only boundary from the
+-- generic provider dispatch claim. It is created before the control facade so
+-- heartbeat/stop can require the complete start -> dispatch -> activation
+-- chain in the same transaction.
+create table private.admin_google_realtime_provider_creation_receipts (
+  start_request_id uuid primary key
+    references private.admin_google_ai_provider_start_receipts(start_request_id)
+    on delete restrict,
+  operation_id uuid not null unique
+    references public.ai_usage_ledger(id) on delete restrict,
+  client_request_id uuid not null unique,
+  outcome text not null check (
+    outcome in ('activated', 'creation_failed', 'creation_uncertain')
+  ),
+  provider_call_id text unique check (
+    provider_call_id is null
+    or (
+      char_length(provider_call_id) between 3 and 200
+      and provider_call_id ~ '^[A-Za-z0-9_-]+$'
+    )
+  ),
+  provider_request_id text check (
+    provider_request_id is null
+    or char_length(provider_request_id) <= 200
+  ),
+  error_code text check (
+    error_code is null
+    or (
+      char_length(error_code) between 1 and 120
+      and error_code ~ '^[A-Za-z0-9:_-]+$'
+    )
+  ),
+  created_at timestamptz not null default statement_timestamp(),
+  check (
+    (outcome = 'activated' and provider_call_id is not null and error_code is null)
+    or (outcome = 'creation_failed' and provider_call_id is null and error_code is not null)
+    or (outcome = 'creation_uncertain' and error_code is not null)
+  )
+);
+
+create index admin_google_realtime_creation_operation_idx
+  on private.admin_google_realtime_provider_creation_receipts (
+    operation_id, created_at desc
+  );
+
+alter table private.admin_google_realtime_provider_creation_receipts
+  enable row level security;
+revoke all on private.admin_google_realtime_provider_creation_receipts
+  from public, anon, authenticated, service_role;
+
+create trigger admin_google_realtime_creation_receipts_append_only
+before update or delete
+on private.admin_google_realtime_provider_creation_receipts
+for each row execute function private.reject_admin_c1_evidence_mutation_v1();
+
 create function private.manage_google_admin_ai_master_v1(
   target_token_hash text,
   target_auth_user_id uuid,
@@ -508,9 +563,16 @@ declare
   target_id_value text := target_operation_id::text;
   receipt_row private.admin_google_operation_receipts%rowtype;
   start_intent private.admin_google_ai_provider_start_intents%rowtype;
+  dispatch_receipt private.admin_google_ai_provider_dispatch_receipts%rowtype;
+  creation_receipt private.admin_google_realtime_provider_creation_receipts%rowtype;
   control_grant jsonb;
+  ai_gate private.admin_ai_unlock_runtime_gate%rowtype;
+  policy_row private.admin_ai_policies%rowtype;
+  master_row public.lecture_ai_master_authorizations%rowtype;
   control_row public.lecture_ai_control%rowtype;
+  active_caption_usage public.ai_usage_ledger%rowtype;
   usage_row public.ai_usage_ledger%rowtype;
+  provider_call_row public.ai_realtime_provider_calls%rowtype;
   summary_run public.lecture_summary_runs%rowtype;
   result_value jsonb;
   recent_operations jsonb := '[]'::jsonb;
@@ -518,6 +580,9 @@ declare
   result_status_value text;
   actor_value text;
   changed_value boolean := false;
+  live_authority boolean := false;
+  replay_value boolean := false;
+  effective_now timestamptz := statement_timestamp();
 begin
   if target_action not in (
        'configure',
@@ -707,16 +772,24 @@ begin
        and receipt_row.lecture_session_id = target_lecture_session_id
        and receipt_row.target_id is not distinct from target_id_value
        and receipt_row.result_id is not distinct from target_id_value then
-      return jsonb_build_object(
-        'accepted', true,
-        'idempotentReplay', true,
-        'metadata', receipt_row.result_metadata,
-        'refreshRequired', true,
-        'status', receipt_row.result_status
-      );
+      if target_action = 'heartbeat' then
+        -- A heartbeat retry is deliberately re-evaluated against current
+        -- authority. Replaying a previously stored "continue" decision after
+        -- a revoke or gate transition would keep a paid provider call alive.
+        replay_value := true;
+      else
+        return jsonb_build_object(
+          'accepted', true,
+          'idempotentReplay', true,
+          'metadata', receipt_row.result_metadata,
+          'refreshRequired', true,
+          'status', receipt_row.result_status
+        );
+      end if;
+    else
+      raise exception 'AI control request binding does not match its receipt'
+        using errcode = 'P7335';
     end if;
-    raise exception 'AI control request binding does not match its receipt'
-      using errcode = 'P7335';
   end if;
 
   perform private.assert_google_admin_operation_gate_v1(
@@ -750,6 +823,25 @@ begin
         or ((normalized_configuration ? 'material_analysis_enabled') and control_row.material_analysis_enabled)
         or ((normalized_configuration ? 'poll_suggestions_enabled') and control_row.poll_suggestions_enabled)
         or ((normalized_configuration ? 'academic_answers_enabled') and control_row.academic_answers_enabled);
+      if (normalized_configuration ? 'captions_enabled')
+         and control_row.captions_enabled then
+        select usage.*
+        into active_caption_usage
+        from public.ai_usage_ledger as usage
+        where usage.lecture_session_id = target_lecture_session_id
+          and usage.feature = 'captions'
+          and usage.status = 'running'
+        for update;
+        if found then
+          perform private.finish_realtime_caption_operation(
+            active_caption_usage.id,
+            active_caption_usage.requested_by_actor,
+            'caption_feature_disabled',
+            true,
+            true
+          );
+        end if;
+      end if;
       update public.lecture_ai_control as control
       set
         captions_enabled = control.captions_enabled
@@ -828,10 +920,33 @@ begin
        or (
          target_action = 'heartbeat'
          and start_intent.admin_session_id <>
-           (context_value ->> 'admin_session_id')::uuid
+            (context_value ->> 'admin_session_id')::uuid
        ) then
       return null;
     end if;
+
+    select dispatch.*
+    into dispatch_receipt
+    from private.admin_google_ai_provider_dispatch_receipts as dispatch
+    where dispatch.start_request_id = start_intent.start_request_id
+      and dispatch.operation_id = target_operation_id
+      and dispatch.provider_family = 'openai_realtime_v1';
+    if not found
+       or dispatch_receipt.client_request_id is distinct from
+         start_intent.start_request_id then
+      return null;
+    end if;
+
+    select creation.*
+    into creation_receipt
+    from private.admin_google_realtime_provider_creation_receipts as creation
+    where creation.start_request_id = start_intent.start_request_id
+      and creation.operation_id = target_operation_id
+      and creation.client_request_id = dispatch_receipt.client_request_id;
+    if not found then
+      return null;
+    end if;
+
     select control.*
     into control_row
     from public.lecture_ai_control as control
@@ -849,11 +964,100 @@ begin
     if control_row.lecture_session_id is null or usage_row.id is null then
       return null;
     end if;
+
+    select provider_call.*
+    into provider_call_row
+    from public.ai_realtime_provider_calls as provider_call
+    where provider_call.operation_id = target_operation_id
+      and provider_call.lecture_session_id = target_lecture_session_id
+      and provider_call.actor_id = usage_row.requested_by_actor
+      and provider_call.client_request_id = start_intent.start_request_id::text
+    for update;
+    if not found
+       or provider_call_row.provider_call_id is distinct from
+         creation_receipt.provider_call_id
+       or provider_call_row.provider_request_id is distinct from
+         creation_receipt.provider_request_id then
+      return null;
+    end if;
+
     if target_action = 'heartbeat' then
-      result_value := private.heartbeat_realtime_caption_operation(
-        target_operation_id,
-        usage_row.requested_by_actor
-      );
+      select gate.*
+      into ai_gate
+      from private.admin_ai_unlock_runtime_gate as gate
+      where gate.singleton;
+      select policy.*
+      into policy_row
+      from private.admin_ai_policies as policy
+      where policy.id = start_intent.policy_id
+        and policy.version = start_intent.policy_version;
+      select master.*
+      into master_row
+      from public.lecture_ai_master_authorizations as master
+      where master.id = start_intent.master_authorization_id;
+
+      live_authority :=
+        coalesce((context_value ->> 'can_use_ai')::boolean, false)
+        and target_transport_enabled is true
+        and coalesce(
+          (context_value ->> 'google_operational_authorization_enabled')::boolean,
+          false
+        )
+        and ai_gate.singleton is true
+        and ai_gate.google_ai_child_grant_enabled is true
+        and policy_row.id is not null
+        and policy_row.environment_id is not distinct from
+          start_intent.environment_id
+        and policy_row.membership_id is not distinct from
+          start_intent.membership_id
+        and policy_row.status = 'active'
+        and policy_row.valid_from <= effective_now
+        and policy_row.valid_until > effective_now
+        and array['captions']::text[] <@ policy_row.allowed_actions
+        and array[start_intent.model_id]::text[] <@ policy_row.allowed_models
+        and master_row.id is not null
+        and master_row.lecture_session_id is not distinct from
+          target_lecture_session_id
+        and master_row.principal_id is not distinct from start_intent.principal_id
+        and master_row.membership_id is not distinct from start_intent.membership_id
+        and master_row.issuing_admin_session_id is not distinct from
+          start_intent.admin_session_id
+        and master_row.ai_policy_id is not distinct from start_intent.policy_id
+        and master_row.ai_policy_version is not distinct from
+          start_intent.policy_version
+        and master_row.status = 'active'
+        and master_row.expires_at > effective_now
+        and array['captions']::text[] <@ master_row.actions
+        and creation_receipt.outcome = 'activated'
+        and control_row.status in ('ready', 'running')
+        and control_row.captions_enabled
+        and control_row.stop_requested_at is null
+        and usage_row.status = 'running'
+        and usage_row.accounting_settled_at is null
+        and usage_row.provider_dispatched_at is not null
+        and usage_row.provider_request_id is not distinct from
+          dispatch_receipt.client_request_id::text
+        and provider_call_row.status = 'active';
+
+      if live_authority then
+        result_value := private.heartbeat_realtime_caption_operation(
+          target_operation_id,
+          usage_row.requested_by_actor
+        );
+      else
+        perform private.finish_realtime_caption_operation(
+          target_operation_id,
+          usage_row.requested_by_actor,
+          'authority_revoked',
+          true,
+          true
+        );
+        result_value := jsonb_build_object(
+          'accepted', true,
+          'reason', 'authority_revoked',
+          'should_stop', true
+        );
+      end if;
       result_status_value := case
         when coalesce((result_value ->> 'should_stop')::boolean, true)
           then 'stop'
@@ -894,6 +1098,22 @@ begin
     where control.lecture_session_id = target_lecture_session_id
     for update;
     if found then
+      select usage.*
+      into active_caption_usage
+      from public.ai_usage_ledger as usage
+      where usage.lecture_session_id = target_lecture_session_id
+        and usage.feature = 'captions'
+        and usage.status = 'running'
+      for update;
+      if found then
+        perform private.finish_realtime_caption_operation(
+          active_caption_usage.id,
+          active_caption_usage.requested_by_actor,
+          effective_reason,
+          true,
+          true
+        );
+      end if;
       select run.*
       into summary_run
       from public.lecture_summary_runs as run
@@ -930,69 +1150,71 @@ begin
     );
   end if;
 
-  insert into private.admin_google_operation_receipts (
-    request_id,
-    operation_key,
-    intent_digest,
-    environment_id,
-    principal_id,
-    membership_id,
-    admin_session_id,
-    supabase_auth_session_id,
-    lecture_session_id,
-    target_id,
-    result_id,
-    result_status,
-    result_metadata
-  ) values (
-    target_request_id,
-    operation_key_value,
-    intent_digest_value,
-    (context_value ->> 'environment_id')::uuid,
-    (context_value ->> 'principal_id')::uuid,
-    (context_value ->> 'membership_id')::uuid,
-    (context_value ->> 'admin_session_id')::uuid,
-    target_supabase_auth_session_id,
-    target_lecture_session_id,
-    target_id_value,
-    target_id_value,
-    result_status_value,
-    result_metadata_value
-  );
+  if not replay_value then
+    insert into private.admin_google_operation_receipts (
+      request_id,
+      operation_key,
+      intent_digest,
+      environment_id,
+      principal_id,
+      membership_id,
+      admin_session_id,
+      supabase_auth_session_id,
+      lecture_session_id,
+      target_id,
+      result_id,
+      result_status,
+      result_metadata
+    ) values (
+      target_request_id,
+      operation_key_value,
+      intent_digest_value,
+      (context_value ->> 'environment_id')::uuid,
+      (context_value ->> 'principal_id')::uuid,
+      (context_value ->> 'membership_id')::uuid,
+      (context_value ->> 'admin_session_id')::uuid,
+      target_supabase_auth_session_id,
+      target_lecture_session_id,
+      target_id_value,
+      target_id_value,
+      result_status_value,
+      result_metadata_value
+    );
 
-  insert into private.admin_audit_events (
-    request_id,
-    environment_id,
-    actor_principal_id,
-    actor_membership_id,
-    actor_session_id,
-    action,
-    target_type,
-    target_id,
-    result,
-    reason_code,
-    metadata
-  ) values (
-    target_request_id,
-    (context_value ->> 'environment_id')::uuid,
-    (context_value ->> 'principal_id')::uuid,
-    (context_value ->> 'membership_id')::uuid,
-    (context_value ->> 'admin_session_id')::uuid,
-    'admin_ai_control.' || target_action,
-    case when target_operation_id is null
-      then 'lecture_ai_control' else 'ai_operation' end,
-    coalesce(target_operation_id::text, target_lecture_session_id::text),
-    'accepted',
-    'google_admin_operation',
-    jsonb_build_object(
-      'operation_key', operation_key_value,
-      'result_status', result_status_value
-    )
-  );
+    insert into private.admin_audit_events (
+      request_id,
+      environment_id,
+      actor_principal_id,
+      actor_membership_id,
+      actor_session_id,
+      action,
+      target_type,
+      target_id,
+      result,
+      reason_code,
+      metadata
+    ) values (
+      target_request_id,
+      (context_value ->> 'environment_id')::uuid,
+      (context_value ->> 'principal_id')::uuid,
+      (context_value ->> 'membership_id')::uuid,
+      (context_value ->> 'admin_session_id')::uuid,
+      'admin_ai_control.' || target_action,
+      case when target_operation_id is null
+        then 'lecture_ai_control' else 'ai_operation' end,
+      coalesce(target_operation_id::text, target_lecture_session_id::text),
+      'accepted',
+      'google_admin_operation',
+      jsonb_build_object(
+        'operation_key', operation_key_value,
+        'result_status', result_status_value
+      )
+    );
+  end if;
 
   return jsonb_build_object(
     'accepted', true,
-    'idempotentReplay', false,
+    'idempotentReplay', replay_value,
     'metadata', result_metadata_value,
     'result', result_value,
     'status', result_status_value

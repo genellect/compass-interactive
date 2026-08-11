@@ -109,6 +109,7 @@ SELECT ok(
       ('admin_google_ai_provider_start_intents'),
       ('admin_google_ai_provider_start_receipts'),
       ('admin_google_ai_provider_dispatch_receipts'),
+      ('admin_google_realtime_provider_creation_receipts'),
       ('admin_google_summary_run_receipts'),
       ('admin_google_summary_window_preflight_receipts'),
       ('admin_google_summary_window_start_bindings'),
@@ -153,6 +154,7 @@ SELECT ok(
         'private.admin_google_ai_provider_start_intents'::regclass,
         'private.admin_google_ai_provider_start_receipts'::regclass,
         'private.admin_google_ai_provider_dispatch_receipts'::regclass,
+        'private.admin_google_realtime_provider_creation_receipts'::regclass,
         'private.admin_google_summary_run_receipts'::regclass,
         'private.admin_google_summary_window_preflight_receipts'::regclass,
         'private.admin_google_summary_window_start_bindings'::regclass,
@@ -325,6 +327,36 @@ SELECT ok(
   NOT EXISTS (
     SELECT 1
     FROM unnest(ARRAY[
+      'public.issue_google_realtime_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,text,text,text,text,text,bigint,integer,bigint,text,integer,uuid,boolean)',
+      'public.start_google_admin_realtime_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,text,text,bigint,integer,bigint,uuid,text,boolean)',
+      'public.activate_google_admin_realtime_provider_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,boolean)',
+      'public.fail_google_admin_realtime_provider_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,text,text,boolean)',
+      'public.publish_google_admin_caption_window_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,uuid,text,text,text,bigint,boolean)'
+    ]::text[]) AS facade(signature)
+    WHERE NOT has_function_privilege('service_role', facade.signature, 'EXECUTE')
+       OR has_function_privilege('authenticated', facade.signature, 'EXECUTE')
+       OR has_function_privilege('anon', facade.signature, 'EXECUTE')
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM unnest(ARRAY[
+      'private.issue_google_realtime_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,text,text,text,text,text,bigint,integer,bigint,text,integer,uuid,boolean)',
+      'private.start_google_admin_realtime_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,text,text,bigint,integer,bigint,uuid,text,boolean)',
+      'private.finalize_google_admin_realtime_provider_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,text,text,boolean)',
+      'private.publish_google_admin_caption_window_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,uuid,text,text,text,bigint,boolean)',
+      'private.settle_unclaimed_google_realtime_start_v1(uuid)',
+      'private.settle_terminal_google_realtime_accounting_v1(integer)'
+    ]::text[]) AS helper(signature)
+    WHERE has_function_privilege('service_role', helper.signature, 'EXECUTE')
+       OR has_function_privilege('authenticated', helper.signature, 'EXECUTE')
+       OR has_function_privilege('anon', helper.signature, 'EXECUTE')
+  ),
+  'Realtime provider authority is exposed only through typed service facades'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM unnest(ARRAY[
       'public.manage_google_admin_summary_run_v2(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
       'public.prepare_google_admin_academic_answer_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,uuid,text,text,text,text,uuid,boolean)',
       'public.mark_google_admin_academic_answer_insufficient_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,boolean)',
@@ -364,6 +396,7 @@ SELECT ok(
         'admin_google_ai_provider_start_intents',
         'admin_google_ai_provider_start_receipts',
         'admin_google_ai_provider_dispatch_receipts',
+        'admin_google_realtime_provider_creation_receipts',
         'admin_google_summary_run_receipts',
         'admin_google_summary_window_preflight_receipts',
         'admin_google_summary_window_start_bindings',
@@ -410,6 +443,21 @@ SELECT ok(
       AND is_nullable = 'NO'
   ),
   'Academic evidence is append-only and summary runs carry an explicit authority mode'
+);
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM pg_class AS class
+    JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
+    JOIN pg_trigger AS trigger
+      ON trigger.tgrelid = class.oid
+     AND trigger.tgname =
+       'admin_google_realtime_creation_receipts_append_only'
+     AND NOT trigger.tgisinternal
+    WHERE namespace.nspname = 'private'
+      AND class.relname = 'admin_google_realtime_provider_creation_receipts'
+  ),
+  'Realtime provider creation evidence is append-only'
 );
 
 INSERT INTO auth.users (
@@ -575,6 +623,7 @@ INSERT INTO private.admin_ai_policies (
   '00000000-0000-4000-8000-00000000e206'::uuid,
   array[
     'academic_answers',
+    'captions',
     'material_analysis',
     'poll_suggestions',
     'summaries'
@@ -3123,13 +3172,13 @@ SELECT is(
     '00000000-0000-4000-8000-00000000e202'::uuid,
     '00000000-0000-4000-8000-00000000e203'::uuid,
     current_setting('compass.test.c2_provider_lecture_id')::uuid,
-    'all_except_captions',
+    'all_including_captions',
     '00000000-0000-4000-8000-00000000e20a'::uuid, 1,
     repeat('b', 64), 1, repeat('e', 64),
     '00000000-0000-4000-8000-00000000e2a3'::uuid
   ) ->> 'accepted',
   'true',
-  'restored membership explicitly creates a fresh Academic-capable master'
+  'restored membership explicitly creates one Academic and Realtime-capable master'
 );
 SELECT ok(
   (
@@ -3385,6 +3434,340 @@ SELECT throws_ok(
   'P7335',
   'Google AI provider result lacks dispatch evidence',
   'a Google provider result cannot bypass the dispatch receipt'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_realtime_child', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_realtime_digest',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT public.issue_google_realtime_ai_child_grant_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
+        60, 60, 60, repeat('d',64), 1,
+        '00000000-0000-4000-8000-00000000e2b0'::uuid, true
+      ) AS result
+    ) AS issued
+  ),
+  'Realtime captions receive one scope-bound child without a provider call'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_realtime_operation', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND (result ->> 'reservedAudioSeconds')::integer = 60
+      AND (result ->> 'reservedMicrousd')::bigint = 60
+    FROM (
+      SELECT public.start_google_admin_realtime_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_realtime_child')::uuid,
+        repeat('d',64),
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
+        60, 60, 60,
+        '00000000-0000-4000-8000-00000000e2b1'::uuid,
+        current_setting('compass.test.c2_realtime_digest'), true
+      ) AS result
+    ) AS started
+  ),
+  'Realtime start consumes one child and reserves the bounded caption lane'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'operationId' =
+        current_setting('compass.test.c2_realtime_operation')
+      AND result ->> 'idempotentReplay' = 'true'
+    FROM (
+      SELECT public.start_google_admin_realtime_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_realtime_child')::uuid,
+        repeat('d',64),
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
+        60, 60, 60,
+        '00000000-0000-4000-8000-00000000e2b1'::uuid,
+        current_setting('compass.test.c2_realtime_digest'), true
+      ) AS result
+    ) AS replayed
+  ),
+  'lost Realtime start response converges before provider dispatch'
+);
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2b1'::uuid,
+    current_setting('compass.test.c2_realtime_operation')::uuid,
+    'openai_realtime_v1',
+    '00000000-0000-4000-8000-00000000e2b1'::uuid, true
+  ) ->> 'dispatchAllowed',
+  'true',
+  'Realtime provider dispatch is claimed exactly once after live control recheck'
+);
+SELECT is(
+  public.activate_google_admin_realtime_provider_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2b1'::uuid,
+    current_setting('compass.test.c2_realtime_operation')::uuid,
+    '00000000-0000-4000-8000-00000000e2b1'::uuid,
+    'call_phase730c2_realtime', 'request-phase730c2-realtime', true
+  ) ->> 'accepted',
+  'true',
+  'Realtime activation records immutable provider evidence after live authority recheck'
+);
+SELECT is(
+  public.publish_google_admin_caption_window_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e2b1'::uuid,
+    current_setting('compass.test.c2_realtime_operation')::uuid,
+    '00000000-0000-4000-8000-00000000e2b2'::uuid,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    'Realtime caption fixture', 'ja', 'item-2', 2, true
+  ) ->> 'status',
+  'published',
+  'an activated Google Realtime operation publishes one caption window'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'status' = 'ignored'
+      AND result #>> '{metadata,reason}' = 'stale_sequence'
+      AND result #>> '{metadata,shouldStop}' = 'false'
+    FROM (
+      SELECT public.publish_google_admin_caption_window_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e2b1'::uuid,
+        current_setting('compass.test.c2_realtime_operation')::uuid,
+        '00000000-0000-4000-8000-00000000e2b3'::uuid,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'Delayed caption fixture', 'ja', 'item-1', 1, true
+      ) AS result
+    ) AS ignored
+  ),
+  'stale caption delivery is ignored without stopping the live session'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'status' = 'ignored'
+      AND result #>> '{metadata,reason}' = 'sequence_conflict'
+      AND result #>> '{metadata,shouldStop}' = 'false'
+    FROM (
+      SELECT public.publish_google_admin_caption_window_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e2b1'::uuid,
+        current_setting('compass.test.c2_realtime_operation')::uuid,
+        '00000000-0000-4000-8000-00000000e2b4'::uuid,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'Conflicting caption fixture', 'ja', 'item-2-conflict', 2, true
+      ) AS result
+    ) AS ignored
+  ),
+  'same-sequence caption conflict is nonterminal and never replaces public text'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'status' = 'continue'
+      AND result #>> '{metadata,should_stop}' = 'false'
+    FROM (
+      SELECT public.manage_google_admin_ai_control_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        'heartbeat',
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        '00000000-0000-4000-8000-00000000e2b5'::uuid,
+        current_setting('compass.test.c2_realtime_operation')::uuid,
+        null::jsonb, null::text, null::text, true
+      ) AS result
+    ) AS continued
+  ),
+  'an activated Realtime operation continues without another MFA prompt'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'status' = 'disabled'
+      AND result #>> '{metadata,changed}' = 'true'
+    FROM (
+      SELECT public.manage_google_admin_ai_control_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        'disableFeatures',
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        '00000000-0000-4000-8000-00000000e2b6'::uuid,
+        null::uuid,
+        jsonb_build_object('captions_enabled', false),
+        null::text, null::text, true
+      ) AS result
+    ) AS disabled
+  ),
+  'disabling captions atomically settles the active operation before hangup'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND provider_call.status = 'stop_requested'
+      AND creation.outcome = 'activated'
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.ai_realtime_provider_calls AS provider_call
+      ON provider_call.operation_id = usage.id
+    JOIN private.admin_google_realtime_provider_creation_receipts AS creation
+      ON creation.operation_id = usage.id
+    WHERE usage.id =
+      current_setting('compass.test.c2_realtime_operation')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.lecture_public_captions AS caption
+    WHERE caption.lecture_session_id =
+      current_setting('compass.test.c2_provider_lecture_id')::uuid
+  )
+  AND (
+    SELECT control.active_operation_count = 1
+      AND control.status = 'running'
+      AND NOT control.captions_enabled
+      AND control.stop_requested_at IS NULL
+    FROM public.lecture_ai_control AS control
+    WHERE control.lecture_session_id =
+      current_setting('compass.test.c2_provider_lecture_id')::uuid
+  ),
+  'terminal Realtime control settles accounting, clears public captions and preserves other AI work'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_realtime_unclaimed_child',
+      result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_realtime_unclaimed_digest',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT public.issue_google_realtime_ai_child_grant_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
+        60, 60, 60, repeat('c',64), 1,
+        '00000000-0000-4000-8000-00000000e2b7'::uuid, true
+      ) AS result
+    ) AS issued
+  ),
+  'a second Realtime child can prepare an immediate-stop recovery fixture'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_realtime_unclaimed_operation',
+      result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT public.start_google_admin_realtime_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_realtime_unclaimed_child')::uuid,
+        repeat('c',64),
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'test-model', 'ja', 'minimal', repeat('e',64), repeat('f',64),
+        60, 60, 60,
+        '00000000-0000-4000-8000-00000000e2b8'::uuid,
+        current_setting('compass.test.c2_realtime_unclaimed_digest'), true
+      ) AS result
+    ) AS started
+  ),
+  'an unclaimed Realtime start remains locally reversible before provider dispatch'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    'disableFeatures',
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2b9'::uuid,
+    null::uuid,
+    jsonb_build_object('captions_enabled', false),
+    null::text, null::text, true
+  ) ->> 'status',
+  'disabled',
+  'an immediate caption disable succeeds before a provider claim exists'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.settlement_status = 'released'
+      AND usage.actual_microusd = 0
+      AND usage.actual_audio_seconds = 0
+      AND provider_call.status = 'creation_failed'
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.ai_realtime_provider_calls AS provider_call
+      ON provider_call.operation_id = usage.id
+    WHERE usage.id =
+      current_setting('compass.test.c2_realtime_unclaimed_operation')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_provider_dispatch_receipts AS receipt
+    WHERE receipt.operation_id =
+      current_setting('compass.test.c2_realtime_unclaimed_operation')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_realtime_provider_creation_receipts AS receipt
+    WHERE receipt.operation_id =
+      current_setting('compass.test.c2_realtime_unclaimed_operation')::uuid
+  ),
+  'pre-dispatch disable releases the full reservation without fabricated provider evidence'
 );
 
 UPDATE public.admin_sessions

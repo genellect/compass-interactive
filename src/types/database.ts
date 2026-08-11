@@ -3605,6 +3605,23 @@ export type Database = {
         }
         Returns: Json
       }
+      activate_google_admin_realtime_provider_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_call_id: string
+          target_provider_request_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       admin_abort_pdf_publication_v1: {
         Args: {
           target_admin_auth_user_id: string
@@ -5159,6 +5176,25 @@ export type Database = {
         }
         Returns: Json
       }
+      fail_google_admin_realtime_provider_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_error_code: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_outcome: string
+          target_provider_call_id: string
+          target_provider_request_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       fail_google_admin_summary_window_operation_v1: {
         Args: {
           actual_input_tokens: number
@@ -5718,6 +5754,30 @@ export type Database = {
         }
         Returns: Json
       }
+      issue_google_realtime_ai_child_grant_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_delay: string
+          target_estimated_microusd: number
+          target_google_issuer: string
+          target_language: string
+          target_lecture_session_id: string
+          target_model_id: string
+          target_nonce_hash: string
+          target_nonce_key_version: number
+          target_price_microusd_per_minute: number
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_requested_audio_seconds: number
+          target_sdp_offer_sha256: string
+          target_session_config_sha256: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       issue_google_summary_ai_child_grant_v1: {
         Args: {
           target_auth_user_id: string
@@ -6122,6 +6182,26 @@ export type Database = {
         }
         Returns: Json
       }
+      publish_google_admin_caption_window_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_language: string
+          target_last_item_id: string
+          target_lecture_session_id: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_sequence: number
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_text: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       reap_stale_google_ai_provider_dispatches_v1: {
         Args: { job_limit?: number }
         Returns: number
@@ -6324,6 +6404,31 @@ export type Database = {
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_text_sha256: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      start_google_admin_realtime_operation_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_delay: string
+          target_estimated_microusd: number
+          target_google_issuer: string
+          target_grant_id: string
+          target_language: string
+          target_lecture_session_id: string
+          target_model_id: string
+          target_nonce_hash: string
+          target_price_microusd_per_minute: number
+          target_provider_intent_digest: string
+          target_provider_subject_hmac: string
+          target_requested_audio_seconds: number
+          target_sdp_offer_sha256: string
+          target_session_config_sha256: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
           target_token_hash: string
           target_transport_enabled: boolean
         }

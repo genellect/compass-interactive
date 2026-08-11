@@ -26,18 +26,35 @@ const summaryProviderMigration = read(
 const academicMigration = read(
   'supabase/migrations/20260811233000_phase7_30c2_google_academic_provider.sql',
 )
+const realtimeControlMigration = read(
+  'supabase/migrations/20260812011500_phase7_30c2_google_realtime_control.sql',
+)
+const realtimeProviderMigration = read(
+  'supabase/migrations/20260812023000_phase7_30c2_google_realtime_provider.sql',
+)
 const aiBilling = read('supabase/functions/_shared/aiBilling.ts')
+const openAiRealtime = read('supabase/functions/_shared/openaiRealtime.ts')
 const analyzeMaterial = read(
   'supabase/functions/analyze-lecture-material/index.ts',
 )
 const manageSummaries = read(
   'supabase/functions/manage-lecture-summaries/index.ts',
 )
+const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
 const generateSummary = read(
   'supabase/functions/generate-lecture-summary/index.ts',
 )
 const generateAcademicAnswer = read(
   'supabase/functions/generate-academic-answer/index.ts',
+)
+const issueRealtimeClientSecret = read(
+  'supabase/functions/issue-realtime-client-secret/index.ts',
+)
+const publishCaptionWindow = read(
+  'supabase/functions/publish-caption-window/index.ts',
+)
+const sweepRealtimeProviderCalls = read(
+  'supabase/functions/sweep-realtime-provider-calls/index.ts',
 )
 const databaseTypes = read('src/types/database.ts')
 const envExample = read('.env.local.example')
@@ -1443,6 +1460,21 @@ for (const contract of [
   'stale automatic Academic dispatch is conservatively accounted and releases its request lane',
   'completion rechecks live Google authority without prompting for another MFA',
   'revoked completion accounts and closes work without saving provider content',
+  'Realtime captions receive one scope-bound child without a provider call',
+  'Realtime start consumes one child and reserves the bounded caption lane',
+  'lost Realtime start response converges before provider dispatch',
+  'Realtime provider dispatch is claimed exactly once after live control recheck',
+  'Realtime activation records immutable provider evidence after live authority recheck',
+  'an activated Google Realtime operation publishes one caption window',
+  'stale caption delivery is ignored without stopping the live session',
+  'same-sequence caption conflict is nonterminal and never replaces public text',
+  'an activated Realtime operation continues without another MFA prompt',
+  'disabling captions atomically settles the active operation before hangup',
+  'terminal Realtime control settles accounting, clears public captions and preserves other AI work',
+  'a second Realtime child can prepare an immediate-stop recovery fixture',
+  'an unclaimed Realtime start remains locally reversible before provider dispatch',
+  'an immediate caption disable succeeds before a provider claim exists',
+  'pre-dispatch disable releases the full reservation without fabricated provider evidence',
 ]) {
   assert.match(
     pgTap,
@@ -1452,8 +1484,8 @@ for (const contract of [
 assert.match(pgTap, /SELECT no_plan\(\)/)
 assert.match(
   pgTap,
-  /array\[\s*'academic_answers',\s*'material_analysis',\s*'poll_suggestions',\s*'summaries'\s*\]::text\[\]/,
-  'the reusable master policy covers the complete all-except-captions scope',
+  /array\[\s*'academic_answers',\s*'captions',\s*'material_analysis',\s*'poll_suggestions',\s*'summaries'\s*\]::text\[\]/,
+  'the reusable policy covers every C2 provider action while each master remains scope-bound',
 )
 assert.match(
   pgTap,
@@ -1485,6 +1517,274 @@ assert.doesNotMatch(
   providerFixtureC,
   /repeat\('8',64\)/,
   'the third provider fixture never collides with the legacy grant nonce',
+)
+
+assert.match(
+  realtimeProviderMigration,
+  /feature in \([\s\S]*'academic_answers', 'captions', 'material_analysis',[\s\S]*'poll_suggestions', 'summaries'[\s\S]*feature = 'captions' and provider_family = 'openai_realtime_v1'[\s\S]*feature <> 'captions'[\s\S]*provider_family = 'openai_responses_v1'/,
+  'Realtime start evidence uses an exact captions/provider-family pairing',
+)
+assert.match(
+  realtimeControlMigration,
+  /create table private\.admin_google_realtime_provider_creation_receipts[\s\S]*enable row level security;[\s\S]*revoke all on private\.admin_google_realtime_provider_creation_receipts[\s\S]*public, anon, authenticated, service_role[\s\S]*before update or delete[\s\S]*reject_admin_c1_evidence_mutation_v1/,
+  'Realtime provider creation evidence is private, RLS-protected and append-only',
+)
+
+for (const facade of [
+  'issue_google_realtime_ai_child_grant_v1',
+  'start_google_admin_realtime_operation_v1',
+  'activate_google_admin_realtime_provider_v1',
+  'fail_google_admin_realtime_provider_v1',
+  'publish_google_admin_caption_window_v1',
+]) {
+  assert.match(
+    realtimeProviderMigration,
+    new RegExp(
+      `revoke all on function public\\.${facade}\\([\\s\\S]*` +
+        `from public, anon, authenticated;[\\s\\S]*` +
+        `grant execute on function public\\.${facade}\\([\\s\\S]*` +
+        `to service_role`,
+    ),
+    `${facade} is service-role-only`,
+  )
+  assert.match(
+    databaseTypes,
+    new RegExp(`${facade}: \\{[\\s\\S]*Returns: Json`),
+    `${facade} is present in generated database types`,
+  )
+}
+
+for (const worker of [
+  'issue_google_realtime_ai_child_grant_v1',
+  'start_google_admin_realtime_operation_v1',
+  'finalize_google_admin_realtime_provider_v1',
+  'publish_google_admin_caption_window_v1',
+  'settle_unclaimed_google_realtime_start_v1',
+  'settle_terminal_google_realtime_accounting_v1',
+]) {
+  assert.match(
+    realtimeProviderMigration,
+    new RegExp(
+      `revoke all on function private\\.${worker}\\([\\s\\S]*` +
+        `from public, anon, authenticated, service_role`,
+    ),
+    `${worker} is unavailable to runtime roles`,
+  )
+}
+
+const realtimeStart = functionBlock(
+  realtimeProviderMigration,
+  'private.start_google_admin_realtime_operation_v1',
+)
+const realtimeStartRequest = realtimeStart.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const realtimeStartGrant = realtimeStart.indexOf(
+  'from public.ai_billing_grants as grant_record',
+)
+const realtimeStartContext = realtimeStart.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const realtimeStartPolicy = realtimeStart.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const realtimeStartLecture = realtimeStart.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const realtimeStartMaster = realtimeStart.indexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const realtimeStartControl = realtimeStart.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const realtimeStartOperation = realtimeStart.indexOf(
+  'private.start_lecture_ai_operation',
+)
+const realtimeStartProvider = realtimeStart.indexOf(
+  'insert into public.ai_realtime_provider_calls',
+)
+assert.ok(
+  realtimeStartRequest >= 0 &&
+    realtimeStartRequest < realtimeStartGrant &&
+    realtimeStartGrant < realtimeStartContext &&
+    realtimeStartContext < realtimeStartPolicy &&
+    realtimeStartPolicy < realtimeStartLecture &&
+    realtimeStartLecture < realtimeStartMaster &&
+    realtimeStartMaster < realtimeStartControl &&
+    realtimeStartControl < realtimeStartOperation &&
+    realtimeStartOperation < realtimeStartProvider,
+  'Realtime start preserves request -> child grant -> Google context -> policy -> lecture -> master -> control -> usage -> provider order',
+)
+assert.match(
+  realtimeStart,
+  /max_realtime_minutes_per_lecture[\s\S]*max_realtime_minutes_per_day[\s\S]*reserved_audio_seconds[\s\S]*max_calls_per_lecture[\s\S]*max_calls_per_day/,
+  'Realtime start enforces audio and call budgets while holding the policy scope',
+)
+const providerDispatch = functionBlock(
+  dispatchMigration,
+  'private.claim_google_ai_provider_dispatch_v1',
+)
+const realtimeDispatchLecture = providerDispatch.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const realtimeDispatchControl = providerDispatch.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const realtimeDispatchUsage = providerDispatch.indexOf(
+  'from public.ai_usage_ledger as usage',
+)
+assert.ok(
+  realtimeDispatchLecture >= 0 &&
+    realtimeDispatchLecture < realtimeDispatchControl &&
+    realtimeDispatchControl < realtimeDispatchUsage,
+  'caption dispatch rechecks enabled control in lecture -> control -> usage order',
+)
+assert.match(
+  providerDispatch,
+  /feature'\) = 'captions'[\s\S]*captions_enabled[\s\S]*stop_requested_at is not null[\s\S]*P7338/,
+  'a disabled caption feature cannot cross the paid provider-dispatch boundary',
+)
+
+const realtimeFinalize = functionBlock(
+  realtimeProviderMigration,
+  'private.finalize_google_admin_realtime_provider_v1',
+)
+const realtimeFinalizePolicy = realtimeFinalize.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const realtimeFinalizeLecture = realtimeFinalize.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const realtimeFinalizeMaster = realtimeFinalize.indexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const realtimeFinalizeControl = realtimeFinalize.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const realtimeFinalizeUsage = realtimeFinalize.indexOf(
+  'from public.ai_usage_ledger as usage',
+)
+const realtimeFinalizeProvider = realtimeFinalize.indexOf(
+  'from public.ai_realtime_provider_calls as provider_call',
+)
+assert.ok(
+  realtimeFinalizePolicy >= 0 &&
+    realtimeFinalizePolicy < realtimeFinalizeLecture &&
+    realtimeFinalizeLecture < realtimeFinalizeMaster &&
+    realtimeFinalizeMaster < realtimeFinalizeControl &&
+    realtimeFinalizeControl < realtimeFinalizeUsage &&
+    realtimeFinalizeUsage < realtimeFinalizeProvider,
+  'Realtime finalization uses policy -> lecture -> master -> control -> usage -> provider lock order',
+)
+assert.match(
+  realtimeFinalize,
+  /reconcile_activated_response_loss[\s\S]*authority_revoked_after_provider_dispatch_ambiguous[\s\S]*finish_lecture_ai_operation/,
+  'activation response loss converges through durable hangup and conservative accounting',
+)
+const realtimeFinish = functionBlock(
+  realtimeProviderMigration,
+  'private.finish_realtime_caption_operation',
+)
+assert.match(
+  realtimeFinish,
+  /finish_lecture_ai_operation[\s\S]*if disable_feature then[\s\S]*delete from public\.lecture_public_captions[\s\S]*bump_lecture_live_state[\s\S]*'caption'/,
+  'terminal Realtime settlement clears the student caption and advances live state',
+)
+assert.match(
+  realtimeFinish,
+  /admin_google_ai_provider_start_receipts[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*admin_google_realtime_provider_creation_receipts[\s\S]*creation_failed[\s\S]*activated[\s\S]*reserved_audio_seconds[\s\S]*realtime_stop_after_dispatch_ambiguous[\s\S]*elsif charge_elapsed/,
+  'Realtime settlement distinguishes unclaimed, activated, ambiguous and legacy provider cost',
+)
+assert.match(
+  realtimeFinish,
+  /coalesce\([\s\S]*usage_snapshot\.finished_at,[\s\S]*statement_timestamp\(\)[\s\S]*- usage_snapshot\.requested_at/,
+  'delayed terminal recovery charges only through the original finish time',
+)
+
+const realtimeControl = functionBlock(
+  realtimeControlMigration,
+  'private.manage_google_admin_ai_control_v1',
+)
+assert.match(
+  realtimeControl,
+  /admin_google_ai_provider_dispatch_receipts[\s\S]*admin_google_realtime_provider_creation_receipts[\s\S]*target_transport_enabled is true[\s\S]*google_ai_child_grant_enabled is true/,
+  'Realtime heartbeat requires dispatch, activation, AI gate and transport authority',
+)
+assert.match(
+  realtimeControl,
+  /'should_stop', coalesce\([\s\S]*result_value ->> 'should_stop'/,
+  'heartbeat replay preserves the canonical terminal stop signal',
+)
+assert.match(
+  realtimeControl,
+  /target_action = 'disableFeatures'[\s\S]*usage\.feature = 'captions'[\s\S]*usage\.status = 'running'[\s\S]*finish_realtime_caption_operation\([\s\S]*'caption_feature_disabled'[\s\S]*update public\.lecture_ai_control/,
+  'disabling captions settles the active operation before provider sweep',
+)
+assert.match(
+  realtimeControl,
+  /Full stop is one database transaction[\s\S]*usage\.feature = 'captions'[\s\S]*finish_realtime_caption_operation\([\s\S]*stop_lecture_summary_run[\s\S]*stop_lecture_ai_control/,
+  'a full stop settles Realtime accounting before legacy global control drain',
+)
+assert.match(
+  realtimeProviderMigration,
+  /result_status,[\s\S]*when coalesce\(\(result_value ->> 'accepted'\)::boolean, false\)[\s\S]*then 'published'[\s\S]*when live_authority is not true[\s\S]*then 'stopped'[\s\S]*else 'ignored'/,
+  'stale caption windows are ignored without tearing down a healthy session',
+)
+assert.match(
+  realtimeProviderMigration,
+  /'shouldStop', live_authority is not true[\s\S]*'authority_revoked', 'selected_duration_elapsed'/,
+  'only terminal authority or duration outcomes stop a healthy caption session',
+)
+assert.match(
+  publishCaptionWindow,
+  /publish_google_admin_caption_window_v1[\s\S]*shouldStop: result\.metadata\?\.shouldStop === true/,
+  'the caption Edge propagates only an explicit terminal stop signal',
+)
+assert.doesNotMatch(
+  sweepRealtimeProviderCalls,
+  /PHASE4_REALTIME_CAPTIONS_ENABLED/,
+  'provider hangup cleanup remains available while admission is disabled',
+)
+assert.ok(
+  openAiRealtime.indexOf("response.headers.get('Location')") >= 0 &&
+    openAiRealtime.indexOf("response.headers.get('Location')") <
+      openAiRealtime.indexOf('await response.text()'),
+  'Realtime provider call identity is captured before parsing a 2xx SDP body',
+)
+assert.match(
+  openAiRealtime,
+  /RealtimeProviderCreationError[\s\S]*creationMayHaveSucceeded[\s\S]*callId/,
+  'post-dispatch ambiguity retains the known provider call for durable hangup',
+)
+assert.match(
+  issueRealtimeClientSecret,
+  /grantRequestId[\s\S]*startRequestId[\s\S]*issue_google_realtime_ai_child_grant_v1[\s\S]*start_google_admin_realtime_operation_v1[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*activate_google_admin_realtime_provider_v1/,
+  'the Realtime Edge uses stable request IDs and the complete typed authority chain',
+)
+assert.match(
+  issueRealtimeClientSecret,
+  /let childRetried = false[\s\S]*childResponse = await issueChild\(\)[\s\S]*let startRetried = false[\s\S]*startResponse = await startRealtime\(\)/,
+  'child and start response loss receive one exact same-request recovery attempt before provider dispatch',
+)
+assert.match(
+  issueRealtimeClientSecret,
+  /fail_google_admin_realtime_provider_v1[\s\S]*target_action: 'stopFeature'/,
+  'provider activation response loss falls back to a database-terminal stop before hangup',
+)
+assert.match(
+  manageAiControl,
+  /semanticAction === 'disableFeatures'[\s\S]*captions_enabled === false[\s\S]*sweepRealtimeProviderCalls[\s\S]*shouldStopRealtime[\s\S]*semanticAction === 'stopFeature'[\s\S]*sweepRealtimeProviderCalls/,
+  'Google caption disable, terminal heartbeat and stop perform an immediate best-effort provider sweep',
+)
+assert.match(
+  realtimeProviderMigration,
+  /create or replace function public\.run_phase6_6_maintenance\(\)[\s\S]*security definer[\s\S]*reap_stale_google_ai_provider_dispatches_v1\(20\)[\s\S]*maintain_phase6_6_jobs\(\)[\s\S]*settle_terminal_google_realtime_accounting_v1\(20\)[\s\S]*revoke all on function public\.run_phase6_6_maintenance\(\)[\s\S]*grant execute on function public\.run_phase6_6_maintenance\(\)[\s\S]*to service_role/,
+  'the service-only durable maintenance facade can reconcile private Google evidence and terminal legacy transitions',
+)
+assert.match(
+  realtimeProviderMigration,
+  /settle_unclaimed_google_realtime_start_v1[\s\S]*interval '45 seconds'[\s\S]*for update;[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*provider_dispatch_not_claimed/,
+  'an abandoned pre-dispatch Realtime start is bounded and rechecks immutable evidence after locking',
 )
 
 console.log('Phase 7.30C2 AI provider static checks passed.')

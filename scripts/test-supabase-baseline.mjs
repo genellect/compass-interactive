@@ -86,6 +86,8 @@ const phase730c2GoogleAcademicProviderMigrationName =
   '20260811233000_phase7_30c2_google_academic_provider.sql'
 const phase730c2GoogleRealtimeControlMigrationName =
   '20260812011500_phase7_30c2_google_realtime_control.sql'
+const phase730c2GoogleRealtimeProviderMigrationName =
+  '20260812023000_phase7_30c2_google_realtime_provider.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -140,6 +142,7 @@ assert.deepEqual(
     phase730c2GoogleSummaryProviderMigrationName,
     phase730c2GoogleAcademicProviderMigrationName,
     phase730c2GoogleRealtimeControlMigrationName,
+    phase730c2GoogleRealtimeProviderMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

@@ -10,6 +10,31 @@ export type RealtimeProviderCall = {
   requestId: string | null
 }
 
+export class RealtimeProviderCreationError extends Error {
+  callId: string | null
+  creationMayHaveSucceeded: boolean
+  requestId: string | null
+
+  constructor(
+    message: string,
+    {
+      callId = null,
+      creationMayHaveSucceeded,
+      requestId = null,
+    }: {
+      callId?: string | null
+      creationMayHaveSucceeded: boolean
+      requestId?: string | null
+    },
+  ) {
+    super(message)
+    this.name = 'RealtimeProviderCreationError'
+    this.callId = callId
+    this.creationMayHaveSucceeded = creationMayHaveSucceeded
+    this.requestId = requestId
+  }
+}
+
 const REALTIME_CREATE_TIMEOUT_MS = 20_000
 const REALTIME_HANGUP_TIMEOUT_MS = 10_000
 
@@ -96,35 +121,75 @@ export async function createOpenAiRealtimeCall({
   formData.set('sdp', sdpOffer)
   formData.set('session', JSON.stringify(sessionConfig.session))
 
-  const response = await fetchImpl('https://api.openai.com/v1/realtime/calls', {
-    body: formData,
-    headers: {
-      Accept: 'application/sdp',
-      Authorization: `Bearer ${apiKey}`,
-      'OpenAI-Safety-Identifier': safetyIdentifier,
-      'X-Client-Request-Id': clientRequestId,
-    },
-    method: 'POST',
-    signal: AbortSignal.timeout(REALTIME_CREATE_TIMEOUT_MS),
-  })
-
-  if (!response.ok) {
-    throw new Error(`openai_http_${response.status}`)
+  let response: Response
+  try {
+    response = await fetchImpl('https://api.openai.com/v1/realtime/calls', {
+      body: formData,
+      headers: {
+        Accept: 'application/sdp',
+        Authorization: `Bearer ${apiKey}`,
+        'OpenAI-Safety-Identifier': safetyIdentifier,
+        'X-Client-Request-Id': clientRequestId,
+      },
+      method: 'POST',
+      signal: AbortSignal.timeout(REALTIME_CREATE_TIMEOUT_MS),
+    })
+  } catch (error) {
+    throw new RealtimeProviderCreationError(
+      error instanceof Error ? error.message : 'openai_realtime_create_failed',
+      { creationMayHaveSucceeded: true },
+    )
   }
 
-  const answerSdp = await response.text()
+  if (!response.ok) {
+    throw new RealtimeProviderCreationError(`openai_http_${response.status}`, {
+      creationMayHaveSucceeded: false,
+      requestId: response.headers.get('x-request-id'),
+    })
+  }
+
+  const requestId = response.headers.get('x-request-id')
+  let callId: string
+  try {
+    // Capture the provider identity before reading the response body. A 2xx
+    // response may have created a billable call even if the SDP body is lost
+    // or malformed, and that call must remain durably hangup-able.
+    callId = parseRealtimeCallId(response.headers.get('Location'))
+  } catch (error) {
+    throw new RealtimeProviderCreationError(
+      error instanceof Error
+        ? error.message
+        : 'openai_invalid_realtime_call_location',
+      { creationMayHaveSucceeded: true, requestId },
+    )
+  }
+
+  let answerSdp: string
+  try {
+    answerSdp = await response.text()
+  } catch (error) {
+    throw new RealtimeProviderCreationError(
+      error instanceof Error
+        ? error.message
+        : 'openai_realtime_sdp_read_failed',
+      { callId, creationMayHaveSucceeded: true, requestId },
+    )
+  }
   if (
     answerSdp.length < 10 ||
     answerSdp.length > 100_000 ||
     !answerSdp.startsWith('v=0')
   ) {
-    throw new Error('openai_invalid_realtime_sdp_response')
+    throw new RealtimeProviderCreationError(
+      'openai_invalid_realtime_sdp_response',
+      { callId, creationMayHaveSucceeded: true, requestId },
+    )
   }
 
   return {
     answerSdp,
-    callId: parseRealtimeCallId(response.headers.get('Location')),
-    requestId: response.headers.get('x-request-id'),
+    callId,
+    requestId,
   }
 }
 

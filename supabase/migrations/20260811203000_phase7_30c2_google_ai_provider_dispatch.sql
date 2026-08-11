@@ -283,6 +283,7 @@ declare
   policy_row private.admin_ai_policies%rowtype;
   lecture_row public.lecture_sessions%rowtype;
   master_row public.lecture_ai_master_authorizations%rowtype;
+  control_row public.lecture_ai_control%rowtype;
   usage_row public.ai_usage_ledger%rowtype;
   receipt_row private.admin_google_ai_provider_dispatch_receipts%rowtype;
   stale_result jsonb;
@@ -472,6 +473,25 @@ begin
        (evidence ->> 'policy_version')::bigint
      or not array[evidence ->> 'feature']::text[] <@ master_row.actions then
     return null;
+  end if;
+
+  -- Realtime disable/stop is lecture -> control -> usage. Lock and validate
+  -- the caption control before the usage reservation so a disabled feature
+  -- cannot cross the provider-dispatch boundary and no inverse lock edge is
+  -- introduced against terminal controls.
+  if (evidence ->> 'feature') = 'captions' then
+    select control.*
+    into control_row
+    from public.lecture_ai_control as control
+    where control.lecture_session_id = lecture_row.id
+    for update;
+    if not found
+       or control_row.status not in ('ready', 'running')
+       or not control_row.captions_enabled
+       or control_row.stop_requested_at is not null then
+      raise exception 'Google Realtime provider dispatch is disabled'
+        using errcode = 'P7338';
+    end if;
   end if;
 
   select usage.*
