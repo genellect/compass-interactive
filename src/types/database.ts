@@ -5301,6 +5301,19 @@ export type Database = {
         }
         Returns: Json
       }
+      get_google_admin_academic_results_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       get_google_admin_ai_control_configuration_intent_v1: {
         Args: {
           target_auth_user_id: string
@@ -5378,6 +5391,19 @@ export type Database = {
         Args: {
           target_auth_user_id: string
           target_google_issuer: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_summary_results_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
           target_provider_subject_hmac: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
@@ -5855,6 +5881,25 @@ export type Database = {
           title: string
         }[]
       }
+      manage_google_admin_academic_results_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_action: string
+          target_answer_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_revision_body: Json
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       manage_google_admin_ai_control_v1: {
         Args: {
           target_action: string
@@ -6044,6 +6089,26 @@ export type Database = {
           target_request_id: string
           target_session_id: string
           target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_summary_publication_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_pinned_order: number
+          target_pinned_until: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_revision_body: Json
+          target_subject_pepper_version: number
+          target_summary_id: string
           target_supabase_auth_session_id: string
           target_token_hash: string
           target_transport_enabled: boolean

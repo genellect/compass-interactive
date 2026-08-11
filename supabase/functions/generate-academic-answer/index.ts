@@ -50,6 +50,7 @@ type RequestBody = {
     | 'revise'
     | 'status'
   adminToken?: string
+  academicRequestId?: string
   appSessionToken?: string
   answerId?: string
   billingGrant?: string
@@ -276,12 +277,8 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return jsonResponse({ message: 'Method not allowed.', ok: false }, 405)
   }
-  if (Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') !== 'true') {
-    return jsonResponse(
-      { message: 'Academic reference answers are disabled.', ok: false },
-      503,
-    )
-  }
+  const academicTransportEnabled =
+    Deno.env.get('PHASE7_2_ACADEMIC_ANSWERS_ENABLED') === 'true'
 
   let body: RequestBody
   try {
@@ -309,6 +306,18 @@ Deno.serve(async (request) => {
       401,
     )
   }
+  if (
+    !academicTransportEnabled &&
+    !(
+      hasGoogleCredential &&
+      ['status', 'cancel', 'hide', 'reject'].includes(body.action)
+    )
+  ) {
+    return jsonResponse(
+      { message: 'Academic reference answers are disabled.', ok: false },
+      503,
+    )
+  }
   if (!body.lectureSessionId || !body.action) {
     return jsonResponse(
       { message: 'Admin session, lecture and action are required.', ok: false },
@@ -317,7 +326,16 @@ Deno.serve(async (request) => {
   }
   if (
     hasGoogleCredential &&
-    !['generate', 'generateAuto'].includes(body.action)
+    ![
+      'approve',
+      'cancel',
+      'generate',
+      'generateAuto',
+      'hide',
+      'reject',
+      'revise',
+      'status',
+    ].includes(body.action)
   ) {
     return jsonResponse(
       {
@@ -330,6 +348,7 @@ Deno.serve(async (request) => {
   }
   if (
     hasGoogleCredential &&
+    ['generate', 'generateAuto'].includes(body.action) &&
     (!isUuid(body.preflightRequestId) ||
       !isUuid(body.grantRequestId) ||
       !isUuid(body.startRequestId) ||
@@ -345,8 +364,20 @@ Deno.serve(async (request) => {
     )
   }
   if (
+    hasGoogleCredential &&
+    ['approve', 'cancel', 'hide', 'reject', 'revise'].includes(body.action) &&
+    (!isUuid(body.requestId) ||
+      (body.action === 'cancel' && !isUuid(body.academicRequestId)))
+  ) {
+    return jsonResponse(
+      { message: 'Google academic control request is invalid.', ok: false },
+      400,
+    )
+  }
+  if (
     hasLegacyCredential &&
-    (body.preflightRequestId !== undefined ||
+    (body.academicRequestId !== undefined ||
+      body.preflightRequestId !== undefined ||
       body.grantRequestId !== undefined ||
       body.startRequestId !== undefined ||
       body.appSessionToken !== undefined)
@@ -439,6 +470,25 @@ Deno.serve(async (request) => {
 
   try {
     if (body.action === 'status') {
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'get_google_admin_academic_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
+          },
+        )
+        if (error) throw error
+        if (!data) {
+          return jsonResponse(
+            { message: 'Academic answer status is not available.', ok: false },
+            409,
+          )
+        }
+        return jsonResponse({ ok: true, results: data })
+      }
       await supabase.rpc('admin_reap_stale_academic_answer_operations', {
         job_limit: 10,
       })
@@ -451,6 +501,58 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'cancel') {
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_academic_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_academic_request_id: body.academicRequestId,
+            target_action: 'cancel',
+            target_answer_id: null,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: null,
+            target_request_id: body.requestId,
+            target_revision_body: null,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          idempotentReplay?: boolean
+          ok?: boolean
+          refreshRequired?: boolean
+          results?: unknown
+        } | null
+        if (!result?.ok) {
+          return jsonResponse(
+            {
+              message: 'Academic answer request could not be stopped.',
+              ok: false,
+            },
+            409,
+          )
+        }
+        let results = result.results
+        if (result.refreshRequired) {
+          const refreshed = await supabase.rpc(
+            'get_google_admin_academic_results_v1',
+            {
+              ...googleRpcIdentity,
+              target_lecture_session_id: body.lectureSessionId,
+              target_transport_enabled:
+                googleContext.transportEnabled && academicTransportEnabled,
+            },
+          )
+          if (!refreshed.error && refreshed.data) results = refreshed.data
+        }
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          refreshRequired: result.refreshRequired === true && !results,
+          results,
+        })
+      }
       if (!body.requestId) {
         return jsonResponse(
           { message: 'requestId is required.', ok: false },
@@ -476,6 +578,58 @@ Deno.serve(async (request) => {
           400,
         )
       }
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_academic_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_academic_request_id: null,
+            target_action: body.action,
+            target_answer_id: body.answerId,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: null,
+            target_request_id: body.requestId,
+            target_revision_body: null,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          idempotentReplay?: boolean
+          ok?: boolean
+          refreshRequired?: boolean
+          results?: unknown
+        } | null
+        if (!result?.ok) {
+          return jsonResponse(
+            {
+              message: 'Academic answer state could not be updated.',
+              ok: false,
+            },
+            409,
+          )
+        }
+        let results = result.results
+        if (result.refreshRequired) {
+          const refreshed = await supabase.rpc(
+            'get_google_admin_academic_results_v1',
+            {
+              ...googleRpcIdentity,
+              target_lecture_session_id: body.lectureSessionId,
+              target_transport_enabled:
+                googleContext.transportEnabled && academicTransportEnabled,
+            },
+          )
+          if (!refreshed.error && refreshed.data) results = refreshed.data
+        }
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          refreshRequired: result.refreshRequired === true && !results,
+          results,
+        })
+      }
       const { data, error } = await supabase.rpc(
         'admin_manage_academic_answer_publication',
         {
@@ -497,6 +651,58 @@ Deno.serve(async (request) => {
           { message: 'A valid answer revision is required.', ok: false },
           400,
         )
+      }
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_academic_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_academic_request_id: null,
+            target_action: 'revise',
+            target_answer_id: body.answerId,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: reason,
+            target_request_id: body.requestId,
+            target_revision_body: revisedBody,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          idempotentReplay?: boolean
+          ok?: boolean
+          refreshRequired?: boolean
+          results?: unknown
+        } | null
+        if (!result?.ok) {
+          return jsonResponse(
+            {
+              message: 'Academic answer revision could not be saved.',
+              ok: false,
+            },
+            409,
+          )
+        }
+        let results = result.results
+        if (result.refreshRequired) {
+          const refreshed = await supabase.rpc(
+            'get_google_admin_academic_results_v1',
+            {
+              ...googleRpcIdentity,
+              target_lecture_session_id: body.lectureSessionId,
+              target_transport_enabled:
+                googleContext.transportEnabled && academicTransportEnabled,
+            },
+          )
+          if (!refreshed.error && refreshed.data) results = refreshed.data
+        }
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          refreshRequired: result.refreshRequired === true && !results,
+          results,
+        })
       }
       const { data, error } = await supabase.rpc(
         'admin_revise_academic_answer_publication',
@@ -575,7 +781,8 @@ Deno.serve(async (request) => {
     let requestState: PreparedRequest
     let googlePreflightContextDigest: string | null = null
     if (googleContext && googleRpcIdentity) {
-      const transportEnabled = googleContext.transportEnabled
+      const transportEnabled =
+        googleContext.transportEnabled && academicTransportEnabled
       const { data: prepareData, error: prepareError } = await supabase.rpc(
         'prepare_google_admin_academic_answer_v1',
         {
@@ -631,11 +838,20 @@ Deno.serve(async (request) => {
           prepared.requestStatus ?? '',
         )
       ) {
+        const refreshed = await supabase.rpc(
+          'get_google_admin_academic_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
+          },
+        )
         return jsonResponse({
           idempotentReplay: true,
           ok: true,
-          refreshRequired: true,
-          results: null,
+          refreshRequired: !refreshed.data,
+          results: refreshed.error ? null : refreshed.data,
         })
       }
       if (prepared.requestStatus === 'insufficient_evidence') {
@@ -790,7 +1006,8 @@ Deno.serve(async (request) => {
             target_academic_request_id: requestState.id,
             target_preflight_request_id: body.preflightRequestId,
             target_reason: 'insufficient_verified_primary_evidence',
-            target_transport_enabled: googleContext.transportEnabled,
+            target_transport_enabled:
+              googleContext.transportEnabled && academicTransportEnabled,
           },
         )
         if (
@@ -855,7 +1072,8 @@ Deno.serve(async (request) => {
       googlePreflightContextDigest &&
       requestState.id
     ) {
-      const transportEnabled = googleContext.transportEnabled
+      const transportEnabled =
+        googleContext.transportEnabled && academicTransportEnabled
       const { error: reapError } = await supabase.rpc(
         'reap_stale_google_ai_provider_dispatches_v1',
         { job_limit: 10 },

@@ -1,4 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  type AdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../lib/adminAuth/adminOperationCredential'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
@@ -37,9 +41,11 @@ import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
 import { useBrowserPdfPublication } from '../hooks/useBrowserPdfPublication'
 import {
   buildAdminPageView,
+  fromDatetimeLocalValue,
   makeJoinedLecture,
 } from './admin/adminPageViewModel'
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
+import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceSession'
 import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
 import {
   ADMIN_SESSION_STORAGE_KEY,
@@ -51,7 +57,15 @@ import {
 } from './admin/adminSessionStorage'
 import './AdminPage.css'
 
-export function AdminPage() {
+export function AdminPage({
+  adminCredential,
+  identitySettings,
+  onAdminLogout,
+}: {
+  adminCredential?: AdminOperationCredential
+  identitySettings?: ReactNode
+  onAdminLogout?: () => Promise<void>
+} = {}) {
   const {
     activeLectureSessionId,
     comments,
@@ -70,8 +84,12 @@ export function AdminPage() {
     selectLectureSession,
     visibleCommentCount,
   } = useCompassState()
-  const [isAuthenticated, setIsAuthenticated] = useState(restoreAdminSession)
-  const [adminToken, setAdminToken] = useState(restoreAdminToken)
+  const [isLegacyAuthenticated, setIsLegacyAuthenticated] =
+    useState(restoreAdminSession)
+  const [legacyAdminToken, setLegacyAdminToken] = useState(restoreAdminToken)
+  const adminToken: AdminOperationCredentialInput | '' =
+    adminCredential || legacyAdminToken
+  const isAuthenticated = Boolean(adminCredential) || isLegacyAuthenticated
   const [adminSessions, setAdminSessions] = useState<AdminSessionSummary[]>([])
   const [adminCurrentSessionId, setAdminCurrentSessionId] = useState('')
   const [adminSessionsError, setAdminSessionsError] = useState('')
@@ -79,6 +97,16 @@ export function AdminPage() {
   const [showAdminSessions, setShowAdminSessions] = useState(false)
   const [pin, setPin] = useState('')
   const [authError, setAuthError] = useState('')
+  const { expireAdminSession, handleInvalidAdminSession, handleLogout } =
+    useGoogleAdminWorkspaceSession({
+      activeLectureSessionId,
+      adminCredential,
+      adminToken,
+      clearLocalWorkspace: clearLocalAdminSession,
+      onAdminLogout,
+      securityEnabled: isPhase68SecurityEnabled,
+      setAuthError,
+    })
   const [isVerifying, setIsVerifying] = useState(false)
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(
@@ -210,10 +238,6 @@ export function AdminPage() {
     return () => setOperatorLiveAccess(null)
   }, [adminToken, isAuthenticated, setOperatorLiveAccess])
 
-  function fromDatetimeLocalValue(value: string) {
-    return value ? new Date(value).toISOString() : null
-  }
-
   function selectAdminLecture(lectureRow: AdminLecture) {
     selectLectureSession(makeJoinedLecture(lectureRow))
     if (!lectureRow.journalClub) return
@@ -225,18 +249,6 @@ export function AdminPage() {
     setPublisherMessage(
       '修正版PDFを選択し、「学生に講義資料を公開する」を押してください。',
     )
-  }
-
-  function expireAdminSession() {
-    clearLocalAdminSession()
-    setAuthError('管理者認証の有効期限が切れました。再度ログインしてください。')
-  }
-
-  function handleInvalidAdminSession(error: unknown) {
-    if (!(error instanceof Error) || error.message !== 'Invalid Admin session.')
-      return false
-    expireAdminSession()
-    return true
   }
 
   async function refreshLectures(
@@ -504,8 +516,8 @@ export function AdminPage() {
         ADMIN_TOKEN_SESSION_STORAGE_KEY,
         verifiedAdminToken,
       )
-      setAdminToken(verifiedAdminToken)
-      setIsAuthenticated(true)
+      setLegacyAdminToken(verifiedAdminToken)
+      setIsLegacyAuthenticated(true)
       setPin('')
       await refreshLectures(verifiedAdminToken)
     } catch {
@@ -608,8 +620,8 @@ export function AdminPage() {
     clearAdminPdfExtractionCache()
     window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
     window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
-    setIsAuthenticated(false)
-    setAdminToken('')
+    setIsLegacyAuthenticated(false)
+    setLegacyAdminToken('')
     setPin('')
     setAdminPolls([])
     setAdminPollsHasMore(false)
@@ -620,21 +632,6 @@ export function AdminPage() {
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
     resetBrowserPdfPublication()
-  }
-
-  async function handleLogout() {
-    try {
-      if (isPhase68SecurityEnabled && adminToken) {
-        await supabaseAdminRepository.manageAdminSessions({
-          action: 'logout',
-          adminToken,
-        })
-      }
-    } catch {
-      // Local logout is fail-safe even when the revoke request times out.
-    } finally {
-      clearLocalAdminSession()
-    }
   }
 
   async function refreshAdminSessions() {
@@ -667,6 +664,7 @@ export function AdminPage() {
       })
       if (sessionId === adminCurrentSessionId) {
         clearLocalAdminSession()
+        if (adminCredential && onAdminLogout) await onAdminLogout()
       } else if (adminSessions.some((session) => session.id === sessionId)) {
         await refreshAdminSessions()
       }
@@ -1119,6 +1117,7 @@ export function AdminPage() {
       {displayLaunchError ? (
         <p className="error-note">{displayLaunchError}</p>
       ) : null}
+      {identitySettings}
       {showAdminSessions && isPhase68SecurityEnabled ? (
         <AdminSessionPanel
           currentSessionId={adminCurrentSessionId}

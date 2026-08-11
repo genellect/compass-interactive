@@ -485,6 +485,16 @@ SELECT is(
   'status remains available gate OFF after revoke'
 );
 SELECT is(
+  public.get_google_ai_master_status_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid
+  ) ->> 'admission_enabled',
+  'false',
+  'status exposes admission disabled while free status and revoke remain available'
+);
+SELECT is(
   public.authorize_google_ai_master_with_pin_v1(
     repeat('1', 64),
     '00000000-0000-4000-8000-00000000c102'::uuid,
@@ -849,6 +859,27 @@ SELECT ok(
     WHERE receipt.request_id = '00000000-0000-4000-8000-00000000c159'::uuid
   ),
   'browser challenge consumption rolls back when master admission fails'
+);
+SET ROLE service_role;
+SELECT is(
+  public.get_google_ai_master_status_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid
+  ) ->> 'reason',
+  'pre_c1_master_remediated',
+  'workspace status safely drains a pre-C1 master before personal readmission'
+);
+RESET ROLE;
+SELECT is(
+  (
+    SELECT master.status
+    FROM public.lecture_ai_master_authorizations AS master
+    WHERE master.id = '00000000-0000-4000-8000-00000000c160'::uuid
+  ),
+  'expired',
+  'pre-C1 remediation leaves no active shared authority'
 );
 DELETE FROM public.lecture_ai_master_authorizations
 WHERE id = '00000000-0000-4000-8000-00000000c160'::uuid;

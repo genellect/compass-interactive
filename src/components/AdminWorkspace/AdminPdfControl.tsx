@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent, type FormEventHandler } from 'react'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase729PowerPointSyncEnabled } from '../../lib/featureFlags'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { SyncedPdfViewer } from '../DisplayView/SyncedPdfViewer'
@@ -8,7 +9,7 @@ type PdfAsset = { id: string; pageCount: number; title: string }
 
 type AdminPdfControlProps = {
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   availableAssets: readonly PdfAsset[]
   browserPublishingEnabled: boolean
   displayPageInput: string

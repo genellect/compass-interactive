@@ -14,6 +14,9 @@ const functionBlock = (sql, qualifiedName) =>
 const migration = read(
   'supabase/migrations/20260811012111_phase7_30c2_unified_admin_authorization.sql',
 )
+const workspaceMigration = read(
+  'supabase/migrations/20260812033000_phase7_30c2_google_workspace_authority.sql',
+)
 const pgTap = read(
   'supabase/tests/phase7_30c2_unified_admin_authorization_test.sql',
 )
@@ -42,10 +45,29 @@ const updateDisplayState = read(
 const materialAnalysisControl = read(
   'src/components/AdminAiControl/MaterialAnalysisControl.tsx',
 )
+const academicAnswerControl = read(
+  'src/components/AdminAiControl/AcademicAnswerControl.tsx',
+)
+const realtimeCaptionControl = read(
+  'src/components/AdminAiControl/RealtimeCaptionControl.tsx',
+)
+const aiMasterAuthorizationControl = read(
+  'src/components/AdminAiControl/AiMasterAuthorizationControl.tsx',
+)
+const aiMasterAuthorizationRepository = read(
+  'src/repositories/supabase/aiMasterAuthorizationRepository.ts',
+)
+const adminRoute = read('src/pages/AdminRoute.tsx')
+const adminOperationSessionEvents = read(
+  'src/lib/adminAuth/adminOperationSessionEvents.ts',
+)
+const edgeTransport = read('src/repositories/supabase/transport.ts')
 const adminAiControlPanel = read(
   'src/components/AdminWorkspace/AdminAiControlPanel.tsx',
 )
-const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
+const adminContentAiRepository = read(
+  'src/repositories/supabase/adminContentAiRepository.ts',
+)
 const featureFlags = read('src/lib/featureFlags.ts')
 const databaseTypes = read('src/types/database.ts')
 const envExample = read('.env.local.example')
@@ -1133,8 +1155,9 @@ assert.match(
   'public copy remains readable and does not expose development terminology',
 )
 const hideSummaryRepositoryType =
-  adminRepository.match(/\| \{\s*action: 'hideSummary'[\s\S]*?\n\s*\},/)?.[0] ??
-  ''
+  adminContentAiRepository.match(
+    /\| \{\s*action: 'hideSummary'[\s\S]*?\n\s*\},/,
+  )?.[0] ?? ''
 assert.match(hideSummaryRepositoryType, /analysisId: string/)
 assert.doesNotMatch(hideSummaryRepositoryType, /reviewState|summaryBody/)
 assert.match(
@@ -1213,5 +1236,126 @@ assert.match(docsTest, /72 non-live/)
 assert.match(ciDocs, /72 non-live/)
 assert.match(gateDocs, /test:ci:nonlive` \(72 groups\)/)
 assert.match(readme, /72 non-live groups/)
+
+const googleMasterStatus = functionBlock(
+  workspaceMigration,
+  'private.get_google_ai_master_status_v1',
+)
+assert.match(
+  googleMasterStatus,
+  /admin_ai_unlock_runtime_gate[\s\S]*for share[\s\S]*admin_ai_policies[\s\S]*for share[\s\S]*lecture_sessions[\s\S]*for update/,
+  'workspace status preserves gate -> policy -> lecture authority lock order',
+)
+assert.match(
+  googleMasterStatus,
+  /expire_ai_master_authorization[\s\S]*pre_c1_master_fenced[\s\S]*pre_c1_master_remediated/,
+  'workspace status drains an unconvertible pre-C1 master before readmission',
+)
+assert.match(
+  googleMasterStatus,
+  /admission_blocked_reason[\s\S]*admission_enabled[\s\S]*allowed_scopes/,
+  'workspace status exposes one authoritative admission decision and supported bundles',
+)
+
+const googleAcademicControl = functionBlock(
+  workspaceMigration,
+  'private.manage_google_admin_academic_results_v1',
+)
+assert.match(
+  googleAcademicControl,
+  /target_action = 'cancel'[\s\S]*lecture_ai_control[\s\S]*academic_answer_requests[\s\S]*ai_usage_ledger[\s\S]*finish_lecture_ai_operation/,
+  'Google academic cancellation follows lecture -> control -> request -> usage settlement',
+)
+assert.doesNotMatch(
+  googleAcademicControl,
+  /admin_cancel_academic_answer_request/,
+  'Google academic cancellation is owned by canonical lecture authority, not the historical app-session actor',
+)
+for (const facade of [
+  'get_google_admin_summary_results_v1',
+  'manage_google_admin_summary_publication_v1',
+  'get_google_admin_academic_results_v1',
+  'manage_google_admin_academic_results_v1',
+]) {
+  assert.match(
+    workspaceMigration,
+    new RegExp(
+      `revoke all on function public\\.${facade}\\([\\s\\S]*from public, anon, authenticated;[\\s\\S]*grant execute on function public\\.${facade}\\([\\s\\S]*to service_role`,
+    ),
+    `${facade} remains service-role-only`,
+  )
+  assert.match(
+    databaseTypes,
+    new RegExp(`${facade}: \\{[\\s\\S]*Returns: Json`),
+  )
+}
+
+assert.match(
+  edgeTransport,
+  /GOOGLE_ADMIN_SESSION_INVALID_CODES[\s\S]*response\.clone\(\)\.text\(\)[\s\S]*notifyGoogleAdminSessionInvalid\(credential\.appSessionToken\)/,
+  'Google session expiry is dispatched only after reading a bounded structured error code',
+)
+assert.match(
+  edgeTransport,
+  /confirmGoogleAdminSessionInvalid[\s\S]*restoreGoogleAdminSession\(appSessionToken\)[\s\S]*GOOGLE_ADMIN_SESSION_INVALID_CODES\.has\(sessionError\.code\)/,
+  'generic domain failures confirm the exact application session before forcing logout',
+)
+assert.match(
+  edgeTransport,
+  /GOOGLE_REQUEST_ID_FREE_ACTIONS[\s\S]*generate-academic-answer[\s\S]*status[\s\S]*requiresGeneratedRequestId/,
+  'read-only Google actions do not acquire mutation idempotency IDs',
+)
+assert.doesNotMatch(
+  edgeTransport,
+  /context\.status === 401[\s\S]*notifyGoogleAdminSessionInvalid/,
+  'recoverable non-session 401 responses never force a workspace logout',
+)
+assert.match(
+  adminOperationSessionEvents,
+  /getSessionSignal\(appSessionToken\)[\s\S]*CustomEvent[\s\S]*event\.detail === signal/,
+  'session invalidation events are scoped to the exact app session',
+)
+assert.match(
+  adminRoute,
+  /subscribeGoogleAdminSessionInvalid\(appSessionToken[\s\S]*auth\.signOut\(\{ scope: 'local' \}\)[\s\S]*clearGoogleAdminWorkspace/,
+  'the workspace subscribes once and returns invalid Google sessions to sign-in',
+)
+assert.match(
+  adminRoute,
+  /clearGoogleAdminWorkspace[\s\S]*clearAdminAuthStorage\(\)[\s\S]*clearAdminPdfExtractionCache\(\)[\s\S]*setPhase\('signed_out'\)/,
+  'session invalidation clears auth, idempotency and private PDF state locally',
+)
+assert.match(
+  adminRoute,
+  /forcedSessionInvalidRef\.current = true[\s\S]*async function logout\(\)[\s\S]*finishForcedSessionInvalidation[\s\S]*forcedSessionInvalidRef\.current[\s\S]*if \(finishForcedSessionInvalidation\(\)\) return[\s\S]*hasAdminTotpTransitionRecovery[\s\S]*if \(finishForcedSessionInvalidation\(\)\) return/,
+  'a stale child logout callback cannot replace forced sign-out with TOTP recovery',
+)
+
+assert.match(
+  aiMasterAuthorizationRepository,
+  /error instanceof AdminAiUnlockError[\s\S]*error\.code !== 'request_failed'[\s\S]*completeAdminOperationRequestId/,
+  'authoritative PIN denials retire their request ID while ambiguous responses retain it',
+)
+assert.match(
+  aiMasterAuthorizationControl,
+  /status\.admissionEnabled[\s\S]*status\.allowedScopes[\s\S]*authorization\?\.status !== 'active'/,
+  'AI master UX follows DB admission bundles and lets the same principal stop a prior-session master',
+)
+
+for (const [source, label] of [
+  [materialAnalysisControl, 'material'],
+  [academicAnswerControl, 'academic'],
+]) {
+  assert.match(
+    source,
+    /googleProviderAttemptsRef[\s\S]*\.get\(googleAttemptKey\)[\s\S]*\.set\(googleAttemptKey[\s\S]*shouldRetainAdminProviderAttempt[\s\S]*\.delete\(googleAttemptKey\)/,
+    `${label} starts retain exact provider IDs only across ambiguous outcomes`,
+  )
+}
+assert.match(
+  realtimeCaptionControl,
+  /unresolvedGoogleStartRef[\s\S]*manageAiControl\(\{[\s\S]*action: 'status'[\s\S]*findRunningCaptionOperation[\s\S]*重複開始を防ぐ/,
+  'Realtime response loss is reconciled through status before any new provider intent',
+)
 
 console.log('Phase 7.30C2 static checks passed.')

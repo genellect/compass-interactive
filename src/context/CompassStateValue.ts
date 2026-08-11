@@ -17,6 +17,7 @@ import type {
   PublicMaterialSummary,
 } from '../repositories/supabaseLiveStateRepository'
 import type { LectureArchiveSession } from '../types/archive'
+import type { AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 
 export type JoinResult =
   | {
@@ -29,7 +30,8 @@ export type JoinResult =
 export type SessionSyncPauseReason = 'hidden' | 'idle' | 'lectureClosed' | null
 
 export type OperatorLiveAccess =
-  { kind: 'admin'; token: string } | { kind: 'display'; token: string }
+  | { kind: 'admin'; token: AdminOperationCredentialInput }
+  | { kind: 'display'; token: string }
 
 export type CompassStateValue = {
   academicAnswers: PublicAcademicAnswer[]

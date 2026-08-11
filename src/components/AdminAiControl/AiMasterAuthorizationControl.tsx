@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 
 import type {
   AiMasterAuthorization,
@@ -7,10 +11,26 @@ import type {
 import { supabaseAdminRepository } from '../../repositories/supabaseAdminRepository'
 
 type Props = {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   lectureSessionId: string
   lectureStatus: string
   onAuthorizationChange: (authorization: AiMasterAuthorization | null) => void
+}
+
+function admissionBlockedMessage(reason: string | null) {
+  if (reason === 'membership_ai_disabled') {
+    return 'この管理者にはAI機能の利用権限がありません。状態確認と停止は利用できます。'
+  }
+  if (reason === 'lecture_not_open') {
+    return '開始済みで終了前の講義だけAI機能を新しく許可できます。'
+  }
+  if (
+    reason === 'policy_unavailable' ||
+    reason === 'policy_scope_unavailable'
+  ) {
+    return 'この講義で利用できるAI機能の組み合わせがありません。'
+  }
+  return 'AI機能の新しい許可は現在停止中です。状態確認と停止は利用できます。'
 }
 
 export function AiMasterAuthorizationControl({
@@ -22,9 +42,20 @@ export function AiMasterAuthorizationControl({
   const [authorization, setAuthorization] =
     useState<AiMasterAuthorization | null>(null)
   const [billingPin, setBillingPin] = useState('')
+  const [admissionEnabled, setAdmissionEnabled] = useState(true)
+  const [allowedScopes, setAllowedScopes] = useState<
+    AiMasterAuthorizationScope[]
+  >(['all_except_captions', 'all_including_captions'])
+  const [serverLectureOpen, setServerLectureOpen] = useState(
+    lectureStatus === 'open',
+  )
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const statusRequestVersionRef = useRef(0)
+  const googleCredential = isGoogleAdminOperationCredential(adminToken)
+  const pinReady = googleCredential
+    ? /^\d{4}$/.test(billingPin)
+    : billingPin.trim().length > 0
 
   const applyAuthorization = useCallback(
     (next: AiMasterAuthorization | null) => {
@@ -43,6 +74,20 @@ export function AiMasterAuthorizationControl({
       })
       if (requestVersion === statusRequestVersionRef.current) {
         applyAuthorization(status.authorization)
+        setAdmissionEnabled(status.admissionEnabled)
+        setAllowedScopes(status.allowedScopes)
+        setServerLectureOpen(status.lectureOpen)
+        if (
+          googleCredential &&
+          !status.authorization &&
+          !status.admissionEnabled
+        ) {
+          setMessage(admissionBlockedMessage(status.admissionBlockedReason))
+        } else if (status.reason === 'pre_c1_master_remediated') {
+          setMessage(
+            '以前の共有許可を安全に停止しました。個人AI PINで許可し直してください。',
+          )
+        }
       }
     } catch (error) {
       if (requestVersion === statusRequestVersionRef.current) {
@@ -53,7 +98,7 @@ export function AiMasterAuthorizationControl({
         )
       }
     }
-  }, [adminToken, applyAuthorization, lectureSessionId])
+  }, [adminToken, applyAuthorization, googleCredential, lectureSessionId])
 
   useEffect(() => {
     applyAuthorization(null)
@@ -83,10 +128,22 @@ export function AiMasterAuthorizationControl({
   }, [lectureStatus, refresh])
 
   async function authorize(scope: AiMasterAuthorizationScope) {
-    if (!billingPin.trim() || lectureStatus !== 'open' || busy) return
+    if (
+      !pinReady ||
+      lectureStatus !== 'open' ||
+      !serverLectureOpen ||
+      !admissionEnabled ||
+      !allowedScopes.includes(scope) ||
+      busy
+    )
+      return
     statusRequestVersionRef.current += 1
     setBusy(true)
-    setMessage('API PINと講義状態を確認しています…')
+    setMessage(
+      googleCredential
+        ? '個人AI PINと講義状態を確認しています…'
+        : 'API PINと講義状態を確認しています…',
+    )
     try {
       const status = await supabaseAdminRepository.authorizeAiMaster({
         adminToken,
@@ -114,7 +171,7 @@ export function AiMasterAuthorizationControl({
   }
 
   async function revoke() {
-    if (busy || !authorization?.ownedByRequester) return
+    if (busy || authorization?.status !== 'active') return
     statusRequestVersionRef.current += 1
     setBusy(true)
     setMessage('AI機能を停止しています…')
@@ -142,6 +199,13 @@ export function AiMasterAuthorizationControl({
     authorization?.status === 'active' && authorization.ownedByRequester
   const heldByOther =
     authorization?.status === 'active' && !authorization.ownedByRequester
+  const authorizationActive = active || heldByOther
+  const allExceptCaptionsAllowed = allowedScopes.includes('all_except_captions')
+  const allIncludingCaptionsAllowed = allowedScopes.includes(
+    'all_including_captions',
+  )
+  const canAdmit =
+    admissionEnabled && serverLectureOpen && lectureStatus === 'open'
 
   return (
     <section className="ai-master-authorization" data-testid="ai-master-auth">
@@ -155,14 +219,15 @@ export function AiMasterAuthorizationControl({
         </span>
       </div>
 
-      {!active && !heldByOther ? (
+      {!authorizationActive ? (
         <div className="summary-control-actions">
           <label className="field compact-field">
-            <span>API PIN</span>
+            <span>{googleCredential ? '個人AI PIN' : 'API PIN'}</span>
             <input
               autoComplete="off"
-              disabled={busy || lectureStatus !== 'open'}
+              disabled={busy || !canAdmit}
               inputMode="numeric"
+              maxLength={googleCredential ? 4 : undefined}
               onChange={(event) => setBillingPin(event.target.value)}
               type="password"
               value={billingPin}
@@ -170,7 +235,9 @@ export function AiMasterAuthorizationControl({
           </label>
           <button
             className="secondary-button"
-            disabled={busy || !billingPin.trim() || lectureStatus !== 'open'}
+            disabled={
+              busy || !pinReady || !canAdmit || !allExceptCaptionsAllowed
+            }
             onClick={() => void authorize('all_except_captions')}
             type="button"
           >
@@ -178,21 +245,30 @@ export function AiMasterAuthorizationControl({
           </button>
           <button
             className="primary-button"
-            disabled={busy || !billingPin.trim() || lectureStatus !== 'open'}
+            disabled={
+              busy || !pinReady || !canAdmit || !allIncludingCaptionsAllowed
+            }
             onClick={() => void authorize('all_including_captions')}
             type="button"
           >
             字幕も含めて許可
           </button>
+          {googleCredential && !allIncludingCaptionsAllowed ? (
+            <span className="note">
+              この講義では字幕を含む一括許可を利用できません。
+            </span>
+          ) : null}
         </div>
       ) : null}
 
-      {active ? (
+      {authorizationActive ? (
         <div className="summary-control-actions">
           <span className="note">
-            {authorization.scope === 'all_including_captions'
-              ? '字幕を含むすべてのAI機能'
-              : '字幕以外のAI機能'}
+            {heldByOther
+              ? '同じ管理者の以前の画面で許可されています。停止後、この画面で許可し直せます。'
+              : authorization.scope === 'all_including_captions'
+                ? '字幕を含むすべてのAI機能'
+                : '字幕以外のAI機能'}
           </span>
           <button
             className="secondary-button"
@@ -205,11 +281,6 @@ export function AiMasterAuthorizationControl({
         </div>
       ) : null}
 
-      {heldByOther ? (
-        <p className="note">
-          別の教員画面が許可を保持しています。二重実行を避けるため、この画面からは開始できません。
-        </p>
-      ) : null}
       {message ? (
         <p aria-live="polite" className="note">
           {message}

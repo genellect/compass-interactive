@@ -1,3 +1,5 @@
+import { clearAdminOperationRequestIds } from './adminOperationRequestId.ts'
+
 export const ADMIN_AUTH_STORAGE_KEY =
   'compass-interactive-admin-supabase-auth-v1'
 export const ADMIN_APP_SESSION_STORAGE_KEY =
@@ -121,6 +123,7 @@ export function restoreAdminAppSessionToken() {
 }
 
 export function clearAdminAuthStorage() {
+  clearAdminOperationRequestIds()
   window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY)
   window.localStorage.removeItem(`${ADMIN_AUTH_STORAGE_KEY}-code-verifier`)
   window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)

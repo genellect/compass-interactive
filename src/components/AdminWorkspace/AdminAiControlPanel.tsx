@@ -1,4 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 
 import { AppIcon } from '../AppIcon'
 import {
@@ -25,7 +29,7 @@ const AcademicAnswerControl = lazy(() =>
 type Props = {
   activeLecture: AdminLecture | undefined
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   academicEnabled: boolean
   documents: AdminPdfDocument[]
   displayState: DisplayState | null
@@ -91,7 +95,8 @@ export function AdminAiControlPanel({
           {anyEnabled ? '利用可能' : '停止中'}
         </span>
       </div>
-      {isPhase728AiMasterAuthorizationEnabled &&
+      {(isPhase728AiMasterAuthorizationEnabled ||
+        isGoogleAdminOperationCredential(adminToken)) &&
       adminToken &&
       activeLectureSessionId ? (
         <AiMasterAuthorizationControl
@@ -101,8 +106,9 @@ export function AdminAiControlPanel({
           onAuthorizationChange={setMasterAuthorization}
         />
       ) : null}
-      {realtimeEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <RealtimeCaptionControl
+          admissionEnabled={realtimeEnabled}
           adminToken={adminToken}
           hardStopAt={
             activeLecture?.hardStopAt ?? fallbackHardStopAt ?? undefined
@@ -112,8 +118,9 @@ export function AdminAiControlPanel({
           masterAuthorization={masterAuthorization}
         />
       ) : null}
-      {summariesEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <LectureSummaryControl
+          admissionEnabled={summariesEnabled}
           adminToken={adminToken}
           displayState={displayState}
           documents={documents}
@@ -127,9 +134,10 @@ export function AdminAiControlPanel({
           masterAuthorization={masterAuthorization}
         />
       ) : null}
-      {academicEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <Suspense fallback={<p className="note">参考回答を準備しています…</p>}>
           <AcademicAnswerControl
+            admissionEnabled={academicEnabled}
             adminToken={adminToken}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}

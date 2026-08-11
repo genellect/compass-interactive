@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 
 import { buildDoiUrl } from '../../lib/academicSourceLinks'
 import {
   type AdminAcademicAnswer,
   type AdminAcademicResults,
   type AiMasterAuthorization,
+  shouldRetainAdminProviderAttempt,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
 import {
@@ -13,7 +18,8 @@ import {
 } from './aiMasterAuthorization'
 
 type AcademicAnswerControlProps = {
-  adminToken: string
+  admissionEnabled: boolean
+  adminToken: AdminOperationCredentialInput
   lectureSessionId: string
   lectureStatus: string
   masterAuthorization: AiMasterAuthorization | null
@@ -43,12 +49,14 @@ function referenceLabel(answer: AdminAcademicAnswer, sourceId: string) {
 }
 
 export function AcademicAnswerControl({
+  admissionEnabled,
   adminToken,
   lectureSessionId,
   lectureStatus,
   masterAuthorization,
   refreshVersion = 0,
 }: AcademicAnswerControlProps) {
+  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [results, setResults] = useState<AdminAcademicResults>(emptyResults)
   const [sourceMode, setSourceMode] = useState<
     'summary_candidate' | 'teacher_selected'
@@ -65,11 +73,25 @@ export function AcademicAnswerControl({
   const [message, setMessage] = useState('')
   const [editingAnswerId, setEditingAnswerId] = useState('')
   const [revisionPoints, setRevisionPoints] = useState<string[]>([])
+  const googleProviderAttemptsRef = useRef(
+    new Map<
+      string,
+      {
+        grantRequestId: string
+        preflightRequestId: string
+        startRequestId: string
+      }
+    >(),
+  )
   const masterAuthorized = masterAuthorizesFeature(
     masterAuthorization,
     'academic_answers',
   )
   const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
+
+  useEffect(() => {
+    googleProviderAttemptsRef.current.clear()
+  }, [lectureSessionId])
 
   const selectedCandidate = useMemo(
     () =>
@@ -83,6 +105,9 @@ export function AcademicAnswerControl({
     let cancelled = false
     setResults(emptyResults)
     setMessage('')
+    if (googleCredential) {
+      setSourceMode('teacher_selected')
+    }
     void supabaseAdminRepository
       .manageAcademicAnswers({
         action: 'status',
@@ -113,7 +138,7 @@ export function AcademicAnswerControl({
     return () => {
       cancelled = true
     }
-  }, [adminToken, lectureSessionId, refreshVersion])
+  }, [adminToken, googleCredential, lectureSessionId, refreshVersion])
 
   useEffect(() => {
     if (!busy) return
@@ -142,10 +167,12 @@ export function AcademicAnswerControl({
   }
 
   async function generateAnswer() {
+    let googleAttemptKey: string | null = null
     const normalizedQuestion = question.trim()
     const normalizedSearchQuery = searchQuery.trim()
     if (
-      (!masterAuthorized && !billingPin.trim()) ||
+      !admissionEnabled ||
+      (!masterAuthorized && (googleCredential || !billingPin.trim())) ||
       masterHeldByOther ||
       normalizedQuestion.length < 10 ||
       normalizedQuestion.length > 500 ||
@@ -158,7 +185,9 @@ export function AcademicAnswerControl({
           ? '別の教員画面がAI許可を保持しています。'
           : masterAuthorized
             ? '質問と文献検索語を確認してください。'
-            : '質問・文献検索語・API PINを確認してください。',
+            : googleCredential
+              ? '質問・文献検索語・講義中のAI許可を確認してください。'
+              : '質問・文献検索語・API PINを確認してください。',
       )
       return
     }
@@ -166,31 +195,65 @@ export function AcademicAnswerControl({
     setBusy(true)
     setMessage('一次文献を検証してから、参考回答の下書きを作成します…')
     try {
-      const authorization = await supabaseAdminRepository.authorizeAiStart({
-        actions: ['academic_answers'],
-        adminToken,
-        billingPin: masterAuthorized ? undefined : billingPin,
-        lectureSessionId,
-      })
+      const authorization = googleCredential
+        ? null
+        : await supabaseAdminRepository.authorizeAiStart({
+            actions: ['academic_answers'],
+            adminToken,
+            billingPin: masterAuthorized ? undefined : billingPin,
+            lectureSessionId,
+          })
       setBillingPin('')
+      const sourceSummaryId =
+        sourceMode === 'summary_candidate' ? selectedSummaryId : null
+      googleAttemptKey = googleCredential
+        ? JSON.stringify({
+            lectureSessionId,
+            question: normalizedQuestion,
+            searchQuery: normalizedSearchQuery,
+            sourceKind: sourceMode,
+            sourcePolicy,
+            sourceSummaryId,
+          })
+        : null
+      let googleAttempt = googleAttemptKey
+        ? googleProviderAttemptsRef.current.get(googleAttemptKey)
+        : undefined
+      if (googleAttemptKey && !googleAttempt) {
+        googleAttempt = {
+          grantRequestId: crypto.randomUUID(),
+          preflightRequestId: crypto.randomUUID(),
+          startRequestId: crypto.randomUUID(),
+        }
+        googleProviderAttemptsRef.current.set(googleAttemptKey, googleAttempt)
+      }
       const nextResults = await supabaseAdminRepository.manageAcademicAnswers({
         action: 'generate',
         adminToken,
-        billingGrant: authorization.billingGrant,
-        idempotencyKey: `phase7-2-${lectureSessionId}-${crypto.randomUUID()}`,
+        ...(googleCredential
+          ? googleAttempt!
+          : {
+              billingGrant: authorization!.billingGrant,
+              idempotencyKey: `phase7-2-${lectureSessionId}-${crypto.randomUUID()}`,
+            }),
         lectureSessionId,
         question: normalizedQuestion,
         searchQuery: normalizedSearchQuery,
         sourceKind: sourceMode,
-        sourceSummaryId:
-          sourceMode === 'summary_candidate' ? selectedSummaryId : null,
+        sourceSummaryId,
         sourcePolicy,
       })
+      if (googleAttemptKey) {
+        googleProviderAttemptsRef.current.delete(googleAttemptKey)
+      }
       setResults(nextResults)
       setMessage(
         '非公開の下書きを作成しました。文献と表現を確認してから公開してください。',
       )
     } catch (error) {
+      if (googleAttemptKey && !shouldRetainAdminProviderAttempt(error)) {
+        googleProviderAttemptsRef.current.delete(googleAttemptKey)
+      }
       setBillingPin('')
       setMessage(
         error instanceof Error
@@ -301,6 +364,7 @@ export function AcademicAnswerControl({
   }
 
   const disabled = busy || lectureStatus !== 'open'
+  const generationDisabled = disabled || !admissionEnabled
   const callsUsed = results.control?.academicAnswerCallsUsed ?? 0
   const callLimit = results.control?.academicAnswerLimit ?? 3
 
@@ -320,7 +384,7 @@ export function AcademicAnswerControl({
         <label className="field">
           <span>質問の選び方</span>
           <select
-            disabled={disabled}
+            disabled={generationDisabled}
             onChange={(event) => {
               const mode = event.target.value as typeof sourceMode
               setSourceMode(mode)
@@ -343,7 +407,7 @@ export function AcademicAnswerControl({
           <label className="field academic-answer-question-field">
             <span>質問候補</span>
             <select
-              disabled={disabled || results.candidates.length === 0}
+              disabled={generationDisabled || results.candidates.length === 0}
               onChange={(event) => selectCandidate(event.target.value)}
               value={selectedSummaryId}
             >
@@ -361,7 +425,7 @@ export function AcademicAnswerControl({
           <label className="field academic-answer-question-field">
             <span>学生へ補足したい質問</span>
             <textarea
-              disabled={disabled}
+              disabled={generationDisabled}
               maxLength={500}
               onChange={(event) => setQuestion(event.target.value)}
               placeholder="講義中に扱う学術的な質問を入力"
@@ -373,7 +437,7 @@ export function AcademicAnswerControl({
         <label className="field academic-answer-question-field">
           <span>文献検索語</span>
           <input
-            disabled={disabled}
+            disabled={generationDisabled}
             maxLength={240}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="問いに関係する概念、対象、主要な結果など"
@@ -383,7 +447,7 @@ export function AcademicAnswerControl({
         <label className="field">
           <span>参照する分野</span>
           <select
-            disabled={disabled}
+            disabled={generationDisabled}
             onChange={(event) =>
               setSourcePolicy(event.target.value as typeof sourcePolicy)
             }
@@ -400,12 +464,16 @@ export function AcademicAnswerControl({
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
           <p className="note">講義中のAPI許可を使用します。</p>
+        ) : googleCredential ? (
+          <p className="note">
+            上の「講義中のAI機能」で利用を許可してください。
+          </p>
         ) : (
           <label className="field">
             <span>API PIN</span>
             <input
               autoComplete="off"
-              disabled={disabled}
+              disabled={generationDisabled}
               inputMode="numeric"
               onChange={(event) => setBillingPin(event.target.value)}
               type="password"
@@ -415,7 +483,13 @@ export function AcademicAnswerControl({
         )}
         <button
           className="secondary-button"
-          disabled={disabled || masterHeldByOther || callsUsed >= callLimit}
+          disabled={
+            disabled ||
+            !admissionEnabled ||
+            masterHeldByOther ||
+            callsUsed >= callLimit ||
+            (!masterAuthorized && googleCredential)
+          }
           onClick={() => void generateAnswer()}
           type="button"
         >
@@ -423,6 +497,11 @@ export function AcademicAnswerControl({
         </button>
       </div>
       <p className="note">1回 最大約$0.04</p>
+      {!admissionEnabled ? (
+        <p className="note">
+          新しい参考回答の生成は停止中です。状態確認・非表示・非採用・停止は引き続き利用できます。
+        </p>
+      ) : null}
       {message ? (
         <p aria-live="polite" className="note">
           {message}
@@ -540,7 +619,7 @@ export function AcademicAnswerControl({
                 <>
                   <button
                     className="primary-button"
-                    disabled={busy}
+                    disabled={busy || !admissionEnabled}
                     onClick={() => void reviseAnswer(answer)}
                     type="button"
                   >
@@ -561,7 +640,11 @@ export function AcademicAnswerControl({
               ) : (
                 <button
                   className="primary-button"
-                  disabled={disabled || answer.status === 'rejected'}
+                  disabled={
+                    disabled ||
+                    !admissionEnabled ||
+                    answer.status === 'rejected'
+                  }
                   onClick={() => void reviewAnswer('approve', answer.id)}
                   type="button"
                 >
@@ -571,7 +654,7 @@ export function AcademicAnswerControl({
               {editingAnswerId !== answer.id && answer.status !== 'rejected' ? (
                 <button
                   className="secondary-button"
-                  disabled={disabled}
+                  disabled={disabled || !admissionEnabled}
                   onClick={() => beginRevision(answer)}
                   type="button"
                 >

@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 import { listCompletedCaptionSegments } from '../../caption/captionTranscriptStore'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
@@ -29,7 +33,8 @@ import {
 } from './aiMasterAuthorization'
 
 type LectureSummaryControlProps = {
-  adminToken: string
+  admissionEnabled: boolean
+  adminToken: AdminOperationCredentialInput
   displayState: DisplayState | null
   documents: AdminPdfDocument[]
   getServerNow: () => string | null
@@ -69,6 +74,7 @@ function reviewLabel(summary: AdminLectureSummary) {
 }
 
 export function LectureSummaryControl({
+  admissionEnabled,
   adminToken,
   displayState,
   documents,
@@ -81,6 +87,7 @@ export function LectureSummaryControl({
   publisherSessionToken,
   startedAt,
 }: LectureSummaryControlProps) {
+  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [billingPin, setBillingPin] = useState('')
   const [results, setResults] = useState<AdminSummaryResults>(emptyResults)
   const [runToken, setRunToken] = useState<string | null>(null)
@@ -101,6 +108,26 @@ export function LectureSummaryControl({
   const academicDispatchBusyRef = useRef(false)
   const academicRetryTimerRef = useRef<number | null>(null)
   const previousSummaryMasterAuthorizedRef = useRef(false)
+  const academicRequestIdsRef = useRef(
+    new Map<
+      string,
+      {
+        grantRequestId: string
+        preflightRequestId: string
+        startRequestId: string
+      }
+    >(),
+  )
+  const summaryWindowRequestIdsRef = useRef(
+    new Map<
+      number,
+      {
+        grantRequestId: string
+        preflightRequestId: string
+        startRequestId: string
+      }
+    >(),
+  )
   const summaryMasterAuthorized = masterAuthorizesFeature(
     masterAuthorization,
     'summaries',
@@ -164,6 +191,7 @@ export function LectureSummaryControl({
         )
         setSummaryLanguage(response.results.control?.summaryLanguage ?? 'auto')
         if (
+          admissionEnabled &&
           response.results.run?.status === 'running' &&
           lectureStatus === 'open'
         ) {
@@ -198,11 +226,12 @@ export function LectureSummaryControl({
         window.clearTimeout(academicRetryTimerRef.current)
       }
     }
-  }, [adminToken, lectureSessionId, lectureStatus])
+  }, [admissionEnabled, adminToken, lectureSessionId, lectureStatus])
 
   const dispatchAutomaticAcademicAnswers = useCallback(
     async (token: string, attempt = 0) => {
       if (
+        !admissionEnabled ||
         !isPhase725AutoAcademicAnswersEnabled ||
         runTokenRef.current !== token ||
         lectureStatus !== 'open' ||
@@ -258,10 +287,25 @@ export function LectureSummaryControl({
             }
             return
           }
+          const googleRequestIds = googleCredential
+            ? (academicRequestIdsRef.current.get(candidate.summaryId) ?? {
+                grantRequestId: crypto.randomUUID(),
+                preflightRequestId: crypto.randomUUID(),
+                startRequestId: crypto.randomUUID(),
+              })
+            : null
+          if (googleRequestIds) {
+            academicRequestIdsRef.current.set(
+              candidate.summaryId,
+              googleRequestIds,
+            )
+          }
           await supabaseAdminRepository.manageAcademicAnswers({
             action: 'generateAuto',
             adminToken,
-            idempotencyKey: `phase7-25:auto:${lectureSessionId}:${candidate.summaryId}`,
+            ...(googleRequestIds ?? {
+              idempotencyKey: `phase7-25:auto:${lectureSessionId}:${candidate.summaryId}`,
+            }),
             lectureSessionId,
             question: candidate.question,
             runToken: token,
@@ -269,6 +313,9 @@ export function LectureSummaryControl({
             sourcePolicy: automation.sourcePolicy,
             sourceSummaryId: candidate.summaryId,
           })
+          if (googleRequestIds) {
+            academicRequestIdsRef.current.delete(candidate.summaryId)
+          }
           onAcademicAnswerChanged?.()
         }
       } catch (error) {
@@ -289,11 +336,19 @@ export function LectureSummaryControl({
         academicDispatchBusyRef.current = false
       }
     },
-    [adminToken, lectureSessionId, lectureStatus, onAcademicAnswerChanged],
+    [
+      admissionEnabled,
+      adminToken,
+      googleCredential,
+      lectureSessionId,
+      lectureStatus,
+      onAcademicAnswerChanged,
+    ],
   )
 
   useEffect(() => {
     if (
+      admissionEnabled &&
       runToken &&
       results.run?.status === 'running' &&
       results.run.autoAcademicAnswersEnabled
@@ -301,6 +356,7 @@ export function LectureSummaryControl({
       void dispatchAutomaticAcademicAnswers(runToken)
     }
   }, [
+    admissionEnabled,
     dispatchAutomaticAcademicAnswers,
     results.run?.autoAcademicAnswersEnabled,
     results.run?.status,
@@ -355,7 +411,12 @@ export function LectureSummaryControl({
 
   const processNextWindow = useCallback(async () => {
     const token = runTokenRef.current
-    if (!token || lectureStatus !== 'open' || schedulerBusyRef.current) {
+    if (
+      !admissionEnabled ||
+      !token ||
+      lectureStatus !== 'open' ||
+      schedulerBusyRef.current
+    ) {
       return
     }
     if (!startedAt || !hardStopAt) {
@@ -390,8 +451,22 @@ export function LectureSummaryControl({
           '資料公開アプリに接続できないため、PDFの内容を含めずに要約判定を続けます。',
         )
       }
+      const googleRequestIds = googleCredential
+        ? (summaryWindowRequestIdsRef.current.get(summaryWindow.index) ?? {
+            grantRequestId: crypto.randomUUID(),
+            preflightRequestId: crypto.randomUUID(),
+            startRequestId: crypto.randomUUID(),
+          })
+        : null
+      if (googleRequestIds) {
+        summaryWindowRequestIdsRef.current.set(
+          summaryWindow.index,
+          googleRequestIds,
+        )
+      }
       const generated = await supabaseAdminRepository.generateLectureSummary({
         adminToken,
+        ...(googleRequestIds ?? {}),
         lectureSessionId,
         pdfContext,
         runToken: token,
@@ -403,6 +478,9 @@ export function LectureSummaryControl({
         })),
         windowIndex: summaryWindow.index,
       })
+      if (googleRequestIds) {
+        summaryWindowRequestIdsRef.current.delete(summaryWindow.index)
+      }
       setResults(generated.results)
       if (generated.results.run?.autoAcademicAnswersEnabled) {
         void dispatchAutomaticAcademicAnswers(token)
@@ -428,11 +506,13 @@ export function LectureSummaryControl({
       schedulerBusyRef.current = false
     }
   }, [
+    admissionEnabled,
     adminToken,
     dispatchAutomaticAcademicAnswers,
     getPdfContext,
     getServerNow,
     hardStopAt,
+    googleCredential,
     lectureSessionId,
     lectureStatus,
     processedIndexes,
@@ -473,30 +553,39 @@ export function LectureSummaryControl({
 
   async function startRun() {
     if (
-      (!masterAuthorizedForStart && !billingPin.trim()) ||
+      !admissionEnabled ||
+      (!masterAuthorizedForStart && (googleCredential || !billingPin.trim())) ||
       masterHeldByOther ||
       lectureStatus !== 'open'
     )
       return
     setBusy(true)
-    setMessage('API利用PINと講義状態を確認しています…')
+    setMessage(
+      googleCredential
+        ? '講義中のAI許可と講義状態を確認しています…'
+        : 'API利用PINと講義状態を確認しています…',
+    )
     try {
-      const authorization = await supabaseAdminRepository.authorizeAiStart({
-        actions:
-          isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers
-            ? ['summaries', 'academic_answers']
-            : ['summaries'],
-        adminToken,
-        billingPin: masterAuthorizedForStart ? undefined : billingPin,
-        lectureSessionId,
-      })
+      const authorization = googleCredential
+        ? null
+        : await supabaseAdminRepository.authorizeAiStart({
+            actions:
+              isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers
+                ? ['summaries', 'academic_answers']
+                : ['summaries'],
+            adminToken,
+            billingPin: masterAuthorizedForStart ? undefined : billingPin,
+            lectureSessionId,
+          })
       const started = await supabaseAdminRepository.manageLectureSummaries({
         action: 'start',
         academicSourcePolicy,
         adminToken,
         autoAcademicAnswers:
           isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers,
-        billingGrant: authorization.billingGrant,
+        ...(googleCredential
+          ? {}
+          : { billingGrant: authorization!.billingGrant }),
         lectureSessionId,
       })
       setResults(started.results)
@@ -577,6 +666,7 @@ export function LectureSummaryControl({
     summary: AdminLectureSummary,
     action: 'hide' | 'pin' | 'publish' | 'unpin',
   ) {
+    if (!admissionEnabled && action !== 'hide') return
     setBusy(true)
     try {
       const response = await supabaseAdminRepository.manageLectureSummaries(
@@ -741,7 +831,12 @@ export function LectureSummaryControl({
           <label className="field checkbox-field">
             <input
               checked={autoAcademicAnswers}
-              disabled={busy || runActive || lectureStatus !== 'open'}
+              disabled={
+                busy ||
+                runActive ||
+                !admissionEnabled ||
+                lectureStatus !== 'open'
+              }
               onChange={(event) => setAutoAcademicAnswers(event.target.checked)}
               type="checkbox"
             />
@@ -751,7 +846,12 @@ export function LectureSummaryControl({
             <label className="field compact-field">
               <span>参照する分野</span>
               <select
-                disabled={busy || runActive || lectureStatus !== 'open'}
+                disabled={
+                  busy ||
+                  runActive ||
+                  !admissionEnabled ||
+                  lectureStatus !== 'open'
+                }
                 onChange={(event) =>
                   setAcademicSourcePolicy(
                     event.target.value as typeof academicSourcePolicy,
@@ -779,12 +879,21 @@ export function LectureSummaryControl({
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorizedForStart ? (
           <p className="note">講義中のAPI許可を使用します。</p>
+        ) : googleCredential ? (
+          <p className="note">
+            上の「講義中のAI機能」で利用を許可してください。
+          </p>
         ) : (
           <label className="field compact-field">
             <span>API利用PIN（開始時のみ）</span>
             <input
               autoComplete="off"
-              disabled={busy || runActive || lectureStatus !== 'open'}
+              disabled={
+                busy ||
+                runActive ||
+                !admissionEnabled ||
+                lectureStatus !== 'open'
+              }
               inputMode="numeric"
               onChange={(event) => setBillingPin(event.target.value)}
               type="password"
@@ -797,8 +906,10 @@ export function LectureSummaryControl({
           disabled={
             busy ||
             runActive ||
+            !admissionEnabled ||
             masterHeldByOther ||
-            (!masterAuthorizedForStart && !billingPin.trim()) ||
+            (!masterAuthorizedForStart &&
+              (googleCredential || !billingPin.trim())) ||
             lectureStatus !== 'open'
           }
           onClick={() => void startRun()}
@@ -808,13 +919,19 @@ export function LectureSummaryControl({
         </button>
         <button
           className="secondary-button"
-          disabled={busy || !runActive}
+          disabled={busy || results.run?.status !== 'running'}
           onClick={() => void stopRun()}
           type="button"
         >
           停止
         </button>
       </div>
+
+      {!admissionEnabled ? (
+        <p className="note">
+          新しい要約生成は停止中です。状態確認・公開済み要約の非表示・停止は引き続き利用できます。
+        </p>
+      ) : null}
 
       <div className="summary-usage-row">
         <span>
@@ -909,7 +1026,7 @@ export function LectureSummaryControl({
                   </label>
                   <button
                     className="primary-button compact"
-                    disabled={busy}
+                    disabled={busy || !admissionEnabled}
                     onClick={() => void publishRevision(summary.id)}
                     type="button"
                   >
@@ -927,7 +1044,7 @@ export function LectureSummaryControl({
                 <div className="proposal-card-actions">
                   <button
                     className="secondary-button"
-                    disabled={busy}
+                    disabled={busy || (!visible && !admissionEnabled)}
                     onClick={() =>
                       void updateSummary(summary, visible ? 'hide' : 'publish')
                     }
@@ -937,7 +1054,7 @@ export function LectureSummaryControl({
                   </button>
                   <button
                     className="secondary-button"
-                    disabled={busy}
+                    disabled={busy || !admissionEnabled}
                     onClick={() => beginRevision(summary)}
                     type="button"
                   >
@@ -945,7 +1062,7 @@ export function LectureSummaryControl({
                   </button>
                   <button
                     className="secondary-button"
-                    disabled={busy}
+                    disabled={busy || !admissionEnabled}
                     onClick={() =>
                       void updateSummary(summary, pinned ? 'unpin' : 'pin')
                     }

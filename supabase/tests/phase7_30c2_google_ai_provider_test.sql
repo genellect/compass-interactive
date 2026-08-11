@@ -3338,6 +3338,237 @@ SELECT ok(
   'stale automatic Academic dispatch is conservatively accounted and releases its request lane'
 );
 
+-- Start a manual Academic request under the original Admin app session.
+SET ROLE service_role;
+WITH prepared AS MATERIALIZED (
+  SELECT pg_temp.prepare_academic_answer(
+    '00000000-0000-4000-8000-00000000e2c0'::uuid,
+    'manual_review',
+    null::uuid,
+    null::text,
+    'phase730c2-academic-session-replacement-c',
+    'teacher_selected',
+    null::uuid,
+    true
+  ) AS result
+),
+issued AS MATERIALIZED (
+  SELECT
+    prepared.result AS prepared_result,
+    pg_temp.issue_academic_child(
+      '00000000-0000-4000-8000-00000000e2c1'::uuid,
+      repeat('5', 64),
+      (prepared.result ->> 'academicRequestId')::uuid,
+      '00000000-0000-4000-8000-00000000e2c0'::uuid,
+      prepared.result ->> 'providerContextDigest',
+      'manual_review',
+      null::uuid,
+      repeat('c', 64),
+      repeat('d', 64),
+      true
+    ) AS child_result
+  FROM prepared
+),
+started AS MATERIALIZED (
+  SELECT
+    issued.prepared_result,
+    issued.child_result,
+    pg_temp.start_academic_operation(
+      '00000000-0000-4000-8000-00000000e2c2'::uuid,
+      (issued.child_result ->> 'grant_id')::uuid,
+      repeat('5', 64),
+      (issued.prepared_result ->> 'academicRequestId')::uuid,
+      '00000000-0000-4000-8000-00000000e2c0'::uuid,
+      issued.prepared_result ->> 'providerContextDigest',
+      'manual_review',
+      null::uuid,
+      repeat('c', 64),
+      repeat('d', 64),
+      issued.child_result ->> 'providerIntentDigest',
+      true
+    ) AS operation_result
+  FROM issued
+)
+SELECT ok(
+  set_config(
+    'compass.test.c2_academic_request_c',
+    prepared_result ->> 'academicRequestId',
+    false
+  ) IS NOT NULL
+  AND set_config(
+    'compass.test.c2_academic_operation_c',
+    operation_result ->> 'operationId',
+    false
+  ) IS NOT NULL
+  AND prepared_result ->> 'accepted' = 'true'
+  AND child_result ->> 'accepted' = 'true'
+  AND operation_result ->> 'accepted' = 'true',
+  'Academic cancellation fixture starts under the old Admin app session'
+)
+FROM started;
+RESET ROLE;
+
+-- A new app session for the same principal/membership can still perform the
+-- lecture-owner stop control; historical requested_by_actor is evidence only.
+INSERT INTO private.admin_step_up_nonces (
+  id,
+  nonce_hash,
+  reserved_admin_session_id,
+  environment_id,
+  principal_id,
+  membership_id,
+  supabase_auth_session_id,
+  intended_action,
+  request_id,
+  prechallenge_jwt_hash,
+  min_amr_at,
+  challenged_totp_factor_id,
+  prechallenge_verified_totp_factor_set_hash,
+  verified_totp_factor_set_hash,
+  factor_set_bootstrap_allowed,
+  approved_totp_factor_set_version,
+  completion_jwt_hash,
+  verified_totp_amr_at,
+  issued_at,
+  expires_at,
+  status,
+  consumed_at,
+  completed_admin_session_id,
+  updated_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e2c3'::uuid,
+  repeat('8', 64),
+  '00000000-0000-4000-8000-00000000e2c4'::uuid,
+  '00000000-0000-4000-8000-00000000e201'::uuid,
+  '00000000-0000-4000-8000-00000000e205'::uuid,
+  '00000000-0000-4000-8000-00000000e206'::uuid,
+  '00000000-0000-4000-8000-00000000e203'::uuid,
+  'admin_login',
+  '00000000-0000-4000-8000-00000000e2c5'::uuid,
+  repeat('9', 64),
+  statement_timestamp() - interval '1 minute',
+  '00000000-0000-4000-8000-00000000e204'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-00000000e202'::uuid
+  ),
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-00000000e202'::uuid
+  ),
+  false,
+  1,
+  repeat('a', 64),
+  statement_timestamp(),
+  statement_timestamp() - interval '1 minute',
+  statement_timestamp() + interval '4 minutes',
+  'consumed',
+  statement_timestamp(),
+  '00000000-0000-4000-8000-00000000e2c4'::uuid,
+  statement_timestamp()
+);
+
+INSERT INTO public.admin_sessions (
+  id,
+  token_hash,
+  auth_user_id,
+  pin_version_hash,
+  authentication_method,
+  aal,
+  principal_id,
+  membership_id,
+  environment_id,
+  supabase_auth_session_id,
+  step_up_verified_at,
+  step_up_nonce_id,
+  verified_totp_factor_set_hash,
+  issued_at,
+  last_seen_at,
+  idle_expires_at,
+  expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e2c4'::uuid,
+  repeat('f', 64),
+  '00000000-0000-4000-8000-00000000e202'::uuid,
+  null,
+  'google_totp',
+  2,
+  '00000000-0000-4000-8000-00000000e205'::uuid,
+  '00000000-0000-4000-8000-00000000e206'::uuid,
+  '00000000-0000-4000-8000-00000000e201'::uuid,
+  '00000000-0000-4000-8000-00000000e203'::uuid,
+  statement_timestamp(),
+  '00000000-0000-4000-8000-00000000e2c3'::uuid,
+  private.current_verified_totp_factor_set_hash_v1(
+    '00000000-0000-4000-8000-00000000e202'::uuid
+  ),
+  statement_timestamp(),
+  statement_timestamp(),
+  statement_timestamp() + interval '30 minutes',
+  statement_timestamp() + interval '7 hours'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  result ->> 'ok' = 'true'
+  AND result ->> 'idempotentReplay' = 'false'
+  AND result ->> 'resultStatus' = 'cancel'
+  AND result ->> 'resultId' =
+    current_setting('compass.test.c2_academic_request_c'),
+  'the current lecture owner cancels an Academic request from an old app session'
+)
+FROM (
+  SELECT public.manage_google_admin_academic_results_v1(
+    repeat('f', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com',
+    repeat('a', 64),
+    1,
+    false,
+    'cancel',
+    '00000000-0000-4000-8000-00000000e2c6'::uuid,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    current_setting('compass.test.c2_academic_request_c')::uuid,
+    null::uuid,
+    null::jsonb,
+    null::text
+  ) AS result
+) AS cancelled;
+RESET ROLE;
+
+SELECT ok(
+  EXISTS (
+    SELECT 1
+    FROM public.academic_answer_requests AS request
+    JOIN public.ai_usage_ledger AS usage
+      ON usage.id = request.operation_id
+    JOIN private.admin_google_operation_receipts AS receipt
+      ON receipt.request_id =
+        '00000000-0000-4000-8000-00000000e2c6'::uuid
+    WHERE request.id =
+        current_setting('compass.test.c2_academic_request_c')::uuid
+      AND request.lecture_session_id =
+        current_setting('compass.test.c2_provider_lecture_id')::uuid
+      AND request.requested_by_actor =
+        'admin-session:00000000-0000-4000-8000-00000000e208'
+      AND usage.requested_by_actor =
+        'admin-session:00000000-0000-4000-8000-00000000e208'
+      AND request.status = 'discarded'
+      AND request.error_code = 'cancelled_by_admin_before_dispatch'
+      AND usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.provider_dispatched_at IS NULL
+      AND receipt.operation_key = 'generate-academic-answer.cancel'
+      AND receipt.admin_session_id =
+        '00000000-0000-4000-8000-00000000e2c4'::uuid
+      AND receipt.principal_id =
+        '00000000-0000-4000-8000-00000000e205'::uuid
+      AND receipt.membership_id =
+        '00000000-0000-4000-8000-00000000e206'::uuid
+      AND receipt.result_status = 'cancel'
+  ),
+  'Academic cancel uses current lecture ownership instead of historical requested_by_actor'
+);
+
 SET ROLE service_role;
 SELECT ok(
   (

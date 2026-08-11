@@ -172,8 +172,8 @@ assert.match(
 )
 assert.match(
   manageSummaries,
-  /const summariesTransportEnabled[\s\S]*!summariesTransportEnabled[\s\S]*hasGoogleCredential && body\.action === 'stop'/,
-  'the Edge transport kill switch blocks new work without blocking Google stop',
+  /const summariesTransportEnabled[\s\S]*!summariesTransportEnabled[\s\S]*hasGoogleCredential &&[\s\S]*\['status', 'stop', 'hide'\]\.includes\(body\.action\)/,
+  'the Edge transport kill switch blocks new work without blocking Google status, stop or hide',
 )
 assert.match(
   databaseTypes,

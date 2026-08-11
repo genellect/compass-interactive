@@ -1,5 +1,8 @@
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
-import type { PublisherExtraction } from '../pdf/publisherClient'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../lib/adminAuth/adminOperationCredential'
 import type { LectureStatus } from '../types'
 
 import {
@@ -11,18 +14,14 @@ import {
   aiMasterAuthorizationRepository,
   type AiBillingAction,
 } from './supabase/aiMasterAuthorizationRepository'
-import type {
-  AdminAcademicResults,
-  ManageAcademicAnswersRequest,
-} from './supabase/adminAcademicTypes'
+import {
+  adminContentAiRepository,
+  providerAttemptIsAmbiguous,
+} from './supabase/adminContentAiRepository'
 import {
   toAdminDisplayState,
-  toAdminAcademicResults,
-  toAdminMaterialResults,
   toAdminSummaryResults,
   type DisplayStateRow,
-  type RawAcademicResults,
-  type RawMaterialResults,
   type RawSummaryResults,
 } from './supabase/adminMappers'
 
@@ -39,6 +38,10 @@ export type {
   AiMasterAuthorizationScope,
   AiMasterAuthorizationStatus,
 } from './supabase/aiMasterAuthorizationRepository'
+export {
+  AdminProviderAttemptError,
+  shouldRetainAdminProviderAttempt,
+} from './supabase/adminContentAiRepository'
 
 const {
   adminFunction: ADMIN_FUNCTION_TIMEOUT_MS,
@@ -112,24 +115,24 @@ type UpdateDisplayStateResponse = {
 type UpdateDisplayStateRequest =
   | {
       action: 'next' | 'previous'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
     }
   | {
       action: 'goToPage'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       currentPdfPage: number
       lectureSessionId: string
     }
   | {
       action: 'setDisplayMode'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       displayMode: DisplayMode
       lectureSessionId: string
     }
   | {
       action: 'setDocument'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
       pdfDocumentId: string | null
     }
@@ -235,9 +238,22 @@ type RealtimeCaptionCallResponse = Partial<RealtimeCaptionCall> & {
 }
 
 type PublishCaptionResponse = {
+  idempotentReplay?: boolean
   message?: string
+  metadata?: Record<string, unknown>
   ok?: boolean
   result?: unknown
+  shouldStop?: boolean
+  status?: string | null
+}
+
+export type PublishCaptionResult = {
+  accepted: boolean
+  idempotentReplay: boolean
+  metadata: Record<string, unknown>
+  result: unknown
+  shouldStop: boolean
+  status: string | null
 }
 
 export type AdminPdfDocument = {
@@ -325,13 +341,6 @@ export type AdminMaterialResults = {
   proposals: AdminPollProposal[]
 }
 
-type MaterialFunctionResponse = {
-  message?: string
-  ok?: boolean
-  pollId?: string | null
-  results?: RawMaterialResults
-}
-
 export type AdminSummaryRevision = {
   authorActorId: string | null
   authorType: 'admin' | 'ai'
@@ -413,12 +422,6 @@ export type AdminSummaryResults = {
 
 export type SummaryLanguagePreference = 'auto' | 'ja' | 'en'
 
-type AcademicFunctionResponse = {
-  message?: string
-  ok?: boolean
-  results?: RawAcademicResults
-}
-
 type SummaryFunctionResponse = {
   actualInputTokens?: number
   actualMicrousd?: number
@@ -442,13 +445,13 @@ type ManagePdfDocumentsResponse = {
 export type ManagePdfDocumentsRequest =
   | {
       action: 'list'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       includeHistory?: boolean
       lectureSessionId: string
     }
   | ({
       action: 'register'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       expectedAccessVersion: number
       lectureSessionId: string
       manifestEtag: string
@@ -457,18 +460,18 @@ export type ManagePdfDocumentsRequest =
 export type ManageAiControlRequest =
   | {
       action: 'status'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
     }
   | {
       action: 'configure'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       configuration: Record<string, boolean | number | string>
       lectureSessionId: string
     }
   | {
       action: 'startOperation'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       estimatedAudioSeconds?: number
       estimatedInputTokens?: number
       estimatedMicrousd?: number
@@ -488,7 +491,7 @@ export type ManageAiControlRequest =
       actualInputTokens?: number
       actualMicrousd?: number
       actualOutputTokens?: number
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       errorCode?: string | null
       operationId: string
       providerRequestId?: string | null
@@ -496,18 +499,22 @@ export type ManageAiControlRequest =
     }
   | {
       action: 'heartbeat'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
+      lectureSessionId?: string
       operationId: string
+      requestId?: string
     }
   | {
       action: 'stopFeature'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
+      lectureSessionId?: string
       operationId: string
       reason: string
+      requestId?: string
     }
   | {
       action: 'stop'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
       reason: string
     }
@@ -515,29 +522,29 @@ export type ManageAiControlRequest =
 type ManageLecturesRequest =
   | {
       action: 'list'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       includeHistory?: boolean
     }
   | {
       action: 'create'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       endsAt?: string | null
       startsAt?: string | null
       title: string
     }
   | {
       action: 'start' | 'close'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
     }
   | {
       action: 'duplicate'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
     }
   | {
       action: 'createJournalClubRun'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       clientRequestId: string
       runKind: 'production' | 'rehearsal'
     }
@@ -552,13 +559,13 @@ type ManagePollsResponse = {
 export type ManagePollsRequest =
   | {
       action: 'list'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       includeHistory?: boolean
       lectureSessionId: string
     }
   | {
       action: 'create'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       includeHistory?: boolean
       lectureSessionId: string
       optionLabels: string[]
@@ -567,7 +574,7 @@ export type ManagePollsRequest =
     }
   | {
       action: 'open' | 'close'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       includeHistory?: boolean
       lectureSessionId: string
       pollId: string
@@ -611,10 +618,12 @@ export const supabaseAdminRepository = {
 
   async manageAdminSessions(request: {
     action: 'list' | 'logout' | 'revoke' | 'revokeAll'
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     sessionId?: string
   }) {
-    await ensureAnonymousAuthSession()
+    if (!isGoogleAdminOperationCredential(request.adminToken)) {
+      await ensureAnonymousAuthSession()
+    }
     const { data, error } =
       await invokeEdgeFunction<ManageAdminSessionsResponse>(
         'manage-admin-sessions',
@@ -645,11 +654,13 @@ export const supabaseAdminRepository = {
   },
 
   async issueDisplaySession(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     enableRealtime?: boolean
     lectureSessionId: string
   }) {
-    await ensureAnonymousAuthSession()
+    if (!isGoogleAdminOperationCredential(request.adminToken)) {
+      await ensureAnonymousAuthSession()
+    }
 
     const { data, error } =
       await invokeEdgeFunction<IssueDisplaySessionResponse>(
@@ -737,7 +748,7 @@ export const supabaseAdminRepository = {
   },
 
   async createJournalClubRun(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     clientRequestId: string
     runKind: 'production' | 'rehearsal'
   }) {
@@ -786,7 +797,7 @@ export const supabaseAdminRepository = {
 
   async authorizeAiStart(request: {
     actions: AiBillingAction[]
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     billingPin?: string
     lectureSessionId: string
   }) {
@@ -809,50 +820,35 @@ export const supabaseAdminRepository = {
     }
   },
 
-  async manageAcademicAnswers(
-    request: ManageAcademicAnswersRequest,
-  ): Promise<AdminAcademicResults> {
-    const { data, error } = await invokeEdgeFunction<AcademicFunctionResponse>(
-      'generate-academic-answer',
-      {
-        body: request,
-        timeout:
-          request.action === 'generate' || request.action === 'generateAuto'
-            ? AI_FUNCTION_TIMEOUT_MS
-            : ADMIN_FUNCTION_TIMEOUT_MS,
-      },
-    )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(
-          error,
-          '文献に基づく参考回答の操作に失敗しました。',
-        ),
-      )
-    }
-    if (!data?.ok || !data.results) {
-      throw new Error(
-        data?.message ?? '文献に基づく参考回答の操作に失敗しました。',
-      )
-    }
-    return toAdminAcademicResults(data.results)
-  },
+  ...adminContentAiRepository,
 
   async createRealtimeCaptionCall(request: {
-    adminToken: string
-    billingGrant: string
+    adminToken: AdminOperationCredentialInput
+    billingGrant?: string
     delay: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-    idempotencyKey: string
+    grantRequestId?: string
+    idempotencyKey?: string
     language: RealtimeCaptionLanguage
     lectureSessionId: string
     maxAudioSeconds: number
     sdpOffer: string
+    startRequestId?: string
   }): Promise<RealtimeCaptionCall> {
-    const { data, error } =
-      await invokeEdgeFunction<RealtimeCaptionCallResponse>(
+    let response = await invokeEdgeFunction<RealtimeCaptionCallResponse>(
+      'issue-realtime-client-secret',
+      { body: request, timeout: REALTIME_START_TIMEOUT_MS },
+    )
+    if (
+      response.error &&
+      isGoogleAdminOperationCredential(request.adminToken) &&
+      (await providerAttemptIsAmbiguous(response.error))
+    ) {
+      response = await invokeEdgeFunction<RealtimeCaptionCallResponse>(
         'issue-realtime-client-secret',
         { body: request, timeout: REALTIME_START_TIMEOUT_MS },
       )
+    }
+    const { data, error } = response
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(
@@ -889,14 +885,16 @@ export const supabaseAdminRepository = {
   },
 
   async publishCaptionWindow(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     language: RealtimeCaptionLanguage | 'mixed' | 'und'
     lastItemId: string
     lectureSessionId: string
     operationId: string
+    requestId?: string
     sequence: number
+    startRequestId?: string
     text: string
-  }) {
+  }): Promise<PublishCaptionResult> {
     const { data, error } = await invokeEdgeFunction<PublishCaptionResponse>(
       'publish-caption-window',
       { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
@@ -906,10 +904,18 @@ export const supabaseAdminRepository = {
         await getFunctionErrorMessage(error, 'Caption publishing failed.'),
       )
     }
-    if (!data?.ok) {
+    const ignored = data?.status === 'ignored' && data.shouldStop !== true
+    if (!data?.ok && !ignored) {
       throw new Error(data?.message ?? 'Caption publishing failed.')
     }
-    return data.result
+    return {
+      accepted: data.ok === true,
+      idempotentReplay: data.idempotentReplay === true,
+      metadata: data.metadata ?? {},
+      result: data.result,
+      shouldStop: data.shouldStop === true,
+      status: data.status ?? (data.ok ? 'published' : null),
+    }
   },
 
   async managePdfDocuments(
@@ -931,166 +937,18 @@ export const supabaseAdminRepository = {
     return data.documents
   },
 
-  async analyzeLectureMaterial(request: {
-    action: 'material_analysis' | 'poll_suggestions'
-    adminToken: string
-    analysisId?: string | null
-    billingGrant: string
-    documentId: string
-    documentVersion: string
-    extraction: PublisherExtraction
-    idempotencyKey: string
-    lectureSessionId: string
-    pageEnd?: number | null
-    pageStart?: number | null
-  }): Promise<AdminMaterialResults> {
-    const { data, error } = await invokeEdgeFunction<MaterialFunctionResponse>(
-      'analyze-lecture-material',
-      { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
-    )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, 'Material analysis failed.'),
-      )
-    }
-    if (!data?.ok || !data.results) {
-      throw new Error(data?.message ?? 'Material analysis failed.')
-    }
-    return toAdminMaterialResults(data.results)
-  },
-
-  async manageMaterialAnalysis(
-    request:
-      | {
-          action: 'list'
-          adminToken: string
-          lectureSessionId: string
-        }
-      | {
-          action: 'reject'
-          adminToken: string
-          lectureSessionId: string
-          proposalId: string
-        }
-      | {
-          action: 'adopt'
-          adminToken: string
-          lectureSessionId: string
-          optionLabels: string[]
-          pollType: 'single' | 'multiple'
-          proposalId: string
-          question: string
-        }
-      | {
-          action: 'publishSummary'
-          adminToken: string
-          analysisId: string
-          lectureSessionId: string
-          reviewState: AdminMaterialPublication['reviewState']
-          summaryBody: AdminMaterialSummaryBody
-        }
-      | {
-          action: 'hideSummary'
-          adminToken: string
-          analysisId: string
-          lectureSessionId: string
-        },
-  ): Promise<{ pollId: string | null; results: AdminMaterialResults }> {
-    const { data, error } = await invokeEdgeFunction<MaterialFunctionResponse>(
-      'manage-material-analysis',
-      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-    )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, '資料分析の操作に失敗しました。'),
-      )
-    }
-    if (!data?.ok || !data.results) {
-      throw new Error(data?.message ?? '資料分析の操作に失敗しました。')
-    }
-    return {
-      pollId: data.pollId ?? null,
-      results: toAdminMaterialResults(data.results),
-    }
-  },
-
-  async manageLectureSummaries(
-    request:
-      | {
-          action: 'status' | 'resume'
-          adminToken: string
-          lectureSessionId: string
-        }
-      | {
-          action: 'start'
-          academicSourcePolicy:
-            'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
-          adminToken: string
-          autoAcademicAnswers: boolean
-          billingGrant: string
-          lectureSessionId: string
-        }
-      | {
-          action: 'stop'
-          adminToken: string
-          lectureSessionId: string
-          reason: string
-        }
-      | {
-          action: 'hide' | 'publish' | 'unpin'
-          adminToken: string
-          lectureSessionId: string
-          summaryId: string
-        }
-      | {
-          action: 'pin'
-          adminToken: string
-          lectureSessionId: string
-          pinnedOrder: number
-          pinnedUntil: string
-          summaryId: string
-        }
-      | {
-          action: 'revisePublish'
-          adminToken: string
-          lectureSessionId: string
-          reason: string
-          revisionBody: { commentPulse: string[]; lectureRecap: string[] }
-          summaryId: string
-        },
-  ): Promise<{
-    reason: string | null
-    results: AdminSummaryResults
-    runToken: string | null
-  }> {
-    const { data, error } = await invokeEdgeFunction<SummaryFunctionResponse>(
-      'manage-lecture-summaries',
-      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-    )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, '講義要約の操作に失敗しました。'),
-      )
-    }
-    if (!data?.ok) {
-      throw new Error(data?.message ?? '講義要約の操作に失敗しました。')
-    }
-    return {
-      reason: data.reason ?? null,
-      results: toAdminSummaryResults(data.results),
-      runToken: data.runToken ?? null,
-    }
-  },
-
   async generateLectureSummary(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
+    grantRequestId?: string
     lectureSessionId: string
     pdfContext: {
       documentId: string
       documentVersion: string
       pages: Array<{ excerptId: string; pageNumber: number; text: string }>
     } | null
+    preflightRequestId?: string
     runToken: string
+    startRequestId?: string
     transcriptSegments: Array<{
       completedAt: string
       itemId: string
@@ -1104,10 +962,20 @@ export const supabaseAdminRepository = {
     results: AdminSummaryResults
     skipped: boolean
   }> {
-    const { data, error } = await invokeEdgeFunction<SummaryFunctionResponse>(
+    let response = await invokeEdgeFunction<SummaryFunctionResponse>(
       'generate-lecture-summary',
       { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
     )
+    if (
+      response.error &&
+      isGoogleAdminOperationCredential(request.adminToken)
+    ) {
+      response = await invokeEdgeFunction<SummaryFunctionResponse>(
+        'generate-lecture-summary',
+        { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
+      )
+    }
+    const { data, error } = response
     if (error) {
       throw new Error(
         await getFunctionErrorMessage(error, '講義要約の生成に失敗しました。'),
@@ -1151,7 +1019,7 @@ export const supabaseAdminRepository = {
 
   async moderateComment(request: {
     action: 'togglePin' | 'toggleVisibility'
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     commentId: string
     lectureSessionId: string
   }) {

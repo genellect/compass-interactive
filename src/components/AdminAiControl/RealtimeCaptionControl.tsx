@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
+import {
   appendCompletedCaptionSegment,
   createCaptionWindow,
   normalizeCaptionText,
@@ -36,7 +40,8 @@ type CaptionControlStatus =
 type RealtimeDuration = '600' | '1800' | 'remaining'
 
 type RealtimeCaptionControlProps = {
-  adminToken: string
+  admissionEnabled: boolean
+  adminToken: AdminOperationCredentialInput
   hardStopAt?: string | null
   lectureSessionId: string
   lectureStatus: string
@@ -45,6 +50,18 @@ type RealtimeCaptionControlProps = {
 
 function createIdempotencyKey(lectureSessionId: string) {
   return `caption-${lectureSessionId}-${crypto.randomUUID()}`
+}
+
+function findRunningCaptionOperation(recentOperations?: unknown[]) {
+  const operation = recentOperations?.find(
+    (candidate): candidate is { id: string } & Record<string, unknown> =>
+      Boolean(candidate) &&
+      typeof candidate === 'object' &&
+      (candidate as Record<string, unknown>).feature === 'captions' &&
+      (candidate as Record<string, unknown>).status === 'running' &&
+      typeof (candidate as Record<string, unknown>).id === 'string',
+  )
+  return operation?.id ?? null
 }
 
 function triggerTranscriptExport(
@@ -61,19 +78,25 @@ function triggerTranscriptExport(
 }
 
 export function RealtimeCaptionControl({
+  admissionEnabled,
   adminToken,
   hardStopAt,
   lectureSessionId,
   lectureStatus,
   masterAuthorization,
 }: RealtimeCaptionControlProps) {
+  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [billingPin, setBillingPin] = useState('')
   const [language, setLanguage] = useState<RealtimeCaptionLanguage>('auto')
   const [duration, setDuration] = useState<RealtimeDuration>('600')
   const [status, setStatus] = useState<CaptionControlStatus>('idle')
   const statusRef = useRef<CaptionControlStatus>('idle')
-  const [message, setMessage] = useState(
-    'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
+  const [message, setMessage] = useState(() =>
+    !admissionEnabled
+      ? '字幕の新規開始は停止中です。状態確認と停止は利用できます。'
+      : googleCredential
+        ? '講義中のAI機能を許可すると字幕を開始できます。'
+        : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
   )
   const [localCaption, setLocalCaption] = useState('')
   const [savedSegmentCount, setSavedSegmentCount] = useState(0)
@@ -81,6 +104,11 @@ export function RealtimeCaptionControl({
     useState<number | null>(null)
   const sessionRef = useRef<RealtimeCaptionSession | null>(null)
   const operationIdRef = useRef<string | null>(null)
+  const startRequestIdRef = useRef<string | null>(null)
+  const unresolvedGoogleStartRef = useRef<{
+    grantRequestId: string
+    startRequestId: string
+  } | null>(null)
   const sequenceRef = useRef(0)
   const transportSequenceRef = useRef(0)
   const transportStreamIdRef = useRef(crypto.randomUUID())
@@ -89,9 +117,11 @@ export function RealtimeCaptionControl({
   const itemTextRef = useRef(new Map<string, string>())
   const segmentsRef = useRef<CompletedCaptionSegment[]>([])
   const lastPublishedRef = useRef('')
+  const publishRequestIdsRef = useRef(new Map<string, string>())
   const publishTimerRef = useRef<number | null>(null)
   const publishInFlightRef = useRef<Promise<void> | null>(null)
   const heartbeatTimerRef = useRef<number | null>(null)
+  const heartbeatInFlightRef = useRef(false)
   const durationTimerRef = useRef<number | null>(null)
   const stopInFlightRef = useRef(false)
   const broadcastRef = useRef<BroadcastChannel | null>(null)
@@ -142,11 +172,18 @@ export function RealtimeCaptionControl({
     }
   }
 
-  function stopLocal(nextMessage: string, nextStatus: CaptionControlStatus) {
+  function stopLocal(
+    nextMessage: string,
+    nextStatus: CaptionControlStatus,
+    terminalConfirmed = true,
+  ) {
     clearTimers()
     sessionRef.current?.stop()
     sessionRef.current = null
-    operationIdRef.current = null
+    if (terminalConfirmed) {
+      operationIdRef.current = null
+      startRequestIdRef.current = null
+    }
     stopInFlightRef.current = false
     itemTextRef.current.clear()
     setLocalCaption('')
@@ -163,6 +200,7 @@ export function RealtimeCaptionControl({
       await supabaseAdminRepository.manageAiControl({
         action: 'stopFeature',
         adminToken,
+        lectureSessionId,
         operationId,
         reason,
       })
@@ -183,16 +221,21 @@ export function RealtimeCaptionControl({
     )
     setLocalCaption('')
     broadcastCaption(null, 'stopped')
+    let terminalConfirmed = !operationId
     if (operationId) {
       try {
         await stopServerOperation('client_fail_closed')
+        terminalConfirmed = true
       } catch {
         setMessage(
           `${reason} 音声送信は停止しました。サーバー停止確認に失敗したため再開しないでください。`,
         )
       }
     }
-    operationIdRef.current = null
+    if (terminalConfirmed) {
+      operationIdRef.current = null
+      startRequestIdRef.current = null
+    }
   }
   failClosedRef.current = failClosed
 
@@ -209,12 +252,16 @@ export function RealtimeCaptionControl({
     }
     if (statusRef.current === 'idle') {
       setMessage(
-        masterAuthorized
-          ? '利用時間を選び、教員の操作で字幕を開始してください。'
-          : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
+        !admissionEnabled
+          ? '字幕の新規開始は停止中です。状態確認と停止は利用できます。'
+          : masterAuthorized
+            ? '利用時間を選び、教員の操作で字幕を開始してください。'
+            : googleCredential
+              ? '講義中のAI機能を許可すると字幕を開始できます。'
+              : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
       )
     }
-  }, [masterAuthorized])
+  }, [admissionEnabled, googleCredential, masterAuthorized])
 
   function getItemSequence(itemId: string) {
     const existing = itemSequenceRef.current.get(itemId)
@@ -276,15 +323,29 @@ export function RealtimeCaptionControl({
       if (!window) return
       const fingerprint = `${window.sequence}:${window.lastItemId}:${window.text}`
       if (fingerprint === lastPublishedRef.current) return
-      await supabaseAdminRepository.publishCaptionWindow({
+      const requestId =
+        publishRequestIdsRef.current.get(fingerprint) ?? crypto.randomUUID()
+      publishRequestIdsRef.current.set(fingerprint, requestId)
+      const publishResult = await supabaseAdminRepository.publishCaptionWindow({
         adminToken,
         language: window.language,
         lastItemId: window.lastItemId,
         lectureSessionId,
         operationId,
+        ...(googleCredential
+          ? {
+              requestId,
+              startRequestId: startRequestIdRef.current ?? undefined,
+            }
+          : {}),
         sequence: window.sequence,
         text: window.text,
       })
+      publishRequestIdsRef.current.delete(fingerprint)
+      if (publishResult.shouldStop) {
+        await failClosed('字幕の配信権限が終了しました。')
+        return
+      }
       if (operationIdRef.current === operationId) {
         lastPublishedRef.current = fingerprint
       }
@@ -301,23 +362,29 @@ export function RealtimeCaptionControl({
 
   async function heartbeat() {
     const operationId = operationIdRef.current
-    if (!operationId) return
-    const response = await supabaseAdminRepository.manageAiControl({
-      action: 'heartbeat',
-      adminToken,
-      operationId,
-    })
-    const result = response.result as
-      { reason?: string; should_stop?: boolean } | undefined
-    if (result?.should_stop) {
-      if (result.reason === 'selected_duration_elapsed') {
-        stopLocal(
-          '選択した利用時間に到達したため字幕を停止しました。再開は教員が明示的に操作してください。',
-          'idle',
-        )
-        return
+    if (!operationId || heartbeatInFlightRef.current) return
+    heartbeatInFlightRef.current = true
+    try {
+      const response = await supabaseAdminRepository.manageAiControl({
+        action: 'heartbeat',
+        adminToken,
+        lectureSessionId,
+        operationId,
+      })
+      const result = response.result as
+        { reason?: string; should_stop?: boolean } | undefined
+      if (result?.should_stop) {
+        if (result.reason === 'selected_duration_elapsed') {
+          stopLocal(
+            '選択した利用時間に到達したため字幕を停止しました。再開は教員が明示的に操作してください。',
+            'idle',
+          )
+          return
+        }
+        await failClosed(result.reason ?? '講義または字幕処理が終了しました。')
       }
-      await failClosed(result.reason ?? '講義または字幕処理が終了しました。')
+    } finally {
+      heartbeatInFlightRef.current = false
     }
   }
 
@@ -326,7 +393,8 @@ export function RealtimeCaptionControl({
       status === 'running' ||
       status === 'connecting' ||
       masterHeldByOther ||
-      (!masterAuthorized && !billingPin)
+      !admissionEnabled ||
+      (!masterAuthorized && (googleCredential || !billingPin))
     )
       return
     if (lectureStatus !== 'open') {
@@ -335,19 +403,56 @@ export function RealtimeCaptionControl({
       return
     }
 
+    if (googleCredential && unresolvedGoogleStartRef.current) {
+      updateStatus('authorizing')
+      setMessage('前回の字幕開始が確定したか確認しています。')
+      try {
+        const response = await supabaseAdminRepository.manageAiControl({
+          action: 'status',
+          adminToken,
+          lectureSessionId,
+        })
+        const runningOperationId = findRunningCaptionOperation(
+          response.recentOperations,
+        )
+        if (runningOperationId) {
+          operationIdRef.current = runningOperationId
+          updateStatus('error')
+          setMessage(
+            '前回の字幕開始を確認しました。音声は自動再接続せず、停止操作を実行してください。',
+          )
+          return
+        }
+        unresolvedGoogleStartRef.current = null
+      } catch {
+        updateStatus('error')
+        setMessage(
+          '前回の字幕開始を確認できません。重複開始を防ぐため、停止を押して状態確認を再試行してください。',
+        )
+        return
+      }
+    }
+
     transportSequenceRef.current = 0
     transportStreamIdRef.current = crypto.randomUUID()
 
     updateStatus('authorizing')
-    setMessage('API利用PIN、選択時間、講義上限を確認しています。')
+    setMessage(
+      googleCredential
+        ? '講義のAI許可、選択時間、利用上限を確認しています。'
+        : 'API利用PIN、選択時間、講義上限を確認しています。',
+    )
     let stream: MediaStream | null = null
+    let providerStartAttempted = false
     try {
-      const authorization = await supabaseAdminRepository.authorizeAiStart({
-        actions: ['captions'],
-        adminToken,
-        billingPin: masterAuthorized ? undefined : billingPin,
-        lectureSessionId,
-      })
+      const authorization = googleCredential
+        ? null
+        : await supabaseAdminRepository.authorizeAiStart({
+            actions: ['captions'],
+            adminToken,
+            billingPin: masterAuthorized ? undefined : billingPin,
+            lectureSessionId,
+          })
       setBillingPin('')
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -367,12 +472,22 @@ export function RealtimeCaptionControl({
       })
       sessionRef.current = session
       const sdpOffer = await session.createOffer()
+      const grantRequestId = googleCredential ? crypto.randomUUID() : undefined
+      const startRequestId = googleCredential ? crypto.randomUUID() : undefined
+      if (grantRequestId && startRequestId) {
+        unresolvedGoogleStartRef.current = { grantRequestId, startRequestId }
+      }
+      providerStartAttempted = true
       const providerCall =
         await supabaseAdminRepository.createRealtimeCaptionCall({
           adminToken,
-          billingGrant: authorization.billingGrant,
+          ...(googleCredential
+            ? { grantRequestId, startRequestId }
+            : {
+                billingGrant: authorization!.billingGrant,
+                idempotencyKey: createIdempotencyKey(lectureSessionId),
+              }),
           delay: 'low',
-          idempotencyKey: createIdempotencyKey(lectureSessionId),
           language,
           lectureSessionId,
           maxAudioSeconds: requestedAudioSeconds,
@@ -380,6 +495,8 @@ export function RealtimeCaptionControl({
         })
       setPricingRateMicrousdPerMinute(providerCall.pricingRateMicrousdPerMinute)
       operationIdRef.current = providerCall.operationId
+      startRequestIdRef.current = startRequestId ?? null
+      unresolvedGoogleStartRef.current = null
       await session.connect(providerCall.sdpAnswer)
       updateStatus('running')
       setMessage(
@@ -415,6 +532,31 @@ export function RealtimeCaptionControl({
       await failClosed(
         error instanceof Error ? error.message : '字幕を開始できませんでした。',
       )
+      if (googleCredential && providerStartAttempted) {
+        try {
+          const response = await supabaseAdminRepository.manageAiControl({
+            action: 'status',
+            adminToken,
+            lectureSessionId,
+          })
+          const runningOperationId = findRunningCaptionOperation(
+            response.recentOperations,
+          )
+          if (runningOperationId) {
+            operationIdRef.current = runningOperationId
+            updateStatus('error')
+            setMessage(
+              '字幕開始の応答は失われましたが、実行中の処理を確認しました。自動再接続せず、停止操作を実行してください。',
+            )
+          } else {
+            unresolvedGoogleStartRef.current = null
+          }
+        } catch {
+          setMessage(
+            '字幕開始の結果を確認できません。重複開始を防ぐため、停止を押して状態確認を再試行してください。',
+          )
+        }
+      }
     }
   }
 
@@ -435,6 +577,7 @@ export function RealtimeCaptionControl({
       stopLocal(
         '選択した利用時間で音声送信を停止しました。サーバー停止確認に失敗したため再開しないでください。',
         'error',
+        false,
       )
     }
   }
@@ -447,12 +590,32 @@ export function RealtimeCaptionControl({
     sessionRef.current = null
     setLocalCaption('')
     try {
+      if (!operationIdRef.current && unresolvedGoogleStartRef.current) {
+        const response = await supabaseAdminRepository.manageAiControl({
+          action: 'status',
+          adminToken,
+          lectureSessionId,
+        })
+        operationIdRef.current = findRunningCaptionOperation(
+          response.recentOperations,
+        )
+        if (!operationIdRef.current) {
+          unresolvedGoogleStartRef.current = null
+          stopLocal(
+            '前回の字幕開始は実行されていません。安全に再試行できます。',
+            'idle',
+          )
+          return
+        }
+      }
       await stopServerOperation('admin_manual_stop')
+      unresolvedGoogleStartRef.current = null
       stopLocal('字幕を停止しました。停止にはAPI利用PINは不要です。', 'idle')
     } catch {
       stopLocal(
         '音声送信は停止しましたが、サーバー停止確認に失敗しました。再開しないでください。',
         'error',
+        false,
       )
     }
   }
@@ -486,6 +649,20 @@ export function RealtimeCaptionControl({
             ? rate
             : null,
         )
+        const runningCaptionOperationId = findRunningCaptionOperation(
+          response.recentOperations,
+        )
+        if (
+          runningCaptionOperationId &&
+          !sessionRef.current &&
+          statusRef.current === 'idle'
+        ) {
+          operationIdRef.current = runningCaptionOperationId
+          updateStatus('error')
+          setMessage(
+            '実行中の字幕処理を確認しました。音声送信は自動再開せず、停止操作を実行してください。',
+          )
+        }
       })
       .catch(() => {
         if (active) setPricingRateMicrousdPerMinute(null)
@@ -496,6 +673,7 @@ export function RealtimeCaptionControl({
   }, [adminToken, lectureSessionId])
 
   useEffect(() => {
+    unresolvedGoogleStartRef.current = null
     transportSequenceRef.current = 0
     transportStreamIdRef.current = crypto.randomUUID()
     broadcastRef.current = createCaptionBroadcastChannel(lectureSessionId)
@@ -519,6 +697,7 @@ export function RealtimeCaptionControl({
           .manageAiControl({
             action: 'stopFeature',
             adminToken,
+            lectureSessionId,
             operationId,
             reason: 'client_unmount',
           })
@@ -586,10 +765,18 @@ export function RealtimeCaptionControl({
       </p>
 
       <div className="caption-control-form">
-        {masterHeldByOther ? (
+        {!admissionEnabled ? (
+          <p className="note">
+            字幕の新規開始は停止中です。状態確認と停止は引き続き利用できます。
+          </p>
+        ) : masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
           <p className="note">講義中のAPI許可を使用します。</p>
+        ) : googleCredential ? (
+          <p className="note">
+            上の「講義中のAI機能」で字幕を許可してください。
+          </p>
         ) : (
           <label className="field">
             <span>API利用PIN（管理PINとは別）</span>
@@ -642,8 +829,9 @@ export function RealtimeCaptionControl({
             status === 'running' ||
             isStarting ||
             masterHeldByOther ||
+            !admissionEnabled ||
             lectureStatus !== 'open' ||
-            (!masterAuthorized && billingPin.length < 1)
+            (!masterAuthorized && (googleCredential || billingPin.length < 1))
           }
           onClick={() => void handleStart()}
           type="button"

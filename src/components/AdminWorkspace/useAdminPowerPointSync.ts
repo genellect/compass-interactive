@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import {
   supabasePresenterBridgeRepository,
@@ -31,7 +32,7 @@ export type PowerPointReviewPresentation = Omit<
 
 type UseAdminPowerPointSyncInput = {
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   displayState: DisplayState | null
   enabled: boolean
   lectureStatus: string
@@ -431,9 +432,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       manualRecoveryReadyRef.current = false
       setManualRecoveryRequired(false)
       setPhase('activating')
-      setMessage(
-        'Presenter Bridgeを安全に手動復旧へ切り替えています…',
-      )
+      setMessage('Presenter Bridgeを安全に手動復旧へ切り替えています…')
       if (localSession) {
         await presenterBridgeClient
           .disconnect(localSession)

@@ -1,8 +1,8 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Incremental implementation, verification pending
-Gate state: Phase 7.30A-C1 and the merged C2 tranches are default-OFF; the current Academic provider tranche is source implemented with exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-C1 plus the C2 foundation and 16 of 20 operational Edge adapters; the remaining four C2 operations and D-F HOLD
+Gate state: Phase 7.30A-C2 is default-OFF and source implemented through all 20 operational Edge adapters plus the Google Admin workspace; exact-head runtime DB/Local Edge/browser CI is pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-C2 source/local candidate complete; D-F, legacy removal and activation HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-12
@@ -58,12 +58,12 @@ C2 now adds the shared Google-only Edge verifier, a closed 75-action policy
 matrix and same-transaction database facades for lecture lifecycle, comments,
 polls, Admin self-session controls, PDF documents and Admin access claims,
 Admin operator snapshots, Display state, Presenter and PDF publication,
-material-analysis, Summary and Academic provider continuations. Sixteen of the
-exact 20 operational Admin Edge functions have a default-OFF dual transport.
-`authorize-ai-start`, `issue-realtime-client-secret`, `manage-ai-control` and
-`publish-caption-window` remain C2 HOLD. The legacy workspace client remains
-explicit compatibility-only until D connects a distinct Google credential
-transport.
+material-analysis, Summary, Academic and Realtime provider continuations. All
+20 operational Admin Edge functions have a default-OFF dual transport. The
+Admin workspace routes the Google app-session credential through its distinct
+AAL2 Supabase client while preserving the raw-string legacy compatibility
+transport. Status, hide, stop and revoke remain available when admission flags
+are OFF; provider starts retain request-bound IDs across ambiguous responses.
 
 The B2 source additionally implements nine private AI-unlock tables, service-
 role-only public wrappers, fixed-search-path private helpers, bcrypt cost-12 of
@@ -83,10 +83,10 @@ CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1 then
 adds private optional-row lecture ownership and atomic PIN/browser-proof to
 dormant-master admission without inferred backfill or child/provider authority.
 It does not by itself implement the all-Admin verifier, complete operational
-Edge/RPC migration or AI Passkey. C2 has implemented sixteen default-OFF
-operational paths, but the remaining four C2 operations, D-F and every
-activation remain HOLD. The source implementation adds no recurring fixed-cost
-dependency.
+Edge/RPC migration or AI Passkey. C2 now implements the all-Admin verifier,
+all 20 default-OFF operational paths and the workspace credential bridge. D-F,
+legacy removal, AI Passkey and every activation remain HOLD. The source
+implementation adds no recurring fixed-cost dependency.
 
 ## Outcome
 

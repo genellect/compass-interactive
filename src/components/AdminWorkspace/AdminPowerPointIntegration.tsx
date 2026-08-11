@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { SyncedPdfViewer } from '../DisplayView/SyncedPdfViewer'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { useAdminPowerPointSync } from './useAdminPowerPointSync'
@@ -6,7 +7,7 @@ import { AdminPowerPointSyncControl } from './AdminPowerPointSyncControl'
 
 type AdminPowerPointIntegrationProps = {
   activeLectureSessionId: string
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   displayState: DisplayState
   lectureStatus: string
   onCommittedPage: () => void

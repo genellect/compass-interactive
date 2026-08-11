@@ -1,10 +1,11 @@
 import { isPhase726BrowserPdfPublishingEnabled } from '../lib/featureFlags'
-import { preflightBrowserPdf, type BrowserPdfPreflightResult } from './browserPdfPreflight'
-import { issuePdfAccessSession, resolveRuntimePdf } from './pdfDelivery'
+import type { AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 import {
-  publisherClient,
-  type PublisherExtraction,
-} from './publisherClient'
+  preflightBrowserPdf,
+  type BrowserPdfPreflightResult,
+} from './browserPdfPreflight'
+import { issuePdfAccessSession, resolveRuntimePdf } from './pdfDelivery'
+import { publisherClient, type PublisherExtraction } from './publisherClient'
 
 type PdfDocumentIdentity = {
   documentId: string
@@ -86,11 +87,7 @@ export function hasBrowserPdfExtraction(input: {
   lectureSessionId: string
 }) {
   return extractionCache.has(
-    cacheKey(
-      input.lectureSessionId,
-      input.documentId,
-      input.documentVersion,
-    ),
+    cacheKey(input.lectureSessionId, input.documentId, input.documentVersion),
   )
 }
 
@@ -128,7 +125,7 @@ async function readBoundedPdfBody(response: Response) {
 }
 
 async function downloadAndExtract(input: {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   document: PdfDocumentIdentity
   lectureSessionId: string
 }) {
@@ -183,7 +180,7 @@ async function downloadAndExtract(input: {
 }
 
 export async function getAdminPdfExtraction(input: {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   document: PdfDocumentIdentity
   lectureSessionId: string
   publisherSessionToken: string

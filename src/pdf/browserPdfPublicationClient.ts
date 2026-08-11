@@ -1,5 +1,9 @@
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../lib/adminAuth/adminOperationCredential'
+import {
   getFunctionErrorMessage,
   SUPABASE_REQUEST_TIMEOUT_MS,
 } from '../repositories/supabase/requestPolicy'
@@ -52,7 +56,7 @@ export type BrowserPdfPublicationRecovery = {
 }
 
 export type InitiateBrowserPdfPublicationInput = {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   displayName: string
   documentId: string
   downloadEnabled: boolean
@@ -130,7 +134,10 @@ function assertIdempotencyKey(value: string | undefined) {
 }
 
 function assertPublicationStatus(value: string | undefined) {
-  if (!value || !PUBLICATION_STATUSES.has(value as BrowserPdfPublicationStatus)) {
+  if (
+    !value ||
+    !PUBLICATION_STATUSES.has(value as BrowserPdfPublicationStatus)
+  ) {
     throw new BrowserPdfPublicationError('PDF公開状態が不正です。')
   }
   return value as BrowserPdfPublicationStatus
@@ -154,7 +161,8 @@ function assertUploadUrl(value: string | undefined, publicationId: string) {
     parsed.hash ||
     parsed.origin !== configuredWorker.origin ||
     parsed.pathname !== `/v2/pdf-publications/${publicationId}` ||
-    (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback))
+    (parsed.protocol !== 'https:' &&
+      !(parsed.protocol === 'http:' && isLoopback))
   ) {
     throw new BrowserPdfPublicationError('PDF送信先を安全に確認できません。')
   }
@@ -173,10 +181,15 @@ function assertUploadTicket(value: string | undefined) {
 }
 
 async function invokePublicationAction(
-  body: Record<string, boolean | number | string>,
+  body: Record<
+    string,
+    AdminOperationCredentialInput | boolean | number | string
+  >,
   timeout: number = SUPABASE_REQUEST_TIMEOUT_MS.adminFunction,
 ) {
-  await ensureAnonymousAuthSession()
+  if (!isGoogleAdminOperationCredential(body.adminToken)) {
+    await ensureAnonymousAuthSession()
+  }
   const { data, error } = await invokeEdgeFunction<PublicationResponse>(
     PUBLICATION_FUNCTION,
     { body, timeout },
@@ -247,7 +260,7 @@ async function parseBoundedUploadResponse(response: Response) {
 
 export const browserPdfPublicationClient = {
   async discover(input: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
   }): Promise<
     | (BrowserPdfPublicationRecovery & { status: BrowserPdfPublicationStatus })
@@ -300,7 +313,10 @@ export const browserPdfPublicationClient = {
     const uploadTicket = uploadRequired
       ? assertUploadTicket(response.uploadTicket)
       : undefined
-    if (!uploadRequired && !['uploaded', 'committed', 'active'].includes(status)) {
+    if (
+      !uploadRequired &&
+      !['uploaded', 'committed', 'active'].includes(status)
+    ) {
       throw new BrowserPdfPublicationError(
         'PDF publication can no longer be resumed.',
       )
@@ -370,7 +386,7 @@ export const browserPdfPublicationClient = {
   },
 
   async status(input: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
     publicationId: string
   }) {
@@ -381,9 +397,7 @@ export const browserPdfPublicationClient = {
       publicationId: assertPublicationId(input.publicationId),
     })
     const status = assertPublicationStatus(response.status)
-    if (
-      assertPublicationId(response.publicationId) !== input.publicationId
-    ) {
+    if (assertPublicationId(response.publicationId) !== input.publicationId) {
       throw new BrowserPdfPublicationError(
         'PDF公開状態のbindingを確認できません。',
       )
@@ -395,7 +409,7 @@ export const browserPdfPublicationClient = {
   },
 
   async finalize(input: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
     publicationId: string
   }) {
@@ -424,7 +438,7 @@ export const browserPdfPublicationClient = {
   },
 
   async abort(input: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
     publicationId: string
     reason: string

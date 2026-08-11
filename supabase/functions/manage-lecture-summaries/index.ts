@@ -123,30 +123,48 @@ Deno.serve(async (request) => {
   }
   if (
     !summariesTransportEnabled &&
-    !(hasGoogleCredential && body.action === 'stop')
+    !(hasGoogleCredential && ['status', 'stop', 'hide'].includes(body.action))
   ) {
     return jsonResponse(
       { message: 'Five-minute summaries are disabled.', ok: false },
       503,
     )
   }
-  const isGoogleSchedulerAction = ['start', 'resume', 'stop'].includes(
-    body.action,
-  )
+  const isGoogleMutationAction = [
+    'start',
+    'resume',
+    'stop',
+    'publish',
+    'hide',
+    'pin',
+    'unpin',
+    'revisePublish',
+  ].includes(body.action)
+  const isGoogleSupportedAction = [
+    'status',
+    'start',
+    'resume',
+    'stop',
+    'publish',
+    'hide',
+    'pin',
+    'unpin',
+    'revisePublish',
+  ].includes(body.action)
   if (
     hasGoogleCredential &&
-    (!isGoogleSchedulerAction ||
-      !isUuid(body.requestId) ||
+    (!isGoogleSupportedAction ||
+      (isGoogleMutationAction && !isUuid(body.requestId)) ||
       body.billingGrant !== undefined)
   ) {
     return jsonResponse(
       {
-        message: isGoogleSchedulerAction
+        message: isGoogleSupportedAction
           ? 'A valid summary request ID is required.'
           : 'This summary action is not available for this sign-in.',
         ok: false,
       },
-      isGoogleSchedulerAction ? 400 : 409,
+      isGoogleSupportedAction ? 400 : 409,
     )
   }
 
@@ -212,6 +230,25 @@ Deno.serve(async (request) => {
 
   try {
     if (body.action === 'status') {
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled:
+              googleContext.transportEnabled && summariesTransportEnabled,
+          },
+        )
+        if (error) throw error
+        if (!data) {
+          return jsonResponse(
+            { message: 'Summary status is not available.', ok: false },
+            409,
+          )
+        }
+        return jsonResponse({ ok: true, results: data })
+      }
       const { data, error } = await supabase.rpc(
         'admin_get_phase6_summary_results',
         { target_lecture_session_id: body.lectureSessionId },
@@ -493,9 +530,19 @@ Deno.serve(async (request) => {
             409,
           )
         }
+        const refreshed = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled: googleContext.transportEnabled,
+          },
+        )
         return jsonResponse({
           idempotentReplay: result.idempotentReplay === true,
           ok: true,
+          results:
+            !refreshed.error && refreshed.data ? refreshed.data : undefined,
         })
       }
 
@@ -534,6 +581,55 @@ Deno.serve(async (request) => {
           lecture_recap: body.revisionBody.lectureRecap ?? [],
         }
       : null
+    if (googleContext && googleRpcIdentity) {
+      const { data, error } = await supabase.rpc(
+        'manage_google_admin_summary_publication_v1',
+        {
+          ...googleRpcIdentity,
+          target_action: body.action,
+          target_lecture_session_id: body.lectureSessionId,
+          target_pinned_order: body.pinnedOrder ?? null,
+          target_pinned_until: body.pinnedUntil ?? null,
+          target_reason: body.reason ?? null,
+          target_request_id: body.requestId,
+          target_revision_body: revisionBody,
+          target_summary_id: body.summaryId,
+          target_transport_enabled:
+            googleContext.transportEnabled && summariesTransportEnabled,
+        },
+      )
+      if (error) throw error
+      const result = data as {
+        idempotentReplay?: boolean
+        ok?: boolean
+        refreshRequired?: boolean
+        results?: unknown
+      } | null
+      if (!result?.ok) {
+        return jsonResponse(
+          { message: 'Summary state could not be updated.', ok: false },
+          409,
+        )
+      }
+      let results = result.results
+      if (result.refreshRequired) {
+        const refreshed = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled: googleContext.transportEnabled,
+          },
+        )
+        if (!refreshed.error && refreshed.data) results = refreshed.data
+      }
+      return jsonResponse({
+        idempotentReplay: result.idempotentReplay === true,
+        ok: true,
+        refreshRequired: result.refreshRequired === true && !results,
+        results,
+      })
+    }
     const { data, error } = await supabase.rpc(
       'admin_manage_summary_publication',
       {

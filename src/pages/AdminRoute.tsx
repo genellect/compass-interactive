@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -16,7 +17,9 @@ import {
   isPhase730AdminAiUnlockEnabled,
   isPhase730AdminIdentityEnabled,
   isPhase730AdminTotpFactorMutationEnabled,
+  isPhase730GoogleAdminOperationsEnabled,
 } from '../lib/featureFlags'
+import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
 import {
   ADMIN_APP_SESSION_STORAGE_KEY,
   clearAdminAuthStorage,
@@ -27,6 +30,10 @@ import {
   restoreAdminAppSessionToken,
 } from '../lib/adminAuth/adminAuthStorage'
 import { AdminAiUnlockError } from '../lib/adminAuth/adminAiUnlockApi'
+import {
+  forgetGoogleAdminOperationSession,
+  subscribeGoogleAdminSessionInvalid,
+} from '../lib/adminAuth/adminOperationSessionEvents'
 import {
   authorizeAndPersistTotpFactorTransition,
   finalizePersistedTotpFactorTransition,
@@ -51,6 +58,7 @@ import {
   revokeGoogleAdminSession,
   type GoogleAdminSession,
 } from '../lib/adminAuth/adminIdentityApi'
+import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
 import './AdminPage.css'
 
 const AdminLegacyApp = lazy(() => import('./AdminLegacyApp'))
@@ -111,6 +119,7 @@ export function AdminRoute() {
   const callbackStarted = useRef(false)
   const bootStarted = useRef(false)
   const enrollmentSecretRef = useRef<EnrollmentSecret | null>(null)
+  const forcedSessionInvalidRef = useRef(false)
   const [useLegacy, setUseLegacy] = useState(!isPhase730AdminIdentityEnabled)
   const [phase, setPhase] = useState<IdentityPhase>('booting')
   const [errorMessage, setErrorMessage] = useState('')
@@ -120,6 +129,7 @@ export function AdminRoute() {
   const [totpCode, setTotpCode] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [session, setSession] = useState<GoogleAdminSession | null>(null)
+  const [appSessionToken, setAppSessionToken] = useState('')
   const [transitionRecovery, setTransitionRecovery] =
     useState<AdminTotpTransitionRecovery | null>(null)
   const [transitionRecoveryScope, setTransitionRecoveryScope] =
@@ -132,119 +142,150 @@ export function AdminRoute() {
     setTotpCode('')
   }, [])
 
-  const prepareIdentity = useCallback(async (skipTransitionRecovery = false) => {
-    if (adminSupabaseConfigError) {
-      setErrorMessage(adminSupabaseConfigError)
-      setPhase('error')
-      return
-    }
-    const { data, error } = await adminSupabase.auth.getSession()
-    if (error) throw error
-    if (!data.session) {
+  const clearGoogleAdminWorkspace = useCallback(
+    (message: string, invalidatedAppSessionToken = '') => {
+      if (invalidatedAppSessionToken) {
+        forcedSessionInvalidRef.current = true
+        forgetGoogleAdminOperationSession(invalidatedAppSessionToken)
+      }
+      clearEnrollmentSecret()
+      clearAdminAuthStorage()
+      clearAdminPdfExtractionCache()
+      setAppSessionToken('')
       setSession(null)
       setTransitionRecoveryScope(null)
+      setTransitionRecovery(null)
+      setTransitionCandidateCode('')
+      setFactorId('')
+      setErrorMessage(message)
       setPhase('signed_out')
-      return
-    }
-    const currentRecoveryScope = getAdminTotpTransitionRecoveryScope(
-      data.session.user.id,
-      data.session.access_token,
-    )
-    if (!currentRecoveryScope) {
-      throw new Error('The Google session recovery scope is invalid.')
-    }
-    setTransitionRecoveryScope(currentRecoveryScope)
+      setIsSubmitting(false)
+    },
+    [clearEnrollmentSecret],
+  )
 
-    if (!skipTransitionRecovery) {
-      const recovery = await restoreAdminTotpTransitionRecovery(
-        currentRecoveryScope,
+  const prepareIdentity = useCallback(
+    async (skipTransitionRecovery = false) => {
+      if (adminSupabaseConfigError) {
+        setErrorMessage(adminSupabaseConfigError)
+        setPhase('error')
+        return
+      }
+      const { data, error } = await adminSupabase.auth.getSession()
+      if (error) throw error
+      if (!data.session) {
+        setSession(null)
+        setAppSessionToken('')
+        setTransitionRecoveryScope(null)
+        setPhase('signed_out')
+        return
+      }
+      const currentRecoveryScope = getAdminTotpTransitionRecoveryScope(
+        data.session.user.id,
+        data.session.access_token,
       )
-      if (recovery) {
-        try {
-          const finalized = await finalizePersistedTotpFactorTransition(
-            currentRecoveryScope,
-            recovery,
-          )
-          if (finalized) {
-            try {
-              await adminSupabase.auth.signOut({ scope: 'local' })
-            } finally {
-              clearAdminAuthStorage()
-              setSession(null)
-              setTransitionRecoveryScope(null)
-              setTransitionRecovery(null)
-              setErrorMessage(
-                '認証アプリの変更を確定しました。新しい認証構成でGoogleログインをやり直してください。',
-              )
-              setPhase('signed_out')
+      if (!currentRecoveryScope) {
+        throw new Error('The Google session recovery scope is invalid.')
+      }
+      setTransitionRecoveryScope(currentRecoveryScope)
+
+      if (!skipTransitionRecovery) {
+        const recovery =
+          await restoreAdminTotpTransitionRecovery(currentRecoveryScope)
+        if (recovery) {
+          try {
+            const finalized = await finalizePersistedTotpFactorTransition(
+              currentRecoveryScope,
+              recovery,
+            )
+            if (finalized) {
+              try {
+                await adminSupabase.auth.signOut({ scope: 'local' })
+              } finally {
+                clearAdminAuthStorage()
+                clearAdminPdfExtractionCache()
+                setAppSessionToken('')
+                setSession(null)
+                setTransitionRecoveryScope(null)
+                setTransitionRecovery(null)
+                setErrorMessage(
+                  '認証アプリの変更を確定しました。新しい認証構成でGoogleログインをやり直してください。',
+                )
+                setPhase('signed_out')
+              }
+              return
             }
+          } catch (error) {
+            setAppSessionToken('')
+            setSession(null)
+            setTransitionRecovery(recovery)
+            setErrorMessage(
+              error instanceof AdminAiUnlockError &&
+                error.code === 'transition_incomplete'
+                ? '認証アプリ側の変更をまだ確認できません。変更済みなら同じ処理を再試行してください。変更前の取消は競合を安全に判定できないため、この画面では行いません。'
+                : '認証アプリ変更の回復処理を完了できませんでした。保存済みの同じ処理を再試行してください。',
+            )
+            setPhase('transition_recovery')
             return
           }
-        } catch (error) {
-          setSession(null)
-          setTransitionRecovery(recovery)
-          setErrorMessage(
-            error instanceof AdminAiUnlockError &&
-              error.code === 'transition_incomplete'
-              ? '認証アプリ側の変更をまだ確認できません。変更済みなら同じ処理を再試行してください。変更前の取消は競合を安全に判定できないため、この画面では行いません。'
-              : '認証アプリ変更の回復処理を完了できませんでした。保存済みの同じ処理を再試行してください。',
-          )
-          setPhase('transition_recovery')
+        }
+      }
+
+      const appSessionToken = restoreAdminAppSessionToken()
+      if (appSessionToken) {
+        try {
+          const restored = await restoreGoogleAdminSession(appSessionToken)
+          forcedSessionInvalidRef.current = false
+          setAppSessionToken(appSessionToken)
+          setSession(restored)
+          setPhase('ready')
           return
+        } catch (error) {
+          if (
+            error instanceof AdminIdentityError &&
+            error.code === 'app_session_invalid'
+          ) {
+            window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
+            setAppSessionToken('')
+          } else {
+            throw error
+          }
         }
       }
-    }
 
-    const appSessionToken = restoreAdminAppSessionToken()
-    if (appSessionToken) {
-      try {
-        const restored = await restoreGoogleAdminSession(appSessionToken)
-        setSession(restored)
-        setPhase('ready')
+      await admitGoogleAdmin()
+      const { data: factors, error: factorsError } =
+        await adminSupabase.auth.mfa.listFactors()
+      if (factorsError) throw factorsError
+      const verifiedFactor = factors.totp.find(
+        (factor) => factor.status === 'verified',
+      )
+      if (verifiedFactor) {
+        setFactorId(verifiedFactor.id)
+        setPhase('challenge')
         return
-      } catch (error) {
-        if (
-          error instanceof AdminIdentityError &&
-          error.code === 'app_session_invalid'
-        ) {
-          window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
-        } else {
-          throw error
-        }
       }
-    }
 
-    await admitGoogleAdmin()
-    const { data: factors, error: factorsError } =
-      await adminSupabase.auth.mfa.listFactors()
-    if (factorsError) throw factorsError
-    const verifiedFactor = factors.totp.find(
-      (factor) => factor.status === 'verified',
-    )
-    if (verifiedFactor) {
-      setFactorId(verifiedFactor.id)
-      setPhase('challenge')
-      return
-    }
-
-    const { data: enrolled, error: enrollError } =
-      await adminSupabase.auth.mfa.enroll({
-        factorType: 'totp',
-        friendlyName: 'COMPASS Interactive Admin',
-        issuer: 'COMPASS Interactive',
-      })
-    if (enrollError) throw enrollError
-    const secret = {
-      qrCode: enrolled.totp.qr_code.startsWith('data:image/svg+xml;utf-8,')
-        ? enrolled.totp.qr_code
-        : '',
-      secret: enrolled.totp.secret,
-    }
-    enrollmentSecretRef.current = secret
-    setEnrollmentSecret(secret)
-    setFactorId(enrolled.id)
-    setPhase('enrollment')
-  }, [])
+      const { data: enrolled, error: enrollError } =
+        await adminSupabase.auth.mfa.enroll({
+          factorType: 'totp',
+          friendlyName: 'COMPASS Interactive Admin',
+          issuer: 'COMPASS Interactive',
+        })
+      if (enrollError) throw enrollError
+      const secret = {
+        qrCode: enrolled.totp.qr_code.startsWith('data:image/svg+xml;utf-8,')
+          ? enrolled.totp.qr_code
+          : '',
+        secret: enrolled.totp.secret,
+      }
+      enrollmentSecretRef.current = secret
+      setEnrollmentSecret(secret)
+      setFactorId(enrolled.id)
+      setPhase('enrollment')
+    },
+    [],
+  )
 
   useEffect(() => {
     if (
@@ -318,12 +359,25 @@ export function AdminRoute() {
     [],
   )
 
+  useEffect(() => {
+    if (useLegacy || !appSessionToken) return
+    return subscribeGoogleAdminSessionInvalid(appSessionToken, () => {
+      const invalidatedToken = appSessionToken
+      void adminSupabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
+      clearGoogleAdminWorkspace(
+        '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
+        invalidatedToken,
+      )
+    })
+  }, [appSessionToken, clearGoogleAdminWorkspace, useLegacy])
+
   async function startGoogleLogin() {
     if (adminSupabaseConfigError) {
       setErrorMessage(adminSupabaseConfigError)
       setPhase('error')
       return
     }
+    forcedSessionInvalidRef.current = false
     setErrorMessage('')
     beginAdminOAuthAttempt()
     const { error } = await adminSupabase.auth.signInWithOAuth({
@@ -353,7 +407,9 @@ export function AdminRoute() {
       })
       if (error) throw error
       const completed = await completeGoogleAdminStepUp(stepUpNonce)
+      forcedSessionInvalidRef.current = false
       persistAdminAppSessionToken(completed.appSessionToken)
+      setAppSessionToken(completed.appSessionToken)
       setSession(completed.session)
       clearEnrollmentSecret()
       setPhase('ready')
@@ -370,13 +426,23 @@ export function AdminRoute() {
   }
 
   async function logout() {
-    if (
-      transitionRecoveryScope &&
-      (await hasAdminTotpTransitionRecovery(transitionRecoveryScope))
-    ) {
+    const finishForcedSessionInvalidation = () => {
+      if (!forcedSessionInvalidRef.current) return false
+      clearGoogleAdminWorkspace(
+        '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
+      )
+      return true
+    }
+    if (finishForcedSessionInvalidation()) return
+    const hasTransitionRecovery = transitionRecoveryScope
+      ? await hasAdminTotpTransitionRecovery(transitionRecoveryScope)
+      : false
+    if (finishForcedSessionInvalidation()) return
+    if (transitionRecoveryScope && hasTransitionRecovery) {
       const recovery = await restoreAdminTotpTransitionRecovery(
         transitionRecoveryScope,
       )
+      if (finishForcedSessionInvalidation()) return
       setTransitionRecovery(recovery)
       setErrorMessage(
         '認証アプリ変更の回復中はログアウトできません。期限内に同じ変更を確定してください。',
@@ -398,8 +464,11 @@ export function AdminRoute() {
     } catch {
       logoutError = true
     } finally {
+      if (appSessionToken) forgetGoogleAdminOperationSession(appSessionToken)
       clearEnrollmentSecret()
       clearAdminAuthStorage()
+      clearAdminPdfExtractionCache()
+      setAppSessionToken('')
       setSession(null)
       setTransitionRecoveryScope(null)
       setErrorMessage(
@@ -460,9 +529,10 @@ export function AdminRoute() {
         )
 
         if (transitionRecovery.action === 'totp_factor_remove') {
-          const { error: unenrollError } = await adminSupabase.auth.mfa.unenroll({
-            factorId: transitionRecovery.targetFactorId,
-          })
+          const { error: unenrollError } =
+            await adminSupabase.auth.mfa.unenroll({
+              factorId: transitionRecovery.targetFactorId,
+            })
           if (unenrollError) {
             try {
               await finalizePersistedTotpFactorTransition(
@@ -480,7 +550,9 @@ export function AdminRoute() {
           }
         } else {
           if (!/^\d{6}$/.test(transitionCandidateCode)) {
-            throw new Error('追加先の認証アプリに表示された6桁コードを入力してください。')
+            throw new Error(
+              '追加先の認証アプリに表示された6桁コードを入力してください。',
+            )
           }
           const submittedCode = transitionCandidateCode
           setTransitionCandidateCode('')
@@ -513,6 +585,8 @@ export function AdminRoute() {
         await adminSupabase.auth.signOut({ scope: 'local' })
       } finally {
         clearAdminAuthStorage()
+        clearAdminPdfExtractionCache()
+        setAppSessionToken('')
         setSession(null)
         setTransitionRecoveryScope(null)
         setTransitionRecovery(null)
@@ -528,7 +602,7 @@ export function AdminRoute() {
           ? '上流の認証アプリ変更がまだ完了していません。期限内に同じ変更を完了して再試行してください。'
           : transitionRecovery.action === 'totp_factor_add'
             ? '追加先の認証アプリを事前に読み取り、表示された最新の6桁コードで再試行してください。コードやQRの秘密はCOMPASSに保存されません。'
-          : getSafeMessage(error),
+            : getSafeMessage(error),
       )
       setPhase('transition_recovery')
     } finally {
@@ -537,7 +611,15 @@ export function AdminRoute() {
   }
 
   const transitionRecoveryExpired = Boolean(
-    transitionRecovery && Date.now() >= Date.parse(transitionRecovery.expiresAt) + 5_000,
+    transitionRecovery &&
+    Date.now() >= Date.parse(transitionRecovery.expiresAt) + 5_000,
+  )
+  const googleAdminCredential = useMemo(
+    () =>
+      appSessionToken
+        ? createGoogleAdminCredential(appSessionToken)
+        : undefined,
+    [appSessionToken],
   )
 
   let content
@@ -593,7 +675,8 @@ export function AdminRoute() {
             {errorMessage}
           </p>
           <p>
-            回復期限: {new Date(transitionRecovery.expiresAt).toLocaleString('ja-JP')}
+            回復期限:{' '}
+            {new Date(transitionRecovery.expiresAt).toLocaleString('ja-JP')}
           </p>
           {!transitionRecoveryExpired &&
           transitionRecovery.action === 'totp_factor_add' ? (
@@ -699,15 +782,51 @@ export function AdminRoute() {
         </form>
       </main>
     )
+  } else if (
+    phase === 'ready' &&
+    session &&
+    googleAdminCredential &&
+    isPhase730GoogleAdminOperationsEnabled
+  ) {
+    content = (
+      <Suspense fallback={<RouteFallback />}>
+        <AdminLegacyApp
+          adminCredential={googleAdminCredential}
+          identitySettings={
+            <details className="panel admin-identity-card">
+              <summary>個人設定とセキュリティ</summary>
+              {isPhase730AdminTotpFactorMutationEnabled &&
+              transitionRecoveryScope ? (
+                <AdminTotpFactorControlPanel
+                  appSessionToken={appSessionToken}
+                  onReloginRequired={logout}
+                  recoveryScope={transitionRecoveryScope}
+                />
+              ) : null}
+              {isPhase730AdminAiUnlockEnabled ? (
+                <AdminAiUnlockPanel
+                  appSessionToken={appSessionToken}
+                  identityScope={{
+                    environmentId: session.environmentId,
+                    membershipId: session.membershipId,
+                    principalId: session.principalId,
+                  }}
+                />
+              ) : null}
+            </details>
+          }
+          onAdminLogout={logout}
+        />
+      </Suspense>
+    )
   } else if (phase === 'ready' && session) {
     content = (
       <main className="page-shell join-page">
         <section className="join-card admin-identity-card">
-          <p className="eyebrow">IDENTITY READY</p>
-          <h1>Google＋2段階認証を確認しました</h1>
+          <p className="eyebrow">管理者認証</p>
+          <h1>Google＋2段階認証でログインしました</h1>
           <p>
-            個別の管理者セッションを作成しました。講義操作のGoogle権限移行は次のPhase
-            7.30Cで行うため、B1では既存権限へ自動昇格しません。
+            この環境では講義操作を利用できません。運用担当者からの案内をご確認ください。
           </p>
           <dl className="admin-identity-summary">
             <div>

@@ -74,10 +74,7 @@ function sessionJwt(aal: 'aal1' | 'aal2', subject: string) {
   ].join('.')
 }
 
-function factor(
-  status: 'unverified' | 'verified',
-  id = factorId,
-) {
+function factor(status: 'unverified' | 'verified', id = factorId) {
   const now = new Date().toISOString()
   return {
     created_at: now,
@@ -564,7 +561,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   await card.locator('input[autocomplete="one-time-code"]').fill('123456')
   await card.locator('button[type="submit"]').click()
 
-  await expect(card.locator('.eyebrow')).toHaveText('IDENTITY READY')
+  await expect(card.locator('.eyebrow')).toHaveText('管理者認証')
   await expect(card.locator('.admin-identity-summary')).toContainText('Owner')
   await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
   await expect(card).not.toContainText('PHASE730TOTPSECRET')
@@ -720,7 +717,7 @@ test('uses the existing verified factor instead of an abandoned unverified facto
   await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
   await card.locator('input[autocomplete="one-time-code"]').fill('123456')
   await card.locator('button[type="submit"]').click()
-  await expect(card.locator('.eyebrow')).toHaveText('IDENTITY READY')
+  await expect(card.locator('.eyebrow')).toHaveText('管理者認証')
 
   expect(
     state.authRequests.filter(
@@ -728,11 +725,12 @@ test('uses the existing verified factor instead of an abandoned unverified facto
         method === 'POST' && pathname === '/auth/v1/factors',
     ),
   ).toEqual([])
-  expect(state.edgeCalls.find(({ action }) => action === 'beginStepUp')?.body)
-    .toEqual({
-      action: 'beginStepUp',
-      challengedFactorId: factorId,
-    })
+  expect(
+    state.edgeCalls.find(({ action }) => action === 'beginStepUp')?.body,
+  ).toEqual({
+    action: 'beginStepUp',
+    challengedFactorId: factorId,
+  })
   expect(
     state.edgeCalls.some(
       ({ action, body }) =>
