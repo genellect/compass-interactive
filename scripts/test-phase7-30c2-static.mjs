@@ -776,7 +776,7 @@ assert.match(
 )
 assert.match(
   materialAnalysisSql,
-  /publication_value ->> 'analysis_id' is distinct from[\s\S]*target_analysis_id::text[\s\S]*publication_value ->> 'visibility' is distinct from/,
+  /\(publication_value ->> 'analysis_id'\) is distinct from[\s\S]*target_analysis_id::text[\s\S]*\(publication_value ->> 'visibility'\) is distinct from \([\s\S]*case when target_action = 'publishSummary'[\s\S]*\) then/,
   'summary publication proves the nested mutation targeted the requested analysis',
 )
 assert.match(

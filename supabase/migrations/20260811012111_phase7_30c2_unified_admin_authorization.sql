@@ -3660,10 +3660,11 @@ begin
       end
     );
     if publication_value is null
-       or publication_value ->> 'analysis_id' is distinct from
+       or (publication_value ->> 'analysis_id') is distinct from
          target_analysis_id::text
-       or publication_value ->> 'visibility' is distinct from
-         case when target_action = 'publishSummary' then 'public' else 'hidden' end then
+       or (publication_value ->> 'visibility') is distinct from (
+         case when target_action = 'publishSummary' then 'public' else 'hidden' end
+       ) then
       raise exception 'Material summary publication did not converge'
         using errcode = 'P7335';
     end if;
