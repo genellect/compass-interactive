@@ -261,7 +261,8 @@ create function private.claim_google_ai_provider_dispatch_v1(
   target_start_request_id uuid,
   target_operation_id uuid,
   target_provider_family text,
-  target_client_request_id uuid
+  target_client_request_id uuid,
+  target_transport_enabled boolean
 )
 returns jsonb
 language plpgsql
@@ -276,6 +277,8 @@ declare
   context_value jsonb;
   start_intent private.admin_google_ai_provider_start_intents%rowtype;
   existing_receipt private.admin_google_ai_provider_dispatch_receipts%rowtype;
+  identity_gate private.admin_identity_runtime_gate%rowtype;
+  ai_gate private.admin_ai_unlock_runtime_gate%rowtype;
   ownership_row private.admin_lecture_ownerships%rowtype;
   policy_row private.admin_ai_policies%rowtype;
   lecture_row public.lecture_sessions%rowtype;
@@ -377,6 +380,26 @@ begin
      or (context_value ->> 'supabase_auth_session_id')::uuid is distinct from
        (evidence ->> 'supabase_auth_session_id')::uuid then
     return null;
+  end if;
+
+  select gate.*
+  into identity_gate
+  from private.admin_identity_runtime_gate as gate
+  where gate.singleton
+  for share;
+  select gate.*
+  into ai_gate
+  from private.admin_ai_unlock_runtime_gate as gate
+  where gate.singleton
+  for share;
+  if identity_gate.singleton is distinct from true
+     or ai_gate.singleton is distinct from true
+     or target_transport_enabled is distinct from true
+     or identity_gate.google_operational_authorization_enabled
+       is distinct from true
+     or ai_gate.google_ai_child_grant_enabled is distinct from true then
+    raise exception 'Google AI provider dispatch is disabled'
+      using errcode = 'P7338';
   end if;
 
   select ownership.*
@@ -502,7 +525,7 @@ end;
 $$;
 
 revoke all on function private.claim_google_ai_provider_dispatch_v1(
-  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid
+  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid, boolean
 ) from public, anon, authenticated, service_role;
 
 create function public.claim_google_ai_provider_dispatch_v1(
@@ -515,7 +538,8 @@ create function public.claim_google_ai_provider_dispatch_v1(
   target_start_request_id uuid,
   target_operation_id uuid,
   target_provider_family text,
-  target_client_request_id uuid
+  target_client_request_id uuid,
+  target_transport_enabled boolean
 )
 returns jsonb
 language sql
@@ -533,13 +557,14 @@ as $$
     target_start_request_id,
     target_operation_id,
     target_provider_family,
-    target_client_request_id
+    target_client_request_id,
+    target_transport_enabled
   );
 $$;
 
 revoke all on function public.claim_google_ai_provider_dispatch_v1(
-  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid
+  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid, boolean
 ) from public, anon, authenticated;
 grant execute on function public.claim_google_ai_provider_dispatch_v1(
-  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid
+  text, uuid, uuid, text, text, integer, uuid, uuid, text, uuid, boolean
 ) to service_role;

@@ -78,6 +78,8 @@ const phase730c2GoogleAiProviderMigrationName =
   '20260811180000_phase7_30c2_google_ai_provider.sql'
 const phase730c2GoogleAiProviderDispatchMigrationName =
   '20260811203000_phase7_30c2_google_ai_provider_dispatch.sql'
+const phase730c2GoogleSummarySchedulerMigrationName =
+  '20260811213000_phase7_30c2_google_summary_scheduler.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -128,6 +130,7 @@ assert.deepEqual(
     phase730c2OperationalSurfacesMigrationName,
     phase730c2GoogleAiProviderMigrationName,
     phase730c2GoogleAiProviderDispatchMigrationName,
+    phase730c2GoogleSummarySchedulerMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

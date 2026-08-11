@@ -17,13 +17,133 @@ const migration = read(
 const dispatchMigration = read(
   'supabase/migrations/20260811203000_phase7_30c2_google_ai_provider_dispatch.sql',
 )
+const summaryMigration = read(
+  'supabase/migrations/20260811213000_phase7_30c2_google_summary_scheduler.sql',
+)
 const aiBilling = read('supabase/functions/_shared/aiBilling.ts')
 const analyzeMaterial = read(
   'supabase/functions/analyze-lecture-material/index.ts',
 )
+const manageSummaries = read(
+  'supabase/functions/manage-lecture-summaries/index.ts',
+)
 const databaseTypes = read('src/types/database.ts')
 const envExample = read('.env.local.example')
 const pgTap = read('supabase/tests/phase7_30c2_google_ai_provider_test.sql')
+
+assert.match(
+  summaryMigration,
+  /set operation_class = 'write'[\s\S]*where operation_key in \([\s\S]*manage-lecture-summaries\.start[\s\S]*manage-lecture-summaries\.resume/,
+  'summary start and resume are scheduler writes rather than paid provider calls',
+)
+assert.match(
+  summaryMigration,
+  /set lecture_lock_mode = 'update'[\s\S]*where operation_key = 'manage-lecture-summaries\.stop'/,
+  'summary stop takes the lecture update lock before entering the legacy stop core',
+)
+assert.match(
+  summaryMigration,
+  /create table private\.admin_google_summary_run_receipts[\s\S]*enable row level security;[\s\S]*revoke all on private\.admin_google_summary_run_receipts[\s\S]*service_role[\s\S]*before update or delete[\s\S]*reject_admin_c1_evidence_mutation_v1/,
+  'summary scheduler evidence is private, append-only and unavailable to runtime roles',
+)
+const summaryScheduler = functionBlock(
+  summaryMigration,
+  'private.manage_google_admin_summary_run_v1',
+)
+const summaryRequest = summaryScheduler.indexOf('serialize_admin_ai_request_v1')
+const summaryContext = summaryScheduler.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const summaryReplay = summaryScheduler.indexOf(
+  'from private.admin_google_summary_run_receipts as receipt',
+)
+const summaryReplayEnd = summaryScheduler.indexOf(
+  "if target_action = 'stop' then",
+  summaryReplay,
+)
+const summaryGate = summaryScheduler.indexOf(
+  'from private.admin_identity_runtime_gate as gate',
+)
+const summaryOwnership = summaryScheduler.indexOf(
+  'from private.admin_lecture_ownerships as ownership',
+)
+const summaryPolicy = summaryScheduler.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const summaryLecture = summaryScheduler.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const summaryMaster = summaryScheduler.lastIndexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const summaryControl = summaryScheduler.indexOf(
+  'from public.lecture_ai_control as control',
+)
+assert.ok(
+  summaryRequest >= 0 &&
+    summaryRequest < summaryContext &&
+    summaryContext < summaryReplay &&
+    summaryReplay < summaryGate &&
+    summaryGate < summaryOwnership &&
+    summaryOwnership < summaryPolicy &&
+    summaryPolicy < summaryLecture &&
+    summaryLecture < summaryMaster &&
+    summaryMaster < summaryControl,
+  'summary scheduler uses request -> Google context -> replay -> gates -> ownership -> policy -> lecture -> master -> control',
+)
+assert.match(
+  summaryScheduler,
+  /target_auto_academic_answers_enabled is distinct from false/,
+  'Google summary scheduling cannot reuse one run-level child for automatic academic answers',
+)
+assert.match(
+  summaryScheduler,
+  /target_action = 'stop'[\s\S]*require_google_admin_operation_context_v1[\s\S]*select receipt\.\*[\s\S]*if target_action = 'stop'[\s\S]*stop_lecture_summary_run/,
+  'summary stop uses current Google ownership and converges independently of admission gates',
+)
+assert.match(
+  summaryScheduler,
+  /return \(result_value - 'results'\)/,
+  'fresh summary stop never returns AI result content after can_use_ai is revoked',
+)
+assert.doesNotMatch(
+  summaryScheduler.slice(summaryReplay, summaryReplayEnd),
+  /phase6_admin_results_json/,
+  'exact scheduler replay returns receipt metadata without live summary content',
+)
+assert.match(
+  summaryMigration,
+  /revoke all on function public\.manage_google_admin_summary_run_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.manage_google_admin_summary_run_v1\([\s\S]*to service_role/,
+)
+assert.match(
+  aiBilling,
+  /deriveGoogleSummaryRunNonce[\s\S]*google-summary-run-nonce:v1[\s\S]*action=\$\{input\.action\}/,
+  'summary run credentials are deterministic, request-bound and action-separated',
+)
+assert.match(
+  manageSummaries,
+  /Exactly one Admin credential is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*deriveGoogleSummaryRunNonce[\s\S]*manage_google_admin_summary_run_v1/,
+  'the summary Edge keeps legacy and Google credentials mutually exclusive',
+)
+assert.match(
+  manageSummaries,
+  /automatic_academic_answers_unavailable[\s\S]*Start lecture summaries without automatic reference answers/,
+  'Google scheduling fails closed until automatic academic answers use per-call children',
+)
+assert.match(
+  manageSummaries,
+  /target_action: 'stop'[\s\S]*target_transport_enabled: googleContext\.transportEnabled/,
+  'Google summary stop remains routable without the summary admission transport flag',
+)
+assert.match(
+  manageSummaries,
+  /const summariesTransportEnabled[\s\S]*!summariesTransportEnabled[\s\S]*hasGoogleCredential && body\.action === 'stop'/,
+  'the Edge transport kill switch blocks new work without blocking Google stop',
+)
+assert.match(
+  databaseTypes,
+  /manage_google_admin_summary_run_v1: \{[\s\S]*target_academic_source_policy: string[\s\S]*target_action: string[\s\S]*target_request_id: string[\s\S]*target_run_token_hash: string[\s\S]*Returns: Json/,
+)
 
 const providerContext = functionBlock(
   migration,
@@ -99,6 +219,9 @@ const dispatchReplay = dispatchClaim.indexOf(
 const dispatchLive = dispatchClaim.indexOf(
   'require_google_ai_provider_context_v1',
 )
+const dispatchGate = dispatchClaim.indexOf(
+  'from private.admin_identity_runtime_gate as gate',
+)
 const dispatchPolicy = dispatchClaim.indexOf(
   'from private.admin_ai_policies as policy',
 )
@@ -118,12 +241,18 @@ assert.ok(
   dispatchEvidence >= 0 &&
     dispatchEvidence < dispatchReplay &&
     dispatchReplay < dispatchLive &&
-    dispatchLive < dispatchPolicy &&
+    dispatchLive < dispatchGate &&
+    dispatchGate < dispatchPolicy &&
     dispatchPolicy < dispatchLecture &&
     dispatchLecture < dispatchMaster &&
     dispatchMaster < dispatchUsage &&
     dispatchUsage < dispatchInsert,
-  'provider dispatch is immutable-evidence replay first, then live policy -> lecture -> master -> usage before one claim',
+  'provider dispatch is immutable-evidence replay first, then live gates -> policy -> lecture -> master -> usage before one claim',
+)
+assert.match(
+  dispatchClaim,
+  /target_transport_enabled is distinct from true[\s\S]*google_operational_authorization_enabled[\s\S]*google_ai_child_grant_enabled/,
+  'a fresh provider claim rechecks DB admission and the current Edge transport before dispatch',
 )
 assert.match(
   dispatchClaim.slice(dispatchReplay, dispatchLive),
@@ -529,7 +658,12 @@ assert.match(
 )
 assert.match(
   databaseTypes,
-  /claim_google_ai_provider_dispatch_v1: \{[\s\S]*target_client_request_id: string[\s\S]*target_operation_id: string[\s\S]*target_start_request_id: string[\s\S]*Returns: Json/,
+  /claim_google_ai_provider_dispatch_v1: \{[\s\S]*target_client_request_id: string[\s\S]*target_operation_id: string[\s\S]*target_start_request_id: string[\s\S]*target_transport_enabled: boolean[\s\S]*Returns: Json/,
+)
+assert.match(
+  analyzeMaterial,
+  /claim_google_ai_provider_dispatch_v1[\s\S]*target_transport_enabled:[\s\S]*googleContext\.transportEnabled[\s\S]*materialTransportEnabled[\s\S]*Boolean\(openAiKey\)/,
+  'material dispatch cannot outlive its current Edge transport or provider configuration',
 )
 assert.match(
   databaseTypes,

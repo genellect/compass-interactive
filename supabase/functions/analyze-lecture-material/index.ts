@@ -630,6 +630,10 @@ Deno.serve(async (request) => {
           target_operation_id: operationId,
           target_provider_family: 'openai_responses_v1',
           target_start_request_id: body.startRequestId,
+          target_transport_enabled:
+            googleContext.transportEnabled &&
+            materialTransportEnabled &&
+            Boolean(openAiKey),
         },
       )
       if (claimError) throw claimError

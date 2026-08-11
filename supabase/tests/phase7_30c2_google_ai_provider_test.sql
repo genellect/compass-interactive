@@ -10,13 +10,35 @@ SELECT is(
   'Google AI child authority is database-default OFF'
 );
 SELECT ok(
+  (
+    SELECT count(*) = 3
+      AND bool_and(
+        CASE
+          WHEN operation_key IN (
+            'manage-lecture-summaries.start',
+            'manage-lecture-summaries.resume'
+          ) THEN operation_class = 'write'
+          ELSE lecture_lock_mode = 'update'
+        END
+      )
+    FROM private.admin_google_operation_policies
+    WHERE operation_key IN (
+      'manage-lecture-summaries.start',
+      'manage-lecture-summaries.resume',
+      'manage-lecture-summaries.stop'
+    )
+  ),
+  'summary scheduling is a write while stop prelocks the lecture for update'
+);
+SELECT ok(
   NOT EXISTS (
     SELECT 1
     FROM (VALUES
       ('admin_google_ai_child_grant_receipts'),
       ('admin_google_ai_provider_start_intents'),
       ('admin_google_ai_provider_start_receipts'),
-      ('admin_google_ai_provider_dispatch_receipts')
+      ('admin_google_ai_provider_dispatch_receipts'),
+      ('admin_google_summary_run_receipts')
     ) AS expected(table_name)
     JOIN pg_class AS class ON class.relname = expected.table_name
     JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
@@ -54,7 +76,8 @@ SELECT ok(
         'private.admin_google_ai_child_grant_receipts'::regclass,
         'private.admin_google_ai_provider_start_intents'::regclass,
         'private.admin_google_ai_provider_start_receipts'::regclass,
-        'private.admin_google_ai_provider_dispatch_receipts'::regclass
+        'private.admin_google_ai_provider_dispatch_receipts'::regclass,
+        'private.admin_google_summary_run_receipts'::regclass
       )
       AND NOT EXISTS (
         SELECT 1
@@ -92,12 +115,17 @@ SELECT ok(
   )
   AND has_function_privilege(
     'service_role',
-    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid,boolean)',
     'EXECUTE'
   )
   AND has_function_privilege(
     'service_role',
     'public.reap_stale_google_ai_provider_dispatches_v1(integer)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
@@ -107,12 +135,17 @@ SELECT ok(
   )
   AND NOT has_function_privilege(
     'authenticated',
-    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'public.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
     'authenticated',
     'public.reap_stale_google_ai_provider_dispatches_v1(integer)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
@@ -122,7 +155,7 @@ SELECT ok(
   )
   AND NOT has_function_privilege(
     'service_role',
-    'private.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid)',
+    'private.claim_google_ai_provider_dispatch_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
@@ -139,6 +172,11 @@ SELECT ok(
     'service_role',
     'private.require_google_ai_dispatch_receipt_on_terminal_v1()',
     'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+    'EXECUTE'
   ),
   'only typed public provider facades are executable by service_role'
 );
@@ -151,7 +189,8 @@ SELECT ok(
         'admin_google_ai_child_grant_receipts',
         'admin_google_ai_provider_start_intents',
         'admin_google_ai_provider_start_receipts',
-        'admin_google_ai_provider_dispatch_receipts'
+        'admin_google_ai_provider_dispatch_receipts',
+        'admin_google_summary_run_receipts'
       )
       AND column_name ~ '(raw|bearer|secret|payload|response)'
   ),
@@ -494,7 +533,193 @@ SELECT throws_ok(
   'Google AI child admission is disabled',
   'default-OFF rejects a new provider child'
 );
+SELECT throws_ok(
+  format(
+    $$SELECT public.manage_google_admin_summary_run_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a',64), 1,
+      %L::uuid, 'start', repeat('c',64), false, 'auto', null,
+      '00000000-0000-4000-8000-00000000e260'::uuid, true
+    )$$,
+    current_setting('compass.test.c2_provider_lecture_id')
+  ),
+  'P7338',
+  'Google summary scheduling is disabled',
+  'default-OFF rejects a new summary scheduler without consuming a child'
+);
 RESET ROLE;
+UPDATE private.admin_identity_runtime_gate
+SET google_operational_authorization_enabled = true
+WHERE singleton;
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_child_grant_enabled = true
+WHERE singleton;
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_run_id', result #>> '{run,id}', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'refreshRequired' = 'false'
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'start', repeat('c',64), false, 'auto', null,
+        '00000000-0000-4000-8000-00000000e260'::uuid, true
+      ) AS result
+    ) AS started
+  ),
+  'Google scheduling starts without consuming a provider child or another MFA'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'refreshRequired' = 'false'
+      AND NOT (result ? 'results')
+      AND result #>> '{run,id}' =
+        current_setting('compass.test.c2_summary_run_id')
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'start', repeat('c',64), false, 'auto', null,
+        '00000000-0000-4000-8000-00000000e260'::uuid, true
+      ) AS result
+    ) AS replayed
+  ),
+  'a lost summary-start response converges on the same run token binding'
+);
+SELECT throws_ok(
+  format(
+    $$SELECT public.manage_google_admin_summary_run_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a',64), 1,
+      %L::uuid, 'start', repeat('c',64), false,
+      'biomedical_pubmed', null,
+      '00000000-0000-4000-8000-00000000e260'::uuid, true
+    )$$,
+    current_setting('compass.test.c2_provider_lecture_id')
+  ),
+  'P7335',
+  'Google summary request binding changed on retry',
+  'one summary request UUID cannot change scheduler intent'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result #>> '{run,id}' =
+        current_setting('compass.test.c2_summary_run_id')
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'resume', repeat('d',64), null, null, null,
+        '00000000-0000-4000-8000-00000000e261'::uuid, true
+      ) AS result
+    ) AS resumed
+  ),
+  'the same principal can rotate a Google summary run credential without a child'
+);
+SELECT is(
+  public.manage_google_admin_summary_run_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    'start', repeat('c',64), false, 'auto', null,
+    '00000000-0000-4000-8000-00000000e260'::uuid, true
+  ) ->> 'refreshRequired',
+  'true',
+  'an old start receipt never returns a run token after an explicit resume rotated it'
+);
+RESET ROLE;
+UPDATE private.admin_identity_runtime_gate
+SET google_operational_authorization_enabled = false
+WHERE singleton;
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_child_grant_enabled = false
+WHERE singleton;
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'resultStatus' = 'stopped'
+      AND NOT (result ? 'results')
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'stop', null, null, null, 'fixture_stop',
+        '00000000-0000-4000-8000-00000000e262'::uuid, false
+      ) AS result
+    ) AS stopped
+  ),
+  'summary stop remains available when admission and transport are OFF'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'resultStatus' = 'stopped'
+      AND NOT (result ? 'results')
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'stop', null, null, null, 'fixture_stop',
+        '00000000-0000-4000-8000-00000000e262'::uuid, false
+      ) AS result
+    ) AS replayed
+  ),
+  'summary stop replay exposes no AI result content without can_use_ai'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT run.status = 'stopped'
+      AND run.academic_authorization_grant_id IS NULL
+      AND NOT run.auto_academic_answers_enabled
+    FROM public.lecture_summary_runs AS run
+    WHERE run.id = current_setting('compass.test.c2_summary_run_id')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_child_grant_receipts AS child
+    WHERE child.request_id IN (
+      '00000000-0000-4000-8000-00000000e260'::uuid,
+      '00000000-0000-4000-8000-00000000e261'::uuid,
+      '00000000-0000-4000-8000-00000000e262'::uuid
+    )
+  ),
+  'scheduler lifecycle creates no provider child and cannot retain legacy academic authority'
+);
 UPDATE private.admin_identity_runtime_gate
 SET google_operational_authorization_enabled = true
 WHERE singleton;
@@ -651,7 +876,8 @@ SELECT is(
     '00000000-0000-4000-8000-00000000e231'::uuid,
     current_setting('compass.test.c2_provider_operation_a')::uuid,
     null::text,
-    '00000000-0000-4000-8000-00000000e231'::uuid
+    '00000000-0000-4000-8000-00000000e231'::uuid,
+    true
   )::text,
   null,
   'NULL provider family cannot create a dispatch claim'
@@ -664,7 +890,7 @@ SELECT is(
     'https://accounts.google.com', repeat('a',64), 1,
     '00000000-0000-4000-8000-00000000e231'::uuid,
     current_setting('compass.test.c2_provider_operation_a')::uuid,
-    'openai_responses_v1', null::uuid
+    'openai_responses_v1', null::uuid, true
   )::text,
   null,
   'NULL provider request identity cannot create a dispatch claim'
@@ -687,7 +913,8 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e231'::uuid,
         current_setting('compass.test.c2_provider_operation_a')::uuid,
         'openai_responses_v1',
-        '00000000-0000-4000-8000-00000000e231'::uuid
+        '00000000-0000-4000-8000-00000000e231'::uuid,
+        true
       ) AS result
     ) AS claimed
   ),
@@ -736,7 +963,8 @@ SELECT ok(
         '00000000-0000-4000-8000-00000000e231'::uuid,
         current_setting('compass.test.c2_provider_operation_a')::uuid,
         'openai_responses_v1',
-        '00000000-0000-4000-8000-00000000e231'::uuid
+        '00000000-0000-4000-8000-00000000e231'::uuid,
+        false
       ) AS result
     ) AS replayed
   ),
@@ -751,7 +979,8 @@ SELECT throws_ok(
     '00000000-0000-4000-8000-00000000e231'::uuid,
     current_setting('compass.test.c2_provider_operation_a')::uuid,
     'openai_responses_v1',
-    '00000000-0000-4000-8000-00000000e237'::uuid
+    '00000000-0000-4000-8000-00000000e237'::uuid,
+    false
   )$$,
   'P7335',
   'Google AI provider dispatch binding changed on retry',
@@ -1032,6 +1261,52 @@ SELECT ok(
   'provider work starts while the Google Admin session is live'
 );
 RESET ROLE;
+UPDATE private.admin_identity_runtime_gate
+SET google_operational_authorization_enabled = false
+WHERE singleton;
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_child_grant_enabled = false
+WHERE singleton;
+SET ROLE service_role;
+SELECT throws_ok(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e236'::uuid,
+    current_setting('compass.test.c2_provider_operation_c')::uuid,
+    'openai_responses_v1',
+    '00000000-0000-4000-8000-00000000e236'::uuid,
+    false
+  ),
+  'P7338',
+  'Google AI provider dispatch is disabled',
+  'turning admission or Edge transport OFF before claim prevents a new provider request'
+);
+RESET ROLE;
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_provider_dispatch_receipts AS receipt
+    WHERE receipt.start_request_id =
+      '00000000-0000-4000-8000-00000000e236'::uuid
+  )
+  AND (
+    SELECT usage.provider_dispatched_at IS NULL
+      AND usage.provider_request_id IS NULL
+    FROM public.ai_usage_ledger AS usage
+    WHERE usage.id =
+      current_setting('compass.test.c2_provider_operation_c')::uuid
+  ),
+  'a denied fresh claim leaves no dispatch marker or immutable receipt'
+);
+UPDATE private.admin_identity_runtime_gate
+SET google_operational_authorization_enabled = true
+WHERE singleton;
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_child_grant_enabled = true
+WHERE singleton;
 SELECT throws_ok(
   format(
     $$UPDATE public.ai_usage_ledger
