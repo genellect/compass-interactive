@@ -144,10 +144,14 @@ INSERT INTO c2_operational_private_functions(signature) VALUES
   ('private.abort_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,uuid,text)'),
   ('private.advance_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,text,uuid,uuid,uuid,bigint,text,boolean,text,text,text,bigint,bigint,text)'),
   ('private.get_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid)'),
+  ('private.get_google_admin_ai_control_configuration_intent_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,boolean)'),
+  ('private.google_admin_ai_control_payload_digest_v1(text,uuid,jsonb,text)'),
   ('private.issue_google_admin_display_session_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,boolean)'),
   ('private.issue_google_admin_pdf_publication_ticket_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,integer,uuid,text,text,bigint,integer,integer,text,text,boolean,text,text,text)'),
+  ('private.manage_google_admin_ai_control_v1(text,uuid,uuid,text,text,integer,text,uuid,uuid,uuid,jsonb,text,text,boolean)'),
   ('private.manage_google_admin_ai_master_v1(text,uuid,uuid,text,text,integer,text,uuid,uuid,text,boolean)'),
   ('private.manage_google_admin_presenter_connection_v1(text,uuid,uuid,text,text,integer,boolean,boolean,uuid,text,uuid,uuid,text,text,text)'),
+  ('private.normalize_google_admin_ai_control_configuration_v1(text,jsonb)'),
   ('private.prepare_google_admin_pdf_publication_finalize_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,uuid,uuid,uuid,integer)'),
   ('private.verify_and_claim_google_display_session_v1(text,uuid,uuid)');
 SELECT ok(
@@ -168,8 +172,10 @@ INSERT INTO c2_operational_public_functions(signature) VALUES
   ('public.abort_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,uuid,text)'),
   ('public.advance_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,text,uuid,uuid,uuid,bigint,text,boolean,text,text,text,bigint,bigint,text)'),
   ('public.get_google_admin_pdf_publication_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid)'),
+  ('public.get_google_admin_ai_control_configuration_intent_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,boolean)'),
   ('public.issue_google_admin_display_session_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,boolean)'),
   ('public.issue_google_admin_pdf_publication_ticket_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,integer,uuid,text,text,bigint,integer,integer,text,text,boolean,text,text,text)'),
+  ('public.manage_google_admin_ai_control_v1(text,uuid,uuid,text,text,integer,text,uuid,uuid,uuid,jsonb,text,text,boolean)'),
   ('public.manage_google_admin_ai_master_v1(text,uuid,uuid,text,text,integer,text,uuid,uuid,text,boolean)'),
   ('public.manage_google_admin_presenter_connection_v1(text,uuid,uuid,text,text,integer,boolean,boolean,uuid,text,uuid,uuid,text,text,text)'),
   ('public.prepare_google_admin_pdf_publication_finalize_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid,uuid,uuid,uuid,integer)'),
@@ -184,7 +190,7 @@ SELECT is(
       AND procedure.prosecdef
       AND procedure.proconfig @> ARRAY['search_path=""']::text[]
   ),
-  9,
+  11,
   'C2 operational public facades are postgres-owned with an empty search_path'
 );
 SELECT ok(

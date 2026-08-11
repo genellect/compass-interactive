@@ -3,6 +3,77 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 SELECT no_plan();
 
+CREATE FUNCTION pg_temp.seed_c2_admin_control_grant(
+  target_admin_session_id uuid,
+  target_action text,
+  target_request_id uuid,
+  target_intent_digest text
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  session_row public.admin_sessions%ROWTYPE;
+  nonce_id uuid := extensions.gen_random_uuid();
+  grant_id uuid := extensions.gen_random_uuid();
+  effective_now timestamptz := statement_timestamp();
+BEGIN
+  SELECT session.*
+  INTO STRICT session_row
+  FROM public.admin_sessions AS session
+  WHERE session.id = target_admin_session_id;
+
+  INSERT INTO private.admin_control_step_up_nonces (
+    id, nonce_hash, environment_id, principal_id, membership_id,
+    admin_session_id, supabase_auth_session_id,
+    verified_totp_factor_set_hash, intended_action, intent_digest,
+    mutation_request_id, prechallenge_jwt_hash, min_amr_at, issued_at,
+    expires_at, status, consumed_at, completed_grant_id
+  ) VALUES (
+    nonce_id,
+    encode(
+      extensions.digest('c2-control:' || target_request_id::text, 'sha256'),
+      'hex'
+    ),
+    session_row.environment_id, session_row.principal_id,
+    session_row.membership_id, session_row.id,
+    session_row.supabase_auth_session_id,
+    session_row.verified_totp_factor_set_hash, target_action,
+    target_intent_digest, target_request_id,
+    encode(
+      extensions.digest('c2-control-pre:' || target_request_id::text, 'sha256'),
+      'hex'
+    ),
+    effective_now - interval '1 minute', effective_now - interval '1 minute',
+    effective_now + interval '4 minutes', 'consumed', effective_now, grant_id
+  );
+
+  INSERT INTO private.admin_control_step_up_grants (
+    id, source_kind, control_nonce_id, environment_id, principal_id,
+    membership_id, admin_session_id, supabase_auth_session_id,
+    verified_totp_factor_set_hash, intended_action, intent_digest,
+    mutation_request_id, prechallenge_jwt_hash, completion_jwt_hash,
+    min_amr_at, verified_totp_amr_at, issued_at, expires_at
+  ) VALUES (
+    grant_id, 'control', nonce_id, session_row.environment_id,
+    session_row.principal_id, session_row.membership_id, session_row.id,
+    session_row.supabase_auth_session_id,
+    session_row.verified_totp_factor_set_hash, target_action,
+    target_intent_digest, target_request_id,
+    encode(
+      extensions.digest('c2-control-pre:' || target_request_id::text, 'sha256'),
+      'hex'
+    ),
+    encode(
+      extensions.digest('c2-control-post:' || target_request_id::text, 'sha256'),
+      'hex'
+    ),
+    effective_now - interval '1 minute', effective_now - interval '1 minute',
+    effective_now, effective_now + interval '4 minutes'
+  );
+END;
+$$;
+
 SELECT is(
   (SELECT google_ai_child_grant_enabled
    FROM private.admin_ai_unlock_runtime_gate WHERE singleton),
@@ -690,6 +761,98 @@ SELECT is(
   'master revoke drains and terminalizes the exact lecture authority'
 );
 
+SET ROLE service_role;
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'status',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    null::uuid, null::uuid, null::jsonb, null::text, null::text, false
+  ) ->> 'accepted',
+  'true',
+  'AI control status remains available while operational admission is disabled'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'disableFeatures',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f3'::uuid,
+    null::uuid, '{"captions_enabled":false}'::jsonb,
+    null::text, null::text, false
+  ) ->> 'accepted',
+  'true',
+  'safe feature disable remains available while operational admission is disabled'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'disableFeatures',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f3'::uuid,
+    null::uuid, '{"captions_enabled":false}'::jsonb,
+    null::text, null::text, false
+  ) ->> 'idempotentReplay',
+  'true',
+  'a lost feature-disable response converges without restoring admission'
+);
+SELECT throws_ok(
+  format(
+    $$SELECT public.manage_google_admin_ai_control_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a',64), 1,
+      'setSummaryLanguage', %L::uuid,
+      '00000000-0000-4000-8000-00000000e2f4'::uuid,
+      null::uuid, '{"summary_language":"ja"}'::jsonb,
+      null::text, null::text, false
+    )$$,
+    current_setting('compass.test.c2_master_control_lecture_id')
+  ),
+  'P7337',
+  'Google Admin operational authorization is disabled',
+  'default-OFF blocks new AI control writes without blocking status or stop'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'stop',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f5'::uuid,
+    null::uuid, null::jsonb, 'teacher_requested_stop', null::text, false
+  ) ->> 'accepted',
+  'true',
+  'full stop remains available while operational admission is disabled'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'stop',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f5'::uuid,
+    null::uuid, null::jsonb, 'teacher_requested_stop', null::text, false
+  ) ->> 'idempotentReplay',
+  'true',
+  'a lost full-stop response converges without reactivating provider authority'
+);
+RESET ROLE;
+
 CREATE FUNCTION pg_temp.issue_provider_child(
   request_id uuid,
   nonce_hash text,
@@ -965,6 +1128,113 @@ SET google_ai_child_grant_enabled = true
 WHERE singleton;
 
 SET ROLE service_role;
+SELECT ok(
+  set_config(
+    'compass.test.c2_ai_control_intent',
+    public.get_google_admin_ai_control_configuration_intent_v1(
+      repeat('1', 64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a', 64), 1,
+      current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+      '00000000-0000-4000-8000-00000000e2f6'::uuid,
+      '{"budget_limit_microusd":3000000}'::jsonb,
+      true
+    ) ->> 'intentDigest',
+    false
+  ) ~ '^[0-9a-f]{64}$',
+  'AI policy preview returns one request-bound server intent digest'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'configure',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f6'::uuid,
+    null::uuid, '{"budget_limit_microusd":3000000}'::jsonb,
+    null::text, current_setting('compass.test.c2_ai_control_intent'), true
+  )::text,
+  null,
+  'AI policy mutation fails closed until its five-minute control grant exists'
+);
+RESET ROLE;
+SELECT pg_temp.seed_c2_admin_control_grant(
+  '00000000-0000-4000-8000-00000000e208'::uuid,
+  'environment_ai_policy_change',
+  '00000000-0000-4000-8000-00000000e2f6'::uuid,
+  current_setting('compass.test.c2_ai_control_intent')
+);
+SET ROLE service_role;
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'configure',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f6'::uuid,
+    null::uuid, '{"budget_limit_microusd":3000000}'::jsonb,
+    null::text, current_setting('compass.test.c2_ai_control_intent'), true
+  ) ->> 'accepted',
+  'true',
+  'AI policy mutation consumes the exact five-minute control grant'
+);
+SELECT is(
+  public.manage_google_admin_ai_control_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1,
+    'configure',
+    current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+    '00000000-0000-4000-8000-00000000e2f6'::uuid,
+    null::uuid, '{"budget_limit_microusd":3000000}'::jsonb,
+    null::text, current_setting('compass.test.c2_ai_control_intent'), true
+  ) ->> 'idempotentReplay',
+  'true',
+  'lost AI policy mutation responses converge without another TOTP prompt'
+);
+SELECT ok(
+  set_config(
+    'compass.test.c2_ai_control_changed_intent',
+    public.get_google_admin_ai_control_configuration_intent_v1(
+      repeat('1', 64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a', 64), 1,
+      current_setting('compass.test.c2_master_control_lecture_id')::uuid,
+      '00000000-0000-4000-8000-00000000e2f6'::uuid,
+      '{"budget_limit_microusd":4000000}'::jsonb,
+      true
+    ) ->> 'intentDigest',
+    false
+  ) ~ '^[0-9a-f]{64}$',
+  'changed policy payload receives a different canonical intent'
+);
+SELECT throws_ok(
+  format(
+    $$SELECT public.manage_google_admin_ai_control_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a',64), 1,
+      'configure', %L::uuid,
+      '00000000-0000-4000-8000-00000000e2f6'::uuid,
+      null::uuid, '{"budget_limit_microusd":4000000}'::jsonb,
+      null::text, %L::text, true
+    )$$,
+    current_setting('compass.test.c2_master_control_lecture_id'),
+    current_setting('compass.test.c2_ai_control_changed_intent')
+  ),
+  'P7335',
+  'AI control request binding does not match its receipt',
+  'the same request cannot replace an accepted AI policy payload'
+);
+
 SELECT ok(
   (
     SELECT set_config(
