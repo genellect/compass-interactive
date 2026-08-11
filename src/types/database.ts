@@ -2747,8 +2747,8 @@ export type Database = {
       }
       lecture_summary_runs: {
         Row: {
-          academic_authorization_grant_id: string | null
           academic_authority_mode: string
+          academic_authorization_grant_id: string | null
           academic_source_policy: string
           actor_id: string
           auto_academic_answers_enabled: boolean
@@ -2766,8 +2766,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          academic_authorization_grant_id?: string | null
           academic_authority_mode?: string
+          academic_authorization_grant_id?: string | null
           academic_source_policy?: string
           actor_id: string
           auto_academic_answers_enabled?: boolean
@@ -2785,8 +2785,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          academic_authorization_grant_id?: string | null
           academic_authority_mode?: string
+          academic_authorization_grant_id?: string | null
           academic_source_policy?: string
           actor_id?: string
           auto_academic_answers_enabled?: boolean
