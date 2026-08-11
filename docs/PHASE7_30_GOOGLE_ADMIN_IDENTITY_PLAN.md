@@ -543,6 +543,14 @@ Budget exhaustion blocks child calls with an explanatory status but does not
 silently clear the lecture's activated scope. Results arriving after a terminal
 transition are discarded.
 
+Summary run start and resume are scheduler controls and therefore consume no
+provider child. Each five-minute window that actually reaches the model consumes
+its own short-lived child and immutable dispatch claim. Insufficient-source
+windows skip without cost, a lost response converges on the same window, and a
+stale or revoked request settles without publishing late content. These recovery
+paths never require another TOTP or AI PIN while the current Admin session and
+master scope remain valid.
+
 A retry of the same active scope is idempotent and does not prompt again. A
 change from `all_except_captions` to `all_including_captions` is a cost/scope
 escalation: it requires a new PIN, remembered-browser or future AI-Passkey proof

@@ -38,7 +38,9 @@ SELECT ok(
       ('admin_google_ai_provider_start_intents'),
       ('admin_google_ai_provider_start_receipts'),
       ('admin_google_ai_provider_dispatch_receipts'),
-      ('admin_google_summary_run_receipts')
+      ('admin_google_summary_run_receipts'),
+      ('admin_google_summary_window_preflight_receipts'),
+      ('admin_google_summary_window_start_bindings')
     ) AS expected(table_name)
     JOIN pg_class AS class ON class.relname = expected.table_name
     JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
@@ -77,7 +79,9 @@ SELECT ok(
         'private.admin_google_ai_provider_start_intents'::regclass,
         'private.admin_google_ai_provider_start_receipts'::regclass,
         'private.admin_google_ai_provider_dispatch_receipts'::regclass,
-        'private.admin_google_summary_run_receipts'::regclass
+        'private.admin_google_summary_run_receipts'::regclass,
+        'private.admin_google_summary_window_preflight_receipts'::regclass,
+        'private.admin_google_summary_window_start_bindings'::regclass
       )
       AND NOT EXISTS (
         SELECT 1
@@ -128,6 +132,31 @@ SELECT ok(
     'public.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
     'EXECUTE'
   )
+  AND has_function_privilege(
+    'service_role',
+    'public.prepare_google_admin_summary_window_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,integer,text,jsonb,jsonb,text,text,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.issue_google_summary_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,integer,uuid,text,text,text,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.start_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,text,uuid,integer,uuid,text,text,text,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.complete_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,jsonb,boolean,bigint,bigint,bigint,text)',
+    'EXECUTE'
+  )
+  AND has_function_privilege(
+    'service_role',
+    'public.fail_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,bigint,bigint,bigint,text,text)',
+    'EXECUTE'
+  )
   AND NOT has_function_privilege(
     'authenticated',
     'public.issue_google_material_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,text,text,integer,uuid,text,text,text,uuid,integer,integer,text,text,bigint,bigint,integer,bigint,bigint,bigint,boolean)',
@@ -146,6 +175,11 @@ SELECT ok(
   AND NOT has_function_privilege(
     'authenticated',
     'public.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'authenticated',
+    'public.start_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,text,uuid,integer,uuid,text,text,text,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
     'EXECUTE'
   )
   AND NOT has_function_privilege(
@@ -177,6 +211,36 @@ SELECT ok(
     'service_role',
     'private.manage_google_admin_summary_run_v1(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
     'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.prepare_google_admin_summary_window_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,integer,text,jsonb,jsonb,text,text,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.issue_google_summary_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,integer,uuid,text,text,text,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.start_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,text,uuid,integer,uuid,text,text,text,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.complete_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,jsonb,boolean,bigint,bigint,bigint,text)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.fail_google_admin_summary_window_operation_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,bigint,bigint,bigint,text,text)',
+    'EXECUTE'
+  )
+  AND NOT has_function_privilege(
+    'service_role',
+    'private.google_summary_source_evidence_is_valid_v1(jsonb,jsonb)',
+    'EXECUTE'
   ),
   'only typed public provider facades are executable by service_role'
 );
@@ -190,9 +254,12 @@ SELECT ok(
         'admin_google_ai_provider_start_intents',
         'admin_google_ai_provider_start_receipts',
         'admin_google_ai_provider_dispatch_receipts',
-        'admin_google_summary_run_receipts'
+        'admin_google_summary_run_receipts',
+        'admin_google_summary_window_preflight_receipts',
+        'admin_google_summary_window_start_bindings'
       )
       AND column_name ~ '(raw|bearer|secret|payload|response)'
+      AND column_name !~ '(_sha256|_digest)$'
   ),
   'provider evidence stores no raw nonce, bearer, secret or provider payload'
 );
@@ -501,6 +568,79 @@ LANGUAGE sql VOLATILE SET search_path = '' AS $$
     model_name, 'phase5-material-v1',
     1000000, 6000000, 4000, 1600, 1000, 100,
     transport_enabled
+  );
+$$;
+
+CREATE FUNCTION pg_temp.prepare_summary_window(
+  request_id uuid,
+  window_index integer,
+  source_hashes jsonb,
+  source_coverage jsonb
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.prepare_google_admin_summary_window_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    current_setting('compass.test.c2_summary_provider_run_id')::uuid,
+    current_setting('compass.test.c2_summary_provider_run_token_hash'),
+    window_index, 'phase6-summary-v1',
+    source_hashes, source_coverage, null::text, null::text,
+    request_id, true
+  );
+$$;
+
+CREATE FUNCTION pg_temp.issue_summary_child(
+  request_id uuid,
+  nonce_hash text,
+  preflight_request_id uuid,
+  window_id uuid,
+  expected_attempt integer,
+  context_digest text,
+  payload_sha256 text
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.issue_google_summary_ai_child_grant_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    current_setting('compass.test.c2_summary_provider_run_id')::uuid,
+    window_id, expected_attempt, preflight_request_id, context_digest,
+    payload_sha256, 'ja', 'auto_default_ja', 'test-model',
+    'phase6-summary-v1', 1000000, 6000000, 4000, 1600, 1000, 100,
+    nonce_hash, 1, request_id, true
+  );
+$$;
+
+CREATE FUNCTION pg_temp.start_summary_operation(
+  start_request_id uuid,
+  grant_id uuid,
+  nonce_hash text,
+  preflight_request_id uuid,
+  window_id uuid,
+  expected_attempt integer,
+  context_digest text,
+  payload_sha256 text,
+  provider_digest text
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.start_google_admin_summary_window_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    grant_id, nonce_hash,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    current_setting('compass.test.c2_summary_provider_run_id')::uuid,
+    current_setting('compass.test.c2_summary_provider_run_token_hash'),
+    window_id, expected_attempt, preflight_request_id,
+    context_digest, payload_sha256, 'ja', 'auto_default_ja', 'test-model',
+    'phase6-summary-v1', 1000000, 6000000, 4000, 1600, 1000, 100,
+    start_request_id, provider_digest, true
   );
 $$;
 
@@ -1221,6 +1361,871 @@ SELECT ok(
   'stale cancelled dispatch charges its reservation and releases the batch lane'
 );
 
+UPDATE public.lecture_sessions
+SET
+  starts_at = statement_timestamp() - interval '20 minutes',
+  started_at = statement_timestamp() - interval '20 minutes',
+  ends_at = statement_timestamp() + interval '70 minutes',
+  hard_stop_at = statement_timestamp() + interval '70 minutes',
+  updated_at = statement_timestamp()
+WHERE id = current_setting('compass.test.c2_provider_lecture_id')::uuid;
+UPDATE public.lecture_ai_control
+SET
+  hard_stop_at = statement_timestamp() + interval '70 minutes',
+  updated_at = statement_timestamp()
+WHERE lecture_session_id =
+  current_setting('compass.test.c2_provider_lecture_id')::uuid;
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_provider_run_id',
+      result #>> '{run,id}',
+      false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_run_token_hash',
+        repeat('e',64), false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'start', repeat('e',64), false, 'auto', null,
+        '00000000-0000-4000-8000-00000000e263'::uuid, true
+      ) AS result
+    ) AS started
+  ),
+  'Google summary scheduling remains a provider-free control before each window'
+);
+RESET ROLE;
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_child_grant_receipts AS child
+    WHERE child.request_id =
+      '00000000-0000-4000-8000-00000000e263'::uuid
+  ),
+  'starting a summary scheduler consumes no provider child'
+);
+
+SET ROLE service_role;
+SELECT is(
+  pg_temp.prepare_summary_window(
+    '00000000-0000-4000-8000-00000000e26f'::uuid,
+    1,
+    jsonb_build_object(
+      'pdf_character_count', 0,
+      'pdf_context_sha256', null,
+      'pdf_max_page_number', 0,
+      'pdf_page_count', 0,
+      'raw_transcript', 'must-not-persist',
+      'transcript_character_count', 500,
+      'transcript_segment_count', 1,
+      'transcript_sha256', repeat('1',64)
+    ),
+    jsonb_build_object(
+      'comments', false, 'pdf', false, 'transcript', true
+    )
+  )::text,
+  null,
+  'unexpected raw source metadata fails closed before evidence insertion'
+);
+RESET ROLE;
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_summary_window_preflight_receipts AS receipt
+    WHERE receipt.request_id =
+      '00000000-0000-4000-8000-00000000e26f'::uuid
+  ),
+  'rejected raw source metadata leaves no immutable evidence'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_preflight_window_a',
+      result #>> '{window,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_attempt_a',
+        result ->> 'expectedAttempt', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_digest_a',
+        result ->> 'preflightContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'refreshRequired' = 'false'
+      AND result ->> 'resultStatus' = 'prepared'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e270'::uuid,
+        1,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('1',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS prepared
+  ),
+  'one due summary window prepares immutable source context without a child'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'refreshRequired' = 'false'
+      AND result #>> '{window,id}' =
+        current_setting('compass.test.c2_summary_preflight_window_a')
+      AND result ->> 'expectedAttempt' =
+        current_setting('compass.test.c2_summary_preflight_attempt_a')
+      AND result ->> 'preflightContextDigest' =
+        current_setting('compass.test.c2_summary_preflight_digest_a')
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e270'::uuid,
+        1,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('1',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS replayed
+  ),
+  'lost preflight response converges on the same current source context'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'refreshRequired' = 'true'
+      AND result ->> 'resultStatus' = 'skipped'
+      AND result ->> 'skipped' = 'true'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e271'::uuid,
+        2,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 0,
+          'transcript_segment_count', 0,
+          'transcript_sha256', null
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', false
+        )
+      ) AS result
+    ) AS skipped
+  ),
+  'insufficient source skips a due window without provider authority'
+);
+SELECT is(
+  pg_temp.prepare_summary_window(
+    '00000000-0000-4000-8000-00000000e271'::uuid,
+    2,
+    jsonb_build_object(
+      'pdf_character_count', 0,
+      'pdf_context_sha256', null,
+      'pdf_max_page_number', 0,
+      'pdf_page_count', 0,
+      'transcript_character_count', 0,
+      'transcript_segment_count', 0,
+      'transcript_sha256', null
+    ),
+    jsonb_build_object(
+      'comments', false, 'pdf', false, 'transcript', false
+    )
+  ) ->> 'idempotentReplay',
+  'true',
+  'skipped summary preflight replays without creating a child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_child_a', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_digest_a',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT pg_temp.issue_summary_child(
+        '00000000-0000-4000-8000-00000000e272'::uuid,
+        repeat('a',64),
+        '00000000-0000-4000-8000-00000000e270'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_a'),
+        repeat('f',64)
+      ) AS result
+    ) AS issued
+  ),
+  'one prepared window receives one short-lived summaries child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_operation_a', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_summary_operation(
+        '00000000-0000-4000-8000-00000000e273'::uuid,
+        current_setting('compass.test.c2_summary_child_a')::uuid,
+        repeat('a',64),
+        '00000000-0000-4000-8000-00000000e270'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_a'),
+        repeat('f',64),
+        current_setting('compass.test.c2_summary_provider_digest_a')
+      ) AS result
+    ) AS started
+  ),
+  'one summary child starts exactly one usage operation for its window'
+);
+SELECT is(
+  pg_temp.start_summary_operation(
+    '00000000-0000-4000-8000-00000000e273'::uuid,
+    current_setting('compass.test.c2_summary_child_a')::uuid,
+    repeat('a',64),
+    '00000000-0000-4000-8000-00000000e270'::uuid,
+    current_setting('compass.test.c2_summary_preflight_window_a')::uuid,
+    current_setting('compass.test.c2_summary_preflight_attempt_a')::integer,
+    current_setting('compass.test.c2_summary_preflight_digest_a'),
+    repeat('f',64),
+    current_setting('compass.test.c2_summary_provider_digest_a')
+  ) ->> 'idempotentReplay',
+  'true',
+  'lost summary-start response converges before dispatch'
+);
+SELECT throws_ok(
+  $$SELECT public.complete_google_admin_summary_window_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e273'::uuid,
+    current_setting('compass.test.c2_summary_operation_a')::uuid,
+    jsonb_build_object(
+      'lecture_recap', jsonb_build_array('discard me'),
+      'comment_pulse', '[]'::jsonb
+    ),
+    '{}'::jsonb, false, 0, 0, 0, 'provider-before-claim'
+  )$$,
+  'P7335',
+  'Google summary completion lacks dispatch evidence',
+  'summary output cannot be saved before an immutable dispatch claim'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'dispatchAllowed' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'operationId' =
+        current_setting('compass.test.c2_summary_operation_a')
+    FROM (
+      SELECT public.claim_google_ai_provider_dispatch_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e273'::uuid,
+        current_setting('compass.test.c2_summary_operation_a')::uuid,
+        'openai_responses_v1',
+        '00000000-0000-4000-8000-00000000e273'::uuid,
+        true
+      ) AS result
+    ) AS claimed
+  ),
+  'summary provider dispatch is claimed exactly once'
+);
+RESET ROLE;
+UPDATE private.admin_environment_memberships
+SET can_use_ai = false, updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'false'
+      AND result ->> 'authorityRevoked' = 'true'
+      AND result ->> 'result_saved' = 'false'
+    FROM (
+      SELECT public.complete_google_admin_summary_window_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e273'::uuid,
+        current_setting('compass.test.c2_summary_operation_a')::uuid,
+        jsonb_build_object(
+          'lecture_recap', jsonb_build_array('discard me'),
+          'comment_pulse', '[]'::jsonb
+        ),
+        '{}'::jsonb, false, 1600, 1000, 100,
+        '00000000-0000-4000-8000-00000000e273'
+      ) AS result
+    ) AS completed
+  ),
+  'revoked Google authority settles and discards an in-flight summary result'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'cancelled'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND NOT usage.result_accepted
+      AND summary_window.status = 'discarded'
+      AND summary_window.current_operation_id IS NULL
+      AND summary_window.last_error_code = 'google_authority_revoked_ambiguous'
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.lecture_summary_windows AS summary_window
+      ON summary_window.id =
+        current_setting('compass.test.c2_summary_preflight_window_a')::uuid
+    WHERE usage.id =
+      current_setting('compass.test.c2_summary_operation_a')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.lecture_ai_summaries AS summary
+    WHERE summary.operation_id =
+      current_setting('compass.test.c2_summary_operation_a')::uuid
+  ),
+  'revoked completion never persists provider content and clears the window lane'
+);
+UPDATE private.admin_environment_memberships
+SET can_use_ai = true, updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
+SET ROLE service_role;
+SELECT is(
+  public.authorize_google_ai_master_with_pin_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000e20a'::uuid, 1,
+    repeat('b', 64), 1, repeat('e', 64),
+    '00000000-0000-4000-8000-00000000e279'::uuid
+  ) ->> 'accepted',
+  'true',
+  'the restored AI membership can explicitly create a fresh lecture master'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_provider_run_id',
+      result #>> '{run,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_run_token_hash',
+        repeat('f',64), false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT public.manage_google_admin_summary_run_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        current_setting('compass.test.c2_provider_lecture_id')::uuid,
+        'start', repeat('f',64), false, 'auto', null,
+        '00000000-0000-4000-8000-00000000e278'::uuid, true
+      ) AS result
+    ) AS restarted
+  ),
+  'recovery starts a fresh scheduler run after the revoked run is drained'
+);
+
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_preflight_window_c',
+      result #>> '{window,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_attempt_c',
+        result ->> 'expectedAttempt', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_digest_c',
+        result ->> 'preflightContextDigest', false
+      ) IS NOT NULL
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e274'::uuid,
+        3,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('2',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS prepared
+  ),
+  'a second actual window prepares independent provider context'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_child_c', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_digest_c',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+    FROM (
+      SELECT pg_temp.issue_summary_child(
+        '00000000-0000-4000-8000-00000000e275'::uuid,
+        repeat('b',64),
+        '00000000-0000-4000-8000-00000000e274'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_c')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_c')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_c'),
+        repeat('0',64)
+      ) AS result
+    ) AS issued
+  ),
+  'the second actual window receives a distinct child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_operation_c', result ->> 'operationId', false
+    ) IS NOT NULL
+    FROM (
+      SELECT pg_temp.start_summary_operation(
+        '00000000-0000-4000-8000-00000000e276'::uuid,
+        current_setting('compass.test.c2_summary_child_c')::uuid,
+        repeat('b',64),
+        '00000000-0000-4000-8000-00000000e274'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_c')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_c')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_c'),
+        repeat('0',64),
+        current_setting('compass.test.c2_summary_provider_digest_c')
+      ) AS result
+    ) AS started
+  ),
+  'the second actual window starts one independent usage operation'
+);
+RESET ROLE;
+UPDATE public.ai_usage_ledger
+SET
+  provider_dispatched_at = statement_timestamp() - interval '2 minutes',
+  provider_request_id = '00000000-0000-4000-8000-00000000e276'
+WHERE id = current_setting('compass.test.c2_summary_operation_c')::uuid;
+INSERT INTO private.admin_google_ai_provider_dispatch_receipts (
+  start_request_id, operation_id, provider_family, client_request_id,
+  claimed_at, lease_expires_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e276'::uuid,
+  current_setting('compass.test.c2_summary_operation_c')::uuid,
+  'openai_responses_v1',
+  '00000000-0000-4000-8000-00000000e276'::uuid,
+  statement_timestamp() - interval '2 minutes',
+  statement_timestamp() - interval '30 seconds'
+);
+SET ROLE service_role;
+SELECT is(
+  public.reap_stale_google_ai_provider_dispatches_v1(10),
+  1,
+  'stale dispatch cleanup also settles one abandoned summary window'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'failed'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.settlement_status = 'conservative'
+      AND usage.error_code = 'provider_dispatch_lease_expired_ambiguous'
+      AND summary_window.status = 'failed'
+      AND summary_window.current_operation_id IS NULL
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.lecture_summary_windows AS summary_window
+      ON summary_window.id =
+        current_setting('compass.test.c2_summary_preflight_window_c')::uuid
+    WHERE usage.id =
+      current_setting('compass.test.c2_summary_operation_c')::uuid
+  ),
+  'stale summary dispatch is conservatively accounted and releases its window'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_preflight_window_d',
+      result #>> '{window,id}', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_attempt_d',
+        result ->> 'expectedAttempt', false
+      ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_digest_d',
+        result ->> 'preflightContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'resultStatus' = 'prepared'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e27a'::uuid,
+        4,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('3',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS prepared
+  ),
+  'a live recovery run prepares another independent summary window'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_child_d', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_digest_d',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+    FROM (
+      SELECT pg_temp.issue_summary_child(
+        '00000000-0000-4000-8000-00000000e27b'::uuid,
+        repeat('c',64),
+        '00000000-0000-4000-8000-00000000e27a'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_d')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_d'),
+        repeat('3',64)
+      ) AS result
+    ) AS issued
+  ),
+  'the live window receives its own short-lived child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_operation_d', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_summary_operation(
+        '00000000-0000-4000-8000-00000000e27c'::uuid,
+        current_setting('compass.test.c2_summary_child_d')::uuid,
+        repeat('c',64),
+        '00000000-0000-4000-8000-00000000e27a'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_d')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_d'),
+        repeat('3',64),
+        current_setting('compass.test.c2_summary_provider_digest_d')
+      ) AS result
+    ) AS started
+  ),
+  'the live window starts one independently accounted provider operation'
+);
+RESET ROLE;
+INSERT INTO public.participants (
+  id, lecture_session_id, participant_key, joined_at, last_seen_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e28d'::uuid,
+  current_setting('compass.test.c2_provider_lecture_id')::uuid,
+  'summary-drift-participant',
+  statement_timestamp() - interval '2 minutes',
+  statement_timestamp()
+);
+INSERT INTO public.comments (
+  id, lecture_session_id, participant_id, body, status, created_at, updated_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e28e'::uuid,
+  current_setting('compass.test.c2_provider_lecture_id')::uuid,
+  '00000000-0000-4000-8000-00000000e28d'::uuid,
+  'Context changed after start',
+  'visible',
+  (
+    SELECT summary_window.window_start + interval '1 minute'
+    FROM public.lecture_summary_windows AS summary_window
+    WHERE summary_window.id =
+      current_setting('compass.test.c2_summary_preflight_window_d')::uuid
+  ),
+  statement_timestamp()
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'true'
+      AND result ->> 'refreshRequired' = 'true'
+      AND result ->> 'unclaimedStartRecovered' = 'true'
+      AND result ->> 'windowStatus' = 'failed'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e27a'::uuid,
+        4,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('3',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS recovered
+  ),
+  'context drift after a lost start response releases an unclaimed window'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'failed'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.error_code = 'summary_context_changed_before_dispatch'
+      AND usage.provider_dispatched_at IS NULL
+      AND summary_window.status = 'failed'
+      AND summary_window.current_operation_id IS NULL
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.lecture_summary_windows AS summary_window
+      ON summary_window.id =
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid
+    WHERE usage.id =
+      current_setting('compass.test.c2_summary_operation_d')::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_provider_dispatch_receipts AS dispatch
+    WHERE dispatch.start_request_id =
+      '00000000-0000-4000-8000-00000000e27c'::uuid
+  ),
+  'unclaimed recovery settles zero cost and leaves no dispatch authority'
+);
+
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_preflight_attempt_e',
+      result ->> 'expectedAttempt', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_preflight_digest_e',
+        result ->> 'preflightContextDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+      AND result ->> 'refreshRequired' = 'false'
+      AND result ->> 'resultStatus' = 'prepared'
+    FROM (
+      SELECT pg_temp.prepare_summary_window(
+        '00000000-0000-4000-8000-00000000e27d'::uuid,
+        4,
+        jsonb_build_object(
+          'pdf_character_count', 0,
+          'pdf_context_sha256', null,
+          'pdf_max_page_number', 0,
+          'pdf_page_count', 0,
+          'transcript_character_count', 500,
+          'transcript_segment_count', 1,
+          'transcript_sha256', repeat('3',64)
+        ),
+        jsonb_build_object(
+          'comments', false, 'pdf', false, 'transcript', true
+        )
+      ) AS result
+    ) AS prepared
+  ),
+  'the released window prepares a fresh attempt with current lecture context'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_child_e', result ->> 'grant_id', false
+    ) IS NOT NULL
+      AND set_config(
+        'compass.test.c2_summary_provider_digest_e',
+        result ->> 'providerIntentDigest', false
+      ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+    FROM (
+      SELECT pg_temp.issue_summary_child(
+        '00000000-0000-4000-8000-00000000e27e'::uuid,
+        repeat('d',64),
+        '00000000-0000-4000-8000-00000000e27d'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_e')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_e'),
+        repeat('4',64)
+      ) AS result
+    ) AS issued
+  ),
+  'the fresh attempt receives a replacement single-use child'
+);
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_summary_operation_e', result ->> 'operationId', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'idempotentReplay' = 'false'
+    FROM (
+      SELECT pg_temp.start_summary_operation(
+        '00000000-0000-4000-8000-00000000e27f'::uuid,
+        current_setting('compass.test.c2_summary_child_e')::uuid,
+        repeat('d',64),
+        '00000000-0000-4000-8000-00000000e27d'::uuid,
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid,
+        current_setting('compass.test.c2_summary_preflight_attempt_e')::integer,
+        current_setting('compass.test.c2_summary_preflight_digest_e'),
+        repeat('4',64),
+        current_setting('compass.test.c2_summary_provider_digest_e')
+      ) AS result
+    ) AS started
+  ),
+  'the replacement child starts exactly one retry operation'
+);
+SELECT is(
+  public.claim_google_ai_provider_dispatch_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e27f'::uuid,
+    current_setting('compass.test.c2_summary_operation_e')::uuid,
+    'openai_responses_v1',
+    '00000000-0000-4000-8000-00000000e27f'::uuid,
+    true
+  ) ->> 'dispatchAllowed',
+  'true',
+  'only the recovered retry receives provider dispatch authority'
+);
+SELECT ok(
+  (
+    SELECT result ->> 'accepted' = 'true'
+      AND result ->> 'result_saved' = 'true'
+    FROM (
+      SELECT public.complete_google_admin_summary_window_operation_v1(
+        repeat('1',64),
+        '00000000-0000-4000-8000-00000000e202'::uuid,
+        '00000000-0000-4000-8000-00000000e203'::uuid,
+        'https://accounts.google.com', repeat('a',64), 1,
+        '00000000-0000-4000-8000-00000000e27f'::uuid,
+        current_setting('compass.test.c2_summary_operation_e')::uuid,
+        jsonb_build_object(
+          'lecture_recap', jsonb_build_array('Saved summary'),
+          'comment_pulse', '[]'::jsonb
+        ),
+        '{}'::jsonb, false, 1600, 1000, 100,
+        '00000000-0000-4000-8000-00000000e27f'
+      ) AS result
+    ) AS completed
+  ),
+  'a recovered authorized retry saves its result without another MFA prompt'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT usage.status = 'succeeded'
+      AND usage.accounting_settled_at IS NOT NULL
+      AND usage.result_accepted
+      AND summary_window.status = 'succeeded'
+      AND summary_window.current_operation_id IS NULL
+    FROM public.ai_usage_ledger AS usage
+    JOIN public.lecture_summary_windows AS summary_window
+      ON summary_window.id =
+        current_setting('compass.test.c2_summary_preflight_window_d')::uuid
+    WHERE usage.id =
+      current_setting('compass.test.c2_summary_operation_e')::uuid
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.lecture_ai_summaries AS summary
+    WHERE summary.operation_id =
+      current_setting('compass.test.c2_summary_operation_e')::uuid
+  ),
+  'the recovered happy path settles accounting and publishes one result'
+);
+SELECT ok(
+  (
+    SELECT count(*) = 4
+      AND count(DISTINCT binding.window_id) = 3
+      AND count(DISTINCT binding.operation_id) = 4
+      AND bool_and(grant_record.status = 'consumed')
+      AND bool_and(
+        grant_record.operation_ids = array[binding.operation_id]::uuid[]
+      )
+    FROM private.admin_google_summary_window_start_bindings AS binding
+    JOIN private.admin_google_ai_provider_start_receipts AS start_receipt
+      ON start_receipt.start_request_id = binding.start_request_id
+    JOIN public.ai_billing_grants AS grant_record
+      ON grant_record.id = start_receipt.child_grant_id
+    WHERE binding.start_request_id IN (
+      '00000000-0000-4000-8000-00000000e273'::uuid,
+      '00000000-0000-4000-8000-00000000e276'::uuid,
+      '00000000-0000-4000-8000-00000000e27c'::uuid,
+      '00000000-0000-4000-8000-00000000e27f'::uuid
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_summary_window_start_bindings AS binding
+    WHERE binding.preflight_request_id =
+      '00000000-0000-4000-8000-00000000e271'::uuid
+  ),
+  'each provider attempt consumes one child while skipped windows consume none'
+);
+
 SET ROLE service_role;
 SELECT ok(
   (
@@ -1269,7 +2274,7 @@ SET google_ai_child_grant_enabled = false
 WHERE singleton;
 SET ROLE service_role;
 SELECT throws_ok(
-  public.claim_google_ai_provider_dispatch_v1(
+  $$SELECT public.claim_google_ai_provider_dispatch_v1(
     repeat('1',64),
     '00000000-0000-4000-8000-00000000e202'::uuid,
     '00000000-0000-4000-8000-00000000e203'::uuid,
@@ -1279,7 +2284,7 @@ SELECT throws_ok(
     'openai_responses_v1',
     '00000000-0000-4000-8000-00000000e236'::uuid,
     false
-  ),
+  )$$,
   'P7338',
   'Google AI provider dispatch is disabled',
   'turning admission or Edge transport OFF before claim prevents a new provider request'

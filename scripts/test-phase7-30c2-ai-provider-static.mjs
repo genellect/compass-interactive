@@ -20,12 +20,18 @@ const dispatchMigration = read(
 const summaryMigration = read(
   'supabase/migrations/20260811213000_phase7_30c2_google_summary_scheduler.sql',
 )
+const summaryProviderMigration = read(
+  'supabase/migrations/20260811223000_phase7_30c2_google_summary_provider.sql',
+)
 const aiBilling = read('supabase/functions/_shared/aiBilling.ts')
 const analyzeMaterial = read(
   'supabase/functions/analyze-lecture-material/index.ts',
 )
 const manageSummaries = read(
   'supabase/functions/manage-lecture-summaries/index.ts',
+)
+const generateSummary = read(
+  'supabase/functions/generate-lecture-summary/index.ts',
 )
 const databaseTypes = read('src/types/database.ts')
 const envExample = read('.env.local.example')
@@ -145,6 +151,307 @@ assert.match(
   /manage_google_admin_summary_run_v1: \{[\s\S]*target_academic_source_policy: string[\s\S]*target_action: string[\s\S]*target_request_id: string[\s\S]*target_run_token_hash: string[\s\S]*Returns: Json/,
 )
 
+for (const table of [
+  'admin_google_summary_window_preflight_receipts',
+  'admin_google_summary_window_start_bindings',
+]) {
+  assert.match(
+    summaryProviderMigration,
+    new RegExp(`create table private\\.${table}`),
+  )
+  assert.match(
+    summaryProviderMigration,
+    new RegExp(
+      `alter table private\\.${table}[\\s\\S]*enable row level security;[\\s\\S]*` +
+        `revoke all on private\\.${table}[\\s\\S]*` +
+        `from public, anon, authenticated, service_role`,
+    ),
+  )
+  assert.match(
+    summaryProviderMigration,
+    new RegExp(
+      `before update or delete on private\\.${table}[\\s\\S]*` +
+        `reject_admin_c1_evidence_mutation_v1`,
+    ),
+  )
+}
+assert.doesNotMatch(
+  summaryProviderMigration.slice(
+    summaryProviderMigration.indexOf(
+      'create table private.admin_google_summary_window_preflight_receipts',
+    ),
+    summaryProviderMigration.indexOf(
+      'create function private.google_summary_preflight_intent_digest_v1',
+    ),
+  ),
+  /^\s*(?:raw|bearer|secret|transcript|pdf_text|provider_payload)(?!_sha256)\w*\s+\w+/im,
+  'summary provider evidence stores hashes and bounded metadata, never raw source or credentials',
+)
+const summarySourceEvidenceValidator = functionBlock(
+  summaryProviderMigration,
+  'private.google_summary_source_evidence_is_valid_v1',
+)
+assert.match(
+  summarySourceEvidenceValidator,
+  /jsonb_object_length\(target_source_hashes\) <> 7[\s\S]*pdf_character_count[\s\S]*pdf_context_sha256[\s\S]*pdf_max_page_number[\s\S]*pdf_page_count[\s\S]*transcript_character_count[\s\S]*transcript_segment_count[\s\S]*transcript_sha256/,
+  'summary source evidence accepts only the seven canonical hash/count keys',
+)
+assert.match(
+  summarySourceEvidenceValidator,
+  /jsonb_object_length\(target_source_coverage\) <> 3[\s\S]*'comments', 'pdf', 'transcript'[\s\S]*is distinct from 'boolean'/,
+  'summary source coverage accepts only canonical boolean keys',
+)
+assert.match(
+  summaryProviderMigration,
+  /revoke all on function private\.google_summary_source_evidence_is_valid_v1\([\s\S]*service_role/,
+  'the private exact evidence validator is unavailable to runtime roles',
+)
+assert.match(
+  summaryProviderMigration,
+  /check \(private\.google_summary_source_evidence_is_valid_v1\([\s\S]*source_hashes, source_coverage/,
+  'the table constraint enforces the private exact evidence schema',
+)
+assert.match(
+  summaryProviderMigration,
+  /admin_google_summary_preflight_(?:environment|principal|membership|session|lecture|run|window)_idx[\s\S]*admin_google_summary_bindings_(?:operation|preflight|lecture|run|window)_idx/,
+  'every summary evidence foreign key has a leading lookup index',
+)
+
+const summaryPreflight = functionBlock(
+  summaryProviderMigration,
+  'private.prepare_google_admin_summary_window_v1',
+)
+const preflightRequest = summaryPreflight.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const preflightDiscovery = summaryPreflight.indexOf(
+  'from private.admin_google_summary_window_preflight_receipts as receipt',
+)
+const preflightContext = summaryPreflight.indexOf(
+  'require_google_admin_operation_context_v1',
+)
+const preflightReplay = summaryPreflight.indexOf(
+  'from private.admin_google_summary_window_preflight_receipts as receipt',
+  preflightContext,
+)
+const preflightGate = summaryPreflight.indexOf(
+  'from private.admin_ai_unlock_runtime_gate as gate',
+)
+const preflightLecture = summaryPreflight.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const preflightControl = summaryPreflight.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const preflightRun = summaryPreflight.indexOf(
+  'from public.lecture_summary_runs as run',
+)
+const preflightWindow = summaryPreflight.indexOf(
+  'from public.lecture_summary_windows as summary_window',
+  preflightRun,
+)
+assert.ok(
+  preflightRequest >= 0 &&
+    preflightRequest < preflightDiscovery &&
+    preflightDiscovery < preflightContext &&
+    preflightContext < preflightReplay &&
+    preflightReplay < preflightGate &&
+    preflightGate < preflightLecture &&
+    preflightLecture < preflightControl &&
+    preflightControl < preflightRun &&
+    preflightRun < preflightWindow,
+  'summary preflight serializes discovered start requests before context, replays before gates, then locks lecture -> control -> run -> window',
+)
+assert.match(
+  summaryPreflight.slice(preflightDiscovery, preflightContext),
+  /admin_google_summary_window_start_bindings[\s\S]*serialize_admin_ai_request_v1\([\s\S]*start_binding_snapshot\.start_request_id/,
+  'response-loss recovery takes the start advisory before identity and lecture locks',
+)
+assert.match(
+  summaryPreflight.slice(preflightReplay, preflightGate),
+  /idempotentReplay[\s\S]*refreshRequired[\s\S]*resultStatus/,
+  'preflight exact replay returns receipt state instead of stale lecture content',
+)
+assert.match(
+  summaryPreflight.slice(preflightReplay, preflightGate),
+  /lecture_status[\s\S]*hard_stop_at[\s\S]*google_summary_provider_context_digest_v1[\s\S]*context_digest_value is distinct from receipt_row\.provider_context_digest[\s\S]*refreshRequired'[\s\S]*true[\s\S]*commentContext[\s\S]*materialContext[\s\S]*previousSummary/,
+  'preflight replay exposes freshly derived source context only while the current owned lecture and original context digest still match',
+)
+assert.match(
+  summaryPreflight.slice(preflightReplay, preflightGate),
+  /context_digest_value is distinct from receipt_row\.provider_context_digest[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*provider_dispatched_at is null[\s\S]*summary_context_changed_before_dispatch[\s\S]*unclaimedStartRecovered/,
+  'context drift zero-settles only an unclaimed start before releasing the window',
+)
+assert.match(
+  summaryPreflight,
+  /source_below_threshold[\s\S]*result_status[\s\S]*'skipped'/,
+  'insufficient-source preflight reaches a terminal skip without provider authority',
+)
+assert.match(
+  summaryPreflight,
+  /pdf_max_page_number[\s\S]*document_row\.page_count[\s\S]*summary PDF context is not current[\s\S]*summary PDF context has no registered document/,
+  'PDF source context is bound to the current registered document and page range',
+)
+
+const summaryChild = functionBlock(
+  summaryProviderMigration,
+  'private.issue_google_summary_ai_child_grant_v1',
+)
+assert.match(
+  summaryChild,
+  /private\.issue_google_ai_child_grant_v1\([\s\S]*'summaries'[\s\S]*from private\.admin_google_summary_window_preflight_receipts as receipt[\s\S]*result_status <> 'prepared'/,
+  'one summary child is bound to one prepared preflight and the summaries feature',
+)
+
+const summaryStart = functionBlock(
+  summaryProviderMigration,
+  'private.start_google_admin_summary_window_operation_v1',
+)
+const summaryStartRequest = summaryStart.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const summaryStartGrant = summaryStart.indexOf(
+  'from public.ai_billing_grants as grant_record',
+)
+const summaryStartContext = summaryStart.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const summaryStartReplay = summaryStart.indexOf(
+  'from private.admin_google_ai_provider_start_receipts as receipt',
+)
+const summaryStartGate = summaryStart.indexOf(
+  'from private.admin_identity_runtime_gate as gate',
+)
+const summaryStartPolicy = summaryStart.indexOf(
+  'from private.admin_ai_policies as policy',
+)
+const summaryStartLecture = summaryStart.indexOf(
+  'from public.lecture_sessions as lecture',
+)
+const summaryStartMaster = summaryStart.indexOf(
+  'from public.lecture_ai_master_authorizations as master',
+)
+const summaryStartControl = summaryStart.indexOf(
+  'from public.lecture_ai_control as control',
+)
+const summaryStartRun = summaryStart.indexOf(
+  'from public.lecture_summary_runs as run',
+)
+const summaryStartWindow = summaryStart.indexOf(
+  'from public.lecture_summary_windows as summary_window',
+)
+const summaryStartUsage = summaryStart.indexOf(
+  'from public.ai_usage_ledger as usage',
+  summaryStartWindow,
+)
+const summaryStartBinding = summaryStart.indexOf(
+  'insert into private.admin_google_summary_window_start_bindings',
+)
+const summaryStartConsume = summaryStart.indexOf(
+  'update public.ai_billing_grants as grant_record',
+)
+const summaryStartReceipt = summaryStart.indexOf(
+  'insert into private.admin_google_ai_provider_start_receipts',
+)
+assert.ok(
+  summaryStartRequest >= 0 &&
+    summaryStartRequest < summaryStartGrant &&
+    summaryStartGrant < summaryStartContext &&
+    summaryStartContext < summaryStartReplay &&
+    summaryStartReplay < summaryStartGate &&
+    summaryStartGate < summaryStartPolicy &&
+    summaryStartPolicy < summaryStartLecture &&
+    summaryStartLecture < summaryStartMaster &&
+    summaryStartMaster < summaryStartControl &&
+    summaryStartControl < summaryStartRun &&
+    summaryStartRun < summaryStartWindow &&
+    summaryStartWindow < summaryStartUsage &&
+    summaryStartUsage < summaryStartBinding &&
+    summaryStartBinding < summaryStartConsume &&
+    summaryStartConsume < summaryStartReceipt,
+  'summary start preserves grant -> Google context -> policy -> lecture -> master -> control -> run -> window -> usage order',
+)
+assert.match(
+  summaryStart,
+  /control_row\.summaries_enabled is distinct from true[\s\S]*summary scheduler is not active/,
+  'a provider attempt never restarts a stopped summary scheduler',
+)
+assert.match(
+  summaryStart,
+  /pdf_max_page_number[\s\S]*document_row\.page_count[\s\S]*summary PDF context changed before provider start[\s\S]*summary PDF context has no registered document/,
+  'provider start rechecks the registered PDF and its bounded page range',
+)
+assert.doesNotMatch(
+  summaryStart,
+  /set[\s\S]*summaries_enabled\s*=\s*true/,
+  'the provider start does not turn scheduler authority back on',
+)
+assert.match(
+  summaryStart,
+  /private\.start_lecture_ai_operation\([\s\S]*'summaries'[\s\S]*idempotent_replay'\)::boolean is distinct from false[\s\S]*usage_row\.requested_by_actor is distinct from actor_value[\s\S]*usage_row\.status <> 'running'/,
+  'legacy UUID collisions cannot become dispatch-eligible Google summary work',
+)
+
+const summaryFailure = functionBlock(
+  summaryProviderMigration,
+  'private.fail_google_admin_summary_window_operation_v1',
+)
+assert.match(
+  summaryFailure,
+  /require_google_ai_provider_settlement_context_v1[\s\S]*admin_google_summary_window_start_bindings[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*fail_summary_window_operation/,
+  'summary failure settles from immutable evidence and requires dispatch evidence for charged work',
+)
+assert.match(
+  summaryFailure,
+  /usage_row\.status = 'running' and target_status = 'failed'[\s\S]*fail_summary_window_operation[\s\S]*usage_row\.status = 'running'[\s\S]*finish_lecture_ai_operation\([\s\S]*'cancelled'[\s\S]*status = 'discarded'[\s\S]*current_operation_id = null/,
+  'revoked completion discards its window while ordinary provider failures remain retryable',
+)
+assert.match(summaryFailure, /return \(settlement - 'results'\)/)
+assert.match(
+  summaryFailure,
+  /target_status is null[\s\S]*actual_microusd is null[\s\S]*actual_input_tokens is null[\s\S]*actual_output_tokens is null/,
+  'NULL settlement metrics fail closed at the typed summary boundary',
+)
+
+const summaryCompletion = functionBlock(
+  summaryProviderMigration,
+  'private.complete_google_admin_summary_window_operation_v1',
+)
+assert.match(
+  summaryCompletion,
+  /require_google_ai_provider_settlement_context_v1[\s\S]*admin_google_ai_provider_dispatch_receipts[\s\S]*require_google_ai_provider_context_v1[\s\S]*admin_lecture_ownerships[\s\S]*admin_ai_policies[\s\S]*lecture_sessions[\s\S]*lecture_ai_master_authorizations[\s\S]*if not authority_is_live then[\s\S]*fail_google_admin_summary_window_operation_v1[\s\S]*complete_summary_window_operation/,
+  'summary completion saves content only after current Google authority, ownership, policy, lecture and master revalidation',
+)
+assert.match(
+  summaryCompletion,
+  /target_ai_output is null[\s\S]*target_quality_result is null[\s\S]*actual_microusd is null[\s\S]*actual_input_tokens is null[\s\S]*actual_output_tokens is null/,
+  'NULL provider output or accounting fails closed before completion',
+)
+
+for (const facade of [
+  'prepare_google_admin_summary_window_v1',
+  'issue_google_summary_ai_child_grant_v1',
+  'start_google_admin_summary_window_operation_v1',
+  'complete_google_admin_summary_window_operation_v1',
+  'fail_google_admin_summary_window_operation_v1',
+]) {
+  assert.match(
+    summaryProviderMigration,
+    new RegExp(
+      `revoke all on function public\\.${facade}\\([\\s\\S]*` +
+        `from public, anon, authenticated;[\\s\\S]*` +
+        `grant execute on function public\\.${facade}\\([\\s\\S]*to service_role`,
+    ),
+  )
+  assert.match(
+    summaryProviderMigration,
+    new RegExp(
+      `revoke all on function private\\.${facade}\\([\\s\\S]*` +
+        `from public, anon, authenticated, service_role`,
+    ),
+  )
+}
+
 const providerContext = functionBlock(
   migration,
   'private.require_google_ai_provider_context_v1',
@@ -189,13 +496,13 @@ assert.match(
   'provider dispatch ambiguity is bounded by an indexed lease',
 )
 const staleDispatchSettlement = functionBlock(
-  dispatchMigration,
+  summaryProviderMigration,
   'private.settle_stale_google_ai_provider_dispatch_v1',
 )
 assert.match(
   staleDispatchSettlement,
-  /serialize_admin_ai_request_v1[\s\S]*from private\.admin_google_ai_provider_dispatch_receipts as receipt[\s\S]*from public\.lecture_sessions as lecture[\s\S]*for update[\s\S]*from public\.ai_usage_ledger as usage[\s\S]*for update[\s\S]*accounting_settled_at is not null[\s\S]*provider_dispatched_at is null[\s\S]*fail_material_ai_operation[\s\S]*provider_dispatch_lease_expired_ambiguous/,
-  'stale dispatch recovery serializes the request and settles conservatively in lecture -> usage order',
+  /serialize_admin_ai_request_v1[\s\S]*from private\.admin_google_ai_provider_dispatch_receipts as receipt[\s\S]*from public\.lecture_sessions as lecture[\s\S]*for update[\s\S]*from public\.ai_usage_ledger as usage[\s\S]*for update[\s\S]*accounting_settled_at is not null[\s\S]*provider_dispatched_at is null[\s\S]*intent_row\.feature = 'summaries'[\s\S]*fail_summary_window_operation[\s\S]*fail_material_ai_operation[\s\S]*provider_dispatch_lease_expired_ambiguous/,
+  'stale dispatch recovery serializes the request and conservatively settles material or summary work in lecture -> usage order',
 )
 const staleDispatchReaper = functionBlock(
   dispatchMigration,
@@ -665,6 +972,96 @@ assert.match(
   /claim_google_ai_provider_dispatch_v1[\s\S]*target_transport_enabled:[\s\S]*googleContext\.transportEnabled[\s\S]*materialTransportEnabled[\s\S]*Boolean\(openAiKey\)/,
   'material dispatch cannot outlive its current Edge transport or provider configuration',
 )
+
+assert.match(generateSummary, /hasGoogleCredential === hasLegacyCredential/)
+assert.match(generateSummary, /verifyGoogleAdminOperationRequest/)
+assert.match(generateSummary, /deriveGoogleAiChildGrantNonce/)
+assert.match(generateSummary, /prepare_google_admin_summary_window_v1/)
+assert.match(generateSummary, /issue_google_summary_ai_child_grant_v1/)
+assert.match(generateSummary, /start_google_admin_summary_window_operation_v1/)
+assert.match(generateSummary, /claim_google_ai_provider_dispatch_v1/)
+assert.match(
+  generateSummary,
+  /complete_google_admin_summary_window_operation_v1/,
+)
+assert.match(generateSummary, /fail_google_admin_summary_window_operation_v1/)
+assert.doesNotMatch(
+  generateSummary,
+  /\bbillingGrant\b|\bidempotencyKey\b/,
+  'summary windows never accept a reusable run-level billing grant',
+)
+assert.match(
+  generateSummary,
+  /body\.preflightRequestId !== undefined[\s\S]*body\.grantRequestId !== undefined[\s\S]*body\.startRequestId !== undefined/,
+  'legacy summary requests reject Google per-window request identifiers',
+)
+assert.match(
+  generateSummary,
+  /pdf_max_page_number:[\s\S]*Math\.max\([\s\S]*page\.pageNumber/,
+  'the Edge passes a bounded PDF page-range proof to both provider transactions',
+)
+assert.match(
+  generateSummary,
+  /JSON\.stringify\(providerRequestBody\)[\s\S]*sha256Hex\(serializedProviderBody\)[\s\S]*start_google_admin_summary_window_operation_v1[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*fetch\([\s\S]*body: serializedProviderBody/,
+  'the exact serialized provider payload is hashed, authorized, claimed and dispatched once',
+)
+assert.equal(
+  (
+    generateSummary.match(
+      /fetch\('https:\/\/api\.openai\.com\/v1\/responses'/g,
+    ) ?? []
+  ).length,
+  2,
+  'the dual transport keeps one Google fetch and the two-attempt legacy compatibility loop',
+)
+const googleSummaryBranch = generateSummary.slice(
+  generateSummary.indexOf('if (googleContext && googleRpcIdentity) {'),
+  generateSummary.indexOf(
+    'if (\n      transcript.characters < PHASE6_MIN_SOURCE_CHARACTERS',
+    generateSummary.indexOf('if (googleContext && googleRpcIdentity) {'),
+  ),
+)
+assert.doesNotMatch(
+  googleSummaryBranch,
+  /admin_record_summary_window_language/,
+  'Google language provenance is committed inside the typed start transaction',
+)
+assert.match(
+  googleSummaryBranch,
+  /ownsNewOperation = !started\.idempotentReplay[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*if \(!claim\.dispatchAllowed\)[\s\S]*operation_in_progress[\s\S]*ownsNewOperation = true/,
+  'a response-loss retry may recover one unclaimed summary start but never dispatch an existing claim twice',
+)
+assert.match(
+  googleSummaryBranch,
+  /providerWasDispatched = true[\s\S]*fetch\(/,
+  'summary failure accounting distinguishes pre-dispatch rollback from ambiguous provider work',
+)
+assert.match(
+  generateSummary,
+  /async function finishGoogleFailure[\s\S]*if \([\s\S]*!ownsNewOperation[\s\S]*providerWasDispatched[\s\S]*conservativeUnknownUsage[\s\S]*fail_google_admin_summary_window_operation_v1[\s\S]*catch \(error\)[\s\S]*await finishGoogleFailure\(code\)/,
+  'fresh-start, claim and provider failures converge through one typed settlement boundary',
+)
+
+assert.match(
+  databaseTypes,
+  /prepare_google_admin_summary_window_v1: \{[\s\S]*target_preflight_request_id|prepare_google_admin_summary_window_v1: \{[\s\S]*target_request_id: string[\s\S]*target_window_index: number[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /issue_google_summary_ai_child_grant_v1: \{[\s\S]*target_preflight_context_digest: string[\s\S]*target_preflight_request_id: string[\s\S]*target_request_id: string[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /start_google_admin_summary_window_operation_v1: \{[\s\S]*target_preflight_request_id: string[\s\S]*target_provider_payload_sha256: string[\s\S]*target_start_request_id: string[\s\S]*target_window_id: string[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /complete_google_admin_summary_window_operation_v1: \{[\s\S]*target_operation_id: string[\s\S]*target_quality_result: Json[\s\S]*target_start_request_id: string[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /fail_google_admin_summary_window_operation_v1: \{[\s\S]*target_operation_id: string[\s\S]*target_start_request_id: string[\s\S]*Returns: Json/,
+)
 assert.match(
   databaseTypes,
   /reap_stale_google_ai_provider_dispatches_v1: \{[\s\S]*job_limit\?: number[\s\S]*Returns: number/,
@@ -682,6 +1079,17 @@ for (const contract of [
   'exact provider start replay converges after admission gates turn OFF',
   'a legacy idempotency UUID collision cannot become dispatch-eligible C2 work',
   'direct Google child insert without immutable receipt is rejected',
+  'one due summary window prepares immutable source context without a child',
+  'unexpected raw source metadata fails closed before evidence insertion',
+  'rejected raw source metadata leaves no immutable evidence',
+  'summary output cannot be saved before an immutable dispatch claim',
+  'revoked completion never persists provider content and clears the window lane',
+  'recovery starts a fresh scheduler run after the revoked run is drained',
+  'stale summary dispatch is conservatively accounted and releases its window',
+  'context drift after a lost start response releases an unclaimed window',
+  'unclaimed recovery settles zero cost and leaves no dispatch authority',
+  'a recovered authorized retry saves its result without another MFA prompt',
+  'the recovered happy path settles accounting and publishes one result',
   'completion rechecks live Google authority without prompting for another MFA',
   'revoked completion accounts and closes work without saving provider content',
 ]) {

@@ -28,7 +28,11 @@ assert.doesNotMatch(migration, /grant execute on function public\.get_lecture_co
 assert.match(liveRepository, /scope = 'all'/)
 assert.match(historyPage, /historyScope === 'mine'/)
 assert.doesNotMatch(historyPage, /setInterval|setTimeout/)
-assert.equal((generate.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? []).length, 1)
+assert.equal(
+  (generate.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? []).length,
+  2,
+  'Google and legacy summary transports each own one bounded provider call site',
+)
 assert.doesNotMatch(qrComponent, /fetch\(|supabase|cloudflare|r2/i)
 
 assert.equal(normalizeStandardLectureCode(' 285463 '), '285463')
