@@ -6,7 +6,9 @@ gate evidence. Commit IDs identify the main implementation landmarks.
 ## 2026-08-12 - Phase 7.30F source/local Hosted/Human readiness contract
 
 - Added a closed redacted evidence schema/example, pure-local readiness
-  validator and operator-reviewed read-only SQL preflight. The only decisions
+  validator, postgres-owner-only
+  `private.get_phase7_30f_source_readiness_preflight_v1(uuid)` projection and
+  operator-reviewed read-only SQL preflight. The only decisions
   are `SOURCE_READY`, `HOLD` and `READY_FOR_SEPARATE_HOSTED_EXECUTION`;
   repository tooling cannot declare `Production PASS` or perform an external
   action.

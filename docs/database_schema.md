@@ -436,9 +436,16 @@ compatibility authority is a separate retirement boundary.
 
 ## 17. Phase 7.30F read-only evidence projection
 
-Phase F adds no migration, table, function, trigger, grant or policy. Its SQL
-artifact is a read-only staging evidence projection and is never invoked by
-repository CI. It preserves the exact 16-key advisory output of
+Phase F adds one observational migration,
+`20260812142023_phase7_30f_source_readiness_preflight.sql`, and one stable
+`SECURITY DEFINER` function,
+`private.get_phase7_30f_source_readiness_preflight_v1(uuid)`. EXECUTE is
+revoked from `PUBLIC`, `anon`, `authenticated` and `service_role`, leaving it
+postgres-owner-only. It adds no table, trigger, runtime gate, receipt,
+application-role grant or policy and changes no active state. Its companion
+`scripts/phase7-30f-hosted-readonly-preflight.sql` is an operator-reviewed,
+read-only staging evidence projection and is never invoked against Hosted by
+repository CI. The projection preserves the exact 16-key advisory output of
 `private.get_google_only_admin_cutover_preflight_v1(uuid)` and supplements it
 with bounded direct observations for the legacy-login gate, invalid active
 ownership, immutable cutover receipt/digest agreement, legacy-verifier ACL,
@@ -456,10 +463,16 @@ The current historical billing admission inventory has six functions:
 | -------- | ----------------- |
 | `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)` | existence, owner, language, security and effective EXECUTE metadata only |
 | `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)` | same; current compatibility wrapper is not invoked |
-| `private.authorize_ai_master(uuid,uuid,text,text,boolean)` | same; current private compatibility body is not invoked |
+| `private.consume_ai_billing_grant_and_start_operations(uuid,text,uuid,jsonb,text)` | same; current direct consumer is not invoked |
+| `public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)` | same; current direct consumer wrapper is not invoked |
 | `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)` | same; current service wrapper is not invoked |
-| `private.issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` | same; current private compatibility body is not invoked |
 | `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` | same; current service wrapper is not invoked |
+
+The C1 migration already revoked `service_role` EXECUTE from the retained
+private master implementations, so they are outside this exact effective-six
+inventory. Each listed function is reported under the matching
+`legacyBillingAcl` key with `publicExecute`, `anonExecute`,
+`authenticatedExecute` and `serviceRoleExecute` booleans.
 
 Any runtime-reachable historical admission remains a Production `HOLD`.
 Revoking or dropping these paths belongs to a later separately reviewed

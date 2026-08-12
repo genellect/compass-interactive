@@ -480,14 +480,23 @@ directory deletion does not authorize that operator action.
 
 ## 19. Phase 7.30F evidence and execution boundary
 
-Phase F adds no browser authority and no database object. Its source layer is a
-pure-local trust boundary around a closed redacted JSON manifest, a synthetic
-example, a deterministic validator and operator-reviewed read-only SQL text.
+Phase F adds no browser or runtime authority. Its only database object is the
+postgres-owner read-only projection
+`private.get_phase7_30f_source_readiness_preflight_v1(uuid)` from
+`20260812142023_phase7_30f_source_readiness_preflight.sql`; application roles
+receive no EXECUTE grant and no gate, receipt or active state changes. Its
+source layer is a pure-local trust boundary around a closed redacted JSON
+manifest, a synthetic example, a deterministic validator and
+operator-reviewed read-only SQL text.
 The validator reads one file, performs no network, child process, database or
 filesystem write, rejects secret/identity-shaped data and defaults to `HOLD`.
 Source consistency may be `SOURCE_READY`; the highest next-step decision is
 `READY_FOR_SEPARATE_HOSTED_EXECUTION`. `Production PASS` is outside the output
-domain.
+domain. The maximum decision is possible only for an internally consistent
+complete staging dossier containing already separately approved Hosted/Human
+observations. It means the next separately approved step may be requested; the
+local validator neither queries nor independently proves the supplied external
+state.
 
 The evidence architecture keeps source, deployment, OAuth metadata, secret
 name/presence metadata, `preCutover`, `postCutover`, Human scenario results,

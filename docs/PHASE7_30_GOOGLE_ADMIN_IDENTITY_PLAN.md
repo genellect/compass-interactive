@@ -99,9 +99,11 @@ billing compatibility retirement, AI Passkey and every Hosted activation
 remain HOLD. F now supplies the source/local evidence format, strict
 secret-rejecting validator, read-only preflight, approval separation and
 Google-only rollback checklist. It never performs an external action, and its
-highest local decision is `READY_FOR_SEPARATE_HOSTED_EXECUTION`, not a Hosted or
-Production result. The source implementation adds no recurring fixed-cost
-dependency.
+highest local decision is `READY_FOR_SEPARATE_HOSTED_EXECUTION`: a complete,
+separately collected staging dossier may request the next separately approved
+step, but the validator does not query or independently prove Hosted state and
+this is not a Production result. The source implementation adds no recurring
+fixed-cost dependency.
 
 ## Outcome
 
@@ -684,7 +686,8 @@ The F source/local subgate uses only `SOURCE_READY`, `HOLD` and
 source-only manifest remains `HOLD`. Staging Hosted mutation, OAuth/provider
 configuration, Human identity tests, E cutover, `ADMIN_PIN` deletion,
 historical billing retirement, `BILLING_PIN` deletion and limited canary each
-require a distinct approval. The exact evidence checklist and rollback
+require a distinct approval; Production activation remains its own later HOLD.
+The exact evidence checklist and rollback
 boundary are recorded in
 [`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 

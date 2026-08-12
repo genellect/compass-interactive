@@ -519,13 +519,45 @@ for (const requiredText of [
   'HOLD',
   'READY_FOR_SEPARATE_HOSTED_EXECUTION',
   '`preCutover` and `postCutover`',
+  '`SOURCE_READINESS_EXAMPLE`',
+  '`HOSTED_HUMAN_STAGING`',
+  '`legacyPinLoginEnabled`',
+  '`configuration.environment`',
+  '`configuration.frontendFlags`',
+  '`configuration.serverFlags`',
+  '`configuration.databaseGates`',
+  '`configuration.secretInventory`',
+  '`sourceEvidence`',
+  '`hostedEvidence`',
+  '`humanEvidence`',
+  '`regressionEvidence`',
+  '`rollbackEvidence`',
+  '`independentReview`',
+  '`independentReview.separateFromExecutor`',
+  '`evidenceDigestSha256`, `state` and `recordedAt`',
+  'cannot infer them from the digest',
+  'next separately approved external step',
+  'all corresponding frontend and server flags are true',
+  'positive integer `version` and Boolean `verifyJwt`',
   'six read-only evidence paths',
-  '`staging_hosted_mutation`',
-  '`phase7_30e_identity_cutover`',
-  '`admin_pin_secret_deletion`',
-  '`billing_compatibility_retirement`',
-  '`billing_pin_secret_deletion`',
-  '`limited_identity_canary`',
+  'exact 29-key flat snapshot',
+  '`cutoverReceiptDeploymentEvidenceDigestMatches`',
+  '`legacyGateTombstoneEnabled`',
+  '`legacySessionFenceEnabled`',
+  '`activeLectureOwnershipFenceEnabled`',
+  '`/.phase7-30f-evidence*.json`',
+  '`supabase/migrations/20260812142023_phase7_30f_source_readiness_preflight.sql`',
+  '`supabase/tests/phase7_30f_source_readiness_preflight_test.sql`',
+  '`private.get_phase7_30f_source_readiness_preflight_v1(uuid)`',
+  '`stagingHostedMutation`',
+  '`oauthProviderConfiguration`',
+  '`stagingHumanIdentityRun`',
+  '`googleOnlyCutover`',
+  '`adminPinSecretDeletion`',
+  '`legacyBillingAuthorityRetirement`',
+  '`billingPinSecretDeletion`',
+  '`limitedIdentityCanary`',
+  '`productionActivation`',
   'rollback never restores `ADMIN_PIN`',
 ]) {
   assert.ok(
@@ -549,6 +581,32 @@ for (const functionName of [
   assert.ok(
     hostedHumanReadiness.includes(functionName),
     `Phase 7.30F billing inventory missing: ${functionName}`,
+  )
+}
+for (const aclField of [
+  'publicAdminIssueAiBillingGrant',
+  'privateIssueAiBillingGrant',
+  'publicAdminConsumeAiBillingGrant',
+  'privateConsumeAiBillingGrantAndStartOperations',
+  'publicAdminAuthorizeAiMaster',
+  'publicAdminIssueAiBillingGrantFromMaster',
+  'publicExecute',
+  'anonExecute',
+  'authenticatedExecute',
+  'serviceRoleExecute',
+]) {
+  assert.ok(
+    hostedHumanReadiness.includes(aclField),
+    `Phase 7.30F billing ACL contract missing: ${aclField}`,
+  )
+}
+for (const nonEffectivePrivateMaster of [
+  'private.authorize_ai_master(uuid,uuid,text,text,boolean)',
+  'private.issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)',
+]) {
+  assert.ok(
+    !hostedHumanReadiness.includes(nonEffectivePrivateMaster),
+    `Phase 7.30F must not count revoked private master ACL: ${nonEffectivePrivateMaster}`,
   )
 }
 for (const retiredName of [

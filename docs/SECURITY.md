@@ -529,15 +529,22 @@ activation remain HOLD regardless of repository CI status.
   network, database, child-process, deployment, secret-management or approval
   capability. It emits only `SOURCE_READY`, `HOLD` or
   `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is invalid.
+- The source example keeps frontend/server flags OFF and only the legacy-login
+  database gate true. A complete staging dossier instead records separately
+  approved frontend/server flags and post-cutover database gates ON, with
+  legacy login OFF and every corresponding value equal. These are untrusted
+  evidence inputs until independent review; the validator does not query or
+  independently prove Hosted state.
 - The closed manifest rejects unknown/missing fields, Production/contest
   targets, inconsistent pre/post-cutover claims and secret/identity-shaped
   keys or values. JWTs, bearer strings, PEM, service-role, OAuth secret/token,
   raw PIN, TOTP, recovery material, project refs, real domains, email, user IDs
   and database dumps never enter evidence, logs, Git, PRs or CI artifacts.
-- Function evidence contains only name, immutable revision digest,
-  JWT-verification posture and timestamp. Secret evidence contains only the
-  secret name, presence/absence, rotation-state metadata and timestamp; never
-  a value or value digest.
+- Each function-inventory entry contains exactly `name`, positive integer
+  `version` and Boolean `verifyJwt`; immutable revision and deployment-evidence
+  digests live at the enclosing Hosted evidence level. Secret evidence contains
+  only the secret name, presence/absence, rotation-state metadata and timestamp;
+  never a value or value digest.
 - `preCutover` preserves the E advisory function's exact non-authoritative
   16-key result and separate direct safety observations. `postCutover` is a
   distinct observation after separately approved execution and must agree with

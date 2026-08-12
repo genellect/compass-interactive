@@ -68,7 +68,10 @@ separation. It does not execute the SQL, contact a Hosted environment, inspect
 an OAuth client, enroll a Human account, invoke the E cutover, delete a secret,
 retire billing authority or enable a canary. Its highest possible readiness
 word is `READY_FOR_SEPARATE_HOSTED_EXECUTION`; CI cannot produce
-`Production PASS`.
+`Production PASS`. A source-only CI/example input remains `HOLD`. The maximum
+word applies only when the offline validator receives a complete dossier of
+separately approved staging observations; it checks consistency but neither
+collects nor independently proves them.
 
 4. **Presenter Bridge Windows x64 build and tests** restores and builds the .NET
    solution for x64, then runs the Core/loopback/security tests.

@@ -63,13 +63,17 @@ schema, synthetic example, pure-local validator, read-only SQL text,
 production-environment metadata checks and documentation. It may report only
 `SOURCE_READY`, `HOLD` or `READY_FOR_SEPARATE_HOSTED_EXECUTION`;
 `Production PASS` is prohibited. No-argument validation remains `HOLD`, and a source-only
-example never authorizes an external action.
+example never authorizes an external action. The maximum decision requires a
+complete, separately collected staging dossier and means only that the next
+separate approval may be requested; local evaluation does not prove external
+state.
 
 Hosted and Human work is a new Ultra task with an independent reviewer and a
 fresh user approval. Stop separately before staging mutation, OAuth/provider
 configuration, Human identity testing, the E operator cutover, `ADMIN_PIN`
 deletion, historical billing retirement, `BILLING_PIN` deletion and limited
-identity canary. The six historical billing admission functions are
+identity canary. Production activation is another later approval and remains
+`HOLD`. The six historical billing admission functions are
 read-only evidence in this tranche; the agent must not revoke or drop them.
 The exact contract is
 [`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).

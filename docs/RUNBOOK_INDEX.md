@@ -269,10 +269,22 @@ Local writer while browser mode is active.
   decision is `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is not a
   valid output. It rejects Production/contest targets and any project ref,
   domain, email, user ID, credential, PIN, token or recovery material.
+- Source-only evidence keeps frontend/server and new database activation OFF
+  while legacy login remains true. Complete staging evidence records only
+  separately approved ON-state observations (legacy login OFF), requires the
+  corresponding frontend/server/post-DB values to match and can request only
+  the next separately approved step; validation itself proves no Hosted state.
 - `scripts/phase7-30f-hosted-readonly-preflight.sql` is an operator-reviewed
   staging evidence query, not an automated CI or cutover command. It keeps
   `preCutover` and `postCutover` distinct and inventories all six historical
   billing admission functions without revoking them.
+- `private.get_phase7_30f_source_readiness_preflight_v1(uuid)` is the
+  postgres-owner-only raw projection installed by
+  `20260812142023_phase7_30f_source_readiness_preflight.sql`; `PUBLIC`, `anon`,
+  `authenticated` and `service_role` cannot execute it. Raw operator output is
+  never a tracked manifest. Store the redacted private manifest only at the
+  repository-root ignored name `.phase7-30f-evidence*.json` and never force-add
+  or upload it.
 - Stop for separate approval before each staging mutation, OAuth/provider
   configuration, Human identity run, E cutover, `ADMIN_PIN` deletion, billing
   compatibility retirement, `BILLING_PIN` deletion and limited identity
