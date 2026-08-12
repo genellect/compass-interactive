@@ -392,11 +392,18 @@ export function isPhase730FEnvironmentAlias(candidate) {
 }
 
 export function isPhase730FIsoTimestamp(candidate) {
-  return (
-    typeof candidate === 'string' &&
-    phase730FIsoTimestampRegex.test(candidate) &&
-    !Number.isNaN(Date.parse(candidate))
-  )
+  if (
+    typeof candidate !== 'string' ||
+    !phase730FIsoTimestampRegex.test(candidate)
+  ) {
+    return false
+  }
+  const parsed = new Date(candidate)
+  if (Number.isNaN(parsed.getTime())) return false
+  const canonical = candidate.includes('.')
+    ? candidate
+    : candidate.replace(/Z$/, '.000Z')
+  return parsed.toISOString() === canonical
 }
 
 /**

@@ -303,6 +303,16 @@ assert.match(
     ...phase730FMetadata,
     environment: {
       ...phase730FMetadata.environment,
+      capturedAt: '2026-02-31T00:00:00Z',
+    },
+  }).join('\n'),
+  /capturedAt must be null or an ISO UTC timestamp/,
+)
+assert.match(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    environment: {
+      ...phase730FMetadata.environment,
       capturedAt: null,
       environmentIdConfigured: true,
     },

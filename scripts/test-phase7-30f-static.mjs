@@ -183,6 +183,9 @@ assert.deepEqual(
 )
 assert.equal(isPhase730FIsoTimestamp('2026-08-12T14:00:00.123Z'), true)
 assert.equal(isPhase730FIsoTimestamp('2026-08-12T14:00:00.1Z'), false)
+assert.equal(isPhase730FIsoTimestamp('2024-02-29T14:00:00Z'), true)
+assert.equal(isPhase730FIsoTimestamp('2025-02-29T14:00:00Z'), false)
+assert.equal(isPhase730FIsoTimestamp('2026-02-31T14:00:00Z'), false)
 
 const invalidAliasEvidence = clone(fixture)
 invalidAliasEvidence.configuration.environment.alias = 'abc'
@@ -203,6 +206,14 @@ invalidFractionEvidence.generatedAt = '2026-08-12T14:00:00.1Z'
 assert.ok(
   validatePhase730FEvidence(invalidFractionEvidence).some(
     (error) => error.code === 'SCHEMA_PATTERN',
+  ),
+)
+
+const invalidCalendarEvidence = clone(fixture)
+invalidCalendarEvidence.generatedAt = '2026-02-31T14:00:00Z'
+assert.ok(
+  validatePhase730FEvidence(invalidCalendarEvidence).some(
+    (error) => error.code === 'SCHEMA_DATETIME',
   ),
 )
 

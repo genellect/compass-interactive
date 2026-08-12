@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   isPhase730FEnvironmentAlias,
+  isPhase730FIsoTimestamp,
   phase730FSecretInventoryNames,
 } from './productionEnvironment.mjs'
 
@@ -324,7 +325,7 @@ function validateSchemaNode(value, node, path, errors, root) {
     if (node.pattern && !new RegExp(node.pattern, 'u').test(value)) {
       errors.push(issue('SCHEMA_PATTERN', path, 'String format is invalid.'))
     }
-    if (node.format === 'date-time' && Number.isNaN(Date.parse(value))) {
+    if (node.format === 'date-time' && !isPhase730FIsoTimestamp(value)) {
       errors.push(issue('SCHEMA_DATETIME', path, 'Timestamp is invalid.'))
     }
   }
