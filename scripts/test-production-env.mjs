@@ -267,6 +267,48 @@ const phase730FMetadata = {
 }
 
 assert.deepEqual(validatePhase730FReadinessMetadata(phase730FMetadata), [])
+assert.deepEqual(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    environment: {
+      ...phase730FMetadata.environment,
+      alias: `staging-${'a'.repeat(32)}`,
+      capturedAt: '2026-08-12T00:00:00.123Z',
+    },
+  }),
+  [],
+)
+assert.match(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    environment: {
+      ...phase730FMetadata.environment,
+      alias: 'abc',
+    },
+  }).join('\n'),
+  /alias must be a non-secret staging alias/,
+)
+assert.match(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    environment: {
+      ...phase730FMetadata.environment,
+      capturedAt: '2026-08-12T00:00:00.1Z',
+    },
+  }).join('\n'),
+  /capturedAt must be null or an ISO UTC timestamp/,
+)
+assert.match(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    environment: {
+      ...phase730FMetadata.environment,
+      capturedAt: null,
+      environmentIdConfigured: true,
+    },
+  }).join('\n'),
+  /capturedAt must be an ISO UTC timestamp when an environment ID was observed/,
+)
 assert.match(
   validatePhase730FReadinessMetadata({
     ...phase730FMetadata,

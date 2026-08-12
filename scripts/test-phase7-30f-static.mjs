@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -10,6 +10,17 @@ import {
   parsePhase730FEvidence,
   validatePhase730FEvidence,
 } from './phase7-30f-readiness.mjs'
+import {
+  isPhase730FEnvironmentAlias,
+  isPhase730FIsoTimestamp,
+  phase730FDatabaseGateNames,
+  phase730FEnvironmentAliasPattern,
+  phase730FFrontendFlagNames,
+  phase730FIsoTimestampPattern,
+  phase730FSecretInventoryNames,
+  phase730FServerFlagNames,
+  validatePhase730FReadinessMetadata,
+} from './productionEnvironment.mjs'
 
 const read = (path) =>
   readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -104,6 +115,16 @@ assert.deepEqual(Object.keys(schema.$defs.environment.properties).sort(), [
   'sourceCommitSha',
   'target',
 ])
+assert.equal(
+  schema.$defs.environment.properties.alias.pattern,
+  phase730FEnvironmentAliasPattern,
+)
+assert.equal(schema.$defs.environment.properties.alias.maxLength, 40)
+assert.equal(schema.$defs.dateTime.pattern, phase730FIsoTimestampPattern)
+assert.equal(
+  schema.$defs.nullableDateTime.pattern,
+  phase730FIsoTimestampPattern,
+)
 assert.deepEqual(Object.keys(schema.$defs.databaseGates.properties).sort(), [
   'aiUnlockEnabled',
   'googleAdminLedgerEnabled',
@@ -115,6 +136,75 @@ assert.deepEqual(Object.keys(schema.$defs.databaseGates.properties).sort(), [
   'rememberedBrowserEnabled',
   'totpFactorMutationEnabled',
 ])
+assert.deepEqual(
+  Object.keys(schema.$defs.frontendFlags.properties).sort(),
+  [...phase730FFrontendFlagNames].sort(),
+)
+assert.deepEqual(
+  Object.keys(schema.$defs.serverFlags.properties).sort(),
+  [...phase730FServerFlagNames].sort(),
+)
+assert.deepEqual(
+  Object.keys(schema.$defs.databaseGates.properties).sort(),
+  [...phase730FDatabaseGateNames].sort(),
+)
+assert.deepEqual(
+  fixture.configuration.secretInventory.captured
+    ? fixture.configuration.secretInventory.entries
+        .map(({ name }) => name)
+        .sort()
+    : [],
+  [],
+)
+assert.deepEqual(
+  validatePhase730FReadinessMetadata(fixture.configuration),
+  [],
+  'the tracked source-only evidence configuration must match the shared metadata contract',
+)
+assert.equal(phase730FSecretInventoryNames.length, 10)
+assert.equal(
+  schema.$defs.secretInventory.properties.entries.maxItems,
+  phase730FSecretInventoryNames.length,
+)
+assert.deepEqual(
+  [...schema.$defs.secretInventoryEntry.properties.name.enum].sort(),
+  [...phase730FSecretInventoryNames].sort(),
+)
+
+const maximumSafeAlias = `staging-${'a'.repeat(32)}`
+assert.equal(maximumSafeAlias.length, 40)
+assert.equal(isPhase730FEnvironmentAlias(maximumSafeAlias), true)
+const maximumAliasEvidence = clone(fixture)
+maximumAliasEvidence.configuration.environment.alias = maximumSafeAlias
+assert.deepEqual(validatePhase730FEvidence(maximumAliasEvidence), [])
+assert.deepEqual(
+  validatePhase730FReadinessMetadata(maximumAliasEvidence.configuration),
+  [],
+)
+assert.equal(isPhase730FIsoTimestamp('2026-08-12T14:00:00.123Z'), true)
+assert.equal(isPhase730FIsoTimestamp('2026-08-12T14:00:00.1Z'), false)
+
+const invalidAliasEvidence = clone(fixture)
+invalidAliasEvidence.configuration.environment.alias = 'abc'
+assert.ok(
+  validatePhase730FEvidence(invalidAliasEvidence).some(
+    (error) => error.code === 'SCHEMA_PATTERN',
+  ),
+)
+assert.match(
+  validatePhase730FReadinessMetadata(invalidAliasEvidence.configuration).join(
+    '\n',
+  ),
+  /alias must be a non-secret staging alias/,
+)
+
+const invalidFractionEvidence = clone(fixture)
+invalidFractionEvidence.generatedAt = '2026-08-12T14:00:00.1Z'
+assert.ok(
+  validatePhase730FEvidence(invalidFractionEvidence).some(
+    (error) => error.code === 'SCHEMA_PATTERN',
+  ),
+)
 
 const ePreflightKeys = [
   'activeLegacyMasterCount',
@@ -372,7 +462,7 @@ complete.configuration.databaseGates = {
 }
 complete.configuration.secretInventory = {
   captured: true,
-  capturedAt: '2026-08-12T14:03:00Z',
+  capturedAt: '2026-08-12T14:05:00Z',
   entries: [
     'ADMIN_AI_BROWSER_CHALLENGE_SECRET',
     'ADMIN_AI_CHILD_GRANT_SECRET',
@@ -491,6 +581,31 @@ assert.equal(completeResult.decision, PHASE730F_MAXIMUM_DECISION)
 assert.equal(completeResult.productionAuthorized, false)
 assert.equal(completeResult.canaryAuthorized, false)
 
+const unreviewedSecretName = clone(complete)
+unreviewedSecretName.configuration.secretInventory.entries.push({
+  name: 'UNREVIEWED_EXTRA_SECRET',
+  present: false,
+  minimumBytesSatisfied: null,
+  rotationVersion: null,
+  rotatedAt: null,
+})
+const unreviewedSecretErrors = validatePhase730FEvidence(unreviewedSecretName)
+assert.ok(
+  unreviewedSecretErrors.some(
+    (error) =>
+      error.code === 'SCHEMA_ARRAY_LENGTH' || error.code === 'SCHEMA_ENUM',
+  ),
+)
+
+const duplicatedSecretName = clone(complete)
+duplicatedSecretName.configuration.secretInventory.entries.at(-1).name =
+  'ADMIN_PIN'
+assert.ok(
+  validatePhase730FEvidence(duplicatedSecretName).some(
+    (error) => error.code === 'SECRET_INVENTORY_SET_MISMATCH',
+  ),
+)
+
 const mismatchedHostedTopology = clone(complete)
 mismatchedHostedTopology.configuration.serverFlags.PHASE730_ADMIN_IDENTITY_ENABLED = false
 assert.ok(
@@ -561,6 +676,16 @@ assert.ok(
   ),
 )
 
+const secretInventoryBeforePostCutover = clone(complete)
+secretInventoryBeforePostCutover.configuration.secretInventory.capturedAt =
+  '2026-08-12T14:03:00Z'
+assert.ok(
+  validatePhase730FEvidence(secretInventoryBeforePostCutover).some(
+    (error) => error.code === 'SECRET_INVENTORY_PRECEDES_POST_CUTOVER',
+  ),
+  'secret-deletion evidence must not predate the post-cutover snapshot',
+)
+
 const validatorPath = fileURLToPath(
   new URL('./phase7-30f-readiness.mjs', import.meta.url),
 )
@@ -611,31 +736,75 @@ assert.deepEqual(JSON.parse(missingEvidenceCli.stdout).errors, [
   { code: 'EVIDENCE_PARSE_FAILED', path: '$' },
 ])
 
-// Root integrates the SQL artifact in parallel. These assertions activate as
-// soon as that file exists and keep this validator test independent until then.
-const preflightUrl = new URL(
-  './phase7-30f-hosted-readonly-preflight.sql',
-  import.meta.url,
+const preflightSql = read('scripts/phase7-30f-hosted-readonly-preflight.sql')
+const preflightMigration = read(
+  'supabase/migrations/20260812142023_phase7_30f_source_readiness_preflight.sql',
 )
-if (existsSync(preflightUrl)) {
-  const preflightSql = readFileSync(preflightUrl, 'utf8')
-  assert.match(preflightSql, /begin[\s\S]*transaction[\s\S]*read only/i)
-  assert.match(preflightSql, /rollback\s*;/i)
-  assert.match(preflightSql, /get_google_only_admin_cutover_preflight_v1/i)
-  for (const key of ePreflightKeys) {
-    assert.ok(preflightSql.includes(key), `read-only SQL must emit ${key}`)
-  }
-  for (const pattern of [
-    /legacyPinLoginEnabled/,
-    /invalidActiveOwnershipCount/,
-    /cutoverReceiptDeploymentEvidenceDigestMatches/,
-    /legacyVerifierServiceRoleExecute/,
-    /legacyGateTombstoneEnabled/,
-    /legacySessionFenceEnabled/,
-    /activeLectureOwnershipFenceEnabled/,
-  ]) {
-    assert.match(preflightSql, pattern)
-  }
+const preflightPgTap = read(
+  'supabase/tests/phase7_30f_source_readiness_preflight_test.sql',
+)
+const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
+const populatedUpgradeProbe = read(
+  'scripts/fixtures/phase7-30f-e-head-upgrade-probe-test.sql',
+)
+assert.match(preflightSql, /begin[\s\S]*transaction[\s\S]*read only/i)
+assert.match(preflightSql, /rollback\s*;/i)
+assert.match(preflightSql, /get_google_only_admin_cutover_preflight_v1/i)
+assert.match(
+  preflightSql,
+  /1\s*\/\s*case[\s\S]*environmentKind[\s\S]*=\s*'staging'[\s\S]*else\s+0[\s\S]*staging_validated/i,
+  'operator SQL must fail closed when the authoritative database environment is not staging',
+)
+for (const key of ePreflightKeys) {
+  assert.ok(preflightSql.includes(key), `read-only SQL must emit ${key}`)
+}
+for (const pattern of [
+  /legacyPinLoginEnabled/,
+  /invalidActiveOwnershipCount/,
+  /cutoverReceiptDeploymentEvidenceDigestMatches/,
+  /legacyVerifierServiceRoleExecute/,
+  /legacyGateTombstoneEnabled/,
+  /legacySessionFenceEnabled/,
+  /activeLectureOwnershipFenceEnabled/,
+]) {
+  assert.match(preflightSql, pattern)
+}
+assert.match(
+  preflightMigration,
+  /create function private\.get_phase7_30f_source_readiness_preflight_v1\([\s\S]*?language sql[\s\S]*?stable[\s\S]*?security definer[\s\S]*?set search_path = ''/i,
+)
+assert.match(
+  preflightMigration,
+  /revoke all on function private\.get_phase7_30f_source_readiness_preflight_v1\(uuid\)[\s\S]*?from public, anon, authenticated, service_role/i,
+)
+assert.doesNotMatch(
+  preflightMigration,
+  /\b(?:insert\s+into|update\s+private\.|delete\s+from|grant\s+execute)\b/i,
+  'the Phase 7.30F migration must remain observational and operator-only',
+)
+for (const key of Object.keys(schema.$defs.legacyBillingAcl.properties)) {
+  assert.ok(preflightMigration.includes(`'${key}'`))
+  assert.ok(preflightPgTap.includes(`'${key}'`))
+}
+assert.match(
+  preflightPgTap,
+  /SELECT no_plan\(\)[\s\S]*SELECT \* FROM finish\(\)[\s\S]*ROLLBACK;/i,
+)
+assert.match(
+  upgradeRunner,
+  /phase7-30e-d-head-upgrade-probe-test\.sql[\s\S]*phase7-30f-e-head-upgrade-probe-test\.sql/,
+  'the populated D-to-E upgrade must run the F-specific probe before reset',
+)
+for (const pattern of [
+  /get_phase7_30f_source_readiness_preflight_v1/,
+  /activeOwnerCount/,
+  /activeApprovedTotpPrincipalCount/,
+  /activeGoogleSessionCount/,
+  /legacyBillingCompatibilityRetired/,
+  /legacyGateTombstoneEnabled/,
+  /the populated Phase 7\.30F preflight call is observational/,
+]) {
+  assert.match(populatedUpgradeProbe, pattern)
 }
 
 process.stdout.write('Phase 7.30F readiness static contract: PASS\n')

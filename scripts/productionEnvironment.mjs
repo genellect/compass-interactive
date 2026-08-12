@@ -71,6 +71,16 @@ export const phase730FSecretInventoryNames = [
   'BILLING_PIN',
 ]
 
+export const phase730FEnvironmentAliasPattern =
+  '^staging-[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$'
+export const phase730FIsoTimestampPattern =
+  '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$'
+
+const phase730FEnvironmentAliasRegex = new RegExp(
+  phase730FEnvironmentAliasPattern,
+)
+const phase730FIsoTimestampRegex = new RegExp(phase730FIsoTimestampPattern)
+
 const phase730FForbiddenSecretNames = new Set(['ADMIN_PIN', 'BILLING_PIN'])
 
 const forbiddenPublicNames = [
@@ -372,10 +382,19 @@ function rejectUnknownKeys(errors, candidate, allowedKeys, path) {
   return true
 }
 
-function isIsoTimestamp(candidate) {
+export function isPhase730FEnvironmentAlias(candidate) {
   return (
     typeof candidate === 'string' &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(candidate) &&
+    candidate.length >= 10 &&
+    candidate.length <= 40 &&
+    phase730FEnvironmentAliasRegex.test(candidate)
+  )
+}
+
+export function isPhase730FIsoTimestamp(candidate) {
+  return (
+    typeof candidate === 'string' &&
+    phase730FIsoTimestampRegex.test(candidate) &&
     !Number.isNaN(Date.parse(candidate))
   )
 }
@@ -423,10 +442,7 @@ export function validatePhase730FReadinessMetadata(configuration) {
     if (environment.target !== 'staging') {
       errors.push('configuration.environment.target must be staging.')
     }
-    if (
-      typeof environment.alias !== 'string' ||
-      !/^[a-z][a-z0-9-]{2,39}$/.test(environment.alias)
-    ) {
+    if (!isPhase730FEnvironmentAlias(environment.alias)) {
       errors.push(
         'configuration.environment.alias must be a non-secret staging alias.',
       )
@@ -436,9 +452,20 @@ export function validatePhase730FReadinessMetadata(configuration) {
         'configuration.environment.sourceCommitSha must be an exact 40-hex commit SHA.',
       )
     }
-    if (!isIsoTimestamp(environment.capturedAt)) {
+    if (
+      environment.capturedAt !== null &&
+      !isPhase730FIsoTimestamp(environment.capturedAt)
+    ) {
       errors.push(
-        'configuration.environment.capturedAt must be an ISO UTC timestamp.',
+        'configuration.environment.capturedAt must be null or an ISO UTC timestamp.',
+      )
+    }
+    if (
+      environment.environmentIdConfigured === true &&
+      !isPhase730FIsoTimestamp(environment.capturedAt)
+    ) {
+      errors.push(
+        'configuration.environment.capturedAt must be an ISO UTC timestamp when an environment ID was observed.',
       )
     }
     if (typeof environment.environmentIdConfigured !== 'boolean') {
@@ -525,7 +552,7 @@ export function validatePhase730FReadinessMetadata(configuration) {
         )
       }
     } else if (secretInventory.captured === true) {
-      if (!isIsoTimestamp(secretInventory.capturedAt)) {
+      if (!isPhase730FIsoTimestamp(secretInventory.capturedAt)) {
         errors.push(
           'configuration.secretInventory.capturedAt must be an ISO UTC timestamp when captured.',
         )
@@ -576,7 +603,7 @@ export function validatePhase730FReadinessMetadata(configuration) {
           entry.minimumBytesSatisfied !== true ||
           !Number.isSafeInteger(entry.rotationVersion) ||
           entry.rotationVersion < 1 ||
-          !isIsoTimestamp(entry.rotatedAt)
+          !isPhase730FIsoTimestamp(entry.rotatedAt)
         ) {
           errors.push(
             `${path}.${entry.name} must be present with valid length and rotation metadata.`,

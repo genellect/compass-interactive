@@ -960,5 +960,23 @@ SELECT ok(
   'populated environment and nested E authority remain internally consistent'
 );
 
+SELECT throws_ok(
+  $$
+    WITH snapshot AS (
+      SELECT private.get_phase7_30f_source_readiness_preflight_v1(
+        '00000000-0000-4000-8000-00000000f101'::uuid
+      ) AS value
+    )
+    SELECT 1 / CASE
+      WHEN snapshot.value ->> 'environmentKind' = 'staging' THEN 1
+      ELSE 0
+    END
+    FROM snapshot
+  $$,
+  '22012',
+  'division by zero',
+  'the staging evidence guard rejects a non-staging database environment'
+);
+
 SELECT * FROM finish();
 ROLLBACK;

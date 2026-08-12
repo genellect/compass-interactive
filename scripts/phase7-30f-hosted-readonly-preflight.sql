@@ -40,6 +40,11 @@ with input as (
   -- reference visible so source/static evidence also proves this dependency.
   select
     raw_snapshot.*,
+    1 / case
+      when raw_snapshot.value ->> 'environmentKind' = 'staging'
+      then 1
+      else 0
+    end as staging_validated,
     raw_snapshot.value -> 'googleOnlyCutoverPreflight' as e_value,
     raw_snapshot.value -> 'identityRuntimeGate' as identity_value,
     raw_snapshot.value -> 'aiUnlockRuntimeGate' as ai_value,
@@ -127,6 +132,7 @@ select pg_catalog.jsonb_pretty(jsonb_build_object(
   )
 )) as phase730f_readiness_snapshot
 from e_preflight
-where e_preflight.validated = 1;
+where e_preflight.validated = 1
+  and e_preflight.staging_validated = 1;
 
 rollback;

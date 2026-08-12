@@ -2,6 +2,11 @@ import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {
+  isPhase730FEnvironmentAlias,
+  phase730FSecretInventoryNames,
+} from './productionEnvironment.mjs'
+
 export const PHASE730F_SCHEMA_VERSION = 'phase7-30f-readiness/v1'
 export const PHASE730F_HOLD = 'HOLD'
 export const PHASE730F_MAXIMUM_DECISION = 'READY_FOR_SEPARATE_HOSTED_EXECUTION'
@@ -52,18 +57,12 @@ const expectedFunctions = new Map([
 
 const retiredFunctions = new Set(['verify-admin-pin', 'authorize-ai-start'])
 
-const requiredPresentSecrets = new Set([
-  'ADMIN_AI_BROWSER_CHALLENGE_SECRET',
-  'ADMIN_AI_CHILD_GRANT_SECRET',
-  'ADMIN_AI_NETWORK_PEPPER',
-  'ADMIN_AI_PIN_PEPPER',
-  'ADMIN_IDENTITY_PEPPER',
-  'ADMIN_INVITATION_SECRET',
-  'ADMIN_SESSION_SECRET',
-  'SUPABASE_SERVICE_ROLE_KEY',
-])
-
 const requiredAbsentSecrets = new Set(['ADMIN_PIN', 'BILLING_PIN'])
+const requiredPresentSecrets = new Set(
+  phase730FSecretInventoryNames.filter(
+    (name) => !requiredAbsentSecrets.has(name),
+  ),
+)
 
 const regressionRecordNames = [
   'database',
@@ -438,6 +437,12 @@ function scanForSensitiveMaterial(value, path, errors, depth = 0) {
   }
   if (typeof value !== 'string') return
   if (
+    path === '$.configuration.environment.alias' &&
+    isPhase730FEnvironmentAlias(value)
+  ) {
+    return
+  }
+  if (
     /^\$\.configuration\.secretInventory\.entries\[[0-9]+\]\.name$/.test(
       path,
     ) &&
@@ -711,6 +716,19 @@ function validateSecretInventory(inventory, errors, generatedAt) {
       )
     }
   })
+  if (
+    inventory.entries.length !== phase730FSecretInventoryNames.length ||
+    names.size !== phase730FSecretInventoryNames.length ||
+    phase730FSecretInventoryNames.some((name) => !names.has(name))
+  ) {
+    errors.push(
+      issue(
+        'SECRET_INVENTORY_SET_MISMATCH',
+        '$.configuration.secretInventory.entries',
+        'Secret inventory must contain the exact approved metadata names.',
+      ),
+    )
+  }
 }
 
 function validateHostedEvidence(hosted, errors, generatedAt) {
@@ -1052,6 +1070,20 @@ function validateSemanticConsistency(evidence) {
         'CUTOVER_ORDER_INVALID',
         '$.postCutover',
         'Post snapshot must follow pre snapshot.',
+      ),
+    )
+  }
+  if (
+    evidence.postCutover.capturedAt &&
+    evidence.configuration.secretInventory.capturedAt &&
+    Date.parse(evidence.postCutover.capturedAt) >
+      Date.parse(evidence.configuration.secretInventory.capturedAt)
+  ) {
+    errors.push(
+      issue(
+        'SECRET_INVENTORY_PRECEDES_POST_CUTOVER',
+        '$.configuration.secretInventory',
+        'Secret-deletion inventory must not precede post-cutover evidence.',
       ),
     )
   }
@@ -1398,6 +1430,13 @@ function secretInventoryReady(inventory) {
   const observed = new Map(
     inventory.entries.map((entry) => [entry.name, entry]),
   )
+  if (
+    inventory.entries.length !== phase730FSecretInventoryNames.length ||
+    observed.size !== phase730FSecretInventoryNames.length ||
+    phase730FSecretInventoryNames.some((name) => !observed.has(name))
+  ) {
+    return false
+  }
   for (const name of requiredPresentSecrets) {
     const entry = observed.get(name)
     if (
