@@ -760,6 +760,7 @@ begin
         )
         or (
           invitation.invitation_kind = 'invitation'
+          and gate_row.google_admin_ledger_enabled is true
           and invitation.token_hash = target_invitation_token_hash
           and invitation.target_normalized_email is not null
           and invitation.target_email_pepper_version is not null
@@ -1795,6 +1796,7 @@ begin
   end if;
 
   return jsonb_build_object(
+    'ok', true,
     'controlStepUpAction', context_value ->> 'control_step_up_action',
     'intentDigest', intent_digest_value,
     'operationKey', operation_key_value,

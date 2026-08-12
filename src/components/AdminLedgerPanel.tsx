@@ -366,10 +366,11 @@ export function AdminLedgerPanel({
 
       clearPendingMutation()
       setMessage('管理台帳を更新しました。')
-      await refresh()
       if (currentMembershipChanged || currentSessionRevoked) {
         await onReloginRequired()
+        return
       }
+      await refresh()
     } catch (error) {
       if (error instanceof AdminLedgerError && error.code === 'state_changed') {
         clearPendingMutation()

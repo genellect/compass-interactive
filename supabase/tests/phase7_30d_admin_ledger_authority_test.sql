@@ -531,7 +531,7 @@ SELECT ok(
       (SELECT value FROM d_values WHERE name = 'issue_payload')
     )::text,
     false
-  ) <> '',
+  )::jsonb @> '{"ok":true}'::jsonb,
   'the enabled ledger prepares an invitation intent'
 );
 RESET ROLE;
@@ -599,7 +599,55 @@ SELECT throws_ok(
   'Admin ledger request binding does not match its receipt',
   'the same request ID cannot be rebound to changed invitation authority'
 );
+RESET ROLE;
 
+UPDATE private.admin_identity_runtime_gate
+SET google_admin_ledger_enabled = false
+WHERE singleton;
+
+SET ROLE service_role;
+SELECT is(
+  public.consume_admin_identity_admission_v1(
+    '00000000-0000-4000-8000-00000000d101'::uuid,
+    '00000000-0000-4000-8000-00000000d122'::uuid,
+    'https://accounts.google.com', repeat('c', 64), 1,
+    'phase730d-invitee@example.test', repeat('d', 64),
+    'Phase 7.30D Invitee',
+    '00000000-0000-4000-8000-00000000d202'::uuid,
+    repeat('e', 64)
+  ),
+  '{"eligible":false}'::jsonb,
+  'the ledger kill switch rejects a pending D invitation'
+);
+RESET ROLE;
+
+SELECT ok(
+  (
+    SELECT status = 'pending'
+      AND accepted_membership_id IS NULL
+    FROM private.admin_invitations
+    WHERE request_id = '00000000-0000-4000-8000-00000000d201'::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_environment_memberships
+    WHERE environment_id = '00000000-0000-4000-8000-00000000d101'::uuid
+      AND principal_id = '00000000-0000-4000-8000-00000000d125'::uuid
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM private.admin_invitation_redemption_receipts
+    WHERE admission_request_id =
+      '00000000-0000-4000-8000-00000000d202'::uuid
+  ),
+  'the rejected invitation creates no membership or redemption evidence'
+);
+
+UPDATE private.admin_identity_runtime_gate
+SET google_admin_ledger_enabled = true
+WHERE singleton;
+
+SET ROLE service_role;
 SELECT ok(
   set_config(
     'compass.test.d.admission_result',

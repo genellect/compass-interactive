@@ -399,6 +399,18 @@ async function handleRequest(request: Request) {
   }
 
   if (
+    body.invitationToken !== undefined &&
+    !ADMIN_INVITATION_TOKEN_PATTERN.test(body.invitationToken)
+  ) {
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
+  }
+
+  if (
     body.action === 'beginStepUp' &&
     (!body.challengedFactorId ||
       !UUID_PATTERN.test(body.challengedFactorId))
@@ -544,7 +556,10 @@ async function handleRequest(request: Request) {
     hmacIdentityValue(googleIdentity.email, identityPepper, 'email'),
   ])
   const invitationToken = body.invitationToken?.trim() ?? ''
-  const invitationTokenHash = invitationToken
+  const invitationAdmissionEnabled =
+    Deno.env.get('PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED') === 'true' &&
+    Deno.env.get('PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED') === 'true'
+  const invitationTokenHash = invitationToken && invitationAdmissionEnabled
     ? await sha256Hex(invitationToken)
     : null
   const pepperVersion = getSubjectPepperVersion()

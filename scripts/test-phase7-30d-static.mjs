@@ -113,11 +113,30 @@ assert.match(
 )
 assert.match(
   migration,
+  /invitation\.invitation_kind = 'invitation'\s+and gate_row\.google_admin_ledger_enabled is true\s+and invitation\.token_hash = target_invitation_token_hash/,
+  'pending D invitations must obey the ledger admission kill switch',
+)
+assert.match(
+  migration,
   /create function private\.begin_google_admin_owner_control_step_up_v1/,
 )
 assert.match(
   migration,
   /create function private\.complete_google_admin_owner_control_step_up_v1/,
+)
+
+const ledgerIntentWorker = migration.slice(
+  migration.indexOf(
+    'create function private.get_google_admin_ledger_intent_v1',
+  ),
+  migration.indexOf(
+    'revoke all on function private.get_google_admin_ledger_intent_v1',
+  ),
+)
+assert.match(
+  ledgerIntentWorker,
+  /return jsonb_build_object\(\s*'ok', true,/,
+  'the ledger intent response must satisfy the client result contract',
 )
 
 const publicFacades = [
@@ -166,12 +185,27 @@ assert.match(
 )
 assert.match(
   identityEdge,
+  /const invitationAdmissionEnabled =[\s\S]*PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED[\s\S]*PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED[\s\S]*const invitationTokenHash = invitationToken && invitationAdmissionEnabled/,
+  'only both server rollout gates may admit a tokenized D invitation',
+)
+assert.match(
+  identityEdge,
+  /body\.invitationToken !== undefined[\s\S]*!ADMIN_INVITATION_TOKEN_PATTERN\.test\(body\.invitationToken\)[\s\S]*'request_invalid'/,
+  'the identity Edge must reject malformed invitation tokens before admission',
+)
+assert.match(
+  identityEdge,
   /complete_google_admin_owner_control_step_up_v1[\s\S]*controlOperationKey/,
 )
 assert.match(identityApi, /createAdminControlStepUpNonce/)
 assert.match(
   identityApi,
   /controlOperationKey\?: AdminLedgerOperationKey[\s\S]*controlStepUpNonce\?: string/,
+)
+assert.match(
+  ledgerPanel,
+  /if \(currentMembershipChanged \|\| currentSessionRevoked\) \{\s*await onReloginRequired\(\)\s*return\s*\}\s*await refresh\(\)/,
+  'self authority changes must relogin before any denied ledger refresh',
 )
 assert.match(ledgerApi, /prepareAdminLedgerMutation/)
 assert.match(ledgerApi, /commitAdminLedgerMutation/)

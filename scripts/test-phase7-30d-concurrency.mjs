@@ -336,7 +336,7 @@ await runSql(`
 
   update private.admin_identity_runtime_gate
   set google_session_issue_enabled = true,
-      google_admin_ledger_enabled = false
+      google_admin_ledger_enabled = true
   where singleton;
   insert into private.admin_step_up_nonces (
     id, nonce_hash, reserved_admin_session_id, environment_id, principal_id,
