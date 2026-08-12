@@ -41,7 +41,7 @@ export function AiMasterAuthorizationControl({
 }: Props) {
   const [authorization, setAuthorization] =
     useState<AiMasterAuthorization | null>(null)
-  const [billingPin, setBillingPin] = useState('')
+  const [aiPin, setAiPin] = useState('')
   const [admissionEnabled, setAdmissionEnabled] = useState(true)
   const [allowedScopes, setAllowedScopes] = useState<
     AiMasterAuthorizationScope[]
@@ -54,8 +54,8 @@ export function AiMasterAuthorizationControl({
   const statusRequestVersionRef = useRef(0)
   const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const pinReady = googleCredential
-    ? /^\d{4}$/.test(billingPin)
-    : billingPin.trim().length > 0
+    ? /^\d{4}$/.test(aiPin)
+    : aiPin.trim().length > 0
 
   const applyAuthorization = useCallback(
     (next: AiMasterAuthorization | null) => {
@@ -102,7 +102,7 @@ export function AiMasterAuthorizationControl({
 
   useEffect(() => {
     applyAuthorization(null)
-    setBillingPin('')
+    setAiPin('')
     setMessage('')
     void refresh()
   }, [applyAuthorization, refresh])
@@ -147,7 +147,7 @@ export function AiMasterAuthorizationControl({
     try {
       const status = await supabaseAdminRepository.authorizeAiMaster({
         adminToken,
-        billingPin,
+        aiPin,
         lectureSessionId,
         masterScope: scope,
       })
@@ -165,7 +165,7 @@ export function AiMasterAuthorizationControl({
           : '講義中のAI機能を許可できませんでした。',
       )
     } finally {
-      setBillingPin('')
+      setAiPin('')
       setBusy(false)
     }
   }
@@ -228,9 +228,9 @@ export function AiMasterAuthorizationControl({
               disabled={busy || !canAdmit}
               inputMode="numeric"
               maxLength={googleCredential ? 4 : undefined}
-              onChange={(event) => setBillingPin(event.target.value)}
+              onChange={(event) => setAiPin(event.target.value)}
               type="password"
-              value={billingPin}
+              value={aiPin}
             />
           </label>
           <button

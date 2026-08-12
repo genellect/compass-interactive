@@ -48,10 +48,6 @@ type RealtimeCaptionControlProps = {
   masterAuthorization: AiMasterAuthorization | null
 }
 
-function createIdempotencyKey(lectureSessionId: string) {
-  return `caption-${lectureSessionId}-${crypto.randomUUID()}`
-}
-
 function findRunningCaptionOperation(recentOperations?: unknown[]) {
   const operation = recentOperations?.find(
     (candidate): candidate is { id: string } & Record<string, unknown> =>
@@ -86,7 +82,6 @@ export function RealtimeCaptionControl({
   masterAuthorization,
 }: RealtimeCaptionControlProps) {
   const googleCredential = isGoogleAdminOperationCredential(adminToken)
-  const [billingPin, setBillingPin] = useState('')
   const [language, setLanguage] = useState<RealtimeCaptionLanguage>('auto')
   const [duration, setDuration] = useState<RealtimeDuration>('600')
   const [status, setStatus] = useState<CaptionControlStatus>('idle')
@@ -394,7 +389,7 @@ export function RealtimeCaptionControl({
       status === 'connecting' ||
       masterHeldByOther ||
       !admissionEnabled ||
-      (!masterAuthorized && (googleCredential || !billingPin))
+      !masterAuthorized
     )
       return
     if (lectureStatus !== 'open') {
@@ -437,23 +432,10 @@ export function RealtimeCaptionControl({
     transportStreamIdRef.current = crypto.randomUUID()
 
     updateStatus('authorizing')
-    setMessage(
-      googleCredential
-        ? '講義のAI許可、選択時間、利用上限を確認しています。'
-        : 'API利用PIN、選択時間、講義上限を確認しています。',
-    )
+    setMessage('講義のAI許可、選択時間、利用上限を確認しています。')
     let stream: MediaStream | null = null
     let providerStartAttempted = false
     try {
-      const authorization = googleCredential
-        ? null
-        : await supabaseAdminRepository.authorizeAiStart({
-            actions: ['captions'],
-            adminToken,
-            billingPin: masterAuthorized ? undefined : billingPin,
-            lectureSessionId,
-          })
-      setBillingPin('')
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           autoGainControl: true,
@@ -472,21 +454,15 @@ export function RealtimeCaptionControl({
       })
       sessionRef.current = session
       const sdpOffer = await session.createOffer()
-      const grantRequestId = googleCredential ? crypto.randomUUID() : undefined
-      const startRequestId = googleCredential ? crypto.randomUUID() : undefined
-      if (grantRequestId && startRequestId) {
-        unresolvedGoogleStartRef.current = { grantRequestId, startRequestId }
-      }
+      const grantRequestId = crypto.randomUUID()
+      const startRequestId = crypto.randomUUID()
+      unresolvedGoogleStartRef.current = { grantRequestId, startRequestId }
       providerStartAttempted = true
       const providerCall =
         await supabaseAdminRepository.createRealtimeCaptionCall({
           adminToken,
-          ...(googleCredential
-            ? { grantRequestId, startRequestId }
-            : {
-                billingGrant: authorization!.billingGrant,
-                idempotencyKey: createIdempotencyKey(lectureSessionId),
-              }),
+          grantRequestId,
+          startRequestId,
           delay: 'low',
           language,
           lectureSessionId,
@@ -527,7 +503,6 @@ export function RealtimeCaptionControl({
         )
       }, 15_000)
     } catch (error) {
-      setBillingPin('')
       stream?.getTracks().forEach((track) => track.stop())
       await failClosed(
         error instanceof Error ? error.message : '字幕を開始できませんでした。',
@@ -773,22 +748,10 @@ export function RealtimeCaptionControl({
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
           <p className="note">講義中のAPI許可を使用します。</p>
-        ) : googleCredential ? (
+        ) : (
           <p className="note">
             上の「講義中のAI機能」で字幕を許可してください。
           </p>
-        ) : (
-          <label className="field">
-            <span>API利用PIN（管理PINとは別）</span>
-            <input
-              autoComplete="new-password"
-              disabled={status === 'running' || isStarting || masterHeldByOther}
-              maxLength={128}
-              onChange={(event) => setBillingPin(event.target.value)}
-              type="password"
-              value={billingPin}
-            />
-          </label>
         )}
         <label className="field compact-field">
           <span>利用時間</span>
@@ -831,7 +794,7 @@ export function RealtimeCaptionControl({
             masterHeldByOther ||
             !admissionEnabled ||
             lectureStatus !== 'open' ||
-            (!masterAuthorized && (googleCredential || billingPin.length < 1))
+            !masterAuthorized
           }
           onClick={() => void handleStart()}
           type="button"

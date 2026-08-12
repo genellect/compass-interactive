@@ -114,8 +114,3 @@ export const isPhase730GoogleAdminOperationsEnabled =
 export const isPhase730GoogleAdminLedgerAdmissionEnabled =
   isPhase730GoogleAdminOperationsEnabled &&
   import.meta.env.VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER === 'true'
-
-// Expand-first rollback stays available unless explicitly disabled. The Edge
-// and database gates remain authoritative even when this UI branch is shown.
-export const isLegacyAdminPinLoginEnabled =
-  import.meta.env.VITE_PHASE7_30_LEGACY_ADMIN_PIN !== 'false'

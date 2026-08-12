@@ -393,9 +393,6 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-[functions.verify-admin-pin]
-verify_jwt = true
-
 [functions.manage-admin-sessions]
 verify_jwt = true
 

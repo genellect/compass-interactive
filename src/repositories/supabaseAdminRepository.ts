@@ -1,6 +1,4 @@
-import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import {
-  isGoogleAdminOperationCredential,
   type AdminOperationCredentialInput,
 } from '../lib/adminAuth/adminOperationCredential'
 import type { LectureStatus } from '../types'
@@ -12,7 +10,6 @@ import {
 import { invokeEdgeFunction } from './supabase/transport'
 import {
   aiMasterAuthorizationRepository,
-  type AiBillingAction,
 } from './supabase/aiMasterAuthorizationRepository'
 import {
   adminContentAiRepository,
@@ -50,12 +47,6 @@ const {
 } = SUPABASE_REQUEST_TIMEOUT_MS
 
 type DisplayMode = 'normal' | 'presentation' | 'slideOnly'
-
-type VerifyAdminPinResponse = {
-  adminToken?: string
-  message?: string
-  ok?: boolean
-}
 
 export type AdminSessionSummary = {
   expiresAt: string
@@ -207,16 +198,6 @@ type ManageAiControlResponse = {
   recentOperations?: unknown[]
   realtimePriceMicrousdPerMinute?: number | null
   result?: unknown
-}
-
-type AuthorizeAiStartResponse = {
-  actions?: AiBillingAction[]
-  billingGrant?: string
-  expiresAt?: string
-  message?: string
-  ok?: boolean
-  reason?: string
-  retryAt?: string | null
 }
 
 export type RealtimeCaptionLanguage = 'auto' | 'en' | 'ja'
@@ -582,48 +563,11 @@ export type ManagePollsRequest =
 export const supabaseAdminRepository = {
   ...aiMasterAuthorizationRepository,
 
-  async verifyAdminPin(pin: string) {
-    const trimmedPin = pin.trim()
-
-    if (!trimmedPin) {
-      throw new Error('Admin PIN is required.')
-    }
-
-    await ensureAnonymousAuthSession()
-
-    const { data, error } = await invokeEdgeFunction<VerifyAdminPinResponse>(
-      'verify-admin-pin',
-      {
-        body: { pin: trimmedPin },
-        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-      },
-    )
-
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, 'Admin PIN check failed.'),
-      )
-    }
-
-    if (!data?.ok) {
-      throw new Error(data?.message ?? 'Admin PIN is invalid.')
-    }
-
-    if (!data.adminToken) {
-      throw new Error('Admin session token was not returned.')
-    }
-
-    return data.adminToken
-  },
-
   async manageAdminSessions(request: {
     action: 'list' | 'logout' | 'revoke' | 'revokeAll'
     adminToken: AdminOperationCredentialInput
     sessionId?: string
   }) {
-    if (!isGoogleAdminOperationCredential(request.adminToken)) {
-      await ensureAnonymousAuthSession()
-    }
     const { data, error } =
       await invokeEdgeFunction<ManageAdminSessionsResponse>(
         'manage-admin-sessions',
@@ -658,10 +602,6 @@ export const supabaseAdminRepository = {
     enableRealtime?: boolean
     lectureSessionId: string
   }) {
-    if (!isGoogleAdminOperationCredential(request.adminToken)) {
-      await ensureAnonymousAuthSession()
-    }
-
     const { data, error } =
       await invokeEdgeFunction<IssueDisplaySessionResponse>(
         'issue-display-session',
@@ -795,44 +735,17 @@ export const supabaseAdminRepository = {
     return data
   },
 
-  async authorizeAiStart(request: {
-    actions: AiBillingAction[]
-    adminToken: AdminOperationCredentialInput
-    billingPin?: string
-    lectureSessionId: string
-  }) {
-    const { data, error } = await invokeEdgeFunction<AuthorizeAiStartResponse>(
-      'authorize-ai-start',
-      { body: request, timeout: ADMIN_FUNCTION_TIMEOUT_MS },
-    )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, 'API usage authorization failed.'),
-      )
-    }
-    if (!data?.ok || !data.billingGrant || !data.expiresAt) {
-      throw new Error(data?.message ?? 'API usage authorization failed.')
-    }
-    return {
-      actions: data.actions ?? request.actions,
-      billingGrant: data.billingGrant,
-      expiresAt: data.expiresAt,
-    }
-  },
-
   ...adminContentAiRepository,
 
   async createRealtimeCaptionCall(request: {
     adminToken: AdminOperationCredentialInput
-    billingGrant?: string
     delay: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-    grantRequestId?: string
-    idempotencyKey?: string
+    grantRequestId: string
     language: RealtimeCaptionLanguage
     lectureSessionId: string
     maxAudioSeconds: number
     sdpOffer: string
-    startRequestId?: string
+    startRequestId: string
   }): Promise<RealtimeCaptionCall> {
     let response = await invokeEdgeFunction<RealtimeCaptionCallResponse>(
       'issue-realtime-client-secret',
@@ -840,7 +753,6 @@ export const supabaseAdminRepository = {
     )
     if (
       response.error &&
-      isGoogleAdminOperationCredential(request.adminToken) &&
       (await providerAttemptIsAmbiguous(response.error))
     ) {
       response = await invokeEdgeFunction<RealtimeCaptionCallResponse>(
@@ -966,10 +878,7 @@ export const supabaseAdminRepository = {
       'generate-lecture-summary',
       { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },
     )
-    if (
-      response.error &&
-      isGoogleAdminOperationCredential(request.adminToken)
-    ) {
+    if (response.error) {
       response = await invokeEdgeFunction<SummaryFunctionResponse>(
         'generate-lecture-summary',
         { body: request, timeout: AI_FUNCTION_TIMEOUT_MS },

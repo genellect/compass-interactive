@@ -13,12 +13,10 @@ import { AppIcon } from '../components/AppIcon'
 import { AdminAiUnlockPanel } from '../components/AdminAiUnlockPanel'
 import { AdminTotpFactorControlPanel } from '../components/AdminTotpFactorControlPanel'
 import {
-  isLegacyAdminPinLoginEnabled,
   isPhase730AdminAiUnlockEnabled,
   isPhase730AdminIdentityEnabled,
   isPhase730AdminTotpFactorMutationEnabled,
   isPhase730GoogleAdminLedgerAdmissionEnabled,
-  isPhase730GoogleAdminOperationsEnabled,
 } from '../lib/featureFlags'
 import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
 import {
@@ -60,9 +58,10 @@ import {
   type GoogleAdminSession,
 } from '../lib/adminAuth/adminIdentityApi'
 import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
+import { purgeLegacyAdminSessionStorage } from './admin/adminSessionStorage'
 import './AdminPage.css'
 
-const AdminLegacyApp = lazy(() => import('./AdminLegacyApp'))
+const AdminWorkspaceApp = lazy(() => import('./AdminWorkspaceApp'))
 const AdminLedgerPanel = lazy(() =>
   import('../components/AdminLedgerPanel').then((module) => ({
     default: module.AdminLedgerPanel,
@@ -126,7 +125,6 @@ export function AdminRoute() {
   const bootStarted = useRef(false)
   const enrollmentSecretRef = useRef<EnrollmentSecret | null>(null)
   const forcedSessionInvalidRef = useRef(false)
-  const [useLegacy, setUseLegacy] = useState(!isPhase730AdminIdentityEnabled)
   const [phase, setPhase] = useState<IdentityPhase>('booting')
   const [errorMessage, setErrorMessage] = useState('')
   const [factorId, setFactorId] = useState('')
@@ -141,6 +139,10 @@ export function AdminRoute() {
   const [transitionRecoveryScope, setTransitionRecoveryScope] =
     useState<AdminTotpTransitionRecoveryScope | null>(null)
   const [transitionCandidateCode, setTransitionCandidateCode] = useState('')
+
+  useEffect(() => {
+    purgeLegacyAdminSessionStorage()
+  }, [])
 
   const clearEnrollmentSecret = useCallback(() => {
     enrollmentSecretRef.current = null
@@ -303,7 +305,11 @@ export function AdminRoute() {
       navigate('/admin', { replace: true })
       return
     }
-    if (useLegacy || !isPhase730AdminIdentityEnabled) return
+    if (!isPhase730AdminIdentityEnabled) {
+      setErrorMessage('Google管理者認証は現在利用できません。')
+      setPhase('error')
+      return
+    }
     if (location.pathname === '/admin/auth/callback') {
       if (callbackStarted.current) return
       callbackStarted.current = true
@@ -356,7 +362,7 @@ export function AdminRoute() {
       setErrorMessage(getSafeMessage(error))
       setPhase(error instanceof AdminIdentityError ? 'denied' : 'error')
     })
-  }, [location.pathname, location.search, navigate, prepareIdentity, useLegacy])
+  }, [location.pathname, location.search, navigate, prepareIdentity])
 
   useEffect(
     () => () => {
@@ -366,7 +372,7 @@ export function AdminRoute() {
   )
 
   useEffect(() => {
-    if (useLegacy || !appSessionToken) return
+    if (!appSessionToken) return
     return subscribeGoogleAdminSessionInvalid(appSessionToken, () => {
       const invalidatedToken = appSessionToken
       void adminSupabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
@@ -375,7 +381,7 @@ export function AdminRoute() {
         invalidatedToken,
       )
     })
-  }, [appSessionToken, clearGoogleAdminWorkspace, useLegacy])
+  }, [appSessionToken, clearGoogleAdminWorkspace])
 
   async function startGoogleLogin() {
     if (adminSupabaseConfigError) {
@@ -629,13 +635,7 @@ export function AdminRoute() {
   )
 
   let content
-  if (useLegacy) {
-    content = (
-      <Suspense fallback={<RouteFallback />}>
-        <AdminLegacyApp />
-      </Suspense>
-    )
-  } else if (phase === 'booting' || phase === 'callback') {
+  if (phase === 'booting' || phase === 'callback') {
     content = <RouteFallback />
   } else if (phase === 'signed_out') {
     content = (
@@ -659,15 +659,6 @@ export function AdminRoute() {
           >
             Googleで続ける
           </button>
-          {isLegacyAdminPinLoginEnabled ? (
-            <button
-              className="secondary-button"
-              onClick={() => setUseLegacy(true)}
-              type="button"
-            >
-              従来の管理PINを使う
-            </button>
-          ) : null}
         </section>
       </main>
     )
@@ -791,12 +782,11 @@ export function AdminRoute() {
   } else if (
     phase === 'ready' &&
     session &&
-    googleAdminCredential &&
-    isPhase730GoogleAdminOperationsEnabled
+    googleAdminCredential
   ) {
     content = (
       <Suspense fallback={<RouteFallback />}>
-        <AdminLegacyApp
+        <AdminWorkspaceApp
           adminCredential={googleAdminCredential}
           identitySettings={
             <details className="panel admin-identity-card">
@@ -872,15 +862,6 @@ export function AdminRoute() {
               }}
             />
           ) : null}
-          {isLegacyAdminPinLoginEnabled ? (
-            <button
-              className="primary-button"
-              onClick={() => setUseLegacy(true)}
-              type="button"
-            >
-              従来PINで講義操作へ
-            </button>
-          ) : null}
           <button
             className="secondary-button"
             disabled={isSubmitting}
@@ -912,15 +893,6 @@ export function AdminRoute() {
           >
             ログアウトしてやり直す
           </button>
-          {isLegacyAdminPinLoginEnabled ? (
-            <button
-              className="secondary-button"
-              onClick={() => setUseLegacy(true)}
-              type="button"
-            >
-              従来の管理PINを使う
-            </button>
-          ) : null}
         </section>
       </main>
     )

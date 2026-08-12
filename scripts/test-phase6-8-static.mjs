@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -46,7 +46,6 @@ const migration = read(
   'supabase/migrations/20260718193306_phase6_8_security_sessions_resume.sql',
 )
 const adminToken = read('supabase/functions/_shared/adminToken.ts')
-const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
 const resumeIssuer = read(
   'supabase/functions/issue-lecture-resume-token/index.ts',
 )
@@ -82,9 +81,11 @@ assert.match(adminToken, /token_hash: await sha256Hex\(token\)/)
 assert.doesNotMatch(adminToken, /\.insert\([\s\S]{0,500}\btoken:/)
 assert.match(adminToken, /auth\.getUser\(bearerToken\)/)
 assert.match(adminToken, /auth_user_id[\s\S]{0,200}authData\.user\.id/)
-assert.match(verifyPin, /consume_admin_pin_rate_limit/)
-assert.match(verifyPin, /timingSafeEqual/)
-assert.match(verifyPin, /auth\.getUser/)
+assert.equal(
+  existsSync(resolve(root, 'supabase/functions/verify-admin-pin/index.ts')),
+  false,
+  'the legacy shared-PIN issuer must stay removed',
+)
 assert.match(resumeIssuer, /auth_user_id/)
 assert.match(resumeIssuer, /resume_token_version/)
 assert.match(worker, /\/v1\/archives\/resume/)

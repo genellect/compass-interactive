@@ -291,7 +291,6 @@ assert.match(
 )
 
 for (const functionName of [
-  'verify-admin-pin',
   'admin-identity-session',
   'manage-admin-ledger',
   'manage-lectures',
@@ -312,5 +311,11 @@ for (const functionName of [
     new RegExp(`\\[functions\\.${functionName}\\][\\s\\S]*?verify_jwt = true`),
   )
 }
+assert.equal(
+  existsSync(join(supabaseDir, 'functions', 'verify-admin-pin', 'index.ts')),
+  false,
+  'the shared Admin PIN issuer must stay removed',
+)
+assert.doesNotMatch(config, /\[functions\.verify-admin-pin\]/)
 
 console.log('Supabase baseline static checks passed.')

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -64,7 +64,6 @@ const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const managePolls = read('supabase/functions/manage-polls/index.ts')
 const updateDisplay = read('supabase/functions/update-display-state/index.ts')
 const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
-const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
 const edgeTransport = read('src/repositories/supabase/transport.ts')
@@ -96,7 +95,11 @@ for (const source of [
   assert.match(source, /verifyAdminToken|getAdminTokenClaims/)
   assert.doesNotMatch(source, /function timingSafeEqual|function signToken/)
 }
-assert.match(verifyPin, /_shared\/adminToken\.ts/)
+assert.equal(
+  existsSync(join(root, 'supabase/functions/verify-admin-pin/index.ts')),
+  false,
+  'the shared Admin PIN issuer must stay removed',
+)
 assert.match(manageLectures, /rpc\('admin_create_lecture_v2'/)
 assert.match(manageLectures, /rpc\('admin_duplicate_lecture_v1'/)
 assert.match(manageLectures, /rpc\(\s*'admin_set_lecture_status'/)
@@ -120,10 +123,8 @@ assert.match(managePolls, /\.eq\('status', 'open'\)/)
 assert.match(managePolls, /\.neq\('status', 'open'\)/)
 assert.match(managePolls, /hasMore/)
 assert.match(adminRepository, /async managePolls/)
-assert.match(
-  adminRepository,
-  /async verifyAdminPin[\s\S]*?await ensureAnonymousAuthSession\(\)[\s\S]*?invokeEdgeFunction/,
-)
+assert.doesNotMatch(adminRepository, /async verifyAdminPin\b|verify-admin-pin/)
+assert.doesNotMatch(config, /\[functions\.verify-admin-pin\]/)
 assert.match(edgeTransport, /supabase\.functions\.invoke/)
 assert.match(adminPage, /handleCreatePoll/)
 assert.doesNotMatch(adminPage, /setPollStatus/)

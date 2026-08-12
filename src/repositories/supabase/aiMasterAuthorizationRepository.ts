@@ -1,10 +1,4 @@
-import {
-  getFunctionErrorMessage,
-  SUPABASE_REQUEST_TIMEOUT_MS,
-} from './requestPolicy'
-import { invokeEdgeFunction } from './transport'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
-import { isGoogleAdminOperationCredential } from '../../lib/adminAuth/adminOperationCredential'
 import {
   AdminAiUnlockError,
   authorizeGoogleAiMasterWithPin,
@@ -69,14 +63,6 @@ type RawAiMasterAuthorization = {
   version?: unknown
 }
 
-type AiMasterAuthorizationResponse = {
-  authorization?: RawAiMasterAuthorization | null
-  lectureOpen?: boolean
-  message?: string
-  ok?: boolean
-  serverTime?: string | null
-}
-
 function toAiMasterAuthorization(
   value: RawAiMasterAuthorization | null | undefined,
 ): AiMasterAuthorization | null {
@@ -128,157 +114,94 @@ function toAiMasterAuthorization(
   }
 }
 
-const timeout = SUPABASE_REQUEST_TIMEOUT_MS.adminFunction
-
 export const aiMasterAuthorizationRepository = {
   async getAiMasterAuthorization(request: {
     adminToken: AdminOperationCredentialInput
     lectureSessionId: string
   }): Promise<AiMasterAuthorizationStatus> {
-    if (isGoogleAdminOperationCredential(request.adminToken)) {
-      const status = await getGoogleAiMasterStatus(
-        request.adminToken.appSessionToken,
-        request.lectureSessionId,
-      )
-      return {
-        admissionBlockedReason: status.admissionBlockedReason,
-        admissionEnabled: status.admissionEnabled,
-        allowedScopes: status.allowedScopes,
-        authorization: toAiMasterAuthorization(status.authorization),
-        canUseAi: status.canUseAi,
-        lectureOpen: status.lectureOpen,
-        policy: status.policy,
-        reason: status.reason,
-        serverTime: status.serverTime,
-      }
-    }
-    const { data, error } =
-      await invokeEdgeFunction<AiMasterAuthorizationResponse>(
-        'authorize-ai-start',
-        { body: { action: 'masterStatus', ...request }, timeout },
-      )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(
-          error,
-          'AI機能の許可状態を確認できませんでした。',
-        ),
-      )
-    }
-    if (!data?.ok) {
-      throw new Error(
-        data?.message ?? 'AI機能の許可状態を確認できませんでした。',
-      )
-    }
+    const status = await getGoogleAiMasterStatus(
+      request.adminToken.appSessionToken,
+      request.lectureSessionId,
+    )
     return {
-      admissionBlockedReason: null,
-      admissionEnabled: true,
-      allowedScopes: ['all_except_captions', 'all_including_captions'],
-      authorization: toAiMasterAuthorization(data.authorization),
-      canUseAi: true,
-      lectureOpen: data.lectureOpen === true,
-      policy: null,
-      reason: null,
-      serverTime: data.serverTime ?? null,
+      admissionBlockedReason: status.admissionBlockedReason,
+      admissionEnabled: status.admissionEnabled,
+      allowedScopes: status.allowedScopes,
+      authorization: toAiMasterAuthorization(status.authorization),
+      canUseAi: status.canUseAi,
+      lectureOpen: status.lectureOpen,
+      policy: status.policy,
+      reason: status.reason,
+      serverTime: status.serverTime,
     }
   },
 
   async authorizeAiMaster(request: {
     adminToken: AdminOperationCredentialInput
-    billingPin: string
+    aiPin: string
     lectureSessionId: string
     masterScope: AiMasterAuthorizationScope
   }): Promise<AiMasterAuthorizationStatus> {
-    if (isGoogleAdminOperationCredential(request.adminToken)) {
-      const status = await getGoogleAiMasterStatus(
+    const status = await getGoogleAiMasterStatus(
+      request.adminToken.appSessionToken,
+      request.lectureSessionId,
+    )
+    if (!status.policy) {
+      throw new Error('この講義で利用できるAIポリシーがありません。')
+    }
+    if (
+      !status.admissionEnabled ||
+      !status.allowedScopes.includes(request.masterScope)
+    ) {
+      throw new Error('この講義では選択したAI機能を新しく許可できません。')
+    }
+    const reserved = reserveAdminOperationRequestId(
+      'admin-ai-unlock:authorizeMasterWithPin',
+      {
+        lectureSessionId: request.lectureSessionId,
+        policyId: status.policy.id,
+        policyVersion: status.policy.version,
+        requestedScope: request.masterScope,
+      },
+    )
+    let data: Awaited<ReturnType<typeof authorizeGoogleAiMasterWithPin>>
+    try {
+      data = await authorizeGoogleAiMasterWithPin(
         request.adminToken.appSessionToken,
-        request.lectureSessionId,
-      )
-      if (!status.policy) {
-        throw new Error('この講義で利用できるAIポリシーがありません。')
-      }
-      if (
-        !status.admissionEnabled ||
-        !status.allowedScopes.includes(request.masterScope)
-      ) {
-        throw new Error('この講義では選択したAI機能を新しく許可できません。')
-      }
-      const reserved = reserveAdminOperationRequestId(
-        'admin-ai-unlock:authorizeMasterWithPin',
         {
           lectureSessionId: request.lectureSessionId,
+          pin: request.aiPin,
           policyId: status.policy.id,
           policyVersion: status.policy.version,
+          requestId: reserved.requestId,
           requestedScope: request.masterScope,
         },
       )
-      let data: Awaited<ReturnType<typeof authorizeGoogleAiMasterWithPin>>
-      try {
-        data = await authorizeGoogleAiMasterWithPin(
-          request.adminToken.appSessionToken,
-          {
-            lectureSessionId: request.lectureSessionId,
-            pin: request.billingPin,
-            policyId: status.policy.id,
-            policyVersion: status.policy.version,
-            requestId: reserved.requestId,
-            requestedScope: request.masterScope,
-          },
-        )
-      } catch (error) {
-        // A durable PIN denial is a completed attempt. A corrected explicit
-        // submission must use a new request ID, while a transport-ambiguous
-        // failure keeps the same ID so a lost success response can converge.
-        if (
-          error instanceof AdminAiUnlockError &&
-          error.code !== 'request_failed'
-        ) {
-          completeAdminOperationRequestId(reserved.key, reserved.requestId)
-        }
-        throw error
+    } catch (error) {
+      // A durable PIN denial is a completed attempt. A corrected explicit
+      // submission must use a new request ID, while a transport-ambiguous
+      // failure keeps the same ID so a lost success response can converge.
+      if (
+        error instanceof AdminAiUnlockError &&
+        error.code !== 'request_failed'
+      ) {
+        completeAdminOperationRequestId(reserved.key, reserved.requestId)
       }
-      completeAdminOperationRequestId(reserved.key, reserved.requestId)
-      return {
-        admissionBlockedReason: status.admissionBlockedReason,
-        admissionEnabled: status.admissionEnabled,
-        allowedScopes: status.allowedScopes,
-        authorization: toAiMasterAuthorization(
-          data.authorization as RawAiMasterAuthorization | null | undefined,
-        ),
-        canUseAi: status.canUseAi,
-        lectureOpen: true,
-        policy: status.policy,
-        reason: status.reason,
-        serverTime:
-          typeof data.serverTime === 'string' ? data.serverTime : null,
-      }
+      throw error
     }
-    const { data, error } =
-      await invokeEdgeFunction<AiMasterAuthorizationResponse>(
-        'authorize-ai-start',
-        { body: { action: 'authorizeMaster', ...request }, timeout },
-      )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(
-          error,
-          '講義中のAI機能を許可できませんでした。',
-        ),
-      )
-    }
-    if (!data?.ok) {
-      throw new Error(data?.message ?? '講義中のAI機能を許可できませんでした。')
-    }
+    completeAdminOperationRequestId(reserved.key, reserved.requestId)
     return {
-      admissionBlockedReason: null,
-      admissionEnabled: true,
-      allowedScopes: ['all_except_captions', 'all_including_captions'],
-      authorization: toAiMasterAuthorization(data.authorization),
-      canUseAi: true,
+      admissionBlockedReason: status.admissionBlockedReason,
+      admissionEnabled: status.admissionEnabled,
+      allowedScopes: status.allowedScopes,
+      authorization: toAiMasterAuthorization(
+        data.authorization as RawAiMasterAuthorization | null | undefined,
+      ),
+      canUseAi: status.canUseAi,
       lectureOpen: true,
-      policy: null,
-      reason: null,
-      serverTime: data.serverTime ?? null,
+      policy: status.policy,
+      reason: status.reason,
+      serverTime: typeof data.serverTime === 'string' ? data.serverTime : null,
     }
   },
 
@@ -287,41 +210,22 @@ export const aiMasterAuthorizationRepository = {
     lectureSessionId: string
     reason: string
   }): Promise<AiMasterAuthorization | null> {
-    if (isGoogleAdminOperationCredential(request.adminToken)) {
-      const reserved = reserveAdminOperationRequestId(
-        'admin-ai-unlock:revokeMaster',
-        {
-          lectureSessionId: request.lectureSessionId,
-          reason: request.reason,
-        },
-      )
-      const data = await revokeGoogleAiMaster(
-        request.adminToken.appSessionToken,
-        request.lectureSessionId,
-        request.reason,
-        reserved.requestId,
-      )
-      completeAdminOperationRequestId(reserved.key, reserved.requestId)
-      return toAiMasterAuthorization(
-        data.authorization as RawAiMasterAuthorization | null | undefined,
-      )
-    }
-    const { data, error } =
-      await invokeEdgeFunction<AiMasterAuthorizationResponse>(
-        'authorize-ai-start',
-        { body: { action: 'revokeMaster', ...request }, timeout },
-      )
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(
-          error,
-          '講義中のAI機能を停止できませんでした。',
-        ),
-      )
-    }
-    if (!data?.ok) {
-      throw new Error(data?.message ?? '講義中のAI機能を停止できませんでした。')
-    }
-    return toAiMasterAuthorization(data.authorization)
+    const reserved = reserveAdminOperationRequestId(
+      'admin-ai-unlock:revokeMaster',
+      {
+        lectureSessionId: request.lectureSessionId,
+        reason: request.reason,
+      },
+    )
+    const data = await revokeGoogleAiMaster(
+      request.adminToken.appSessionToken,
+      request.lectureSessionId,
+      request.reason,
+      reserved.requestId,
+    )
+    completeAdminOperationRequestId(reserved.key, reserved.requestId)
+    return toAiMasterAuthorization(
+      data.authorization as RawAiMasterAuthorization | null | undefined,
+    )
   },
 }

@@ -15,7 +15,7 @@ const workflow = read('.github/workflows/ci.yml')
 const packageJson = JSON.parse(read('package.json'))
 
 for (const component of [
-  'AdminAuthPanel',
+  'AdminSessionPanel',
   'AdminLectureControl',
   'AdminPdfControl',
   'AdminPollControl',
