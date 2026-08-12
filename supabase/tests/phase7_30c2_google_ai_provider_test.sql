@@ -629,7 +629,7 @@ INSERT INTO private.admin_ai_policies (
     'summaries'
   ]::text[],
   array['test-model']::text[],
-  20, 100, 10000, 100000, 10000, 100000, 100000, 1000000,
+  20, 100, 11000, 100000, 10000, 100000, 100000, 1000000,
   90, 900, 2,
   statement_timestamp() - interval '1 minute',
   statement_timestamp() + interval '2 hours',
