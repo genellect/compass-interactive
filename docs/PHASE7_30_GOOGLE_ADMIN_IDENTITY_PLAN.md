@@ -1,8 +1,8 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
-Status: Phase 7.30A-D verified default-OFF; Phase 7.30E source/local candidate
-Gate state: A-D exact-head database, Edge and browser evidence passes. E removes the shared Admin transport from the current application, leaves the operator cutover dormant and requires independent Hosted deployment evidence; E database exact-head plus all Hosted/Human activation remain HOLD
-Implementation scope: A-D complete; E Google-only source, explicit ownership evidence and dormant identity-cutover authority implemented; E runtime freeze, billing compatibility retirement and F activation pending
+Status: Phase 7.30A-D verified default-OFF; Phase 7.30E and 7.30F source/local candidates
+Gate state: A-D exact-head database, Edge and browser evidence passes. E removes the shared Admin transport from the current application and leaves the operator cutover dormant; E exact-head runtime evidence was pending when F branched. F adds a default-HOLD source/local readiness contract, but all Hosted/Human execution and activation remain HOLD
+Implementation scope: A-D complete; E Google-only source, explicit ownership evidence and dormant identity-cutover authority implemented; F redacted evidence/schema/validator/read-only-preflight source candidate; E runtime freeze, billing compatibility retirement and every external F action pending
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-12
@@ -13,7 +13,8 @@ Implementation records:
 [`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md) and
 [`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md) and
 [`PHASE7_30D_ADMIN_LEDGER.md`](PHASE7_30D_ADMIN_LEDGER.md) and
-[`PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](PHASE7_30E_GOOGLE_ONLY_CUTOVER.md).
+[`PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](PHASE7_30E_GOOGLE_ONLY_CUTOVER.md) and
+[`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 The narrow C1 ownership and atomic dormant-master integration record is
 [`PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`](PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md).
 
@@ -94,8 +95,13 @@ session and bounded-audit ledger with immutable request/step-up evidence and
 safe flag-OFF controls. E removes the application shared-Admin transport, adds
 explicit operator-reviewed ownership evidence, Display terminal provenance and
 a dormant SERIALIZABLE/NOWAIT cutover authority. The irreversible cutover,
-billing compatibility retirement, F, AI Passkey and every Hosted activation
-remain HOLD. The source implementation adds no recurring fixed-cost dependency.
+billing compatibility retirement, AI Passkey and every Hosted activation
+remain HOLD. F now supplies the source/local evidence format, strict
+secret-rejecting validator, read-only preflight, approval separation and
+Google-only rollback checklist. It never performs an external action, and its
+highest local decision is `READY_FOR_SEPARATE_HOSTED_EXECUTION`, not a Hosted or
+Production result. The source implementation adds no recurring fixed-cost
+dependency.
 
 ## Outcome
 
@@ -672,6 +678,15 @@ surface.
 | 7.30D | Google/MFA/AI-unlock/Admin-ledger UX and accessibility                                                                                                                                                                                                    | Extra High with Ultra security/accessibility review | concise login/enrollment/recovery/ledger UX, Chromium/WebKit/mobile/visual/accessibility PASS                              |
 | 7.30E | Google-only authorization cutover, explicit legacy ownership claim/backfill, full regression and shared-PIN code/secret retirement                                                                                                                        | **Ultra**                                           | no unmigrated Admin operation, no implicit ownership widening, Google-only immutable rollback PASS                         |
 | 7.30F | staging and Hosted/Human Google-only identity migration                                                                                                                                                                                                   | **Ultra** plus independent final review             | two-owner real-account canary, operator recovery and immutable rollback evidence PASS; formal Phase 7.33 Gate remains HOLD |
+
+The F source/local subgate uses only `SOURCE_READY`, `HOLD` and
+`READY_FOR_SEPARATE_HOSTED_EXECUTION`. `Production PASS` is prohibited, and a
+source-only manifest remains `HOLD`. Staging Hosted mutation, OAuth/provider
+configuration, Human identity tests, E cutover, `ADMIN_PIN` deletion,
+historical billing retirement, `BILLING_PIN` deletion and limited canary each
+require a distinct approval. The exact evidence checklist and rollback
+boundary are recorded in
+[`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 
 Phase 7.30B has an enforced internal order: **B1** first establishes the separate
 Admin client, Google identity binding, tracked session and mandatory TOTP AAL2;

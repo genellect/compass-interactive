@@ -1,7 +1,7 @@
 # COMPASS Interactive Architecture
 
 Last reviewed: 2026-08-12
-Applies to: repository implementation candidate through Phase 7.30E. Phase
+Applies to: repository implementation candidate through Phase 7.30F source/local readiness. Phase
 7.30D exact-head evidence is PASS; Phase 7.30E fresh database/runtime CI,
 irreversible operator cutover, native, Human, Hosted and Production gates remain
 separately authoritative.
@@ -477,3 +477,30 @@ legacy descendants and a digest of independently verified Hosted deployment
 evidence. Only then may it disable legacy admission, revoke legacy sessions and
 write the irreversible tombstone. Migration application, CI or a source
 directory deletion does not authorize that operator action.
+
+## 19. Phase 7.30F evidence and execution boundary
+
+Phase F adds no browser authority and no database object. Its source layer is a
+pure-local trust boundary around a closed redacted JSON manifest, a synthetic
+example, a deterministic validator and operator-reviewed read-only SQL text.
+The validator reads one file, performs no network, child process, database or
+filesystem write, rejects secret/identity-shaped data and defaults to `HOLD`.
+Source consistency may be `SOURCE_READY`; the highest next-step decision is
+`READY_FOR_SEPARATE_HOSTED_EXECUTION`. `Production PASS` is outside the output
+domain.
+
+The evidence architecture keeps source, deployment, OAuth metadata, secret
+name/presence metadata, `preCutover`, `postCutover`, Human scenario results,
+Advisor counts, independent review, rollback and approvals as separate signed
+digest domains. A pre-cutover advisory snapshot cannot be copied into the
+post-cutover slot or treated as authoritative. The 19 Google-only Edge names
+must match exactly, both retired endpoints must be absent, and the six
+historical billing admission functions are inventoried without being invoked
+or revoked.
+
+External state enters this architecture only through a new, separately
+approved staging task. Staging mutation, OAuth/provider configuration, Human
+identity testing, E cutover, `ADMIN_PIN` deletion, billing compatibility
+retirement, `BILLING_PIN` deletion and limited canary are independent approval
+boundaries. Rollback after cutover always returns to an immutable Google-only
+revision and operator owner recovery; no shared PIN path is restored.

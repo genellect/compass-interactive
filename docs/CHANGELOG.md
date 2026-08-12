@@ -3,6 +3,24 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-12 - Phase 7.30F source/local Hosted/Human readiness contract
+
+- Added a closed redacted evidence schema/example, pure-local readiness
+  validator and operator-reviewed read-only SQL preflight. The only decisions
+  are `SOURCE_READY`, `HOLD` and `READY_FOR_SEPARATE_HOSTED_EXECUTION`;
+  repository tooling cannot declare `Production PASS` or perform an external
+  action.
+- Added strict secret/identity rejection, exact 19-function Google-only
+  inventory, separate pre/post-cutover snapshots, zero Critical/High review
+  requirements and the two-owner/Admin/recovery/rollback Human checklist.
+- Added read-only evidence for the six historical billing admission functions.
+  This tranche does not revoke or drop them. Staging mutation, OAuth/provider
+  configuration, Human testing, E cutover, `ADMIN_PIN` deletion, billing
+  retirement, `BILLING_PIN` deletion and limited canary remain separate
+  approval-gated HOLDs.
+- Added `test:phase7-30f-static` to the non-live allowlist, increasing it from
+  74 to 75 groups and the repository `test:*` inventory from 115 to 116.
+
 ## 2026-08-12 - Phase 7.30E Google-only source and dormant identity cutover
 
 - Removed the shared Admin PIN UI, issuer, browser storage, active flags and

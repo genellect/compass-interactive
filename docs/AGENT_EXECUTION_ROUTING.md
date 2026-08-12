@@ -1,6 +1,6 @@
 # Agent Execution and Reasoning Routing
 
-Status: Operational through the Phase 7.30E source candidate
+Status: Operational through the Phase 7.30F source/local readiness candidate
 Scope: agent responsibilities and reasoning budget for Phase 7.29 onward
 Last verified: 2026-08-12
 
@@ -29,7 +29,7 @@ Production secrets or independent deployment authority.
 | 7.30C RBAC and all server authorization          | **Ultra**                                                                 | RLS/ownership/concurrency/cost review                                                      | Capability, lecture ownership, all Edge/RPC checks, revoke, last-owner, AI policy and lecture master authorization must remain transaction-authoritative                                    |
 | 7.30D Google/MFA/AI-unlock/Admin-ledger UX       | Extra High                                                                | Ultra security and accessibility review                                                    | UI work is bounded once the identity and AI-intent contracts are fixed                                                                                                                      |
 | 7.30E Google-only cutover and regression         | **Ultra**                                                                 | Old-client, explicit backfill and immutable-rollback review                                | Ownership claim/backfill, full Phase 0-7.29 regression and complete shared-PIN removal must avoid lockout or privilege expansion                                                            |
-| 7.30F Hosted/Human identity migration gate       | **Ultra**                                                                 | External final read-only review strongly recommended                                       | Exact hosted state, MFA, operator owner recovery, two-admin separation and Google-only rollback decide canary readiness; this is not the Phase 7.33 formal gate                             |
+| 7.30F Hosted/Human identity migration gate       | **Ultra**                                                                 | External final read-only review strongly recommended                                       | Source tooling may reach only `READY_FOR_SEPARATE_HOSTED_EXECUTION`; exact hosted state, MFA, operator owner recovery, two-admin separation and Google-only rollback decide later canary readiness; this is not the Phase 7.33 formal gate |
 | 7.31A GitHub governance                          | **Ultra**                                                                 | Independent supply-chain and repository-governance review                                  | Rulesets, release authority and history exposure determine whether later publication is safe                                                                                                |
 | 7.31B public-source readiness                    | **Ultra**                                                                 | External history/secret/license review                                                     | Visibility is difficult to reverse and exposes every reachable Git surface                                                                                                                  |
 | 7.31C contest environment                        | **Ultra**                                                                 | Independent identity/isolation/cost review plus human reviewer E2E                         | Real `instructor + can_use_ai` access must remain isolated from Production without a mock bypass                                                                                            |
@@ -55,6 +55,24 @@ threat model, tests and redacted evidence. It must not:
 
 Findings are triaged by severity. Critical/High findings block the phase;
 Medium findings require a documented fix or explicit later-phase disposition.
+
+## Phase 7.30F execution boundary
+
+The source/local agent may implement and test the strict redacted evidence
+schema, synthetic example, pure-local validator, read-only SQL text,
+production-environment metadata checks and documentation. It may report only
+`SOURCE_READY`, `HOLD` or `READY_FOR_SEPARATE_HOSTED_EXECUTION`;
+`Production PASS` is prohibited. No-argument validation remains `HOLD`, and a source-only
+example never authorizes an external action.
+
+Hosted and Human work is a new Ultra task with an independent reviewer and a
+fresh user approval. Stop separately before staging mutation, OAuth/provider
+configuration, Human identity testing, the E operator cutover, `ADMIN_PIN`
+deletion, historical billing retirement, `BILLING_PIN` deletion and limited
+identity canary. The six historical billing admission functions are
+read-only evidence in this tranche; the agent must not revoke or drop them.
+The exact contract is
+[`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 
 ## Google authentication reuse boundary
 

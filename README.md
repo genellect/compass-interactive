@@ -111,7 +111,7 @@ flowchart LR
     GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
     Workspace --> Demo["Secret-free /demo"]
     Workspace --> Local["Isolated local Supabase"]
-    Demo --> Gate["Type / lint / 74 non-live groups\nChromium + WebKit E2E"]
+    Demo --> Gate["Type / lint / 75 non-live groups\nChromium + WebKit E2E"]
     Local --> Gate
     Gate --> PR["Commit / Pull Request / CI"]
     PR --> Review["Browser / mobile review"]
@@ -134,6 +134,7 @@ flowchart LR
 - MFAはGoogle Authenticator等に対応するSupabase標準TOTPだけを使い、メールMFAや独自MFAを追加しません。Admin app sessionは講義中に周期的なTOTPを要求しません。5分fresh TOTPはowner/principal、role/status、TOTP factor、environment AI policy、global revokeと、AI PIN factorのenrollment/rotation/revoke/resetという稀なcontrol-plane変更だけに使います。login直後かつfactor履歴がない初回AI PIN enrollmentはlogin時TOTPが既にfreshなので追加promptを出しません。通常の講義操作、緊急停止、AI PIN verification、remembered-browser、AI master、scope/cost escalation、個別AI callではfresh TOTPを要求しません。
 - personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revoke/resetはAI authorityをdrainしてもAdmin sessionを維持します。TOTP factor-set fingerprintとrare-control identity EdgeはB2.2a、raw 4桁のEdge peppered-HMAC経路、実browser CryptoKey/ES256 dormant assertion、TOTP factor-set transitionはB2.2bでsource実装済みです。C1はprivate optional-row lecture ownershipとPIN/browser proofからdormant masterまでのatomic admissionを実装し、既存講義を推測backfillせずchild/provider authorityをC2へfenceします。C2は75 actionのclosed policy matrixとGoogle共通verifierを全Admin surfaceへ追加しました。Eでは削除した`authorize-ai-start`を除く19本の運用EdgeをGoogle-onlyへ収束します。Summary runはprovider呼出ししないscheduler controlとし、Summary window、資料分析、Academic answer、Realtime字幕は実際のdispatchごとにshort-lived single-use childを発行・consumeします。通常操作は一度のGoogle＋TOTPログインを継続し、personal AI PINは講義masterの許可時だけ使用します。AI Passkey、実Google OAuth、Hosted/Human evidence、database cutover実行とProduction activationはHOLDです。今回のsource実装に固定費は発生しません。
 - Phase 7.30E sourceは`ADMIN_PIN`の現行application経路を撤去します。database verifierとlegacy sessionを不可逆にfenceするoperator cutoverはHosted旧Edge停止の独立証拠後だけ実行し、失効済みhistorical rowはFK/audit用途に残せます。personal AI PIN E2E後は`BILLING_PIN`互換RPCも別境界でProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
+- Phase 7.30F source/local readiness candidateは、staging Hosted/Human evidenceのclosed schema、秘密値を拒否するpure-local validator、default `HOLD`、read-only database preflight、承認分離とGoogle-only rollback契約を追加します。判定語は`SOURCE_READY`、`HOLD`、`READY_FOR_SEPARATE_HOSTED_EXECUTION`だけで、repository CIはHosted実行やProduction合格を宣言しません。実OAuth/provider設定、real account/TOTP/recovery、E cutover、`ADMIN_PIN`削除、historical billing 6経路のretirement、`BILLING_PIN`削除、canary/activationはそれぞれ別承認までHOLDです。
 - 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
 
@@ -618,6 +619,7 @@ READMEは、現行システムの全体像と開発の入口を示します。�
 | [`docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Phase 7.30B2.2b Edge・browser・factor transition readiness  |
 | [`docs/PHASE7_30D_ADMIN_LEDGER.md`](docs/PHASE7_30D_ADMIN_LEDGER.md)                                                             | Phase 7.30D owner管理台帳・招待・session revoke契約         |
 | [`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                               | Phase 7.30E Google-only transport・ownership・cutover契約   |
+| [`docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`](docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md)                                         | Phase 7.30F source/local evidence・承認分離・Hosted/Human HOLD契約 |
 | [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画 |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                       |
 | [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                    |

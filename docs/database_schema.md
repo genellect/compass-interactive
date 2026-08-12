@@ -433,3 +433,35 @@ admission, creating/extending/resurrecting a legacy session or committing an
 active lecture without ownership. Applying the migration creates no approval,
 claim or tombstone and changes no active gate or session. Historical billing
 compatibility authority is a separate retirement boundary.
+
+## 17. Phase 7.30F read-only evidence projection
+
+Phase F adds no migration, table, function, trigger, grant or policy. Its SQL
+artifact is a read-only staging evidence projection and is never invoked by
+repository CI. It preserves the exact 16-key advisory output of
+`private.get_google_only_admin_cutover_preflight_v1(uuid)` and supplements it
+with bounded direct observations for the legacy-login gate, invalid active
+ownership, immutable cutover receipt/digest agreement, legacy-verifier ACL,
+post-cutover fence triggers and historical billing ACLs.
+
+`preCutover` and `postCutover` are separate manifest objects. The former stays
+`authoritative = false` and cannot authorize the E operator transaction. The
+latter can be recorded only after a separately approved transaction and must
+agree with the immutable receipt. Neither object contains an environment UUID,
+principal/user ID, project ref, host, email, token, PIN or secret value.
+
+The current historical billing admission inventory has six functions:
+
+| Function | Phase F treatment |
+| -------- | ----------------- |
+| `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)` | existence, owner, language, security and effective EXECUTE metadata only |
+| `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)` | same; current compatibility wrapper is not invoked |
+| `private.authorize_ai_master(uuid,uuid,text,text,boolean)` | same; current private compatibility body is not invoked |
+| `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)` | same; current service wrapper is not invoked |
+| `private.issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` | same; current private compatibility body is not invoked |
+| `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` | same; current service wrapper is not invoked |
+
+Any runtime-reachable historical admission remains a Production `HOLD`.
+Revoking or dropping these paths belongs to a later separately reviewed
+default-OFF retirement migration after personal-AI-PIN Hosted/Human evidence;
+it is not a Phase F source/local schema change.

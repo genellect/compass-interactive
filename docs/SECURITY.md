@@ -1,8 +1,8 @@
 # COMPASS Interactive Security Contract
 
-Last reviewed: 2026-08-10
-Status: source-implemented controls through Phase 7.30A-C1; B2-C1 runtime DB,
-native, Hosted, Human and Production evidence remains separate
+Last reviewed: 2026-08-12
+Status: source-implemented controls through the Phase 7.30F source/local
+readiness candidate; Hosted, Human and Production evidence remains separate
 
 ## 1. Security objectives
 
@@ -522,3 +522,39 @@ Phase E static, type, non-live and mocked browser evidence passes locally.
 Fresh database, concurrency, populated-upgrade, Local Edge and exact-head CI
 remain required before the source candidate may merge. Hosted cutover and
 activation remain HOLD regardless of repository CI status.
+
+## 20. Phase 7.30F evidence and approval controls
+
+- The evidence validator is pure local, read-only and default `HOLD`. It has no
+  network, database, child-process, deployment, secret-management or approval
+  capability. It emits only `SOURCE_READY`, `HOLD` or
+  `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is invalid.
+- The closed manifest rejects unknown/missing fields, Production/contest
+  targets, inconsistent pre/post-cutover claims and secret/identity-shaped
+  keys or values. JWTs, bearer strings, PEM, service-role, OAuth secret/token,
+  raw PIN, TOTP, recovery material, project refs, real domains, email, user IDs
+  and database dumps never enter evidence, logs, Git, PRs or CI artifacts.
+- Function evidence contains only name, immutable revision digest,
+  JWT-verification posture and timestamp. Secret evidence contains only the
+  secret name, presence/absence, rotation-state metadata and timestamp; never
+  a value or value digest.
+- `preCutover` preserves the E advisory function's exact non-authoritative
+  16-key result and separate direct safety observations. `postCutover` is a
+  distinct observation after separately approved execution and must agree with
+  the immutable receipt/deployment digest. CI never fabricates or executes
+  either Hosted observation.
+- The six historical billing admission functions are inventoried read-only.
+  Their remaining effective runtime authority is a Production `HOLD`, but this
+  tranche performs no revoke, rename, drop or secret deletion. Billing
+  retirement and `BILLING_PIN` deletion are two later approval boundaries.
+- Staging mutation, OAuth/provider configuration, Human identity testing, E
+  cutover, `ADMIN_PIN` deletion, billing retirement, `BILLING_PIN` deletion and
+  limited identity canary each require a fresh exact-SHA/environment/action-
+  digest approval. An earlier requirements approval or green CI is not
+  transitive authority.
+- Any identity/lecture/environment leak, AAL1 privileged data, callback/Origin
+  widening, old-session resurrection, last-owner bypass, secret exposure,
+  deployment/receipt mismatch, disabled fence trigger or unresolved
+  Critical/High finding stops the run. Containment disables new admission and
+  paid starts, revokes the affected cohort and returns to the immutable
+  Google-only revision; rollback never restores a shared PIN.
