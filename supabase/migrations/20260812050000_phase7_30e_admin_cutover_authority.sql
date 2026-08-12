@@ -105,8 +105,7 @@ alter table private.admin_lecture_ownerships
     ) on delete restrict;
 
 create unique index admin_lecture_ownerships_approval_idx
-  on private.admin_lecture_ownerships (ownership_approval_id)
-  where ownership_approval_id is not null;
+  on private.admin_lecture_ownerships (ownership_approval_id);
 
 create table private.admin_lecture_ownership_claim_receipts (
   request_id uuid primary key,

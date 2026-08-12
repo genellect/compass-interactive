@@ -226,7 +226,7 @@ SELECT alike(
   pg_get_functiondef(
     'private.approve_google_admin_lecture_ownership_claim_v1(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,timestamp with time zone)'::regprocedure
   ),
-  '%mapping_evidence_digest%expected_lecture_status%expected_lifecycle_version%insert into private.admin_lecture_ownership_claim_approvals%',
+  '%mapping_evidence_digest%insert into private.admin_lecture_ownership_claim_approvals%expected_lecture_status%expected_lifecycle_version%',
   'operator approval freezes mapping evidence and the reviewed lecture state'
 );
 
@@ -280,14 +280,14 @@ SELECT ok(
   EXISTS (
     SELECT 1
     FROM pg_trigger AS trigger
-    JOIN pg_constraint AS constraint
-      ON constraint.oid = trigger.tgconstraint
+    JOIN pg_constraint AS constraint_row
+      ON constraint_row.oid = trigger.tgconstraint
     JOIN pg_proc AS procedure ON procedure.oid = trigger.tgfoid
     JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
     WHERE trigger.tgrelid = 'public.lecture_sessions'::regclass
       AND NOT trigger.tgisinternal
-      AND constraint.condeferrable
-      AND constraint.condeferred
+      AND constraint_row.condeferrable
+      AND constraint_row.condeferred
       AND namespace.nspname = 'private'
       AND procedure.proname =
         'enforce_active_admin_lecture_ownership_v1'
@@ -298,12 +298,12 @@ SELECT ok(
 SELECT ok(
   EXISTS (
     SELECT 1
-    FROM pg_constraint AS constraint
-    WHERE constraint.conrelid =
+    FROM pg_constraint AS constraint_row
+    WHERE constraint_row.conrelid =
       'private.admin_lecture_ownerships'::regclass
-      AND constraint.contype = 'c'
-      AND pg_get_constraintdef(constraint.oid) LIKE '%google_create%'
-      AND pg_get_constraintdef(constraint.oid) LIKE '%operator_claim%'
+      AND constraint_row.contype = 'c'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%google_create%'
+      AND pg_get_constraintdef(constraint_row.oid) LIKE '%operator_claim%'
   )
   AND EXISTS (
     SELECT 1
