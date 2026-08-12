@@ -112,8 +112,8 @@ jobs:
         with:
           name: demo-e2e-evidence-${{ github.run_attempt }}
           path: |
-            playwright-report/
             test-results/demo/
+            test-results/reports/demo/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -318,8 +318,8 @@ jobs:
         with:
           name: local-integration-evidence-${{ github.run_attempt }}
           path: |
-            playwright-report/
             test-results/local/
+            test-results/reports/local/
             ${{ runner.temp }}/compass-edge.log
           if-no-files-found: ignore
           retention-days: 7

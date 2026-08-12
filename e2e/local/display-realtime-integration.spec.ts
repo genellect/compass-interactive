@@ -560,12 +560,39 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // The regression intentionally revokes the issuing Google Admin session.
     // Replacement issuance is covered by the separate Google-session fixture;
     // this browser must now remain unable to elevate or resume operations.
+    await adminSafety.assertClean()
+    const invalidSessionResponsePromise = adminPage.waitForResponse(
+      (response) => {
+        const request = response.request()
+        if (
+          new URL(response.url()).pathname !==
+            '/functions/v1/admin-identity-session' ||
+          request.method() !== 'POST' ||
+          response.status() !== 401
+        ) {
+          return false
+        }
+
+        const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+        return body.action === 'status'
+      },
+    )
     await adminPage.goto('/admin')
+    const invalidSessionResponse = await invalidSessionResponsePromise
+    expect(await invalidSessionResponse.json()).toMatchObject({
+      code: 'app_session_invalid',
+      ok: false,
+    })
     await expect(
       adminPage.getByRole('heading', { name: '教員としてログイン' }),
     ).toBeVisible()
     await expect(adminPage.locator('.admin-workflow')).toHaveCount(0)
 
+    await adminSafety.expectConsoleErrorOnce({
+      message:
+        'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
+      url: invalidSessionResponse.url(),
+    })
     await displaySafety.assertClean()
     await adminSafety.assertClean()
   } finally {

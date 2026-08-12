@@ -33,6 +33,10 @@ const ci = read('.github/workflows/ci.yml')
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
 const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
 const browserGoogleFixture = read('e2e/helpers/googleAdminSession.ts')
+const browserSafety = read('e2e/helpers/browserSafety.ts')
+const displayRealtimeBrowser = read(
+  'e2e/local/display-realtime-integration.spec.ts',
+)
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
@@ -464,6 +468,61 @@ assert.match(
   browserGoogleFixture,
   /repeatEachIndex \* retryStride \+ test\.info\(\)\.retry[\s\S]*Array\.isArray\(configuredFixture\)[\s\S]*configuredFixture\[attemptIndex\]/,
   'each local browser attempt must select its repeat-and-retry-scoped Google Admin fixture',
+)
+assert.match(
+  browserSafety,
+  /expectConsoleErrorOnce: \(expected: \{[\s\S]*message: string[\s\S]*url: string[\s\S]*\}\) => Promise<void>/,
+  'browser safety must expose an exact, one-shot expected console-error contract',
+)
+assert.match(
+  browserSafety,
+  /locationUrl: message\.location\(\)\.url[\s\S]*message: `console: \$\{message\.text\(\)\}`/,
+  'browser safety must retain the console source URL beside the exact message',
+)
+assert.match(
+  browserSafety,
+  /error\.message === expectedMessage[\s\S]*error\.locationUrl === expected\.url[\s\S]*matchingErrors\(\)\.length[\s\S]*\.toBe\(1\)[\s\S]*matchingIndexes[\s\S]*\.toHaveLength\(1\)[\s\S]*browserErrors\.splice/,
+  'expected console errors must match one exact message and URL and consume only that entry',
+)
+assert.doesNotMatch(
+  browserSafety,
+  /401|Unauthorized|admin-identity-session/,
+  'the shared browser monitor must not carry a global authentication-error allowlist',
+)
+assert.match(
+  browserSafety,
+  /page\.on\('pageerror'[\s\S]*message: `pageerror: \$\{error\.message\}`[\s\S]*externalRequests\.push\(requestUrl\.origin\)[\s\S]*route\.abort\('blockedbyclient'\)[\s\S]*new Set\(externalRequests\)[\s\S]*browserErrors\.map/,
+  'one-shot console consumption must preserve page-error and external-host rejection',
+)
+const revokedDisplayBrowserPhaseStart = displayRealtimeBrowser.indexOf(
+  '// The regression intentionally revokes the issuing Google Admin session.',
+)
+assert.ok(
+  revokedDisplayBrowserPhaseStart >= 0,
+  'the Display browser regression must retain its explicit revoke boundary',
+)
+const revokedDisplayBrowserPhase = displayRealtimeBrowser.slice(
+  revokedDisplayBrowserPhaseStart,
+)
+assert.match(
+  revokedDisplayBrowserPhase,
+  /await adminSafety\.assertClean\(\)[\s\S]*adminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*await adminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
+  'the final Display phase must prove the exact fail-closed Admin status response after a clean checkpoint',
+)
+assert.match(
+  revokedDisplayBrowserPhase,
+  /await adminSafety\.expectConsoleErrorOnce\(\{[\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await adminSafety\.assertClean\(\)/,
+  'the Display regression may consume only the proven status 401 before its final safety checks',
+)
+assert.match(
+  ci,
+  /name: local-integration-evidence-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/local\/[\s\S]*test-results\/reports\/local\//,
+  'failed local integration evidence must retain both raw traces and the HTML report',
+)
+assert.match(
+  ci,
+  /name: demo-e2e-evidence-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/demo\/[\s\S]*test-results\/reports\/demo\//,
+  'failed demo integration evidence must retain both raw traces and the HTML report',
 )
 assert.match(
   localGoogleFixture,
