@@ -31,6 +31,8 @@ const legacyFieldGuard = read('supabase/functions/_shared/googleOnlyAdmin.ts')
 const packageJson = JSON.parse(read('package.json'))
 const ci = read('.github/workflows/ci.yml')
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
+const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
+const browserGoogleFixture = read('e2e/helpers/googleAdminSession.ts')
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
@@ -437,6 +439,31 @@ assert.match(
   localGoogleFixture,
   /delete from auth\.identities[\s\S]*provider <> 'google'/,
   'the local AAL2 fixture must expose one Google identity to strict operational verification',
+)
+assert.match(
+  adminRoute,
+  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*await adminSupabase\.auth[\s\S]*\.signOut\(\{ scope: 'local' \}\)[\s\S]*\.catch\(\(\) => undefined\)[\s\S]*clearGoogleAdminWorkspace\([\s\S]*appSessionToken[\s\S]*return/,
+  'boot-time invalid Google identity state must sign out locally and clear the workspace',
+)
+assert.match(
+  browserRunner,
+  /configuredCountOption\('--retries', process\.env\.CI \? 1 : 0, 0\)[\s\S]*configuredCountOption\('--repeat-each', 1, 1\)/,
+  'the local browser fixture count must match Playwright retry and repeat defaults',
+)
+assert.match(
+  browserRunner,
+  /const retryCount = configuredRetryCount\(\)[\s\S]*const repeatEachCount = configuredRepeatEachCount\(\)[\s\S]*repeatEachIndex < repeatEachCount[\s\S]*retry <= retryCount[\s\S]*projectFixtures\.push/,
+  'local browser repeats and retries must receive independent Google Admin fixtures',
+)
+assert.match(
+  browserRunner,
+  /TEST_GOOGLE_ADMIN_BROWSER_RETRY_STRIDE: String\(retryCount \+ 1\)/,
+  'the local browser helper must receive the retry stride used to flatten repeat attempts',
+)
+assert.match(
+  browserGoogleFixture,
+  /repeatEachIndex \* retryStride \+ test\.info\(\)\.retry[\s\S]*Array\.isArray\(configuredFixture\)[\s\S]*configuredFixture\[attemptIndex\]/,
+  'each local browser attempt must select its repeat-and-retry-scoped Google Admin fixture',
 )
 assert.match(
   localGoogleFixture,

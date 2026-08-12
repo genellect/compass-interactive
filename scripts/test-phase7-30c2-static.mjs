@@ -1333,6 +1333,11 @@ assert.match(
 )
 assert.match(
   adminRoute,
+  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*auth[\s\S]*\.signOut\(\{ scope: 'local' \}\)[\s\S]*clearGoogleAdminWorkspace\([\s\S]*appSessionToken[\s\S]*return/,
+  'boot-time identity invalidation must also clear Google Auth before sign-in',
+)
+assert.match(
+  adminRoute,
   /clearGoogleAdminWorkspace[\s\S]*clearAdminAuthStorage\(\)[\s\S]*clearAdminPdfExtractionCache\(\)[\s\S]*setPhase\('signed_out'\)/,
   'session invalidation clears auth, idempotency and private PDF state locally',
 )

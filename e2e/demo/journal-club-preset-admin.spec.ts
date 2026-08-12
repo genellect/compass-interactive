@@ -425,13 +425,17 @@ test.describe('Phase 7.27 flag ON', () => {
     await page.keyboard.press('Tab')
     await expect(productionButton).toBeFocused()
 
-    await Promise.all([
-      page.waitForEvent('dialog').then((dialog) => dialog.dismiss()),
-      // This branch verifies cancellation state. The accepted path below keeps
-      // a real pointer click, so avoid Mobile WebKit occasionally stalling the
-      // redundant native-dialog action after the focus-order assertion.
-      productionButton.dispatchEvent('click'),
-    ])
+    await page.evaluate(() => {
+      const originalConfirm = window.confirm
+      window.confirm = () => {
+        window.confirm = originalConfirm
+        return false
+      }
+    })
+    // Keep the cancellation path on a trusted pointer click without leaving a
+    // dismissed native dialog to absorb Mobile WebKit's next pointer action.
+    // The accepted path below still verifies the real dialog and its copy.
+    await productionButton.click()
     expect(
       state.lectureRequests.filter(
         (request) => request.action === 'createJournalClubRun',
@@ -641,11 +645,14 @@ test.describe('Phase 7.27 flag ON', () => {
 
     await page.goto('/admin')
     await expect(page.locator('.admin-identity-card')).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '教員としてログイン' }),
+    ).toBeVisible()
     await expect(page.locator('input[type="password"]')).toHaveCount(0)
     await expect(page.locator('#admin-live')).toHaveCount(0)
     await expect(
       page.getByText(
-        '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
+        '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
       ),
     ).toBeVisible()
     await expect
@@ -661,7 +668,7 @@ test.describe('Phase 7.27 flag ON', () => {
           ),
         })),
       )
-      .toEqual({ appSessionToken: null, authPresent: true })
+      .toEqual({ appSessionToken: null, authPresent: false })
   })
 
   test('explains the shared PDF start guard in teacher-facing language', async ({

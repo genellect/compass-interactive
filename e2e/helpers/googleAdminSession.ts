@@ -1,9 +1,4 @@
-import {
-  expect,
-  test,
-  type BrowserContext,
-  type Page,
-} from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 const adminAuthStorageKey = 'compass-interactive-admin-supabase-auth-v1'
 const adminAppSessionStorageKey =
@@ -22,13 +17,25 @@ export function readGoogleAdminBrowserFixture(): GoogleAdminBrowserFixture {
   if (fixtures) {
     const byProject = JSON.parse(fixtures) as Record<
       string,
-      GoogleAdminBrowserFixture
+      GoogleAdminBrowserFixture | GoogleAdminBrowserFixture[]
     >
     const projectName = test.info().project.name
-    const projectFixture = byProject[projectName]
+    const configuredFixture = byProject[projectName]
+    const retryStride = Number(
+      process.env.TEST_GOOGLE_ADMIN_BROWSER_RETRY_STRIDE ?? '1',
+    )
+    expect(
+      Number.isSafeInteger(retryStride) && retryStride > 0,
+      'The local Google Admin fixture retry stride must be a positive integer.',
+    ).toBe(true)
+    const attemptIndex =
+      test.info().repeatEachIndex * retryStride + test.info().retry
+    const projectFixture = Array.isArray(configuredFixture)
+      ? configuredFixture[attemptIndex]
+      : configuredFixture
     expect(
       projectFixture,
-      `The local Google Admin fixture for ${projectName} is required.`,
+      `The local Google Admin fixture for ${projectName} repeat ${test.info().repeatEachIndex} retry ${test.info().retry} is required.`,
     ).toBeTruthy()
     fixture = projectFixture
   } else {
@@ -64,7 +71,9 @@ export async function installGoogleAdminSession(
     }) => {
       window.localStorage.setItem(authStorageKey, authStorageValue)
       window.sessionStorage.setItem(appSessionStorageKey, appSessionToken)
-      window.sessionStorage.removeItem('compass-interactive-admin-authenticated')
+      window.sessionStorage.removeItem(
+        'compass-interactive-admin-authenticated',
+      )
       window.sessionStorage.removeItem('compass-interactive-admin-token')
     },
     {

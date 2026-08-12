@@ -72,6 +72,37 @@ function selectedLocalProjects() {
   return [...new Set(projects.length > 0 ? projects : defaultLocalProjects)]
 }
 
+function configuredCountOption(optionName, fallback, minimum) {
+  const args = process.argv.slice(3)
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    const optionPrefix = `${optionName}=`
+    const rawValue = argument.startsWith(optionPrefix)
+      ? argument.slice(optionPrefix.length)
+      : argument === optionName
+        ? args[index + 1]
+        : null
+    if (rawValue === null) continue
+    if (!/^\d+$/.test(rawValue ?? '')) {
+      throw new Error(`${optionName} must be an integer.`)
+    }
+    const value = Number(rawValue)
+    if (!Number.isSafeInteger(value) || value < minimum) {
+      throw new Error(`${optionName} must be at least ${minimum}.`)
+    }
+    return value
+  }
+  return fallback
+}
+
+function configuredRetryCount() {
+  return configuredCountOption('--retries', process.env.CI ? 1 : 0, 0)
+}
+
+function configuredRepeatEachCount() {
+  return configuredCountOption('--repeat-each', 1, 1)
+}
+
 async function allocateLoopbackPort() {
   return await new Promise((resolve, reject) => {
     const probe = createServer()
@@ -479,25 +510,39 @@ try {
     PLAYWRIGHT_BASE_URL: baseURL,
   }
   if (localMode) {
+    const retryCount = configuredRetryCount()
+    const repeatEachCount = configuredRepeatEachCount()
     const fixturesByProject = {}
     for (const projectName of selectedLocalProjects()) {
-      const handle = await startGoogleAdminAal2Fixture({
-        cwd: root,
-        env: {
-          ...appEnvironment,
-          TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN: mode === 'local-ai' ? '1357' : '',
-        },
-        retainEnvironment: true,
-      })
-      googleAdminFixtureHandles.push(handle)
-      fixturesByProject[projectName] = {
-        appSessionToken: handle.fixture.appSessionToken,
-        authStorageValue: handle.fixture.authStorageValue,
+      const projectFixtures = []
+      for (
+        let repeatEachIndex = 0;
+        repeatEachIndex < repeatEachCount;
+        repeatEachIndex += 1
+      ) {
+        for (let retry = 0; retry <= retryCount; retry += 1) {
+          const handle = await startGoogleAdminAal2Fixture({
+            cwd: root,
+            env: {
+              ...appEnvironment,
+              TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
+                mode === 'local-ai' ? '1357' : '',
+            },
+            retainEnvironment: true,
+          })
+          googleAdminFixtureHandles.push(handle)
+          projectFixtures.push({
+            appSessionToken: handle.fixture.appSessionToken,
+            authStorageValue: handle.fixture.authStorageValue,
+          })
+        }
       }
+      fixturesByProject[projectName] = projectFixtures
     }
-    const primaryFixture = Object.values(fixturesByProject)[0]
+    const primaryFixture = Object.values(fixturesByProject)[0][0]
     Object.assign(playwrightEnvironment, {
       TEST_GOOGLE_ADMIN_BROWSER_FIXTURES: JSON.stringify(fixturesByProject),
+      TEST_GOOGLE_ADMIN_BROWSER_RETRY_STRIDE: String(retryCount + 1),
       TEST_GOOGLE_ADMIN_APP_SESSION_TOKEN: primaryFixture.appSessionToken,
       TEST_GOOGLE_ADMIN_AUTH_STORAGE_VALUE: primaryFixture.authStorageValue,
       TEST_GOOGLE_ADMIN_AI_PIN: mode === 'local-ai' ? '1357' : '',

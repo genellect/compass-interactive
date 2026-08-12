@@ -20,7 +20,6 @@ import {
 } from '../lib/featureFlags'
 import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
 import {
-  ADMIN_APP_SESSION_STORAGE_KEY,
   clearAdminAuthStorage,
   clearAdminOAuthAttempt,
   beginAdminOAuthAttempt,
@@ -251,10 +250,20 @@ export function AdminRoute() {
         } catch (error) {
           if (
             error instanceof AdminIdentityError &&
-            error.code === 'app_session_invalid'
+            [
+              'aal2_required',
+              'app_session_invalid',
+              'identity_invalid',
+            ].includes(error.code)
           ) {
-            window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
-            setAppSessionToken('')
+            await adminSupabase.auth
+              .signOut({ scope: 'local' })
+              .catch(() => undefined)
+            clearGoogleAdminWorkspace(
+              '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
+              appSessionToken,
+            )
+            return
           } else {
             throw error
           }
@@ -292,7 +301,7 @@ export function AdminRoute() {
       setFactorId(enrolled.id)
       setPhase('enrollment')
     },
-    [],
+    [clearGoogleAdminWorkspace],
   )
 
   useEffect(() => {
@@ -779,11 +788,7 @@ export function AdminRoute() {
         </form>
       </main>
     )
-  } else if (
-    phase === 'ready' &&
-    session &&
-    googleAdminCredential
-  ) {
+  } else if (phase === 'ready' && session && googleAdminCredential) {
     content = (
       <Suspense fallback={<RouteFallback />}>
         <AdminWorkspaceApp
