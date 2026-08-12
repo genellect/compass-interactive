@@ -4345,7 +4345,6 @@ export type Database = {
       }
       admin_set_poll_status: {
         Args: {
-          target_display_auth_user_id: string
           target_lecture_session_id: string
           target_poll_id: string
           target_status: string
