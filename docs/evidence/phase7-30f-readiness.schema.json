@@ -852,6 +852,8 @@
       "additionalProperties": false,
       "required": [
         "stagingHostedMutation",
+        "oauthProviderConfiguration",
+        "stagingHumanIdentityRun",
         "googleOnlyCutover",
         "adminPinSecretDeletion",
         "legacyBillingAuthorityRetirement",
@@ -861,6 +863,12 @@
       ],
       "properties": {
         "stagingHostedMutation": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "oauthProviderConfiguration": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "stagingHumanIdentityRun": {
           "$ref": "#/$defs/approvalRecord"
         },
         "googleOnlyCutover": {

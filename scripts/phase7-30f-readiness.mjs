@@ -907,6 +907,20 @@ function validateSemanticConsistency(evidence) {
     'stagingHostedMutation',
     evidence.hostedEvidence.executedAt,
   )
+  if (
+    evidence.hostedEvidence.callbackOriginAllowlistPass !== null ||
+    evidence.hostedEvidence.oauthConsentPass !== null
+  ) {
+    requireApprovalBefore(
+      'oauthProviderConfiguration',
+      evidence.hostedEvidence.executedAt,
+    )
+  }
+  for (const record of Object.values(evidence.humanEvidence)) {
+    if (record.status !== 'NOT_RUN') {
+      requireApprovalBefore('stagingHumanIdentityRun', record.performedAt)
+    }
+  }
   if (evidence.postCutover.snapshot?.cutoverCommitted) {
     requireApprovalBefore('googleOnlyCutover', evidence.postCutover.capturedAt)
   }
@@ -1138,6 +1152,30 @@ function validateSemanticConsistency(evidence) {
         ),
       )
     }
+  }
+  if (
+    evidence.hostedEvidence.executed &&
+    evidence.approvals.oauthProviderConfiguration.state !== 'APPROVED'
+  ) {
+    errors.push(
+      issue(
+        'OAUTH_CONFIGURATION_WITHOUT_APPROVAL',
+        '$.approvals.oauthProviderConfiguration',
+        'OAuth/provider configuration evidence requires prior approval.',
+      ),
+    )
+  }
+  if (
+    humanObserved &&
+    evidence.approvals.stagingHumanIdentityRun.state !== 'APPROVED'
+  ) {
+    errors.push(
+      issue(
+        'HUMAN_RUN_WITHOUT_APPROVAL',
+        '$.approvals.stagingHumanIdentityRun',
+        'Staging Human identity evidence requires prior approval.',
+      ),
+    )
   }
   if (
     evidence.postCutover.snapshot?.cutoverCommitted &&
@@ -1449,6 +1487,8 @@ function readinessFailures(evidence) {
   )
   for (const name of [
     'stagingHostedMutation',
+    'oauthProviderConfiguration',
+    'stagingHumanIdentityRun',
     'googleOnlyCutover',
     'adminPinSecretDeletion',
     'legacyBillingAuthorityRetirement',

@@ -232,6 +232,16 @@
       "recordedAt": null,
       "evidenceDigestSha256": null
     },
+    "oauthProviderConfiguration": {
+      "state": "HOLD",
+      "recordedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "stagingHumanIdentityRun": {
+      "state": "HOLD",
+      "recordedAt": null,
+      "evidenceDigestSha256": null
+    },
     "googleOnlyCutover": {
       "state": "HOLD",
       "recordedAt": null,

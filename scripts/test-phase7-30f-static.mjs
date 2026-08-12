@@ -453,6 +453,8 @@ complete.rollbackEvidence = {
 }
 for (const name of [
   'stagingHostedMutation',
+  'oauthProviderConfiguration',
+  'stagingHumanIdentityRun',
   'googleOnlyCutover',
   'adminPinSecretDeletion',
   'legacyBillingAuthorityRetirement',
@@ -477,6 +479,30 @@ assert.deepEqual(completeResult.holdReasons, [])
 assert.equal(completeResult.decision, PHASE730F_MAXIMUM_DECISION)
 assert.equal(completeResult.productionAuthorized, false)
 assert.equal(completeResult.canaryAuthorized, false)
+
+const oauthWithoutApproval = clone(complete)
+oauthWithoutApproval.approvals.oauthProviderConfiguration = {
+  state: 'HOLD',
+  recordedAt: null,
+  evidenceDigestSha256: null,
+}
+assert.ok(
+  validatePhase730FEvidence(oauthWithoutApproval).some(
+    (error) => error.code === 'OAUTH_CONFIGURATION_WITHOUT_APPROVAL',
+  ),
+)
+
+const humanWithoutApproval = clone(complete)
+humanWithoutApproval.approvals.stagingHumanIdentityRun = {
+  state: 'HOLD',
+  recordedAt: null,
+  evidenceDigestSha256: null,
+}
+assert.ok(
+  validatePhase730FEvidence(humanWithoutApproval).some(
+    (error) => error.code === 'HUMAN_RUN_WITHOUT_APPROVAL',
+  ),
+)
 
 const failedHumanScenario = clone(complete)
 failedHumanScenario.humanEvidence.accountDisable.status = 'FAIL'
