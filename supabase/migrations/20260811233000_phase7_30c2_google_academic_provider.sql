@@ -2937,7 +2937,10 @@ begin
       status = 'discarded',
       lease_until = null,
       error_code = left(
-        coalesce(error_code, 'academic_answer_cancelled'),
+        coalesce(
+          fail_google_admin_academic_answer_operation_v1.error_code,
+          'academic_answer_cancelled'
+        ),
         120
       ),
       updated_at = statement_timestamp()
