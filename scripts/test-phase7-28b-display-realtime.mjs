@@ -23,6 +23,7 @@ const displayClient = read('src/display/displayRealtime.ts')
 const displayPage = read('src/pages/DisplayPage.tsx')
 const displayLauncher = read('src/pages/admin/useAdminDisplayLauncher.ts')
 const lecturePage = read('src/pages/LecturePage.tsx')
+const lockOrderRegression = read('scripts/test-phase7-28b-lock-order.mjs')
 const localEnvironment = read('.env.local.example')
 const supabaseConfig = read('supabase/config.toml')
 
@@ -84,6 +85,40 @@ test('Display binding is private, atomically single-use and bounded to one activ
   assert.match(
     migration,
     /select session\.\*[\s\S]*?from public\.admin_sessions[\s\S]*?for share;[\s\S]*?select lecture\.\*[\s\S]*?from public\.lecture_sessions[\s\S]*?for update;/,
+  )
+})
+
+test('Display issue and Admin revoke races observe real row-lock contention', () => {
+  assert.match(lockOrderRegression, /function startSqlUntilReady/)
+  assert.match(
+    lockOrderRegression,
+    /`\$\{stdout\}\\n\$\{stderr\}`\.includes\(readyMarker\)/,
+  )
+  assert.match(lockOrderRegression, /child\.on\('close'/)
+  assert.match(lockOrderRegression, /void done\.catch\(\(\) => undefined\)/)
+  assert.match(
+    lockOrderRegression,
+    /for share;[\s\S]*?PHASE728B_ISSUE_FIRST_READY[\s\S]*?phase728b-issue-first-revoke-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?register_display_realtime_session_v1/,
+  )
+  assert.match(
+    lockOrderRegression,
+    /await issueFirst\.ready[\s\S]*?phase728b-issue-first-revoke-waiter[\s\S]*?Promise\.all\(\[issueFirst\.done, issueFirstRevoke\]\)/,
+  )
+  assert.match(
+    lockOrderRegression,
+    /for update;[\s\S]*?PHASE728B_REVOKE_FIRST_READY[\s\S]*?phase728b-revoke-first-display-waiter[\s\S]*?wait_event_type = 'Lock'[\s\S]*?revoke_reason = 'p728b_revoke_first'/,
+  )
+  assert.match(
+    lockOrderRegression,
+    /revokeFirst\[0\]\?\.status !== 'fulfilled'[\s\S]*?revokeFirst\[1\]\?\.status !== 'rejected'[\s\S]*?tracked Admin session is not active/,
+  )
+  assert.match(
+    lockOrderRegression,
+    /await revokeFirstHolder\.ready[\s\S]*?phase728b-revoke-first-display-waiter[\s\S]*?Promise\.allSettled\(\[[\s\S]*?revokeFirstHolder\.done[\s\S]*?revokeFirstDisplay/,
+  )
+  assert.doesNotMatch(
+    lockOrderRegression,
+    /select (?:pg_catalog\.)?pg_sleep\(0\.(?:1|5)0*\);/,
   )
 })
 

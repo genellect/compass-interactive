@@ -50,7 +50,88 @@ function runSql(sql) {
   })
 }
 
-const roles = ['nonce', 'commit', 'activation', 'cleanup', 'abort_wins', 'active_wins']
+function startSqlUntilReady(sql, readyMarker) {
+  let resolveReady
+  let rejectReady
+  let readySettled = false
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+  const done = new Promise((resolve, reject) => {
+    const child = spawn(
+      'docker',
+      [
+        'exec',
+        '-i',
+        container,
+        'psql',
+        '-X',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-c',
+        sql,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let stdout = ''
+    let stderr = ''
+    const observe = () => {
+      if (!readySettled && `${stdout}\n${stderr}`.includes(readyMarker)) {
+        readySettled = true
+        resolveReady()
+      }
+    }
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      observe()
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      observe()
+    })
+    child.on('error', (error) => {
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+    child.on('close', (code) => {
+      if (code === 0 && readySettled) {
+        resolve()
+        return
+      }
+      const error = new Error(
+        stderr.trim() ||
+          stdout.trim() ||
+          `psql exited before readiness marker ${readyMarker}`,
+      )
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+  })
+  void done.catch(() => undefined)
+  return { ready, done }
+}
+
+const roles = [
+  'nonce',
+  'commit',
+  'activation',
+  'cleanup',
+  'abort_wins',
+  'active_wins',
+]
 const codes = new Map(
   roles.map((role) => [role, String(randomInt(100000, 1000000))]),
 )
@@ -189,6 +270,27 @@ const transactionSettings = `
   set local lock_timeout = '5s';
   set local statement_timeout = '15s';
 `
+const waitForApplicationLock = (applicationName, failureMessage) => `
+  do $phase726_wait$
+  declare wait_started_at timestamptz := clock_timestamp();
+  begin
+    loop
+      perform pg_catalog.pg_stat_clear_snapshot();
+      exit when exists (
+        select 1
+        from pg_catalog.pg_stat_activity
+        where application_name = ${sqlLiteral(applicationName)}
+          and wait_event_type = 'Lock'
+          and pid <> pg_catalog.pg_backend_pid()
+      );
+      if clock_timestamp() > wait_started_at + interval '10 seconds' then
+        raise exception ${sqlLiteral(failureMessage)};
+      end if;
+      perform pg_catalog.pg_sleep(0.01);
+    end loop;
+  end;
+  $phase726_wait$;
+`
 const nonceClaimSql = `
   begin;
   ${transactionSettings}
@@ -241,8 +343,12 @@ const activationPrepareSql = `
 await Promise.all([runSql(activationPrepareSql), runSql(activationPrepareSql)])
 
 await Promise.all([
-  runSql(`select * from public.claim_due_pdf_publication_cleanup_v1(1, 'race-cleaner-a');`),
-  runSql(`select * from public.claim_due_pdf_publication_cleanup_v1(1, 'race-cleaner-b');`),
+  runSql(
+    `select * from public.claim_due_pdf_publication_cleanup_v1(1, 'race-cleaner-a');`,
+  ),
+  runSql(
+    `select * from public.claim_due_pdf_publication_cleanup_v1(1, 'race-cleaner-b');`,
+  ),
 ])
 
 const activationComplete = (column, operationId, etag) => `
@@ -266,66 +372,153 @@ const activationCompleteSql = `
   )}
   commit;
 `
-await Promise.all([runSql(activationCompleteSql), runSql(activationCompleteSql)])
+await Promise.all([
+  runSql(activationCompleteSql),
+  runSql(activationCompleteSql),
+])
 
 await runSql(`
   ${activationPrepare('abort_wins_publication_id', abortWinsOperationId)}
   ${activationPrepare('active_wins_publication_id', activationWinsOperationId)}
 `)
 
-await Promise.all([
-  runSql(`
+const abortWinner = startSqlUntilReady(
+  `
     begin;
     ${transactionSettings}
+    set local application_name = 'phase726-abort-wins-holder';
     select public.admin_abort_pdf_publication_v1(
       abort_wins_publication_id,
       'parallel_abort_wins',
       ${sqlLiteral(adminSessionId)}::uuid,
       ${sqlLiteral(adminUserId)}::uuid
     ) from public.phase726_race_fixture;
-    select pg_sleep(0.5);
-    commit;
-  `),
-  runSql(`
-    begin;
-    ${transactionSettings}
-    select pg_sleep(0.1);
-    ${activationComplete(
-      'abort_wins_publication_id',
-      abortWinsOperationId,
-      'race-abort-wins-etag',
+    do $phase726_abort_ready$
+    begin
+      if not exists (
+        select 1
+        from public.lecture_pdf_publications as publication
+        join public.phase726_race_fixture as fixture
+          on fixture.abort_wins_publication_id = publication.id
+        where publication.state = 'aborted'
+          and publication.last_error_code = 'parallel_abort_wins'
+      ) then
+        raise exception 'abort-first winner did not reach the expected state';
+      end if;
+      raise notice 'PHASE726_ABORT_WINNER_READY';
+    end;
+    $phase726_abort_ready$;
+    ${waitForApplicationLock(
+      'phase726-abort-wins-activation-waiter',
+      'abort-first activation loser did not reach the publication lock',
     )}
     commit;
-  `),
+  `,
+  'PHASE726_ABORT_WINNER_READY',
+)
+await abortWinner.ready
+const abortLoser = runSql(`
+  begin;
+  ${transactionSettings}
+  set local application_name = 'phase726-abort-wins-activation-waiter';
+  ${activationComplete(
+    'abort_wins_publication_id',
+    abortWinsOperationId,
+    'race-abort-wins-etag',
+  )}
+  do $phase726_abort_loser$
+  begin
+    if not exists (
+      select 1
+      from public.lecture_pdf_publications as publication
+      join public.phase726_race_fixture as fixture
+        on fixture.abort_wins_publication_id = publication.id
+      where publication.state = 'aborted'
+        and publication.last_error_code = 'parallel_abort_wins'
+    ) then
+      raise exception 'abort-first activation loser changed the terminal state';
+    end if;
+  end;
+  $phase726_abort_loser$;
+  commit;
+`)
+const [abortWinnerResult, abortLoserResult] = await Promise.allSettled([
+  abortWinner.done,
+  abortLoser,
 ])
+if (abortWinnerResult.status === 'rejected') {
+  throw new Error(`abort-first winner failed: ${abortWinnerResult.reason}`)
+}
+if (abortLoserResult.status === 'rejected') {
+  throw new Error(
+    `abort-first activation loser failed: ${abortLoserResult.reason}`,
+  )
+}
 
-const activationWins = await Promise.allSettled([
-  runSql(`
+const activationWinner = startSqlUntilReady(
+  `
     begin;
     ${transactionSettings}
+    set local application_name = 'phase726-activation-wins-holder';
     ${activationComplete(
       'active_wins_publication_id',
       activationWinsOperationId,
       'race-activation-wins-etag',
     )}
-    select pg_sleep(0.5);
+    do $phase726_activation_ready$
+    begin
+      if not exists (
+        select 1
+        from public.lecture_pdf_publications as publication
+        join public.phase726_race_fixture as fixture
+          on fixture.active_wins_publication_id = publication.id
+        where publication.state = 'active'
+          and publication.last_error_code is null
+      ) then
+        raise exception 'activation-first winner did not reach the expected state';
+      end if;
+      raise notice 'PHASE726_ACTIVATION_WINNER_READY';
+    end;
+    $phase726_activation_ready$;
+    ${waitForApplicationLock(
+      'phase726-activation-wins-abort-waiter',
+      'activation-first abort loser did not reach the publication lock',
+    )}
     commit;
-  `),
-  runSql(`
-    begin;
-    ${transactionSettings}
-    select pg_sleep(0.1);
-    select public.admin_abort_pdf_publication_v1(
-      active_wins_publication_id,
-      'parallel_activation_wins',
-      ${sqlLiteral(adminSessionId)}::uuid,
-      ${sqlLiteral(adminUserId)}::uuid
-    ) from public.phase726_race_fixture;
-    commit;
-  `),
-])
-if (activationWins.filter((result) => result.status === 'rejected').length !== 1) {
-  throw new Error('activation-first race did not reject exactly the losing abort')
+  `,
+  'PHASE726_ACTIVATION_WINNER_READY',
+)
+await activationWinner.ready
+const activationLoser = runSql(`
+  begin;
+  ${transactionSettings}
+  set local application_name = 'phase726-activation-wins-abort-waiter';
+  select public.admin_abort_pdf_publication_v1(
+    active_wins_publication_id,
+    'parallel_activation_wins',
+    ${sqlLiteral(adminSessionId)}::uuid,
+    ${sqlLiteral(adminUserId)}::uuid
+  ) from public.phase726_race_fixture;
+  commit;
+`)
+const [activationWinnerResult, activationLoserResult] =
+  await Promise.allSettled([activationWinner.done, activationLoser])
+if (activationWinnerResult.status === 'rejected') {
+  throw new Error(
+    `activation-first winner failed: ${activationWinnerResult.reason}`,
+  )
+}
+if (activationLoserResult.status !== 'rejected') {
+  throw new Error('activation-first abort loser did not reject')
+}
+if (
+  !String(activationLoserResult.reason).includes(
+    'an active PDF publication cannot be aborted',
+  )
+) {
+  throw new Error(
+    `activation-first abort loser rejected unexpectedly: ${activationLoserResult.reason}`,
+  )
 }
 
 await runSql(`
@@ -389,6 +582,7 @@ await runSql(`
         on lecture.id = publication.lecture_session_id
       where publication.id = fixture.abort_wins_publication_id
         and publication.state = 'aborted'
+        and publication.last_error_code = 'parallel_abort_wins'
         and lecture.pdf_access_version = 1
         and publication.cleanup_worker_generation = 1
     ) then
@@ -401,6 +595,7 @@ await runSql(`
         on lecture.id = publication.lecture_session_id
       where publication.id = fixture.active_wins_publication_id
         and publication.state = 'active'
+        and publication.last_error_code is null
         and lecture.pdf_access_version = 2
         and publication.cleanup_worker_generation is null
     ) then

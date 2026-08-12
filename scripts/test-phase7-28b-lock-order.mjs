@@ -42,6 +42,89 @@ function runSql(sql) {
   })
 }
 
+function startSqlUntilReady(sql, readyMarker) {
+  let resolveReady
+  let rejectReady
+  let readySettled = false
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve
+    rejectReady = reject
+  })
+  const done = new Promise((resolve, reject) => {
+    const child = spawn(
+      'docker',
+      [
+        'exec',
+        '-i',
+        container,
+        'psql',
+        '-X',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-c',
+        sql,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    let stdout = ''
+    let stderr = ''
+    const observeReady = () => {
+      if (!readySettled && `${stdout}\n${stderr}`.includes(readyMarker)) {
+        readySettled = true
+        resolveReady()
+      }
+    }
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      observeReady()
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+      observeReady()
+    })
+    child.on('error', (error) => {
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+    child.on('close', (exitCode) => {
+      if (exitCode === 0) {
+        if (!readySettled) {
+          const error = new Error(
+            `psql exited before readiness marker ${readyMarker}: ${stdout.trim()}`,
+          )
+          readySettled = true
+          rejectReady(error)
+          reject(error)
+          return
+        }
+        resolve()
+        return
+      }
+      const error = new Error(
+        stderr.trim() ||
+          stdout.trim() ||
+          `psql exited with ${exitCode} before ${readyMarker}`,
+      )
+      if (!readySettled) {
+        readySettled = true
+        rejectReady(error)
+      }
+      reject(error)
+    })
+  })
+  void done.catch(() => undefined)
+  return { ready, done }
+}
+
 const issueFirstSessionId = randomUUID()
 const revokeFirstSessionId = randomUUID()
 const issueFirstAuthUserId = randomUUID()
@@ -147,14 +230,33 @@ const transactionSettings = `
 
 // Issue owns the Admin SHARE lock first. Revoke must then converge after the
 // newly issued binding commits, and both B/C revoke triggers drain it.
-await Promise.all([
-  runSql(`
+const issueFirst = startSqlUntilReady(
+  `
     begin;
     ${transactionSettings}
+    set local application_name = 'phase728b-issue-first-holder';
     select 1 from public.admin_sessions
     where id = ${sqlLiteral(issueFirstSessionId)}::uuid
     for share;
-    select pg_sleep(0.5);
+    do $$
+    declare
+      wait_started_at timestamptz := clock_timestamp();
+    begin
+      raise notice 'PHASE728B_ISSUE_FIRST_READY';
+      loop
+        perform pg_catalog.pg_stat_clear_snapshot();
+        exit when exists (
+          select 1 from pg_catalog.pg_stat_activity
+          where application_name = 'phase728b-issue-first-revoke-waiter'
+            and wait_event_type = 'Lock'
+        );
+        if clock_timestamp() > wait_started_at + interval '10 seconds' then
+          raise exception 'issue-first revoke did not reach the Admin session lock barrier';
+        end if;
+        perform pg_catalog.pg_sleep(0.01);
+      end loop;
+    end;
+    $$;
     select public.register_display_realtime_session_v1(
       ${sqlLiteral(issueFirstDisplayId)}::uuid,
       (select issue_first_lecture_id from public.phase728b_lock_fixture),
@@ -164,50 +266,90 @@ await Promise.all([
       ${sqlLiteral(issueFirstAuthUserId)}::uuid
     );
     commit;
-  `),
-  runSql(`
-    begin;
-    ${transactionSettings}
-    select pg_sleep(0.1);
-    update public.admin_sessions
-    set revoked_at = statement_timestamp(), revoke_reason = 'p728b_issue_first'
-    where id = ${sqlLiteral(issueFirstSessionId)}::uuid;
-    commit;
-  `),
-])
+  `,
+  'PHASE728B_ISSUE_FIRST_READY',
+)
+await issueFirst.ready
+const issueFirstRevoke = runSql(`
+  begin;
+  ${transactionSettings}
+  set local application_name = 'phase728b-issue-first-revoke-waiter';
+  update public.admin_sessions
+  set revoked_at = statement_timestamp(), revoke_reason = 'p728b_issue_first'
+  where id = ${sqlLiteral(issueFirstSessionId)}::uuid;
+  commit;
+`)
+await Promise.all([issueFirst.done, issueFirstRevoke])
 
 // Revoke owns the Admin row first. Registration must wait, observe terminal
 // Admin state, and fail cleanly rather than taking lecture->Admin locks.
+const revokeFirstHolder = startSqlUntilReady(
+  `
+  begin;
+  ${transactionSettings}
+  set local application_name = 'phase728b-revoke-first-holder';
+  select 1 from public.admin_sessions
+  where id = ${sqlLiteral(revokeFirstSessionId)}::uuid
+  for update;
+  do $$
+  declare
+    wait_started_at timestamptz := clock_timestamp();
+  begin
+    raise notice 'PHASE728B_REVOKE_FIRST_READY';
+    loop
+      perform pg_catalog.pg_stat_clear_snapshot();
+      exit when exists (
+        select 1 from pg_catalog.pg_stat_activity
+        where application_name = 'phase728b-revoke-first-display-waiter'
+          and wait_event_type = 'Lock'
+      );
+      if clock_timestamp() > wait_started_at + interval '10 seconds' then
+        raise exception 'revoke-first Display issue did not reach the Admin session lock barrier';
+      end if;
+      perform pg_catalog.pg_sleep(0.01);
+    end loop;
+  end;
+  $$;
+  update public.admin_sessions
+  set revoked_at = statement_timestamp(), revoke_reason = 'p728b_revoke_first'
+  where id = ${sqlLiteral(revokeFirstSessionId)}::uuid;
+  commit;
+  `,
+  'PHASE728B_REVOKE_FIRST_READY',
+)
+await revokeFirstHolder.ready
+const revokeFirstDisplay = runSql(`
+  begin;
+  ${transactionSettings}
+  set local application_name = 'phase728b-revoke-first-display-waiter';
+  select public.register_display_realtime_session_v1(
+    ${sqlLiteral(revokeFirstDisplayId)}::uuid,
+    (select revoke_first_lecture_id from public.phase728b_lock_fixture),
+    ${sqlLiteral(randomBytes(32).toString('hex'))},
+    statement_timestamp() + interval '1 hour',
+    ${sqlLiteral(revokeFirstSessionId)}::uuid,
+    ${sqlLiteral(revokeFirstAuthUserId)}::uuid
+  );
+  commit;
+`)
 const revokeFirst = await Promise.allSettled([
-  runSql(`
-    begin;
-    ${transactionSettings}
-    select 1 from public.admin_sessions
-    where id = ${sqlLiteral(revokeFirstSessionId)}::uuid
-    for update;
-    select pg_sleep(0.5);
-    update public.admin_sessions
-    set revoked_at = statement_timestamp(), revoke_reason = 'p728b_revoke_first'
-    where id = ${sqlLiteral(revokeFirstSessionId)}::uuid;
-    commit;
-  `),
-  runSql(`
-    begin;
-    ${transactionSettings}
-    select pg_sleep(0.1);
-    select public.register_display_realtime_session_v1(
-      ${sqlLiteral(revokeFirstDisplayId)}::uuid,
-      (select revoke_first_lecture_id from public.phase728b_lock_fixture),
-      ${sqlLiteral(randomBytes(32).toString('hex'))},
-      statement_timestamp() + interval '1 hour',
-      ${sqlLiteral(revokeFirstSessionId)}::uuid,
-      ${sqlLiteral(revokeFirstAuthUserId)}::uuid
-    );
-    commit;
-  `),
+  revokeFirstHolder.done,
+  revokeFirstDisplay,
 ])
-if (revokeFirst.filter((result) => result.status === 'rejected').length !== 1) {
-  throw new Error('revoke-first race must reject only the losing Display issue')
+if (revokeFirst[0]?.status !== 'fulfilled') {
+  throw new Error('revoke-first race unexpectedly rejected the Admin revoke')
+}
+if (
+  revokeFirst[1]?.status !== 'rejected' ||
+  !String(revokeFirst[1].reason).includes('tracked Admin session is not active')
+) {
+  throw new Error(
+    `revoke-first race did not reject the losing Display issue: ${String(
+      revokeFirst[1]?.status === 'rejected'
+        ? revokeFirst[1].reason
+        : revokeFirst[1]?.status,
+    )}`,
+  )
 }
 
 await runSql(`
