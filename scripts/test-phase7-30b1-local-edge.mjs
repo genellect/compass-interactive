@@ -440,6 +440,9 @@ try {
       statement_timestamp(),
       statement_timestamp()
     );
+    delete from auth.identities
+    where user_id = ${sqlLiteral(authUserId)}::uuid
+      and provider <> 'google';
     update auth.users
     set raw_app_meta_data =
       '{"provider":"google","providers":["google"]}'::jsonb,
@@ -917,6 +920,12 @@ try {
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_control_step_up_nonces
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      alter table private.admin_google_operation_receipts
+        disable trigger admin_google_operation_receipts_append_only;
+      delete from private.admin_google_operation_receipts
+      where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      alter table private.admin_google_operation_receipts
+        enable trigger admin_google_operation_receipts_append_only;
       delete from public.admin_sessions
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_step_up_nonces

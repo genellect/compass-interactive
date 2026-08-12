@@ -1000,8 +1000,8 @@ assert.equal(
 )
 assert.match(
   manageLectures,
-  /\(data as \{ ok\?: boolean \} \| null\)\?\.ok !== true/,
-  'Google lifecycle mutations must validate the RPC result',
+  /const result = requireGoogleAdminRpcResult\(\s*data as \{ ok\?: boolean \} \| null,?\s*\)\s*if \(result(?:\?\.|\.)ok !== true\) \{\s*throw new Error\(\s*'Google Admin lecture transition result is unavailable\.'/,
+  'Google lifecycle mutations must reject an invalid session before validating the RPC result',
 )
 assert.match(
   databaseTypes,

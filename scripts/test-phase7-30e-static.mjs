@@ -31,6 +31,9 @@ const legacyFieldGuard = read('supabase/functions/_shared/googleOnlyAdmin.ts')
 const packageJson = JSON.parse(read('package.json'))
 const ci = read('.github/workflows/ci.yml')
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
+const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
+const localEdgeContract = read('scripts/test-production-local-edge.mjs')
+const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
 const c1HeadUpgradeProbe = read(
   'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
@@ -430,6 +433,31 @@ assert.equal(
 )
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(nonlive, /'test:phase7-30e-static'/)
+assert.match(
+  localGoogleFixture,
+  /delete from auth\.identities[\s\S]*provider <> 'google'/,
+  'the local AAL2 fixture must expose one Google identity to strict operational verification',
+)
+assert.match(
+  localGoogleFixture,
+  /disable trigger admin_google_operation_receipts_append_only[\s\S]*delete from private\.admin_google_operation_receipts[\s\S]*where environment_id =[\s\S]*enable trigger admin_google_operation_receipts_append_only[\s\S]*delete from public\.admin_sessions/,
+  'the isolated local fixture must remove immutable operation receipts before deleting its Admin sessions',
+)
+assert.match(
+  localEdgeContract,
+  /action: 'revokeAll'[\s\S]*requestId: randomUUID\(\)/,
+  'the Google-only local revokeAll contract must carry its mutation request ID',
+)
+assert.match(
+  manageLectures,
+  /data === null[\s\S]*GoogleAdminAppSessionInvalidError/,
+  'the lecture facade must distinguish an invalid application session from an internal error',
+)
+assert.match(
+  manageLectures,
+  /error instanceof GoogleAdminAppSessionInvalidError[\s\S]*app_session_invalid[\s\S]*401/,
+  'a revoked Google application session must fail with a structured 401 response',
+)
 assert.match(upgradeRunner, /upgrade through Phase 7\.30E/)
 assert.match(
   c1HeadUpgradeProbe,

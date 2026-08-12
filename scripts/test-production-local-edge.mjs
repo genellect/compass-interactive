@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 import {
@@ -221,6 +222,7 @@ try {
     body: {
       action: 'revokeAll',
       appSessionToken: fixture.appSessionToken,
+      requestId: randomUUID(),
     },
     jwt: fixture.accessToken,
   })
@@ -233,6 +235,7 @@ try {
     jwt: fixture.accessToken,
   })
   assert.equal(revokedCurrent.response.status, 401)
+  assert.equal(revokedCurrent.body?.code, 'app_session_invalid')
 
   console.log(
     'Local Google AAL2 Auth, CORS, removed legacy routes, strict request fields and tracked Admin sessions passed.',

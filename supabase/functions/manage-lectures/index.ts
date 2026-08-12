@@ -39,6 +39,18 @@ type ManageLecturesRequest =
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
+class GoogleAdminAppSessionInvalidError extends Error {
+  constructor() {
+    super('Admin application session could not be verified.')
+    this.name = 'GoogleAdminAppSessionInvalidError'
+  }
+}
+
+function requireGoogleAdminRpcResult<T>(data: T | null): T {
+  if (data === null) throw new GoogleAdminAppSessionInvalidError()
+  return data
+}
+
 function normalizeTimestamp(value: string | null | undefined) {
   if (!value) return null
   const date = new Date(value)
@@ -130,7 +142,9 @@ Deno.serve(async (request) => {
       },
     )
     if (error) throw new Error(error.message)
-    const result = data as { lectures?: unknown; ok?: boolean } | null
+    const result = requireGoogleAdminRpcResult(
+      data as { lectures?: unknown; ok?: boolean } | null,
+    )
     if (result?.ok !== true || !Array.isArray(result.lectures)) {
       throw new Error('Google Admin lecture list is unavailable.')
     }
@@ -195,11 +209,13 @@ Deno.serve(async (request) => {
         },
       )
       if (!error) {
-        const result = data as {
-          idempotentReplay?: boolean
-          lectureSessionId?: string
-          ok?: boolean
-        } | null
+        const result = requireGoogleAdminRpcResult(
+          data as {
+            idempotentReplay?: boolean
+            lectureSessionId?: string
+            ok?: boolean
+          } | null,
+        )
         if (result?.ok !== true || !UUID_PATTERN.test(result.lectureSessionId ?? '')) {
           throw new Error('Google Admin lecture operation was not accepted.')
         }
@@ -317,10 +333,12 @@ Deno.serve(async (request) => {
         },
       )
       if (error) throw new Error(error.message)
-      if ((data as { ok?: boolean } | null)?.ok !== true) {
-        return jsonResponse(
-          { ok: false, message: 'Lecture status transition is not allowed.' },
-          409,
+      const result = requireGoogleAdminRpcResult(
+        data as { ok?: boolean } | null,
+      )
+      if (result.ok !== true) {
+        throw new Error(
+          'Google Admin lecture transition result is unavailable.',
         )
       }
       const providerHangup =
@@ -336,6 +354,16 @@ Deno.serve(async (request) => {
 
     return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)
   } catch (error) {
+    if (error instanceof GoogleAdminAppSessionInvalidError) {
+      return jsonResponse(
+        {
+          code: 'app_session_invalid',
+          message: error.message,
+          ok: false,
+        },
+        401,
+      )
+    }
     const message =
       error instanceof Error ? error.message : 'Lecture operation failed.'
     return jsonResponse(
