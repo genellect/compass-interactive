@@ -668,6 +668,21 @@ assert.match(
   localEdge,
   /const refreshedAal2 = accessToken\(status,[\s\S]*?totpTimestamp: refreshedTotpAmrTimestamp/,
 )
+assert.match(
+  localEdge,
+  /if \(browserFixtureAiPin\) \{[\s\S]*?action: 'beginControlStepUp'[\s\S]*?const stalePinControl = await invoke\([\s\S]*?aal2,[\s\S]*?action: 'completeControlStepUp'[\s\S]*?409,[\s\S]*?stalePinControl\.code, 'step_up_invalid'[\s\S]*?await waitForNextTotpWindow\(\)[\s\S]*?authClient\.auth\.mfa\.challengeAndVerify\([\s\S]*?pinControlClaims\.iat > pinControlPrechallengeClaims\.iat[\s\S]*?assert\.notEqual\(pinControlAal2, aal2\)[\s\S]*?browserAal2 = pinControlAal2/,
+  'the browser AI-PIN fixture must reject the stale bearer and complete with a real post-challenge TOTP proof',
+)
+assert.match(
+  localEdge,
+  /accessToken: browserAal2,[\s\S]*?authStorageValue: browserAuthStorageValue\(\s*browserAal2,/,
+  'the browser AI-PIN fixture must export its post-challenge bearer',
+)
+assert.doesNotMatch(
+  localEdge,
+  /const pinControlAal2 = accessToken\(status,[\s\S]{0,160}?totpTimestamp: Math\.floor\(Date\.now\(\) \/ 1_000\)/,
+  'the browser AI-PIN fixture must not synthesize its control-step-up AMR timestamp',
+)
 assert.doesNotMatch(
   localEdge,
   /invoke\([\s\S]{0,120}?reverified\.access_token/,

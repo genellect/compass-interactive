@@ -470,6 +470,16 @@ assert.match(
   'each local browser attempt must select its repeat-and-retry-scoped Google Admin fixture',
 )
 assert.match(
+  localGoogleFixture,
+  /if \(browserFixtureAiPin\) \{[\s\S]*?const stalePinControl = await invoke\([\s\S]*?action: 'completeControlStepUp'[\s\S]*?409,[\s\S]*?stalePinControl\.code, 'step_up_invalid'[\s\S]*?await waitForNextTotpWindow\(\)[\s\S]*?authClient\.auth\.mfa\.challengeAndVerify\([\s\S]*?assert\.notEqual\(pinControlAal2, aal2\)[\s\S]*?browserAal2 = pinControlAal2[\s\S]*?accessToken: browserAal2/,
+  'the local AI-PIN fixture must prove stale-bearer rejection and export a real post-challenge bearer',
+)
+assert.doesNotMatch(
+  localGoogleFixture,
+  /const pinControlAal2 = accessToken\(status,[\s\S]{0,160}?totpTimestamp: Math\.floor\(Date\.now\(\) \/ 1_000\)/,
+  'the local AI-PIN fixture must not bypass control-step-up freshness with a synthetic AMR timestamp',
+)
+assert.match(
   browserSafety,
   /expectConsoleErrorOnce: \(expected: \{[\s\S]*message: string[\s\S]*url: string[\s\S]*\}\) => Promise<void>/,
   'browser safety must expose an exact, one-shot expected console-error contract',

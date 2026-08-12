@@ -535,6 +535,7 @@ try {
   assert.match(completed.appSessionToken, /^g1\.[A-Za-z0-9_-]{43}$/)
   assert.equal(completed.session?.role, 'owner')
   assert.equal(completed.session?.canUseAi, false)
+  let browserAal2 = aal2
 
   if (browserFixtureMode) {
     if (browserFixtureAiPin) {
@@ -585,6 +586,8 @@ try {
         },
         200,
       )
+      const pinControlBegunAt = Math.floor(Date.now() / 1_000)
+      const pinControlPrechallengeClaims = decodeJwtPayload(aal2)
       const pinControlBegun = await invoke(
         status,
         aal2,
@@ -598,10 +601,48 @@ try {
         },
         200,
       )
+      const stalePinControl = await invoke(
+        status,
+        aal2,
+        'admin-identity-session',
+        {
+          action: 'completeControlStepUp',
+          appSessionToken: completed.appSessionToken,
+          controlAction: pinPrepared.controlAction,
+          controlIntentDigest: pinPrepared.controlIntentDigest,
+          controlRequestId: pinRequestId,
+          controlStepUpNonce: pinControlBegun.controlStepUpNonce,
+        },
+        409,
+      )
+      assert.equal(stalePinControl.code, 'step_up_invalid')
+
+      // Complete the control step-up only after a real, post-challenge TOTP
+      // proof. Re-signing the prechallenge claims in the same second can
+      // reproduce the same JWT and must remain rejected by the replay fence.
+      await waitForNextTotpWindow()
+      const { data: pinControlVerified, error: pinControlVerifyError } =
+        await authClient.auth.mfa.challengeAndVerify({
+          code: currentTotp(enrolled.totp.secret),
+          factorId: enrolled.id,
+        })
+      if (pinControlVerifyError) throw pinControlVerifyError
+      assert.ok(pinControlVerified.access_token)
+      const pinControlClaims = decodeJwtPayload(pinControlVerified.access_token)
+      assert.equal(pinControlClaims.aal, 'aal2')
+      assert.equal(pinControlClaims.session_id, sessionId)
+      assert.ok(pinControlClaims.iat > pinControlPrechallengeClaims.iat)
+      const pinControlTotpAmrTimestamp =
+        latestTotpAmrTimestamp(pinControlClaims)
+      assert.ok(Number.isSafeInteger(pinControlTotpAmrTimestamp))
+      assert.ok(pinControlTotpAmrTimestamp > verifiedTotpAmrTimestamp)
+      assert.ok(pinControlTotpAmrTimestamp >= pinControlBegunAt - 1)
       const pinControlAal2 = accessToken(status, {
         aal: 'aal2',
-        totpTimestamp: Math.floor(Date.now() / 1_000),
+        totpTimestamp: pinControlTotpAmrTimestamp,
       })
+      assert.notEqual(pinControlAal2, aal2)
+      browserAal2 = pinControlAal2
       await invoke(
         status,
         pinControlAal2,
@@ -631,11 +672,11 @@ try {
       assert.equal(pinSet.status, 'active')
     }
     const fixture = {
-      accessToken: aal2,
+      accessToken: browserAal2,
       appSessionId: completed.session.id,
       appSessionToken: completed.appSessionToken,
       authStorageValue: browserAuthStorageValue(
-        aal2,
+        browserAal2,
         signedIn.session.refresh_token,
         enrolled.id,
       ),
