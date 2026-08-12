@@ -95,6 +95,7 @@
     "test:phase7-30c2-operational-static": "node scripts/test-phase7-30c2-operational-static.mjs",
     "test:phase7-30d-static": "node scripts/test-phase7-30d-static.mjs",
     "test:phase7-30e-static": "node scripts/test-phase7-30e-static.mjs",
+    "test:phase7-30f-static": "node scripts/test-phase7-30f-static.mjs",
     "test:phase7-30b2-concurrency": "node scripts/test-phase7-30b2-concurrency.mjs",
     "test:phase7-30d-concurrency": "node scripts/test-phase7-30d-concurrency.mjs",
     "test:phase7-30e-concurrency": "node scripts/test-phase7-30e-concurrency.mjs",

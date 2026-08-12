@@ -1,0 +1,911 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://compass.invalid/evidence/phase7-30f-readiness.schema.json",
+  "title": "COMPASS Interactive Phase 7.30F staging readiness evidence",
+  "description": "Metadata-only evidence for a separately authorized staging rehearsal. Secret values, personal identifiers, Production activation, and canary authorization are outside this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceMode",
+    "generatedAt",
+    "configuration",
+    "sourceEvidence",
+    "preCutover",
+    "postCutover",
+    "hostedEvidence",
+    "humanEvidence",
+    "regressionEvidence",
+    "rollbackEvidence",
+    "approvals",
+    "independentReview"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "phase7-30f-readiness/v1"
+    },
+    "evidenceMode": {
+      "enum": ["SOURCE_READINESS_EXAMPLE", "HOSTED_HUMAN_STAGING"]
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
+    },
+    "sourceEvidence": {
+      "$ref": "#/$defs/sourceEvidence"
+    },
+    "preCutover": {
+      "$ref": "#/$defs/cutoverSnapshot"
+    },
+    "postCutover": {
+      "$ref": "#/$defs/cutoverSnapshot"
+    },
+    "hostedEvidence": {
+      "$ref": "#/$defs/hostedEvidence"
+    },
+    "humanEvidence": {
+      "$ref": "#/$defs/humanEvidence"
+    },
+    "regressionEvidence": {
+      "$ref": "#/$defs/regressionEvidence"
+    },
+    "rollbackEvidence": {
+      "$ref": "#/$defs/rollbackEvidence"
+    },
+    "approvals": {
+      "$ref": "#/$defs/approvals"
+    },
+    "independentReview": {
+      "$ref": "#/$defs/independentReview"
+    }
+  },
+  "$defs": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,3})?Z$"
+    },
+    "nullableDateTime": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,3})?Z$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableDigest": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "frontendFlags",
+        "serverFlags",
+        "databaseGates",
+        "secretInventory"
+      ],
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "frontendFlags": {
+          "$ref": "#/$defs/frontendFlags"
+        },
+        "serverFlags": {
+          "$ref": "#/$defs/serverFlags"
+        },
+        "databaseGates": {
+          "$ref": "#/$defs/databaseGates"
+        },
+        "secretInventory": {
+          "$ref": "#/$defs/secretInventory"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "alias",
+        "sourceCommitSha",
+        "capturedAt",
+        "environmentIdConfigured"
+      ],
+      "properties": {
+        "target": {
+          "const": "staging"
+        },
+        "alias": {
+          "type": "string",
+          "pattern": "^staging-[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?$",
+          "minLength": 10,
+          "maxLength": 72
+        },
+        "sourceCommitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "environmentIdConfigured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "frontendFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "VITE_PHASE7_30_ADMIN_IDENTITY",
+        "VITE_PHASE7_30_ADMIN_AI_UNLOCK",
+        "VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION",
+        "VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS",
+        "VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER"
+      ],
+      "properties": {
+        "VITE_PHASE7_30_ADMIN_IDENTITY": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_ADMIN_AI_UNLOCK": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serverFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "PHASE730_ADMIN_IDENTITY_ENABLED",
+        "PHASE730_ADMIN_AI_UNLOCK_ENABLED",
+        "PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED",
+        "PHASE730_C1_GOOGLE_AI_MASTER_ENABLED",
+        "PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED",
+        "PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED"
+      ],
+      "properties": {
+        "PHASE730_ADMIN_IDENTITY_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_ADMIN_AI_UNLOCK_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_C1_GOOGLE_AI_MASTER_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED": {
+          "type": "boolean"
+        }
+      }
+    },
+    "databaseGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacyPinLoginEnabled",
+        "googleSessionIssueEnabled",
+        "operatorTotpFactorSetAdoptionEnabled",
+        "totpFactorMutationEnabled",
+        "googleOperationalAuthorizationEnabled",
+        "googleAdminLedgerEnabled",
+        "aiUnlockEnabled",
+        "googleAiMasterAdmissionEnabled",
+        "rememberedBrowserEnabled"
+      ],
+      "properties": {
+        "legacyPinLoginEnabled": {
+          "type": "boolean"
+        },
+        "googleSessionIssueEnabled": {
+          "type": "boolean"
+        },
+        "operatorTotpFactorSetAdoptionEnabled": {
+          "type": "boolean"
+        },
+        "totpFactorMutationEnabled": {
+          "type": "boolean"
+        },
+        "googleOperationalAuthorizationEnabled": {
+          "type": "boolean"
+        },
+        "googleAdminLedgerEnabled": {
+          "type": "boolean"
+        },
+        "aiUnlockEnabled": {
+          "type": "boolean"
+        },
+        "googleAiMasterAdmissionEnabled": {
+          "type": "boolean"
+        },
+        "rememberedBrowserEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "secretInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captured", "capturedAt", "entries"],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/secretInventoryEntry"
+          },
+          "maxItems": 64
+        }
+      }
+    },
+    "secretInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "present",
+        "minimumBytesSatisfied",
+        "rotationVersion",
+        "rotatedAt"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,79}$",
+          "maxLength": 80
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "minimumBytesSatisfied": {
+          "type": ["boolean", "null"]
+        },
+        "rotationVersion": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "rotatedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        }
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strictSchemaContract",
+        "unknownKeysRejected",
+        "secretValuesRejected",
+        "offlineReadOnlyValidator",
+        "defaultHold",
+        "prePostSeparated",
+        "productionPassForbidden"
+      ],
+      "properties": {
+        "strictSchemaContract": {
+          "const": true
+        },
+        "unknownKeysRejected": {
+          "const": true
+        },
+        "secretValuesRejected": {
+          "const": true
+        },
+        "offlineReadOnlyValidator": {
+          "const": true
+        },
+        "defaultHold": {
+          "const": true
+        },
+        "prePostSeparated": {
+          "const": true
+        },
+        "productionPassForbidden": {
+          "const": true
+        }
+      }
+    },
+    "cutoverSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captured",
+        "capturedAt",
+        "readOnlyTransaction",
+        "snapshotDigestSha256",
+        "snapshot"
+      ],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "readOnlyTransaction": {
+          "type": "boolean"
+        },
+        "snapshotDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "activeLegacyMasterCount",
+            "activeLegacySessionCount",
+            "activeOwnerCount",
+            "authoritative",
+            "cutoverCommitted",
+            "environmentReady",
+            "externalTransportAttestationRequired",
+            "googleAdminLedgerEnabled",
+            "googleOperationalAuthorizationEnabled",
+            "googleSessionIssueEnabled",
+            "issuedLegacyGrantCount",
+            "pendingLegacyAcademicCount",
+            "runningLegacySummaryCount",
+            "runningLegacyUsageCount",
+            "unboundPdfPublicationCount",
+            "unownedActiveLectureCount",
+            "legacyPinLoginEnabled",
+            "operatorTotpFactorSetAdoptionEnabled",
+            "totpFactorMutationEnabled",
+            "aiUnlockEnabled",
+            "googleAiMasterAdmissionEnabled",
+            "rememberedBrowserEnabled",
+            "invalidActiveOwnershipCount",
+            "cutoverReceiptCount",
+            "cutoverReceiptEnvironmentMatches",
+            "cutoverReceiptDeploymentEvidenceDigestMatches",
+            "legacyVerifierServiceRoleExecute",
+            "legacyBillingAcl",
+            "triggers"
+          ],
+          "properties": {
+            "activeLegacyMasterCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeLegacySessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeOwnerCount": {
+              "$ref": "#/$defs/count"
+            },
+            "authoritative": {
+              "const": false
+            },
+            "cutoverCommitted": {
+              "type": "boolean"
+            },
+            "environmentReady": {
+              "type": "boolean"
+            },
+            "externalTransportAttestationRequired": {
+              "const": true
+            },
+            "googleAdminLedgerEnabled": {
+              "type": "boolean"
+            },
+            "googleOperationalAuthorizationEnabled": {
+              "type": "boolean"
+            },
+            "googleSessionIssueEnabled": {
+              "type": "boolean"
+            },
+            "issuedLegacyGrantCount": {
+              "$ref": "#/$defs/count"
+            },
+            "pendingLegacyAcademicCount": {
+              "$ref": "#/$defs/count"
+            },
+            "runningLegacySummaryCount": {
+              "$ref": "#/$defs/count"
+            },
+            "runningLegacyUsageCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unboundPdfPublicationCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unownedActiveLectureCount": {
+              "$ref": "#/$defs/count"
+            },
+            "legacyPinLoginEnabled": {
+              "type": "boolean"
+            },
+            "operatorTotpFactorSetAdoptionEnabled": {
+              "type": "boolean"
+            },
+            "totpFactorMutationEnabled": {
+              "type": "boolean"
+            },
+            "aiUnlockEnabled": {
+              "type": "boolean"
+            },
+            "googleAiMasterAdmissionEnabled": {
+              "type": "boolean"
+            },
+            "rememberedBrowserEnabled": {
+              "type": "boolean"
+            },
+            "invalidActiveOwnershipCount": {
+              "$ref": "#/$defs/count"
+            },
+            "cutoverReceiptCount": {
+              "$ref": "#/$defs/count"
+            },
+            "cutoverReceiptEnvironmentMatches": {
+              "type": ["boolean", "null"]
+            },
+            "cutoverReceiptDeploymentEvidenceDigestMatches": {
+              "type": ["boolean", "null"]
+            },
+            "legacyVerifierServiceRoleExecute": {
+              "type": "boolean"
+            },
+            "legacyBillingAcl": {
+              "$ref": "#/$defs/legacyBillingAcl"
+            },
+            "triggers": {
+              "$ref": "#/$defs/triggerState"
+            }
+          }
+        }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "legacyBillingAcl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicAdminIssueAiBillingGrant",
+        "privateIssueAiBillingGrant",
+        "publicAdminConsumeAiBillingGrant",
+        "privateConsumeAiBillingGrantAndStartOperations",
+        "publicAdminAuthorizeAiMaster",
+        "publicAdminIssueAiBillingGrantFromMaster"
+      ],
+      "properties": {
+        "publicAdminIssueAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "privateIssueAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminConsumeAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "privateConsumeAiBillingGrantAndStartOperations": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminAuthorizeAiMaster": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminIssueAiBillingGrantFromMaster": {
+          "$ref": "#/$defs/functionAcl"
+        }
+      }
+    },
+    "functionAcl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serviceRoleExecute",
+        "publicExecute",
+        "anonExecute",
+        "authenticatedExecute"
+      ],
+      "properties": {
+        "serviceRoleExecute": {
+          "type": "boolean"
+        },
+        "publicExecute": {
+          "const": false
+        },
+        "anonExecute": {
+          "const": false
+        },
+        "authenticatedExecute": {
+          "const": false
+        }
+      }
+    },
+    "triggerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacyGateTombstoneEnabled",
+        "legacySessionFenceEnabled",
+        "activeLectureOwnershipFenceEnabled"
+      ],
+      "properties": {
+        "legacyGateTombstoneEnabled": {
+          "type": "boolean"
+        },
+        "legacySessionFenceEnabled": {
+          "type": "boolean"
+        },
+        "activeLectureOwnershipFenceEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "hostedEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executed",
+        "executedAt",
+        "deploymentEvidenceDigestSha256",
+        "immutableRevisionSha256",
+        "sourceCommitMatches",
+        "retiredAdminFunctionsAbsent",
+        "legacyWireFieldsAbsent",
+        "callbackOriginAllowlistPass",
+        "oauthConsentPass",
+        "functionInventory"
+      ],
+      "properties": {
+        "executed": {
+          "type": "boolean"
+        },
+        "executedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "deploymentEvidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "immutableRevisionSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "sourceCommitMatches": {
+          "type": ["boolean", "null"]
+        },
+        "retiredAdminFunctionsAbsent": {
+          "type": ["boolean", "null"]
+        },
+        "legacyWireFieldsAbsent": {
+          "type": ["boolean", "null"]
+        },
+        "callbackOriginAllowlistPass": {
+          "type": ["boolean", "null"]
+        },
+        "oauthConsentPass": {
+          "type": ["boolean", "null"]
+        },
+        "functionInventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/functionInventoryEntry"
+          },
+          "maxItems": 64
+        }
+      }
+    },
+    "functionInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "verifyJwt"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "maxLength": 80
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "verifyJwt": {
+          "type": "boolean"
+        }
+      }
+    },
+    "resultRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "performedAt", "evidenceDigestSha256"],
+      "properties": {
+        "status": {
+          "enum": ["NOT_RUN", "PASS", "FAIL"]
+        },
+        "performedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        }
+      }
+    },
+    "humanEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "twoActiveOwners",
+        "aiEnabledAdmin",
+        "standardAdmin",
+        "suspendedAdminDenied",
+        "crossUserDenied",
+        "crossLectureDenied",
+        "individualRevoke",
+        "globalRevoke",
+        "lastOwnerProtection",
+        "googleCallbackOriginAllowlist",
+        "oauthConsent",
+        "aal1ToAal2",
+        "ownerRecovery",
+        "tokenRotation",
+        "staleSessionDenied",
+        "accountDisable",
+        "personalAiPinIntentOnly"
+      ],
+      "properties": {
+        "twoActiveOwners": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "aiEnabledAdmin": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "standardAdmin": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "suspendedAdminDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossUserDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossLectureDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "individualRevoke": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "globalRevoke": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "lastOwnerProtection": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "googleCallbackOriginAllowlist": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "oauthConsent": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "aal1ToAal2": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "ownerRecovery": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "tokenRotation": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "staleSessionDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "accountDisable": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "personalAiPinIntentOnly": {
+          "$ref": "#/$defs/resultRecord"
+        }
+      }
+    },
+    "regressionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "database",
+        "edge",
+        "browser",
+        "ci",
+        "load",
+        "security",
+        "accessibility",
+        "rollback",
+        "advisors"
+      ],
+      "properties": {
+        "scope": {
+          "const": "PHASE_0_THROUGH_7_30"
+        },
+        "database": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "edge": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "browser": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "ci": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "load": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "security": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "accessibility": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "rollback": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "advisors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "captured",
+            "capturedAt",
+            "evidenceDigestSha256",
+            "criticalFindings",
+            "highFindings"
+          ],
+          "properties": {
+            "captured": {
+              "type": "boolean"
+            },
+            "capturedAt": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "evidenceDigestSha256": {
+              "$ref": "#/$defs/nullableDigest"
+            },
+            "criticalFindings": {
+              "$ref": "#/$defs/count"
+            },
+            "highFindings": {
+              "$ref": "#/$defs/count"
+            }
+          }
+        }
+      }
+    },
+    "rollbackEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rehearsal",
+        "immutableGoogleOnlyRevision",
+        "sharedPinRestored",
+        "paidAdmissionDisabledDuringRecovery",
+        "freeStopAvailable",
+        "operatorOwnerRecoveryRehearsed"
+      ],
+      "properties": {
+        "rehearsal": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "immutableGoogleOnlyRevision": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "sharedPinRestored": {
+          "type": ["boolean", "null"]
+        },
+        "paidAdmissionDisabledDuringRecovery": {
+          "type": ["boolean", "null"]
+        },
+        "freeStopAvailable": {
+          "type": ["boolean", "null"]
+        },
+        "operatorOwnerRecoveryRehearsed": {
+          "type": ["boolean", "null"]
+        }
+      }
+    },
+    "approvalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "recordedAt", "evidenceDigestSha256"],
+      "properties": {
+        "state": {
+          "enum": ["HOLD", "APPROVED", "REJECTED"]
+        },
+        "recordedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stagingHostedMutation",
+        "googleOnlyCutover",
+        "adminPinSecretDeletion",
+        "legacyBillingAuthorityRetirement",
+        "billingPinSecretDeletion",
+        "limitedIdentityCanary",
+        "productionActivation"
+      ],
+      "properties": {
+        "stagingHostedMutation": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "googleOnlyCutover": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "adminPinSecretDeletion": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "legacyBillingAuthorityRetirement": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "billingPinSecretDeletion": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "limitedIdentityCanary": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "productionActivation": {
+          "$ref": "#/$defs/approvalRecord"
+        }
+      }
+    },
+    "independentReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewedAt",
+        "evidenceDigestSha256",
+        "separateFromExecutor"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_REVIEWED", "PASS", "FAIL"]
+        },
+        "reviewedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "separateFromExecutor": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
