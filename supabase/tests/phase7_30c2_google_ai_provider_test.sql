@@ -3615,9 +3615,9 @@ INSERT INTO private.admin_step_up_nonces (
   statement_timestamp(),
   statement_timestamp() - interval '1 minute',
   statement_timestamp() + interval '4 minutes',
-  'consumed',
-  statement_timestamp(),
-  '00000000-0000-4000-8000-00000000e2c4'::uuid,
+  'pending',
+  null,
+  null,
   statement_timestamp()
 );
 
@@ -3660,6 +3660,15 @@ INSERT INTO public.admin_sessions (
   statement_timestamp() + interval '30 minutes',
   statement_timestamp() + interval '7 hours'
 );
+
+UPDATE private.admin_step_up_nonces
+SET
+  status = 'consumed',
+  consumed_at = statement_timestamp(),
+  completed_admin_session_id =
+    '00000000-0000-4000-8000-00000000e2c4'::uuid,
+  updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000e2c3'::uuid;
 
 SET ROLE service_role;
 SELECT ok(
