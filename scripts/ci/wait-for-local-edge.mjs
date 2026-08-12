@@ -14,7 +14,7 @@ if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
 }
 
 const deadline = Date.now() + 120_000
-const endpoint = `${supabaseUrl}/functions/v1/verify-admin-pin`
+const endpoint = `${supabaseUrl}/functions/v1/admin-identity-session`
 let lastStatus = 'not started'
 let ready = false
 

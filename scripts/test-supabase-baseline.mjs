@@ -90,8 +90,12 @@ const phase730c2GoogleRealtimeProviderMigrationName =
   '20260812023000_phase7_30c2_google_realtime_provider.sql'
 const phase730c2GoogleWorkspaceAuthorityMigrationName =
   '20260812033000_phase7_30c2_google_workspace_authority.sql'
+const phase730eDisplayTerminalProvenanceMigrationName =
+  '20260812040000_phase7_30e_google_only_cutover.sql'
 const phase730dAdminLedgerAuthorityMigrationName =
   '20260812043000_phase7_30d_admin_ledger_authority.sql'
+const phase730eAdminCutoverAuthorityMigrationName =
+  '20260812050000_phase7_30e_admin_cutover_authority.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -148,7 +152,9 @@ assert.deepEqual(
     phase730c2GoogleRealtimeControlMigrationName,
     phase730c2GoogleRealtimeProviderMigrationName,
     phase730c2GoogleWorkspaceAuthorityMigrationName,
+    phase730eDisplayTerminalProvenanceMigrationName,
     phase730dAdminLedgerAuthorityMigrationName,
+    phase730eAdminCutoverAuthorityMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

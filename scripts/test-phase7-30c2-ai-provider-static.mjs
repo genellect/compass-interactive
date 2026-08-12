@@ -157,8 +157,8 @@ assert.match(
 )
 assert.match(
   manageSummaries,
-  /Exactly one Admin credential is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*deriveGoogleSummaryRunNonce[\s\S]*manage_google_admin_summary_run_v2/,
-  'the summary Edge keeps legacy and Google credentials mutually exclusive',
+  /hasLegacyAdminFields\(body\)[\s\S]*appSessionToken is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*deriveGoogleSummaryRunNonce[\s\S]*manage_google_admin_summary_run_v2/,
+  'the summary Edge requires Google authority and rejects legacy Admin fields',
 )
 assert.match(
   manageSummaries,
@@ -172,7 +172,7 @@ assert.match(
 )
 assert.match(
   manageSummaries,
-  /const summariesTransportEnabled[\s\S]*!summariesTransportEnabled[\s\S]*hasGoogleCredential &&[\s\S]*\['status', 'stop', 'hide'\]\.includes\(body\.action\)/,
+  /const summariesTransportEnabled[\s\S]*!summariesTransportEnabled[\s\S]*!\['status', 'stop', 'hide'\]\.includes\(body\.action\)/,
   'the Edge transport kill switch blocks new work without blocking Google status, stop or hide',
 )
 assert.match(
@@ -919,7 +919,8 @@ assert.match(
 )
 assert.doesNotMatch(aiBilling, /export function getGoogleAiChildGrantSecret/)
 
-assert.match(analyzeMaterial, /hasGoogleCredential === hasLegacyCredential/)
+assert.match(analyzeMaterial, /hasLegacyAdminFields\(body\)/)
+assert.match(analyzeMaterial, /appSessionToken is required/)
 assert.match(analyzeMaterial, /verifyGoogleAdminOperationRequest/)
 assert.match(analyzeMaterial, /deriveGoogleAiChildGrantNonce/)
 assert.match(analyzeMaterial, /issue_google_material_ai_child_grant_v1/)
@@ -938,8 +939,8 @@ assert.match(
 )
 assert.match(
   analyzeMaterial,
-  /if \(googleRpcIdentity && body\.startRequestId\)[\s\S]*fail_google_admin_material_ai_operation_v1[\s\S]*if \(!actorId\) return[\s\S]*admin_fail_material_ai_operation/,
-  'Google failure settlement stays available after revocation while legacy failure remains actor-bound',
+  /async function finishFailure[\s\S]*fail_google_admin_material_ai_operation_v1/,
+  'Google failure settlement stays available after authority revocation',
 )
 assert.match(
   analyzeMaterial,
@@ -963,17 +964,19 @@ assert.ok(
     ),
   'provider HTTP is strictly after exact-replay handling',
 )
-assert.match(analyzeMaterial, /admin_start_material_ai_operation/)
-assert.match(analyzeMaterial, /parseBillingGrantToken/)
+assert.doesNotMatch(
+  analyzeMaterial,
+  /admin_start_material_ai_operation|admin_fail_material_ai_operation|parseBillingGrantToken/,
+)
 assert.match(
   analyzeMaterial,
-  /body\.billingGrant !== undefined[\s\S]*body\.idempotencyKey !== undefined/,
+  /hasLegacyAdminFields\(body\)[\s\S]*body\.idempotencyKey !== undefined/,
   'Google provider requests reject legacy child inputs',
 )
 assert.match(
   analyzeMaterial,
-  /body\.grantRequestId !== undefined[\s\S]*body\.startRequestId !== undefined/,
-  'legacy provider requests reject Google request identifiers',
+  /!isUuid\(body\.grantRequestId\)[\s\S]*!isUuid\(body\.startRequestId\)[\s\S]*body\.grantRequestId\.toLowerCase\(\) === body\.startRequestId\.toLowerCase\(\)/,
+  'material provider work requires two distinct stable Google request identifiers',
 )
 
 assert.match(
@@ -1002,7 +1005,8 @@ assert.match(
   'material dispatch cannot outlive its current Edge transport or provider configuration',
 )
 
-assert.match(generateSummary, /hasGoogleCredential === hasLegacyCredential/)
+assert.match(generateSummary, /hasLegacyAdminFields\(body\)/)
+assert.match(generateSummary, /appSessionToken is required/)
 assert.match(generateSummary, /verifyGoogleAdminOperationRequest/)
 assert.match(generateSummary, /deriveGoogleAiChildGrantNonce/)
 assert.match(generateSummary, /prepare_google_admin_summary_window_v1/)
@@ -1021,8 +1025,8 @@ assert.doesNotMatch(
 )
 assert.match(
   generateSummary,
-  /body\.preflightRequestId !== undefined[\s\S]*body\.grantRequestId !== undefined[\s\S]*body\.startRequestId !== undefined/,
-  'legacy summary requests reject Google per-window request identifiers',
+  /!isUuid\(body\.preflightRequestId\)[\s\S]*!isUuid\(body\.grantRequestId\)[\s\S]*!isUuid\(body\.startRequestId\)[\s\S]*\.size !== 3/,
+  'summary windows require three distinct stable Google request identifiers',
 )
 assert.match(
   generateSummary,
@@ -1040,16 +1044,10 @@ assert.equal(
       /fetch\('https:\/\/api\.openai\.com\/v1\/responses'/g,
     ) ?? []
   ).length,
-  2,
-  'the dual transport keeps one Google fetch and the two-attempt legacy compatibility loop',
+  1,
+  'the Google-only summary transport dispatches one provider request',
 )
-const googleSummaryBranch = generateSummary.slice(
-  generateSummary.indexOf('if (googleContext && googleRpcIdentity) {'),
-  generateSummary.indexOf(
-    'if (\n      transcript.characters < PHASE6_MIN_SOURCE_CHARACTERS',
-    generateSummary.indexOf('if (googleContext && googleRpcIdentity) {'),
-  ),
-)
+const googleSummaryBranch = generateSummary
 assert.doesNotMatch(
   googleSummaryBranch,
   /admin_record_summary_window_language/,
@@ -1370,8 +1368,8 @@ for (const facade of [
 
 assert.match(
   generateAcademicAnswer,
-  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*preflightRequestId[\s\S]*grantRequestId[\s\S]*startRequestId/,
-  'Academic Edge keeps Google and legacy authority exclusive and requires three stable request IDs',
+  /hasLegacyAdminFields\(body\)[\s\S]*body\.idempotencyKey !== undefined[\s\S]*appSessionToken is required[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*preflightRequestId[\s\S]*grantRequestId[\s\S]*startRequestId/,
+  'Academic Edge rejects legacy inputs and requires three stable Google request IDs',
 )
 assert.match(
   generateAcademicAnswer,

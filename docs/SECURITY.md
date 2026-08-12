@@ -474,11 +474,51 @@ the unified verifier across every operational Admin Edge/RPC path.
 - Lecture-master provenance columns are additive and nullable. C1 now stores
   new-lecture ownership privately with no inferred backfill and atomically
   consumes a PIN/browser proof into a full-provenance dormant master. It fences
-  legacy conversion and all child/provider authority; the all-operational Admin
-  verifier and provider/child path remain C2 blockers.
+  legacy conversion and all child/provider authority. C2 adds the unified
+  verifier, policy matrix and same-transaction provider/child paths.
 
-The B2/B2.2a/B2.2b/C1 source/static contracts and B2.2b Chromium/WebKit storage
-tests are implemented. From-zero migration, populated upgrade, all pgTAP, real
-two-transaction concurrency, generated types and DB lint remain exact-head
-runtime CI requirements. All runtime gates are OFF; Local Edge, Hosted/Human
-and activation evidence remains HOLD.
+The A-D from-zero migration, populated upgrade, pgTAP, concurrency, generated
+types, DB lint, Local Edge and browser gates pass exact-head CI. All runtime
+gates remain default OFF; Hosted/Human activation evidence remains HOLD.
+
+## 19. Phase 7.30E Google-only identity cutover controls
+
+- The Admin browser and all 19 remaining operational Admin Edge adapters accept
+  only the opaque Google Admin application session. Legacy Admin-token,
+  billing-PIN and billing-grant request fields are rejected before action
+  dispatch. The personal four-digit AI PIN remains a separate in-session intent
+  factor.
+- Display terminal access requires an exact durable Google issuance binding for
+  JTI hash, lecture, issued/expires timestamps and Display Auth UID. Unknown
+  legacy descendants and cross-UID claims fail closed whether the signed token
+  is expired or merely no longer live-authorized.
+- Existing lecture ownership is never inferred. A postgres-only approval binds
+  one environment, lecture status/lifecycle version, principal, membership,
+  approving Google session and evidence digest. Claim consumes only that
+  immutable approval and stores an append-only exact-replay receipt.
+- Migration application is dormant. The final cutover is a separately invoked
+  SERIALIZABLE operator function requiring a digest of independently verified
+  Hosted deployment evidence. It serializes by environment/request, takes
+  `ACCESS EXCLUSIVE NOWAIT` locks and rechecks owners, ownership, gates, legacy
+  sessions and every unresolved legacy AI/PDF descendant in the same
+  transaction.
+- A successful cutover disables legacy admission, terminally revokes live
+  legacy sessions through their existing descendant-drain triggers, revokes
+  service-role execution of the legacy verifier and inserts one immutable
+  tombstone. Triggers then prevent legacy gate re-enable, session issuance,
+  relabel, extension or resurrection and prevent a new draft/open lecture from
+  committing without explicit ownership. Exact committed replay remains
+  available.
+- SQL cannot verify that a stateless old Hosted Edge bundle has been removed.
+  Source deletion and test success do not authorize the operator cutover. The
+  Hosted function inventory, release digest, secret inventory, two-owner
+  recovery and immutable Google-only rollback revision are mandatory Human
+  gates.
+- The identity cutover does not delete historical rows or retire historical
+  billing compatibility RPCs. Billing retirement follows personal-AI-PIN
+  evidence in a separate transaction. Rollback never restores a shared PIN.
+
+Phase E static, type, non-live and mocked browser evidence passes locally.
+Fresh database, concurrency, populated-upgrade, Local Edge and exact-head CI
+remain required before the source candidate may merge. Hosted cutover and
+activation remain HOLD regardless of repository CI status.

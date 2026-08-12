@@ -23,7 +23,7 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 72 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 74 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
@@ -37,18 +37,20 @@ Dependency Review and CodeQL jobs:
    convergence without contacting Supabase or any hosted service.
 3. **Local Supabase, pgTAP and live browser E2E** applies every migration from
    zero, verifies generated types, runs every pgTAP file plus the real-DB
-   concurrency suites, proves populated Phase 7.29, B1, B2-head and B2.2a-head
-   states upgrade through Phase 7.30B2.2b, and the populated C1 head upgrades
-   through the current default-OFF C2 operational and provider migrations
-   without inferred ownership or fabricated receipts, then runs DB lint. The
+   concurrency suites, proves populated Phase 7.29, B1, B2, C1 and C2 states
+   upgrade through the current schema, and additionally proves populated C2
+   Display provenance and D ownership/ledger state survive E without inferred
+   approvals, claims or cutover receipts, then runs DB lint. The
    B2/B2.2a/B2.2b database step includes the
    from-zero migration/pgTAP, a real two-transaction replay/lock-order/
    cleanup and principal-transition concurrency runner plus populated
    Phase 7.29/B1/B2-head/B2.2a-head-to-B2.2b upgrades. It
-   then serves Edge Functions with
+   E step adds a real two-connection approval/claim/session/cutover NOWAIT and
+   exact-replay runner, then fully resets the local database. It then serves Edge Functions with
    synthetic secrets, checks Auth/CORS/paid-feature fail-closed behavior, and
-   drives the browser integrations. Its Phase 7.30 step enables only the local
-   identity gates, performs real local GoTrue TOTP enrollment and
+   drives the browser integrations with Google app-session fixtures rather
+   than a shared Admin PIN. Its Phase 7.30 step enables only the local identity
+   gates, performs real local GoTrue TOTP enrollment and
    `challengeAndVerify`, binds the resulting AAL2/TOTP AMR into the signed
    local Google-identity fixture, exercises Edge plus database tracked-session
    admission/status/logout, and restores the identity gates to OFF before the
@@ -99,6 +101,9 @@ npm run test:phase7-30b2-static
 npm run test:phase7-30b22a-static
 npm run test:phase7-30b22b-static
 npm run test:phase7-30c1-static
+npm run test:phase7-30c2-static
+npm run test:phase7-30d-static
+npm run test:phase7-30e-static
 npm run test:ci:nonlive
 npm run build
 npm run test:e2e:phase7-30
@@ -121,13 +126,21 @@ Create an ignored file named `.env.edge.e2e.local` containing only synthetic
 local test values. These are examples, not production credentials:
 
 ```dotenv
-ADMIN_PIN=246810
 ADMIN_SESSION_SECRET=compass-local-only-admin-session-secret-at-least-32-bytes
-BILLING_PIN=135790
+ADMIN_IDENTITY_PEPPER=compass-local-only-admin-identity-pepper-at-least-32-bytes
+ADMIN_IDENTITY_PEPPER_VERSION=1
+ADMIN_AI_PIN_PEPPER=compass-local-only-admin-ai-pin-pepper-at-least-32-bytes
+ADMIN_AI_PIN_PEPPER_VERSION=1
+ADMIN_AI_NETWORK_PEPPER=compass-local-only-admin-ai-network-pepper-at-least-32-bytes
+ADMIN_AI_BROWSER_CHALLENGE_SECRET=compass-local-only-browser-challenge-secret-at-least-32-bytes
 COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
-PHASE4_REALTIME_CAPTIONS_ENABLED=false
-PHASE5_MATERIAL_ANALYSIS_ENABLED=false
-PHASE6_SUMMARIES_ENABLED=false
+PHASE730_ADMIN_IDENTITY_ENABLED=true
+PHASE730_ADMIN_AI_UNLOCK_ENABLED=true
+PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED=false
+PHASE730_C1_GOOGLE_AI_MASTER_ENABLED=true
+PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=true
+PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED=false
+PHASE730_ADMIN_ENVIRONMENT_ID=00000000-0000-4000-8000-000000000730
 ```
 
 Then keep the local Functions server running in terminal 1:
@@ -136,19 +149,19 @@ Then keep the local Functions server running in terminal 1:
 npx supabase functions serve --env-file .env.edge.e2e.local
 ```
 
-In terminal 2, use the same synthetic Admin PIN:
+In terminal 2, start the local browser suite. The runner creates short-lived,
+per-project Google AAL2/Auth fixtures and cleans them up; no shared Admin PIN is
+accepted or configured:
 
 Git Bash:
 
 ```bash
-export TEST_ADMIN_PIN=246810
 npm run test:e2e:local
 ```
 
 PowerShell:
 
 ```powershell
-$env:TEST_ADMIN_PIN = '246810'
 npm.cmd run test:e2e:local
 ```
 
@@ -162,12 +175,11 @@ The following remain manual, explicitly paid or hosted checks:
 
 - `test:phase5-openai-live`
 - `test:phase6-openai-live`
-- `scripts/test-pdf-sync-hosted.mjs`
 - real microphone/Realtime transcription testing
 - Cloudflare Publisher/R2 production uploads
 - Hosted Supabase and public-web smoke testing
 - signed Presenter installer, real Office/COM, 500 transitions and venue/PNA
-- real Admin AI PIN Edge/UI flow, browser CryptoKey persistence/signature,
+- real-account Admin AI PIN, browser CryptoKey persistence/signature,
   Google/TOTP factor-set invalidation and remembered-browser Human testing
 
 They must not be added to the default workflow. The non-live suite also scans

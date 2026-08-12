@@ -13,6 +13,16 @@ const container =
   process.env.SUPABASE_DB_CONTAINER ?? 'supabase_db_compass-interactive'
 const expectedOrigin = 'http://127.0.0.1:4173'
 const environmentId = '00000000-0000-4000-8000-000000000730'
+const browserFixtureMode = process.argv.includes('--browser-fixture')
+const browserFixtureRetainEnvironment =
+  browserFixtureMode &&
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_RETAIN_ENVIRONMENT === 'true'
+const browserFixtureAiPin =
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN?.trim() ?? ''
+assert.ok(
+  !browserFixtureAiPin || /^\d{4}$/.test(browserFixtureAiPin),
+  'TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN must be an optional synthetic 4-digit PIN.',
+)
 const identityPepper = process.env.TEST_ADMIN_IDENTITY_PEPPER?.trim() ?? ''
 assert.ok(
   identityPepper.length >= 32,
@@ -111,6 +121,55 @@ function hmacIdentity(value, domain) {
     .digest('hex')
 }
 
+function bootstrapEnvironmentSql(status) {
+  const bootstrapCall = `
+    public.bootstrap_admin_environment_v1(
+      ${sqlLiteral(environmentId)}::uuid,
+      'local',
+      ${sqlLiteral(expectedOrigin)},
+      ${sqlLiteral(`${status.API_URL}/auth/v1`)},
+      'authenticated',
+      array[
+        ${sqlLiteral(hmacIdentity(email, 'email'))},
+        ${sqlLiteral(hmacIdentity(otherOwnerEmail, 'email'))}
+      ]::text[],
+      statement_timestamp() + interval '1 hour',
+      ${sqlLiteral(randomUUID())}::uuid
+    )`
+  if (!browserFixtureRetainEnvironment) return `select ${bootstrapCall};`
+
+  return `
+    do $browser_fixture$
+    begin
+      if exists (
+        select 1
+        from private.admin_environments
+        where id = ${sqlLiteral(environmentId)}::uuid
+          and environment_kind = 'local'
+          and current_deployment
+          and status = 'active'
+      ) then
+        insert into private.admin_invitations (
+          id, environment_id, invitation_kind, target_email_hmac,
+          role, can_use_ai, expires_at, request_id
+        ) values (
+          ${sqlLiteral(randomUUID())}::uuid,
+          ${sqlLiteral(environmentId)}::uuid,
+          'bootstrap',
+          ${sqlLiteral(hmacIdentity(email, 'email'))},
+          'owner',
+          false,
+          statement_timestamp() + interval '1 hour',
+          ${sqlLiteral(randomUUID())}::uuid
+        );
+      else
+        perform ${bootstrapCall};
+      end if;
+    end
+    $browser_fixture$;
+  `
+}
+
 function jwtPart(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
@@ -199,6 +258,68 @@ function accessToken(status, { aal, totpTimestamp = null }) {
     session_id: sessionId,
     sub: authUserId,
     user_metadata: { full_name: 'Phase 7.30 Local Owner' },
+  })
+}
+
+function browserAuthStorageValue(accessToken, refreshToken, factorId) {
+  const claims = decodeJwtPayload(accessToken)
+  const now = new Date().toISOString()
+  return JSON.stringify({
+    access_token: accessToken,
+    expires_at: claims.exp,
+    expires_in: Math.max(1, claims.exp - Math.floor(Date.now() / 1_000)),
+    refresh_token: refreshToken,
+    token_type: 'bearer',
+    user: {
+      app_metadata: { provider: 'google', providers: ['google'] },
+      aud: 'authenticated',
+      confirmed_at: now,
+      created_at: now,
+      email,
+      email_confirmed_at: now,
+      factors: [
+        {
+          created_at: now,
+          factor_type: 'totp',
+          friendly_name: 'Phase 7.30 Local TOTP',
+          id: factorId,
+          status: 'verified',
+          updated_at: now,
+        },
+      ],
+      id: authUserId,
+      identities: [
+        {
+          created_at: now,
+          id: googleSubject,
+          identity_data: {
+            email,
+            email_verified: true,
+            iss: 'https://accounts.google.com',
+            sub: googleSubject,
+          },
+          identity_id: googleSubject,
+          last_sign_in_at: now,
+          provider: 'google',
+          updated_at: now,
+          user_id: authUserId,
+        },
+      ],
+      is_anonymous: false,
+      role: 'authenticated',
+      updated_at: now,
+      user_metadata: { full_name: 'Phase 7.30 Local Owner' },
+    },
+  })
+}
+
+async function waitForBrowserFixtureRelease() {
+  process.stdin.resume()
+  await new Promise((resolve) => {
+    const release = () => resolve()
+    process.stdin.once('end', release)
+    process.once('SIGINT', release)
+    process.once('SIGTERM', release)
   })
 }
 
@@ -324,22 +445,16 @@ try {
       '{"provider":"google","providers":["google"]}'::jsonb,
         updated_at = statement_timestamp()
     where id = ${sqlLiteral(authUserId)}::uuid;
-    select public.bootstrap_admin_environment_v1(
-      ${sqlLiteral(environmentId)}::uuid,
-      'local',
-      ${sqlLiteral(expectedOrigin)},
-      ${sqlLiteral(`${status.API_URL}/auth/v1`)},
-      'authenticated',
-      array[
-        ${sqlLiteral(hmacIdentity(email, 'email'))},
-        ${sqlLiteral(hmacIdentity(otherOwnerEmail, 'email'))}
-      ]::text[],
-      statement_timestamp() + interval '1 hour',
-      ${sqlLiteral(randomUUID())}::uuid
-    );
+    ${bootstrapEnvironmentSql(status)}
     update private.admin_identity_runtime_gate
     set google_session_issue_enabled = true,
-        totp_factor_mutation_enabled = true,
+        google_operational_authorization_enabled = ${
+          browserFixtureMode ? 'true' : 'false'
+        },
+        google_admin_ledger_enabled = false,
+        totp_factor_mutation_enabled = ${
+          browserFixtureMode ? 'false' : 'true'
+        },
         updated_at = statement_timestamp()
     where singleton;
     update private.admin_ai_unlock_runtime_gate
@@ -418,6 +533,120 @@ try {
   assert.equal(completed.session?.role, 'owner')
   assert.equal(completed.session?.canUseAi, false)
 
+  if (browserFixtureMode) {
+    if (browserFixtureAiPin) {
+      await runSql(`
+        update private.admin_environment_memberships
+        set can_use_ai = true,
+            updated_at = statement_timestamp()
+        where id = ${sqlLiteral(completed.session.membershipId)}::uuid;
+        update private.admin_ai_unlock_runtime_gate
+        set google_ai_master_admission_enabled = true,
+            updated_at = statement_timestamp()
+        where singleton;
+        insert into private.admin_ai_policies (
+          id, environment_id, membership_id, allowed_actions, allowed_models,
+          max_calls_per_lecture, max_calls_per_day,
+          max_input_tokens_per_lecture, max_input_tokens_per_day,
+          max_output_tokens_per_lecture, max_output_tokens_per_day,
+          max_cost_microusd_per_lecture, max_cost_microusd_per_day,
+          max_realtime_minutes_per_lecture, max_realtime_minutes_per_day,
+          max_concurrency, valid_from, valid_until, version,
+          created_by_membership_id, created_by_admin_session_id, request_id
+        ) values (
+          ${sqlLiteral(randomUUID())}::uuid,
+          ${sqlLiteral(environmentId)}::uuid,
+          ${sqlLiteral(completed.session.membershipId)}::uuid,
+          array['academic_answers', 'captions', 'material_analysis', 'summaries']::text[],
+          array['test-model']::text[],
+          10, 100, 10000, 100000, 10000, 100000,
+          100000, 1000000, 30, 300, 1,
+          statement_timestamp() - interval '1 minute',
+          statement_timestamp() + interval '1 hour', 1,
+          ${sqlLiteral(completed.session.membershipId)}::uuid,
+          ${sqlLiteral(completed.session.id)}::uuid,
+          ${sqlLiteral(randomUUID())}::uuid
+        );
+      `)
+      const pinRequestId = randomUUID()
+      const pinPrepared = await invoke(
+        status,
+        aal2,
+        'admin-ai-unlock',
+        {
+          action: 'preparePinMutation',
+          appSessionToken: completed.appSessionToken,
+          pin: browserFixtureAiPin,
+          pinAction: 'enroll',
+          requestId: pinRequestId,
+        },
+        200,
+      )
+      const pinControlBegun = await invoke(
+        status,
+        aal2,
+        'admin-identity-session',
+        {
+          action: 'beginControlStepUp',
+          appSessionToken: completed.appSessionToken,
+          controlAction: pinPrepared.controlAction,
+          controlIntentDigest: pinPrepared.controlIntentDigest,
+          controlRequestId: pinRequestId,
+        },
+        200,
+      )
+      const pinControlAal2 = accessToken(status, {
+        aal: 'aal2',
+        totpTimestamp: Math.floor(Date.now() / 1_000),
+      })
+      await invoke(
+        status,
+        pinControlAal2,
+        'admin-identity-session',
+        {
+          action: 'completeControlStepUp',
+          appSessionToken: completed.appSessionToken,
+          controlAction: pinPrepared.controlAction,
+          controlIntentDigest: pinPrepared.controlIntentDigest,
+          controlRequestId: pinRequestId,
+          controlStepUpNonce: pinControlBegun.controlStepUpNonce,
+        },
+        200,
+      )
+      const pinSet = await invoke(
+        status,
+        pinControlAal2,
+        'admin-ai-unlock',
+        {
+          action: 'setPin',
+          appSessionToken: completed.appSessionToken,
+          pin: browserFixtureAiPin,
+          requestId: pinRequestId,
+        },
+        200,
+      )
+      assert.equal(pinSet.status, 'active')
+    }
+    const fixture = {
+      accessToken: aal2,
+      appSessionId: completed.session.id,
+      appSessionToken: completed.appSessionToken,
+      authStorageValue: browserAuthStorageValue(
+        aal2,
+        signedIn.session.refresh_token,
+        enrolled.id,
+      ),
+      aiPin: browserFixtureAiPin,
+      environmentId,
+    }
+    console.log(
+      `GOOGLE_ADMIN_AAL2_FIXTURE=${Buffer.from(
+        JSON.stringify(fixture),
+        'utf8',
+      ).toString('base64url')}`,
+    )
+    await waitForBrowserFixtureRelease()
+  } else {
   const replayed = await invoke(
     status,
     aal2,
@@ -563,14 +792,19 @@ try {
     Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
   )
 
-  const legacyCrossMode = await invoke(
-    status,
-    refreshedAal2,
-    'verify-admin-pin',
-    { pin: '246810' },
-    401,
+  const legacyEndpoint = await fetch(
+    `${status.API_URL}/functions/v1/verify-admin-pin`,
+    {
+      headers: {
+        apikey: status.PUBLISHABLE_KEY || status.ANON_KEY,
+        Authorization: `Bearer ${refreshedAal2}`,
+        Origin: expectedOrigin,
+      },
+      method: 'OPTIONS',
+      redirect: 'manual',
+    },
   )
-  assert.equal(legacyCrossMode.ok, false)
+  assert.equal(legacyEndpoint.status, 404)
 
   const loggedOut = await invoke(
     status,
@@ -622,19 +856,49 @@ try {
   console.log(
     'Phase 7.30 B1 local Google identity, AAL2 and tracked-session integration passed.',
   )
+  }
 } catch (error) {
   failure = error
 } finally {
   try {
-    await runSql(`
+    if (browserFixtureRetainEnvironment) {
+      await runSql(`
+        begin;
+        update private.admin_identity_runtime_gate
+        set google_session_issue_enabled = false,
+            google_operational_authorization_enabled = false,
+            google_admin_ledger_enabled = false,
+            totp_factor_mutation_enabled = false,
+            updated_at = statement_timestamp()
+        where singleton;
+        update private.admin_ai_unlock_runtime_gate
+        set ai_unlock_enabled = false,
+            google_ai_master_admission_enabled = false,
+            remembered_browser_enabled = false,
+            updated_at = statement_timestamp()
+        where singleton;
+        update public.admin_sessions
+        set revoked_at = coalesce(revoked_at, statement_timestamp()),
+            revoke_reason = coalesce(revoke_reason, 'browser_fixture_released'),
+            updated_at = statement_timestamp()
+        where supabase_auth_session_id = ${
+          sessionId ? `${sqlLiteral(sessionId)}::uuid` : 'null::uuid'
+        };
+        commit;
+      `)
+    } else {
+      await runSql(`
       begin;
       update private.admin_identity_runtime_gate
       set google_session_issue_enabled = false,
+          google_operational_authorization_enabled = false,
+          google_admin_ledger_enabled = false,
           totp_factor_mutation_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
       update private.admin_ai_unlock_runtime_gate
       set ai_unlock_enabled = false,
+          google_ai_master_admission_enabled = false,
           remembered_browser_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
@@ -647,6 +911,8 @@ try {
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       alter table private.admin_audit_events
         enable trigger admin_audit_events_append_only;
+      delete from private.admin_ai_policies
+      where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_control_step_up_grants
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_control_step_up_nonces
@@ -680,7 +946,8 @@ try {
         authUserId ? `${sqlLiteral(authUserId)}::uuid` : 'null::uuid'
       };
       commit;
-    `)
+      `)
+    }
   } catch (cleanupError) {
     failure ??= cleanupError
   }

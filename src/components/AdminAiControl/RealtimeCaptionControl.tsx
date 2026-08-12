@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import {
   appendCompletedCaptionSegment,
   createCaptionWindow,
@@ -81,7 +78,6 @@ export function RealtimeCaptionControl({
   lectureStatus,
   masterAuthorization,
 }: RealtimeCaptionControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [language, setLanguage] = useState<RealtimeCaptionLanguage>('auto')
   const [duration, setDuration] = useState<RealtimeDuration>('600')
   const [status, setStatus] = useState<CaptionControlStatus>('idle')
@@ -89,9 +85,7 @@ export function RealtimeCaptionControl({
   const [message, setMessage] = useState(() =>
     !admissionEnabled
       ? '字幕の新規開始は停止中です。状態確認と停止は利用できます。'
-      : googleCredential
-        ? '講義中のAI機能を許可すると字幕を開始できます。'
-        : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
+      : '講義中のAI機能を許可すると字幕を開始できます。',
   )
   const [localCaption, setLocalCaption] = useState('')
   const [savedSegmentCount, setSavedSegmentCount] = useState(0)
@@ -242,7 +236,7 @@ export function RealtimeCaptionControl({
       !masterAuthorized &&
       ['authorizing', 'connecting', 'running'].includes(statusRef.current)
     ) {
-      void failClosedRef.current('字幕の講義中API許可が解除されました。')
+      void failClosedRef.current('字幕の講義中AI許可が解除されました。')
       return
     }
     if (statusRef.current === 'idle') {
@@ -251,12 +245,10 @@ export function RealtimeCaptionControl({
           ? '字幕の新規開始は停止中です。状態確認と停止は利用できます。'
           : masterAuthorized
             ? '利用時間を選び、教員の操作で字幕を開始してください。'
-            : googleCredential
-              ? '講義中のAI機能を許可すると字幕を開始できます。'
-              : 'API利用PINを入力し、利用時間を選んで字幕を開始してください。',
+            : '講義中のAI機能を許可すると字幕を開始できます。',
       )
     }
-  }, [admissionEnabled, googleCredential, masterAuthorized])
+  }, [admissionEnabled, masterAuthorized])
 
   function getItemSequence(itemId: string) {
     const existing = itemSequenceRef.current.get(itemId)
@@ -327,12 +319,8 @@ export function RealtimeCaptionControl({
         lastItemId: window.lastItemId,
         lectureSessionId,
         operationId,
-        ...(googleCredential
-          ? {
-              requestId,
-              startRequestId: startRequestIdRef.current ?? undefined,
-            }
-          : {}),
+        requestId,
+        startRequestId: startRequestIdRef.current ?? undefined,
         sequence: window.sequence,
         text: window.text,
       })
@@ -398,7 +386,7 @@ export function RealtimeCaptionControl({
       return
     }
 
-    if (googleCredential && unresolvedGoogleStartRef.current) {
+    if (unresolvedGoogleStartRef.current) {
       updateStatus('authorizing')
       setMessage('前回の字幕開始が確定したか確認しています。')
       try {
@@ -507,7 +495,7 @@ export function RealtimeCaptionControl({
       await failClosed(
         error instanceof Error ? error.message : '字幕を開始できませんでした。',
       )
-      if (googleCredential && providerStartAttempted) {
+      if (providerStartAttempted) {
         try {
           const response = await supabaseAdminRepository.manageAiControl({
             action: 'status',
@@ -585,7 +573,7 @@ export function RealtimeCaptionControl({
       }
       await stopServerOperation('admin_manual_stop')
       unresolvedGoogleStartRef.current = null
-      stopLocal('字幕を停止しました。停止にはAPI利用PINは不要です。', 'idle')
+      stopLocal('字幕を停止しました。停止に個人AI PINは不要です。', 'idle')
     } catch {
       stopLocal(
         '音声送信は停止しましたが、サーバー停止確認に失敗しました。再開しないでください。',
@@ -747,7 +735,7 @@ export function RealtimeCaptionControl({
         ) : masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
+          <p className="note">講義中のAI許可を使用します。</p>
         ) : (
           <p className="note">
             上の「講義中のAI機能」で字幕を許可してください。

@@ -1,8 +1,10 @@
 # COMPASS Interactive Architecture
 
-Last reviewed: 2026-08-10
-Applies to: repository implementation candidate through Phase 7.30A-C1;
-B2-C1 runtime DB, later native, Human, Hosted and Production gates remain separately authoritative
+Last reviewed: 2026-08-12
+Applies to: repository implementation candidate through Phase 7.30E. Phase
+7.30D exact-head evidence is PASS; Phase 7.30E fresh database/runtime CI,
+irreversible operator cutover, native, Human, Hosted and Production gates remain
+separately authoritative.
 
 ## 1. Architectural goals
 
@@ -52,8 +54,9 @@ The frontend is a Vite, React and TypeScript single-page application. Public,
 Student and Display route components are lazy-loaded and share the anonymous
 Student `CompassStateProvider`. The `/admin` identity shell is separately
 lazy-loaded outside that provider so its PKCE callback and Auth storage cannot
-replace or consume the Student anonymous session. The existing Admin workspace
-mounts its provider only through the separately flagged legacy path in B1.
+replace or consume the Student anonymous session. The current Admin workspace
+mounts only for a verified Google Admin application session; there is no
+legacy-PIN provider path.
 
 | Route               | Responsibility                          | Important boundary                                                            |
 | ------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
@@ -62,7 +65,7 @@ mounts its provider only through the separately flagged legacy path in B1.
 | `/lecture`          | Mobile-first student session            | Five-second snapshot while active; stop on exit/terminal state                |
 | `/lecture/comments` | Older comment history                   | Explicit cursor fetch; no periodic history polling                            |
 | `/lecture/archive`  | Closed lecture preview                  | Cloudflare read-only access; no live Supabase loop                            |
-| `/admin`            | Teacher identity and operations         | Separate Admin Auth client; Google B1 session grants no operational authority |
+| `/admin`            | Teacher identity and operations         | Separate Admin Auth client; Google plus TOTP AAL2 application session only    |
 | `/display`          | Fullscreen classroom view               | Scoped display token, never an Admin token                                    |
 
 `scripts/create-route-entrypoints.mjs` copies the production `index.html` into
@@ -142,17 +145,19 @@ does not redeploy the main Pages application.
 
 ### 7.1 Admission
 
-The current legacy source admits paid work with all of the following:
+The current Google-only Admin source admits paid work with all of the following:
 
 - an explicit teacher action;
-- a valid API-use PIN grant, separate from the Admin PIN;
+- a personal AI-PIN or remembered-browser lecture-master proof inside a valid
+  Google plus TOTP AAL2 Admin session;
 - an open, non-expired lecture;
 - an enabled server-side feature flag;
 - available per-lecture call and cost budget;
 - an available Realtime or Batch concurrency lane;
 - a unique idempotent operation identity.
 
-Stop is intentionally easier than start and does not require the API-use PIN.
+Status, downgrade and stop are intentionally easier than start and do not
+require the personal AI PIN.
 
 Phase 7.30B2 implements the continuous-session lifetime migration and B2.2a
 adds an approved TOTP factor-set trust anchor; Phase 7.30C completes its unified
@@ -188,10 +193,12 @@ to owner/principal, role/status, verified TOTP-factor-set, environment AI-policy
 global-revoke and AI PIN factor enrollment/rotation/revoke/reset control-plane changes.
 Initial PIN enrollment after login uses the already-fresh login TOTP without an
 extra prompt; ordinary lecture controls, emergency stop, PIN verification,
-browser proof, AI master/escalation and child starts never prompt. `ADMIN_PIN` is removed
-after the C migration and `BILLING_PIN` after personal-AI-PIN E2E, both before
-Production. Rollback is a Google-only immutable revision plus operator owner
-recovery.
+browser proof, AI master/escalation and child starts never prompt. Phase 7.30E
+removes the shared `ADMIN_PIN` application path and all operational
+`BILLING_PIN` wire paths from the current source. Retirement of historical
+billing compatibility authority is a separate default-OFF migration after
+personal-AI-PIN evidence. Rollback never restores a shared PIN; it uses a
+Google-only immutable revision plus operator owner recovery.
 
 ### 7.2 Realtime transcription
 
@@ -274,7 +281,7 @@ available to the browser or database client.
 | Zone                        | May contain                                                                                             | Must not contain                                                      |
 | --------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL; transient user-entered AI PIN form | service role, OpenAI key, persisted PINs, R2 secret, Turnstile secret |
-| Supabase Edge secrets       | OpenAI key, current legacy PIN material until Phase 7.30 removal, service role, trigger secrets         | values returned to browser or committed to Git                        |
+| Supabase Edge secrets       | OpenAI key, service role, Google identity/AI peppers and trigger secrets; Hosted inventory may retain legacy secrets pending authorized deletion | values returned to browser or committed to Git; current source must not read shared Admin/Billing PINs |
 | Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material                                          | values in frontend variables or simultaneous browser mode             |
 | Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings                               | plaintext lecture codes or Supabase service role                      |
 | PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                                                           | PDF/audio bytes, raw local transcript, plaintext secrets              |
@@ -286,7 +293,8 @@ hosted/human Phase 6.8 evidence.
 
 - Migrations are append-only and expand-first.
 - New capabilities deploy with frontend and server flags OFF.
-- Legacy RPCs remain until the minimum supported client no longer calls them.
+- Legacy RPCs may remain for staged retirement, foreign keys and audit, but
+  retention does not authorize a retired wire field or restoring a shared PIN.
 - A rollback normally disables flags and restores the previous frontend/Edge
   version; it does not drop newly added columns or destroy audit records.
 - Every database phase must pass a clean reset and an upgrade fixture.
@@ -385,32 +393,34 @@ and browser testing, and verification of the 55-second automatic ticket versus
 the five-minute manual recovery-code TTL are separate Phase 7.29C
 Hosted/Device/Human gates; source or CI PASS cannot activate them.
 
-## 16. Phase 7.30A-B1 Admin identity boundary
+## 16. Phase 7.30A-E Admin identity boundary
 
-Phase 7.30A-B1 adds a separate Admin Supabase Auth client with a distinct
+Phase 7.30A-B1 established a separate Admin Supabase Auth client with a distinct
 storage key, explicit PKCE exchange on `/admin/auth/callback`, and URL-session
 detection disabled everywhere else. The Student client continues to accept
 only an anonymous Auth user. Google provider tokens are removed from Auth JSON
 before the SDK can persist or broadcast a session and are stripped again by
 the Admin storage adapter.
 
-The local identity path binds a trusted Supabase Auth user and linked Google
+The B1 identity path binds a trusted Supabase Auth user and linked Google
 identity to one environment membership, then requires a five-minute,
 digest-only step-up nonce and a fresh TOTP AAL2 AMR before issuing an
 application Admin session. The database and Edge authorization gates are
 default OFF; the separate frontend flag controls only UI exposure and is also
-default OFF. Legacy PIN compatibility remains default ON. The B1 Google
-session is identity-only and cannot invoke the existing lecture, PDF, AI,
-Display or Presenter Admin operations. That capability migration belongs to
-Phase 7.30C, while real Google OAuth and Hosted/Human evidence remain HOLD.
+default OFF. The B1 Google session was identity-only. C2 later applied the
+closed authorization policy and shared verifier to every operational Admin
+surface, and D added owner-ledger invitation, membership and session controls.
 
-Phase 7.30B2 now migrates the default-OFF database source for that B1 identity-
-only session to the continuous
+Phase 7.30B2 migrates the default-OFF database source for that B1 identity
+session to the continuous
 teacher-session contract described in Section 7.1: no 30-minute idle expiry and
-no periodic TOTP. Phase 7.30C completes the unified verifier across every
-operational Admin Edge/RPC path. The later cutover makes Production authority
-Google-only and removes the shared `ADMIN_PIN`/`BILLING_PIN` paths before
-Production.
+no periodic TOTP. Phase 7.30E removes the shared Admin PIN UI, issuer, storage
+and accepted transport fields and leaves 19 operational Admin Edge adapters
+Google-app-session only. Its database cutover is intentionally dormant: SQL
+application alone changes no active gate, session or ownership, and Hosted
+deployment evidence is required before the operator commits the irreversible
+tombstone. The personal AI PIN remains; historical billing compatibility is a
+separate retirement boundary.
 
 ## 17. Phase 7.30B2 Admin AI-unlock database boundary
 
@@ -435,9 +445,7 @@ but B2 does not issue a master from an AI proof.
 
 All B2/B2.2 public wrappers are service-role-only `SECURITY INVOKER`; private privileged
 helpers use a fixed empty `search_path`, minimum grants and database context
-revalidation. The source/static gate is PASS, while exact-head from-zero/
-populated upgrade, pgTAP, database concurrency, generated types and lint remain
-pending. B2.2a implements the TOTP factor-set fingerprint and dormant identity
+revalidation. B2.2a implements the TOTP factor-set fingerprint and dormant identity
 Edge begin/complete/reconcile transport. B2.2b implements default-OFF raw-PIN,
 AI mutation, browser proof and approved factor-transition source paths, but
 issues no master. C1 adds four RLS-enabled private evidence tables for
@@ -446,5 +454,26 @@ same-scope request observation and downgrade/revoke replay. Its nine public
 facades are fixed-search-path `SECURITY DEFINER` functions restricted to
 `service_role`. It never backfills an existing lecture, exposes
 principal UUIDs on `lecture_sessions`, issues child/provider authority or
-converts a pre-C1 master. The remaining all-operational Admin verifier, AI
-Passkey, Local Edge, Hosted/Human and activation are C2/later HOLD boundaries.
+converts a pre-C1 master. C2's all-operational Admin verifier and D's owner
+ledger have exact-head evidence. AI Passkey, E's irreversible operator cutover,
+Hosted/Human evidence and Production activation remain HOLD boundaries.
+
+## 18. Phase 7.30E Google-only cutover authority
+
+The current application source has 19 operational Admin Edge adapters. Each
+requires an opaque Google Admin application session, rejects legacy Admin and
+billing wire fields and delegates authorization to the closed database policy
+matrix. Display terminal access additionally requires durable Google issuance
+provenance bound to the exact JTI hash, lecture, time bounds and Display Auth
+user.
+
+The E authority migration is expand-first and dormant. It adds immutable
+operator-reviewed lecture-ownership approvals, exact-replay claim receipts and
+one Google-only cutover receipt. Existing lecture ownership is never inferred.
+The final postgres-operator function requires a SERIALIZABLE transaction,
+environment/request serialization, `ACCESS EXCLUSIVE NOWAIT` locks, two active
+owners, complete active-lecture ownership, enabled Google gates, zero unresolved
+legacy descendants and a digest of independently verified Hosted deployment
+evidence. Only then may it disable legacy admission, revoke legacy sessions and
+write the irreversible tombstone. Migration application, CI or a source
+directory deletion does not authorize that operator action.

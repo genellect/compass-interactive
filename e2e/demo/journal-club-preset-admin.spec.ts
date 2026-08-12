@@ -1,6 +1,12 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
+import {
+  createMockGoogleAdminSession,
+  expectMockGoogleAdminCredential,
+  fulfillMockGoogleAdminRequest,
+  installMockGoogleAdminSession,
+} from '../helpers/mockGoogleAdminSession.js'
 
 const rehearsalLectureId = '72700000-0000-4000-8000-000000000001'
 const productionLectureId = '72700000-0000-4000-8000-000000000002'
@@ -8,6 +14,7 @@ const expectedDocumentId = 'journal-club-2026-07-23-v1'
 const samplePdfPath = fileURLToPath(
   new URL('../../public/lecture-assets/m4-sample-v1.pdf', import.meta.url),
 )
+const googleAdmin = createMockGoogleAdminSession()
 
 const pollQuestions = [
   'QUIZ1: C9orf72リピートはどの方向に転写される？',
@@ -201,19 +208,13 @@ function archiveResolveResponse(
 }
 
 async function installAdminState(page: Page) {
-  await page.addInitScript(() => {
-    window.sessionStorage.setItem(
-      'compass-interactive-admin-authenticated',
-      'true',
-    )
-    window.sessionStorage.setItem(
-      'compass-interactive-admin-token',
-      'admin-session-playwright',
-    )
-    window.localStorage.removeItem('compass-interactive-lecture-session-id')
-    window.localStorage.removeItem('compass-interactive-lecture-runtime-mode')
-    window.localStorage.removeItem('compass-interactive-lecture-title')
-    window.localStorage.removeItem('compass-interactive-lecture-status')
+  await installMockGoogleAdminSession(page, googleAdmin, {
+    localStorage: {
+      'compass-interactive-lecture-runtime-mode': null,
+      'compass-interactive-lecture-session-id': null,
+      'compass-interactive-lecture-status': null,
+      'compass-interactive-lecture-title': null,
+    },
   })
 }
 
@@ -245,6 +246,14 @@ async function installNetworkMocks(
     const request = route.request()
     const url = new URL(request.url())
 
+    if (
+      await fulfillMockGoogleAdminRequest(route, googleAdmin, {
+        identityInvalid: invalidAdminSession,
+      })
+    ) {
+      return
+    }
+
     if (url.pathname.startsWith('/auth/v1/')) {
       await fulfillJson(route, anonymousSessionResponse())
       return
@@ -256,6 +265,21 @@ async function installNetworkMocks(
 
     const functionName = url.pathname.split('/').at(-1) ?? ''
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+    if (
+      [
+        'generate-academic-answer',
+        'manage-ai-control',
+        'manage-lecture-summaries',
+        'manage-lectures',
+        'manage-material-analysis',
+        'manage-pdf-documents',
+        'manage-pdf-publications',
+        'manage-polls',
+        'operator-live-snapshot',
+      ].includes(functionName)
+    ) {
+      expectMockGoogleAdminCredential(body, googleAdmin)
+    }
     if (functionName === 'manage-lectures') {
       state.lectureRequests.push(body)
       if (invalidAdminSession && body.action === 'list') {
@@ -347,8 +371,8 @@ async function installNetworkMocks(
       return
     }
     const safeAiStatusRead =
-      (functionName === 'manage-material-analysis' &&
-        body.action === 'list') ||
+      (functionName === 'admin-ai-unlock' && body.action === 'masterStatus') ||
+      (functionName === 'manage-material-analysis' && body.action === 'list') ||
       (body.action === 'status' &&
         [
           'generate-academic-answer',
@@ -464,7 +488,8 @@ test.describe('Phase 7.27 flag ON', () => {
       'production',
     ])
     for (const request of prepareRequests) {
-      expect(request.adminToken).toBe('admin-session-playwright')
+      expect(request.appSessionToken).toBe(googleAdmin.appSessionToken)
+      expect(request).not.toHaveProperty('adminToken')
       expect(request.clientRequestId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       )
@@ -552,15 +577,8 @@ test.describe('Phase 7.27 flag ON', () => {
   }) => {
     const pageErrors: Error[] = []
     page.on('pageerror', (error) => pageErrors.push(error))
+    await installMockGoogleAdminSession(page, googleAdmin)
     await page.addInitScript(() => {
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-authenticated',
-        'true',
-      )
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-token',
-        'admin-session-playwright',
-      )
       window.localStorage.setItem(
         'compass-interactive-lecture-session-id',
         '72700000-0000-4000-8000-000000000404',
@@ -591,11 +609,13 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          adminAuthenticated: window.sessionStorage.getItem(
-            'compass-interactive-admin-authenticated',
+          appSessionToken: window.sessionStorage.getItem(
+            'compass-interactive-admin-google-app-session-v1',
           ),
-          adminToken: window.sessionStorage.getItem(
-            'compass-interactive-admin-token',
+          authPresent: Boolean(
+            window.localStorage.getItem(
+              'compass-interactive-admin-supabase-auth-v1',
+            ),
           ),
           lectureSessionId: window.localStorage.getItem(
             'compass-interactive-lecture-session-id',
@@ -603,8 +623,8 @@ test.describe('Phase 7.27 flag ON', () => {
         })),
       )
       .toEqual({
-        adminAuthenticated: 'true',
-        adminToken: 'admin-session-playwright',
+        appSessionToken: googleAdmin.appSessionToken,
+        authPresent: true,
         lectureSessionId: null,
       })
     await expect(
@@ -620,24 +640,28 @@ test.describe('Phase 7.27 flag ON', () => {
     await installNetworkMocks(page, { invalidAdminSession: true })
 
     await page.goto('/admin')
-    await expect(page.getByLabel('管理PIN')).toBeVisible()
+    await expect(page.locator('.admin-identity-card')).toBeVisible()
+    await expect(page.locator('input[type="password"]')).toHaveCount(0)
+    await expect(page.locator('#admin-live')).toHaveCount(0)
     await expect(
       page.getByText(
-        '管理者認証の有効期限が切れました。再度ログインしてください。',
+        '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
       ),
     ).toBeVisible()
     await expect
       .poll(() =>
         page.evaluate(() => ({
-          authenticated: window.sessionStorage.getItem(
-            'compass-interactive-admin-authenticated',
+          appSessionToken: window.sessionStorage.getItem(
+            'compass-interactive-admin-google-app-session-v1',
           ),
-          token: window.sessionStorage.getItem(
-            'compass-interactive-admin-token',
+          authPresent: Boolean(
+            window.localStorage.getItem(
+              'compass-interactive-admin-supabase-auth-v1',
+            ),
           ),
         })),
       )
-      .toEqual({ authenticated: null, token: null })
+      .toEqual({ appSessionToken: null, authPresent: true })
   })
 
   test('explains the shared PDF start guard in teacher-facing language', async ({
@@ -748,8 +772,10 @@ test.describe('Phase 7.27 flag ON', () => {
 test.describe('Phase 7.28 Journal Club creation retired', () => {
   test.skip(
     process.env.VITE_PHASE7_27_JOURNAL_CLUB !== 'true' ||
-      process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'false',
-    'Phase 7.28 retirement requires history compatibility ON and creation OFF.',
+      process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'false' ||
+      process.env.VITE_PHASE7_30_ADMIN_IDENTITY !== 'true' ||
+      process.env.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS !== 'true',
+    'Phase 7.28 retirement requires Google Admin and history compatibility ON with creation OFF.',
   )
 
   test('keeps the preset hidden and issues no Journal Club prepare request', async ({
@@ -759,6 +785,20 @@ test.describe('Phase 7.28 Journal Club creation retired', () => {
     const state = await installNetworkMocks(page)
 
     await page.goto('/admin')
+    await expect(page.locator('#admin-live')).toBeVisible()
+    await expect(page.locator('.admin-identity-card')).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          legacyAuthenticated: window.sessionStorage.getItem(
+            'compass-interactive-admin-authenticated',
+          ),
+          legacyToken: window.sessionStorage.getItem(
+            'compass-interactive-admin-token',
+          ),
+        })),
+      )
+      .toEqual({ legacyAuthenticated: null, legacyToken: null })
     await expect(page.locator('.journal-club-preset')).toHaveCount(0)
     await expect(
       page.getByRole('button', { name: 'リハーサルを一覧に追加' }),

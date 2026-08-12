@@ -180,13 +180,15 @@ test('caption terminal events bypass delta throttle while retaining sequence and
 })
 
 test('Edge claim binds signed jti to the verified anonymous Display identity', () => {
-  assert.match(issueSession, /getAdminTokenClaims/)
+  assert.match(issueSession, /verifyGoogleAdminOperationRequest/)
+  assert.match(issueSession, /hasLegacyAdminFields\(body\)/)
   assert.match(issueSession, /body\.enableRealtime === true/)
-  assert.match(issueSession, /register_display_realtime_session_v1/)
-  assert.match(issueSession, /sha256Hex\(displayClaims\.jti\)/)
+  assert.match(issueSession, /issue_google_admin_display_session_v1/)
+  assert.match(issueSession, /createBoundDisplayToken/)
   assert.match(claimSession, /getDisplayTokenClaims/)
   assert.match(claimSession, /service\.auth\.getUser\(bearerToken\)/)
-  assert.match(claimSession, /claim_display_realtime_session_v1/)
+  assert.match(claimSession, /verify_and_claim_google_display_session_v1/)
+  assert.doesNotMatch(claimSession, /claim_display_realtime_session_v1/)
   assert.match(claimSession, /await sha256Hex\(displayClaims\.jti\)/)
   assert.match(claimSession, /result\.status === 'claimed_by_other'/)
   assert.match(claimSession, /409/)
@@ -221,21 +223,22 @@ test('server caption relay is bounded, authenticated, lifecycle-gated and privat
 
 test('operator snapshot and PDF access preserve flag-OFF tokens but reject registered unclaimed or replayed tokens', () => {
   for (const source of [operatorSnapshot, pdfAccess]) {
-    assert.match(source, /verify_display_realtime_session_v1/)
+    assert.match(source, /verify_and_claim_google_display_session_v1/)
+    assert.match(source, /verify_google_display_terminal_session_v1/g)
     assert.match(source, /auth\.getUser\(bearerToken\)/)
     assert.match(
       source,
       /sha256Hex\((?:liveDisplayClaims|displayClaims)\.jti\)/,
     )
-    assert.match(source, /from\('display_realtime_sessions'\)/)
-    assert.match(source, /select\('id, display_auth_user_id, revoke_reason'\)/)
-    assert.match(source, /\.eq\('token_jti_hash', tokenJtiHash\)/)
-    assert.match(
+    assert.match(source, /target_display_auth_user_id: authData\.user\.id/)
+    assert.match(source, /recognized !== true/)
+    assert.match(source, /valid !== true/)
+    assert.doesNotMatch(
       source,
-      /verify_display_snapshot_fallback_v1[\s\S]*?target_display_auth_user_id: authData\.user\.id/,
+      /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1/,
     )
     const bindingVerificationStart = source.indexOf(
-      'verify_display_realtime_session_v1',
+      'verify_and_claim_google_display_session_v1',
     )
     assert.ok(bindingVerificationStart > 0)
     assert.doesNotMatch(
@@ -249,16 +252,16 @@ test('operator snapshot and PDF access preserve flag-OFF tokens but reject regis
   }
   assert.match(
     operatorSnapshot,
-    /bindingValid !== true[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode === 'terminal'/,
+    /googleDisplayBinding\.valid !== true[\s\S]*?verify_google_display_terminal_session_v1[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode === 'terminal'/,
   )
   assert.match(
     operatorSnapshot,
-    /realtimeBinding\.display_auth_user_id === authData\.user\.id[\s\S]*?credentialExpired: true[\s\S]*?Display session has ended\./,
+    /descendant\.valid !== true[\s\S]*?credentialExpired: true[\s\S]*?Display session has ended\./,
   )
   assert.match(pdfAccess, /getDisplayTerminalTokenClaims/)
   assert.match(
     pdfAccess,
-    /bindingValid !== true[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode !== 'terminal'/,
+    /googleDisplayBinding\.valid !== true[\s\S]*?verify_google_display_terminal_session_v1[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode !== 'terminal'/,
   )
   assert.doesNotMatch(
     `${migration}\n${operatorSnapshot}\n${pdfAccess}`,

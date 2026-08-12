@@ -3,10 +3,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import {
-  createAdminToken,
-  verifyAdminToken,
-} from '../supabase/functions/_shared/adminToken.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (path) => readFileSync(join(root, path), 'utf8')
@@ -48,17 +44,6 @@ function assertSecretsAreNotReturned(source) {
   )
 }
 
-const secret = 'milestone-3-test-secret'
-const token = await createAdminToken(secret)
-assert.equal(await verifyAdminToken(token, secret), true)
-assert.equal(await verifyAdminToken(`${token}tampered`, secret), false)
-assert.equal(await verifyAdminToken('invalid-token', secret), false)
-
-const originalNow = Date.now
-Date.now = () => originalNow() + 9 * 60 * 60 * 1000
-assert.equal(await verifyAdminToken(token, secret), false)
-Date.now = originalNow
-
 const migration = read('supabase/migrations/20260711080712_admin_lifecycle.sql')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const managePolls = read('supabase/functions/manage-polls/index.ts')
@@ -91,8 +76,10 @@ for (const source of [
   updateDisplay,
   manageAiControl,
 ]) {
-  assert.match(source, /_shared\/adminToken\.ts/)
-  assert.match(source, /verifyAdminToken|getAdminTokenClaims/)
+  assert.match(source, /verifyGoogleAdminOperationRequest/)
+  assert.match(source, /hasLegacyAdminFields\(body\)/)
+  assert.match(source, /appSessionToken/)
+  assert.doesNotMatch(source, /verifyAdminToken|getAdminTokenClaims/)
   assert.doesNotMatch(source, /function timingSafeEqual|function signToken/)
 }
 assert.equal(
@@ -100,27 +87,25 @@ assert.equal(
   false,
   'the shared Admin PIN issuer must stay removed',
 )
-assert.match(manageLectures, /rpc\('admin_create_lecture_v2'/)
-assert.match(manageLectures, /rpc\('admin_duplicate_lecture_v1'/)
-assert.match(manageLectures, /rpc\(\s*'admin_set_lecture_status'/)
+assert.match(manageLectures, /manage_google_admin_lectures_v1/)
+assert.match(manageLectures, /target_action: action/)
+assert.match(manageLectures, /target_action: body\.action/)
 assert.doesNotMatch(manageLectures, /from\('lecture_sessions'\)\s*\.insert/)
 assert.doesNotMatch(manageLectures, /transition_at:\s*new Date/)
-assert.match(manageAiControl, /admin_stop_lecture_ai_control/)
-assert.match(manageAiControl, /admin_heartbeat_realtime_caption_operation/)
+assert.match(manageAiControl, /manage_google_admin_ai_control_v1/)
+assert.match(manageAiControl, /target_action: semanticAction/)
 assert.match(
   manageAiControl,
-  /Starting a paid AI feature requires a billing grant/,
+  /provider_specific_authority_required/,
 )
 assert.doesNotMatch(
   manageAiControl,
-  /rpc\(\s*'admin_start_lecture_ai_operation'/,
+  /admin_start_lecture_ai_operation|admin_stop_lecture_ai_control|admin_heartbeat_realtime_caption_operation/,
 )
 assert.match(manageAiControl, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
 assertSecretsAreNotReturned(manageAiControl)
-assert.match(managePolls, /rpc\('admin_create_poll'/)
-assert.match(managePolls, /'admin_set_poll_status'/)
-assert.match(managePolls, /\.eq\('status', 'open'\)/)
-assert.match(managePolls, /\.neq\('status', 'open'\)/)
+assert.match(managePolls, /manage_google_admin_polls_v1/)
+assert.doesNotMatch(managePolls, /admin_create_poll|admin_set_poll_status/)
 assert.match(managePolls, /hasMore/)
 assert.match(adminRepository, /async managePolls/)
 assert.doesNotMatch(adminRepository, /async verifyAdminPin\b|verify-admin-pin/)

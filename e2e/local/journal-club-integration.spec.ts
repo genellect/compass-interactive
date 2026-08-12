@@ -4,8 +4,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
+import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
-const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
 const adminSessionSecret = process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
@@ -177,7 +177,6 @@ async function installLocalPdfDeliveryMock(
 }
 
 function createLocalServiceClient() {
-  expect(adminPin, 'TEST_ADMIN_PIN must match the local Edge env.').not.toBe('')
   expect(supabaseUrl, 'TEST_SUPABASE_URL is required.').not.toBe('')
   expect(
     serviceRoleKey,
@@ -237,9 +236,8 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
     'This test requires a clean local reset so production cannot be duplicated.',
   ).toBe(0)
 
+  await installGoogleAdminSession(page)
   await page.goto('/admin')
-  await page.getByLabel('管理PIN').fill(adminPin)
-  await page.getByRole('button', { name: '講義コントロールを開く' }).click()
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
   ).toBeVisible()
@@ -560,7 +558,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
     })
 
     const issuedAt = Math.floor((Date.now() - 120_000) / 1_000)
-    const expiredDisplayToken = await createLocalDisplayToken({
+    const forgedExpiredDisplayToken = await createLocalDisplayToken({
       expiresAt: issuedAt + 60,
       issuedAt,
       lectureSessionId: rehearsal!.lecture_session_id,
@@ -571,17 +569,14 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       {
         data: {
           action: 'display',
-          displayToken: expiredDisplayToken,
+          displayToken: forgedExpiredDisplayToken,
           lectureSessionId: rehearsal!.lecture_session_id,
         },
         headers: edgeHeaders,
       },
     )
     expect(expiredTokenResponse.status()).toBe(401)
-    expect(await expiredTokenResponse.json()).toMatchObject({
-      message: 'Display archive is unavailable.',
-      ok: false,
-    })
+    expect(await expiredTokenResponse.json()).toMatchObject({ ok: false })
     await displaySafety.assertClean()
   } finally {
     await displayContext.close()

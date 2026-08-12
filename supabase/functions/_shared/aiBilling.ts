@@ -1,5 +1,3 @@
-import { timingSafeEqual } from './adminToken.ts'
-
 export const AI_FEATURES = [
   'captions',
   'summaries',
@@ -82,11 +80,6 @@ export function normalizeAiFeatures(value: unknown): AiFeature[] {
   return [...unique].sort()
 }
 
-export function createBillingGrantNonce() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return bytesToBase64Url(bytes)
-}
-
 /**
  * Recreates one raw nonce for a single Google Admin provider attempt. The
  * database stores only its SHA-256 hash and the version. A lost HTTP response
@@ -150,33 +143,4 @@ export async function deriveGoogleSummaryRunNonce(input: {
     ),
   )
   return bytesToBase64Url(new Uint8Array(signature))
-}
-
-export function formatBillingGrantToken(grantId: string, nonce: string) {
-  return `${grantId}.${nonce}`
-}
-
-export function parseBillingGrantToken(token: string) {
-  const [grantId, nonce, extra] = token.split('.')
-  if (
-    !grantId ||
-    !nonce ||
-    extra ||
-    !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(grantId) ||
-    !/^[A-Za-z0-9_-]{40,60}$/.test(nonce)
-  ) {
-    throw new Error('Invalid billing authorization.')
-  }
-  return { grantId, nonce }
-}
-
-export async function verifyBillingPin(candidate: string, expected: string) {
-  if (candidate.length > 128 || expected.length < 6 || expected.length > 128) {
-    return false
-  }
-  const [candidateHash, expectedHash] = await Promise.all([
-    sha256Hex(candidate),
-    sha256Hex(expected),
-  ])
-  return timingSafeEqual(candidateHash, expectedHash)
 }

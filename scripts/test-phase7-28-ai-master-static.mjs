@@ -7,7 +7,7 @@ const read = (path) =>
 const migration = read(
   'supabase/migrations/20260731110753_phase7_28_ai_master_authorization.sql',
 )
-const edge = read('supabase/functions/authorize-ai-start/index.ts')
+const edge = read('supabase/functions/admin-ai-unlock/index.ts')
 const masterControl = read(
   'src/components/AdminAiControl/AiMasterAuthorizationControl.tsx',
 )
@@ -30,6 +30,7 @@ const masterRepository = read(
 )
 const envExample = read('.env.local.example')
 const featureFlags = read('src/lib/featureFlags.ts')
+const localBrowser = read('e2e/local/ai-master-authorization.spec.ts')
 
 assert.match(
   migration,
@@ -67,34 +68,31 @@ assert.doesNotMatch(
   'master authorization tables and RPCs must never store secrets',
 )
 
-assert.match(edge, /PHASE7_28_AI_MASTER_AUTH_ENABLED/)
-assert.match(edge, /validateMasterFeatureReadiness/)
-assert.match(
+assert.match(edge, /PHASE730_C1_GOOGLE_AI_MASTER_ENABLED/)
+assert.match(edge, /PHASE730_ADMIN_AI_UNLOCK_ENABLED/)
+assert.match(edge, /FOUR_DIGIT_PIN_PATTERN\.test\(body\.pin\)/)
+assert.match(edge, /authorize_google_ai_master_with_pin_v1/)
+assert.doesNotMatch(
   edge,
-  /validateMasterFeatureReadiness[\s\S]*?PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED/,
+  /billingPin|BILLING_PIN|admin_issue_ai_billing_grant_from_master|formatBillingGrantToken/,
 )
-assert.match(edge, /PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED|adminSessionId/)
-assert.match(edge, /body\.billingPin\?\.trim\(\)/)
-assert.match(edge, /admin_issue_ai_billing_grant_from_master/)
-assert.match(edge, /createBillingGrantNonce\(\)/)
-assert.match(edge, /formatBillingGrantToken/)
 const revokeMasterBranch = edge.slice(
   edge.indexOf("if (action === 'revokeMaster')"),
-  edge.indexOf("if (action !== 'issueGrant')"),
+  edge.indexOf("if (action === 'authorizeMasterWithPin')"),
 )
 assert.ok(revokeMasterBranch.length > 0)
 assert.doesNotMatch(
   revokeMasterBranch,
-  /if \(!masterEnabled\)/,
+  /if \(!c1AdmissionSourceAllowed\)/,
   'stop-only recovery must remain available after the master flag is disabled',
 )
 const masterStatusBranch = edge.slice(
   edge.indexOf("if (action === 'masterStatus')"),
-  edge.indexOf("if (action === 'authorizeMaster')"),
+  edge.indexOf("if (action === 'downgradeMaster')"),
 )
 assert.doesNotMatch(
   masterStatusBranch,
-  /if \(!masterEnabled\)/,
+  /if \(!c1AdmissionSourceAllowed\)/,
   'status must remain visible so an already-active authorization can be stopped after flag rollback',
 )
 
@@ -121,7 +119,7 @@ assert.match(masterHelpers, /masterAuthorizationHeldByOther/)
 for (const control of [captions, summaries, material, academic]) {
   assert.match(control, /masterAuthorizesFeature/)
   assert.match(control, /masterAuthorizationHeldByOther/)
-  assert.match(control, /billingPin:/)
+  assert.doesNotMatch(control, /billingPin:/)
 }
 assert.match(captions, /navigator\.mediaDevices\.getUserMedia/)
 assert.match(captions, /字幕を開始/)
@@ -136,18 +134,23 @@ assert.match(
   /previouslyAuthorized[\s\S]*?!summaryMasterAuthorized[\s\S]*?runTokenRef\.current = null[\s\S]*?setRunToken\(null\)/,
   'master revocation must stop the local five-minute scheduler immediately',
 )
-assert.match(material, /講義中のAPI許可を使用します/)
-assert.match(academic, /講義中のAPI許可を使用します/)
+assert.match(material, /講義中のAI許可を使用します/)
+assert.match(academic, /講義中のAI許可を使用します/)
 
-assert.match(repository, /billingPin\?: string/)
+assert.doesNotMatch(repository, /billingPin\?: string/)
 assert.match(repository, /aiMasterAuthorizationRepository/)
 assert.match(masterRepository, /authorizeAiMaster/)
 assert.match(masterRepository, /revokeAiMasterAuthorization/)
-assert.match(envExample, /^VITE_PHASE7_28_AI_MASTER_AUTH=false$/m)
-assert.match(envExample, /^PHASE7_28_AI_MASTER_AUTH_ENABLED=false$/m)
-assert.match(
-  featureFlags,
-  /isPhase728AiMasterAuthorizationEnabled\s*=\s*[\s\S]*?isPhase68SecurityEnabled\s*&&[\s\S]*?VITE_PHASE7_28_AI_MASTER_AUTH === 'true'/,
-)
+assert.doesNotMatch(envExample, /PHASE7_28_AI_MASTER_AUTH/)
+assert.doesNotMatch(featureFlags, /isPhase728AiMasterAuthorizationEnabled/)
+assert.match(localBrowser, /installGoogleAdminSession/)
+assert.match(localBrowser, /個人AI PIN/)
+assert.match(localBrowser, /要約を開始/)
+assert.match(localBrowser, /lecture_summary_runs/)
+assert.match(localBrowser, /status', 'consumed'/)
+assert.match(localBrowser, /すべて停止/)
+assert.match(localBrowser, /postStopSummaryRequests/)
+assert.match(localBrowser, /expect\(paidRequests\)\.toEqual\(\[\]\)/)
+assert.doesNotMatch(localBrowser, /TEST_ADMIN_PIN|TEST_BILLING_PIN|API PIN/)
 
 console.log('Phase 7.28C master AI authorization static tests passed.')

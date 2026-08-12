@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { listCompletedCaptionSegments } from '../../caption/captionTranscriptStore'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
@@ -87,7 +84,6 @@ export function LectureSummaryControl({
   publisherSessionToken,
   startedAt,
 }: LectureSummaryControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [results, setResults] = useState<AdminSummaryResults>(emptyResults)
   const [runToken, setRunToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -332,7 +328,6 @@ export function LectureSummaryControl({
     [
       admissionEnabled,
       adminToken,
-      googleCredential,
       lectureSessionId,
       lectureStatus,
       onAcademicAnswerChanged,
@@ -444,22 +439,20 @@ export function LectureSummaryControl({
           '資料公開アプリに接続できないため、PDFの内容を含めずに要約判定を続けます。',
         )
       }
-      const googleRequestIds = googleCredential
-        ? (summaryWindowRequestIdsRef.current.get(summaryWindow.index) ?? {
-            grantRequestId: crypto.randomUUID(),
-            preflightRequestId: crypto.randomUUID(),
-            startRequestId: crypto.randomUUID(),
-          })
-        : null
-      if (googleRequestIds) {
-        summaryWindowRequestIdsRef.current.set(
-          summaryWindow.index,
-          googleRequestIds,
-        )
+      const googleRequestIds = summaryWindowRequestIdsRef.current.get(
+        summaryWindow.index,
+      ) ?? {
+        grantRequestId: crypto.randomUUID(),
+        preflightRequestId: crypto.randomUUID(),
+        startRequestId: crypto.randomUUID(),
       }
+      summaryWindowRequestIdsRef.current.set(
+        summaryWindow.index,
+        googleRequestIds,
+      )
       const generated = await supabaseAdminRepository.generateLectureSummary({
         adminToken,
-        ...(googleRequestIds ?? {}),
+        ...googleRequestIds,
         lectureSessionId,
         pdfContext,
         runToken: token,
@@ -471,9 +464,7 @@ export function LectureSummaryControl({
         })),
         windowIndex: summaryWindow.index,
       })
-      if (googleRequestIds) {
-        summaryWindowRequestIdsRef.current.delete(summaryWindow.index)
-      }
+      summaryWindowRequestIdsRef.current.delete(summaryWindow.index)
       setResults(generated.results)
       if (generated.results.run?.autoAcademicAnswersEnabled) {
         void dispatchAutomaticAcademicAnswers(token)
@@ -505,7 +496,6 @@ export function LectureSummaryControl({
     getPdfContext,
     getServerNow,
     hardStopAt,
-    googleCredential,
     lectureSessionId,
     lectureStatus,
     processedIndexes,
@@ -626,7 +616,7 @@ export function LectureSummaryControl({
         window.clearTimeout(academicRetryTimerRef.current)
         academicRetryTimerRef.current = null
       }
-      setMessage('5分要約を停止しました。停止にAPI利用PINは不要です。')
+      setMessage('5分要約を停止しました。停止に個人AI PINは不要です。')
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : '要約を停止できませんでした。',
@@ -852,7 +842,7 @@ export function LectureSummaryControl({
         {masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorizedForStart ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
+          <p className="note">講義中のAI許可を使用します。</p>
         ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。

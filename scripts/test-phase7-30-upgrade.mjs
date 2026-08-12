@@ -113,6 +113,38 @@ try {
     'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
     '--local',
   ])
+  runSupabase([
+    'db',
+    'reset',
+    '--local',
+    '--version',
+    '20260812033000',
+    '--sql-paths',
+    '../scripts/fixtures/phase7-30e-c2-head-upgrade-probe.sql',
+  ])
+  runSupabase(['migration', 'up', '--local'])
+  runSupabase([
+    'test',
+    'db',
+    'scripts/fixtures/phase7-30e-c2-head-upgrade-probe-test.sql',
+    '--local',
+  ])
+  runSupabase([
+    'db',
+    'reset',
+    '--local',
+    '--version',
+    '20260812043000',
+    '--sql-paths',
+    '../scripts/fixtures/phase7-30e-d-head-upgrade-probe.sql',
+  ])
+  runSupabase(['migration', 'up', '--local'])
+  runSupabase([
+    'test',
+    'db',
+    'scripts/fixtures/phase7-30e-d-head-upgrade-probe-test.sql',
+    '--local',
+  ])
 } catch (error) {
   failure = error
 } finally {
@@ -125,5 +157,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head and C1-head states upgrade through Phase 7.30D with explicit trust anchors, invitation lifecycle evidence, no ownership/browser/receipt inference, eight-hour cap and dormant gates intact.',
+  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head, C1-head, C2-head and D-head states upgrade through Phase 7.30E with exact Display terminal binding, Google-create ownership provenance, explicit trust anchors, invitation lifecycle evidence, no ownership/browser/receipt inference, eight-hour cap and dormant cutover gates intact.',
 )

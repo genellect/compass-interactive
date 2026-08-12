@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-12
 
 ## 1. Purpose
 
@@ -53,9 +53,9 @@ The Interactive application does not intentionally collect:
 - complete raw microphone streams;
 - PDF bytes or image OCR output in Supabase;
 - complete local transcript files in Supabase;
-- plaintext current-legacy Admin/API-use PIN or lecture-code hash material in
-  client data; both shared PIN systems are removed before Production by the
-  Phase 7.30 contract;
+- plaintext shared Admin/Billing PIN or lecture-code hash material in client
+  data; Phase 7.30E application/Edge source accepts neither shared PIN wire
+  path, while the personal AI PIN remains transient intent input only;
 - OpenAI, Supabase service-role, R2, Turnstile or email-provider secrets in the
   browser.
 - raw Google subject in COMPASS application tables; Supabase Auth remains the
@@ -198,9 +198,10 @@ Realtime subscription is introduced.
   additionally verify participant ownership.
 - Students cannot list participant records or raw Poll responses.
 - Display credentials have a narrower scope than Admin credentials.
-- Admin access does not grant paid API use. The current source has a separate
-  API-use PIN; Phase 7.30 replaces it before Production with a personal AI PIN
-  verified once per new lecture master or explicit scope/cost escalation.
+- Admin access does not grant paid API use. The current source requires a
+  personal AI PIN or valid remembered-browser proof inside a verified Google
+  plus TOTP AAL2 session once per new lecture master or explicit scope/cost
+  escalation.
 - Service-role access is restricted to trusted Edge Functions.
 - Archive and PDF access are short-lived and scoped.
 
@@ -265,7 +266,7 @@ rollback.
   authorize use while waiting for cleanup. A future retention change must keep
   FK order and audit/privacy requirements explicit.
 
-## 14. Phase 7.30A-B2 Admin identity and AI-unlock data
+## 14. Phase 7.30A-E Admin identity, AI-unlock and cutover data
 
 ### B1 identity data
 
@@ -329,7 +330,28 @@ state remains non-authorizing while awaiting deletion. The Hosted retention
 schedule, privacy notice, operator export/deletion procedure and real-account
 evidence remain unproven.
 
-### Approved Phase 7.30 Production boundary
+### D owner-ledger and E cutover evidence
+
+The D ledger stores only the identity and content-free authority metadata needed
+for invitations, membership role/status/AI entitlement, session revocation and
+bounded audit. Invitation email and token values are normalized or hashed at
+the trusted boundary; raw invitation tokens, Auth tokens, TOTP codes, AI PINs,
+lecture content and provider responses are excluded from receipts and audit.
+
+E adds immutable operator-reviewed lecture-ownership approval and exact-replay
+claim evidence plus one global cutover receipt. An approval binds an explicit
+environment, lecture, principal, membership, expected lecture status/lifecycle,
+bounded operator actor/reason and expiry. The cutover receipt stores bounded
+guard counts and a 64-hex digest of independently reviewed Hosted deployment
+evidence, not a release artifact, credential or raw identity. Existing
+ownership is never inferred from email, lecture title or request input.
+
+Historical revoked legacy sessions and billing/master/grant rows may remain
+only for foreign-key, accounting and audit integrity. They do not authorize a
+current Admin request. Hosted retention, access/export/deletion operations and
+the irreversible operator cutover remain separate Human/Hosted gates.
+
+### Approved Phase 7.30 contract (activation pending)
 
 - MFA uses only Supabase Authenticator App TOTP, compatible with Google
   Authenticator, and configures no email MFA or custom MFA path. Supabase Auth
@@ -371,8 +393,12 @@ evidence remain unproven.
   request. Its verifier, factor version and content-free lifecycle metadata may
   be stored server-side. Rotation/revocation drains AI master, browser and
   pending-child authority while preserving the Admin session.
-- `ADMIN_PIN` is removed after the Phase 7.30C authorization migration;
-  `BILLING_PIN` and its compatibility RPC are removed after personal-AI-PIN E2E.
-  Both removals occur before Production. Revoked historical session rows may
-  remain only for foreign-key and audit integrity. Rollback restores no shared
-  secret and uses a Google-only immutable revision plus operator owner recovery.
+- Phase 7.30E removes the `ADMIN_PIN` UI, issuer, browser storage and accepted
+  application transport. The dormant database cutover may be committed only
+  after independently verified Google-only Hosted deployment evidence.
+  Operational `BILLING_PIN` wire paths are absent from the current application;
+  retirement of its historical compatibility authority is a separate
+  default-OFF migration after personal-AI-PIN evidence and before Production.
+  Revoked historical rows may remain only for foreign-key/accounting/audit
+  integrity. Rollback restores no shared secret and uses a Google-only immutable
+  revision plus operator owner recovery.

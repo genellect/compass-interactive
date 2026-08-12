@@ -414,6 +414,7 @@ assert.equal(
   'node scripts/test-phase7-30b22b-static.mjs',
 )
 assert.match(nonlive, /'test:phase7-30b22b-static'/)
-assert.match(workflow, /admin-ai-unlock/)
+assert.match(workflow, /PHASE730_ADMIN_AI_UNLOCK_ENABLED=true/)
+assert.match(workflow, /test:e2e:phase7-28c:local/)
 
 console.log('Phase 7.30 B2.2b static contract passed.')

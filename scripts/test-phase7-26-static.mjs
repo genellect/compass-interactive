@@ -68,18 +68,19 @@ assert.match(crypto, /payload\.origin/)
 assert.match(crypto, /payload\.sid/)
 assert.match(crypto, /payload\.purpose === 'upload'/)
 
-assert.match(manage, /trackedAdminSessionsEnabled\(\)/)
+assert.match(manage, /hasLegacyAdminFields\(body\)/)
+assert.match(manage, /verifyGoogleAdminOperationRequest/)
 assert.match(manage, /getAllowedCorsOrigin\(request\)/)
 assert.match(manage, /readJsonBody<RequestBody>\(request, 32 \* 1024\)/)
-assert.match(manage, /admin_prepare_pdf_publication_commit_v1/)
-assert.match(manage, /admin_complete_pdf_publication_activation_v1/)
-assert.match(manage, /admin_find_inflight_pdf_publication_v1/)
+assert.match(manage, /prepare_google_admin_pdf_publication_finalize_v1/)
+assert.match(manage, /advance_google_admin_pdf_publication_v1/)
+assert.match(manage, /get_google_admin_pdf_publication_v1/)
 assert.match(manage, /response\.body\?\.getReader\(\)/)
 assert.doesNotMatch(manage, /response\.arrayBuffer\(\)/)
 assert.match(manage, /typeof body\.downloadEnabled !== 'boolean'/)
 assert.doesNotMatch(manage, /VITE_.*SERVICE_ROLE|import\.meta\.env.*SERVICE_ROLE/i)
 
-assert.match(manageDocuments, /admin_register_local_pdf_document_v2/)
+assert.match(manageDocuments, /manage_google_admin_pdf_documents_v1/)
 assert.match(manageDocuments, /target_expected_access_version/)
 assert.match(manageDocuments, /target_manifest_etag/)
 assert.match(
@@ -90,10 +91,11 @@ assert.doesNotMatch(
   manageDocuments,
   /PHASE726_BROWSER_PDF_PUBLICATION_ENABLED'[\s\S]*?!hasLocalPublicationReceipt/,
 )
-assert.match(manageDocuments, /trackedAdminSessionsEnabled\(\)/)
-const abortRpcIndex = manage.indexOf("'admin_abort_pdf_publication_v1'")
+assert.match(manageDocuments, /hasLegacyAdminFields\(body\)/)
+assert.match(manageDocuments, /verifyGoogleAdminOperationRequest/)
+const abortRpcIndex = manage.indexOf("'abort_google_admin_pdf_publication_v1'")
 const abortRollbackIndex = manage.indexOf(
-  '`/v2/pdf-publications/${row.publication_id}/rollback`',
+  '`/v2/pdf-publications/${before.publication_id}/rollback`',
   abortRpcIndex,
 )
 assert.ok(abortRpcIndex >= 0 && abortRollbackIndex > abortRpcIndex)

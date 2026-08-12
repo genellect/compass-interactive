@@ -1,9 +1,3 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
-import {
-  getAdminActorId,
-  getAdminTokenClaims,
-  getAdminTokenSecret,
-} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   readJsonBody,
@@ -15,10 +9,10 @@ import {
   type GoogleAdminOperationContext,
   verifyGoogleAdminOperationRequest,
 } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
 
 type RequestBody = {
   action?: 'list' | 'adopt' | 'reject' | 'publishSummary' | 'hideSummary'
-  adminToken?: string
   appSessionToken?: string
   analysisId?: string
   lectureSessionId?: string
@@ -109,6 +103,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
   if (
+    hasLegacyAdminFields(body) ||
     !body.action ||
     !['list', 'adopt', 'reject', 'publishSummary', 'hideSummary'].includes(
       body.action,
@@ -135,54 +130,28 @@ Deno.serve(async (request) => {
     )
   }
 
-  const hasGoogleCredential = Boolean(body.appSessionToken)
-  const hasLegacyCredential = Boolean(body.adminToken)
-  if (hasGoogleCredential === hasLegacyCredential) {
+  if (!body.appSessionToken) {
     return jsonResponse(
-      { message: 'Exactly one Admin credential is required.', ok: false },
-      400,
+      { message: 'Google Admin credential is required.', ok: false },
+      401,
     )
   }
 
-  let actorId = ''
-  let actorSessionId: string | null = null
-  let googleContext: GoogleAdminOperationContext | null = null
-  if (body.appSessionToken) {
-    const verification = await verifyGoogleAdminOperationRequest(
-      request,
-      body.appSessionToken,
+  const verification = await verifyGoogleAdminOperationRequest(
+    request,
+    body.appSessionToken,
+  )
+  if (!verification.ok) {
+    return jsonResponse(
+      {
+        code: verification.code,
+        message: verification.message,
+        ok: false,
+      },
+      verification.status,
     )
-    if (!verification.ok) {
-      return jsonResponse(
-        {
-          code: verification.code,
-          message: verification.message,
-          ok: false,
-        },
-        verification.status,
-      )
-    }
-    googleContext = verification
-  } else {
-    try {
-      const claims = await getAdminTokenClaims(
-        body.adminToken ?? '',
-        getAdminTokenSecret(),
-        request,
-      )
-      if (!claims) {
-        return jsonResponse(
-          { message: 'Invalid Admin session.', ok: false },
-          401,
-        )
-      }
-      actorId = getAdminActorId(claims)
-      actorSessionId =
-        claims.sid && UUID_PATTERN.test(claims.sid) ? claims.sid : null
-    } catch {
-      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
-    }
   }
+  const googleContext: GoogleAdminOperationContext = verification
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -192,14 +161,9 @@ Deno.serve(async (request) => {
       503,
     )
   }
-  const supabase =
-    googleContext?.serviceClient ??
-    createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    })
+  const supabase = googleContext.serviceClient
 
-  if (googleContext) {
-    if (body.action === 'list') {
+  if (body.action === 'list') {
       const { data, error } = await supabase.rpc(
         'get_google_admin_material_analysis_v1',
         {
@@ -219,8 +183,8 @@ Deno.serve(async (request) => {
           error ? 503 : 404,
         )
       }
-      return jsonResponse({ ok: true, pollId: null, results: data })
-    }
+    return jsonResponse({ ok: true, pollId: null, results: data })
+  }
 
     if (!body.requestId || !UUID_PATTERN.test(body.requestId)) {
       return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
@@ -373,105 +337,5 @@ Deno.serve(async (request) => {
         results = refreshed.data
       }
     }
-    return jsonResponse({ ok: true, pollId: result.pollId ?? null, results })
-  }
-
-  try {
-    let pollId: string | null = null
-    if (body.action === 'adopt') {
-      const question = body.question?.trim()
-      const options = body.optionLabels?.map((option) => option.trim())
-      if (
-        !body.proposalId ||
-        !question ||
-        !body.pollType ||
-        !options ||
-        options.length < 2
-      ) {
-        return jsonResponse(
-          { message: 'Edited Poll draft fields are required.', ok: false },
-          400,
-        )
-      }
-      const { data, error } = await supabase.rpc('admin_adopt_poll_proposal', {
-        option_labels: options,
-        poll_question: question,
-        poll_type: body.pollType,
-        target_actor_id: actorId,
-        target_lecture_session_id: body.lectureSessionId,
-        target_proposal_id: body.proposalId,
-      })
-      if (error) throw error
-      pollId = data as string
-    } else if (body.action === 'reject') {
-      if (!body.proposalId) {
-        return jsonResponse(
-          { message: 'proposalId is required.', ok: false },
-          400,
-        )
-      }
-      const { error } = await supabase.rpc('admin_reject_poll_proposal', {
-        target_actor_id: actorId,
-        target_lecture_session_id: body.lectureSessionId,
-        target_proposal_id: body.proposalId,
-      })
-      if (error) throw error
-    } else if (
-      body.action === 'publishSummary' ||
-      body.action === 'hideSummary'
-    ) {
-      if (!actorSessionId) {
-        return jsonResponse(
-          {
-            message: '続行するには、管理画面へ再度ログインしてください。',
-            ok: false,
-          },
-          401,
-        )
-      }
-      const summaryBody = normalizeMaterialSummaryBody(body.summaryBody)
-      if (
-        !body.analysisId ||
-        (body.action === 'publishSummary' &&
-          (!summaryBody ||
-            !body.reviewState ||
-            !['admin_confirmed', 'admin_revised'].includes(body.reviewState)))
-      ) {
-        return jsonResponse(
-          {
-            message: 'Reviewed material summary fields are required.',
-            ok: false,
-          },
-          400,
-        )
-      }
-      const { error } = await supabase.rpc(
-        'admin_set_material_summary_publication',
-        {
-          target_actor_id: actorSessionId,
-          target_analysis_id: body.analysisId,
-          target_body: summaryBody ?? null,
-          target_lecture_session_id: body.lectureSessionId,
-          target_review_state: body.reviewState ?? null,
-          target_visibility:
-            body.action === 'publishSummary' ? 'public' : 'hidden',
-        },
-      )
-      if (error) throw error
-    } else if (body.action !== 'list') {
-      return jsonResponse({ message: 'Unknown action.', ok: false }, 400)
-    }
-
-    const { data, error } = await supabase.rpc(
-      'admin_list_material_ai_results',
-      { target_lecture_session_id: body.lectureSessionId },
-    )
-    if (error) throw error
-    return jsonResponse({ ok: true, pollId, results: data })
-  } catch {
-    return jsonResponse(
-      { message: 'Material analysis operation failed.', ok: false },
-      409,
-    )
-  }
+  return jsonResponse({ ok: true, pollId: result.pollId ?? null, results })
 })

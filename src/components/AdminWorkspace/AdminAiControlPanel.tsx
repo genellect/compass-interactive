@@ -1,8 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 
 import { AppIcon } from '../AppIcon'
 import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
@@ -15,7 +12,6 @@ import type {
 } from '../../repositories/supabaseAdminRepository'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { resolveSummaryScheduleTiming } from '../../summary/summarySchedule'
-import { isPhase728AiMasterAuthorizationEnabled } from '../../lib/featureFlags'
 
 const AcademicAnswerControl = lazy(() =>
   import('../AdminAiControl/AcademicAnswerControl').then((module) => ({
@@ -98,10 +94,7 @@ export function AdminAiControlPanel({
           {anyEnabled ? '利用可能' : '停止中'}
         </span>
       </div>
-      {(isPhase728AiMasterAuthorizationEnabled ||
-        isGoogleAdminOperationCredential(adminToken)) &&
-      adminToken &&
-      activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <Suspense
           fallback={<p className="note">AI利用許可を確認しています…</p>}
         >

@@ -1,6 +1,4 @@
-import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import {
-  isGoogleAdminOperationCredential,
   type AdminOperationCredentialInput,
 } from '../lib/adminAuth/adminOperationCredential'
 import {
@@ -187,9 +185,6 @@ async function invokePublicationAction(
   >,
   timeout: number = SUPABASE_REQUEST_TIMEOUT_MS.adminFunction,
 ) {
-  if (!isGoogleAdminOperationCredential(body.adminToken)) {
-    await ensureAnonymousAuthSession()
-  }
   const { data, error } = await invokeEdgeFunction<PublicationResponse>(
     PUBLICATION_FUNCTION,
     { body, timeout },

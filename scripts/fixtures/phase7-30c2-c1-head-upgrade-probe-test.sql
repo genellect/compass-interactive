@@ -11,7 +11,7 @@ select ok(
       and title = 'pre-C2 unowned active lecture'
       and status = 'open'
   ),
-  'the populated C1-head lecture survives C2 unchanged'
+  'the populated C1-head lecture survives the C2 through E upgrade unchanged'
 );
 select ok(
   not exists (
@@ -20,7 +20,7 @@ select ok(
     where lecture_session_id =
       '73032000-0000-4000-8000-000000000001'::uuid
   ),
-  'C2 never infers ownership for a pre-existing lecture'
+  'the C2 through E upgrade never infers ownership for a pre-existing lecture'
 );
 select is(
   (
@@ -99,6 +99,47 @@ select is(
   'activation preflight keeps the unowned active lecture as an explicit HOLD'
 );
 reset role;
+
+select ok(
+  (select legacy_pin_login_enabled
+   from private.admin_identity_runtime_gate
+   where singleton)
+  and not exists (
+    select 1 from private.admin_identity_cutover_receipts
+  )
+  and not exists (
+    select 1 from private.admin_lecture_ownership_claim_approvals
+  )
+  and not exists (
+    select 1 from private.admin_lecture_ownership_claim_receipts
+  ),
+  'E applies dormant without disabling legacy admission or fabricating ownership evidence'
+);
+
+select ok(
+  (private.get_google_only_admin_cutover_preflight_v1(
+    '00000000-0000-0000-0000-000000000000'::uuid
+  ) ->> 'authoritative')::boolean is false
+  and (private.get_google_only_admin_cutover_preflight_v1(
+    '00000000-0000-0000-0000-000000000000'::uuid
+  ) ->> 'externalTransportAttestationRequired')::boolean
+  and private.get_google_only_admin_cutover_preflight_v1(
+    '00000000-0000-0000-0000-000000000000'::uuid
+  ) ->> 'unownedActiveLectureCount' = '1'
+  and private.get_google_only_admin_cutover_preflight_v1(
+    '00000000-0000-0000-0000-000000000000'::uuid
+  ) ->> 'issuedLegacyGrantCount' = '1',
+  'E preflight preserves unresolved legacy authority as an explicit non-authoritative HOLD'
+);
+
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.verify_and_touch_admin_session(uuid,text,text)',
+    'EXECUTE'
+  ),
+  'migration application alone does not revoke the legacy verifier before operator cutover'
+);
 
 select * from finish();
 rollback;

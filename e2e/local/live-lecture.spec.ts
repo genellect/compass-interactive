@@ -1,8 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
+import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
-const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
 const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const decodeQrPixels = jsQR as unknown as (
   data: Uint8ClampedArray,
@@ -51,10 +51,6 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   browser,
 }) => {
   test.setTimeout(150_000)
-  expect(
-    adminPin,
-    'TEST_ADMIN_PIN must match the local Edge test env.',
-  ).not.toBe('')
 
   const adminContext = await browser.newContext()
   const studentContext = await browser.newContext()
@@ -66,11 +62,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   const lectureTitle = `CI講義 ${Date.now()}`
 
   try {
+    await installGoogleAdminSession(admin.page)
     await admin.page.goto('/admin')
-    await admin.page.getByLabel('管理PIN').fill(adminPin)
-    await admin.page
-      .getByRole('button', { name: '講義コントロールを開く' })
-      .click()
     await expect(
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()
@@ -282,7 +275,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     ).toBeDisabled()
 
     await admin.page.getByRole('button', { name: 'ログアウト' }).click()
-    await expect(admin.page.getByLabel('管理PIN')).toBeVisible()
+    await expect(
+      admin.page.getByRole('heading', { name: '教員としてログイン' }),
+    ).toBeVisible()
 
     await admin.safety.assertClean()
     await student.safety.assertClean()

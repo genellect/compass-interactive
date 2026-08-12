@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase726BrowserPdfPublishingEnabled } from '../../lib/featureFlags'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import {
@@ -73,7 +70,6 @@ export function MaterialAnalysisControl({
   onPollDraftCreated,
   publisherSessionToken,
 }: MaterialAnalysisControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const googleProviderAttemptsRef = useRef(
     new Map<string, { grantRequestId: string; startRequestId: string }>(),
@@ -179,9 +175,7 @@ export function MaterialAnalysisControl({
           ? '別の教員画面がAI許可を保持しています。'
           : masterAuthorized
             ? 'PDFの公開状態を確認してください。'
-            : googleCredential
-              ? 'PDFの公開状態と講義中のAI許可を確認してください。'
-              : 'PDFの公開状態とAPI利用PINを確認してください。',
+            : 'PDFの公開状態と講義中のAI許可を確認してください。',
       )
       return
     }
@@ -214,16 +208,14 @@ export function MaterialAnalysisControl({
       })
       const analysisId =
         action === 'poll_suggestions' ? (results.analysis?.id ?? null) : null
-      googleAttemptKey = googleCredential
-        ? JSON.stringify({
-            action,
-            analysisId,
-            documentId: selectedDocument.documentId,
-            documentVersion: selectedDocument.documentVersion,
-            pageEnd: action === 'poll_suggestions' ? end : null,
-            pageStart: action === 'poll_suggestions' ? start : null,
-          })
-        : null
+      googleAttemptKey = JSON.stringify({
+        action,
+        analysisId,
+        documentId: selectedDocument.documentId,
+        documentVersion: selectedDocument.documentVersion,
+        pageEnd: action === 'poll_suggestions' ? end : null,
+        pageStart: action === 'poll_suggestions' ? start : null,
+      })
       let googleAttempt = googleAttemptKey
         ? googleProviderAttemptsRef.current.get(googleAttemptKey)
         : undefined
@@ -462,7 +454,7 @@ export function MaterialAnalysisControl({
         ) : masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
+          <p className="note">講義中のAI許可を使用します。</p>
         ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。
@@ -703,10 +695,8 @@ export function MaterialAnalysisControl({
             <strong>指定ページから追加候補</strong>
             <small>
               {masterAuthorized
-                ? '講義中のAPI許可を使用します'
-                : googleCredential
-                  ? '講義中のAI許可が必要です'
-                  : '実行時にAPI利用PINをもう一度確認します'}
+                ? '講義中のAI許可を使用します'
+                : '講義中のAI許可が必要です'}
             </small>
           </div>
           <label className="field compact-field">

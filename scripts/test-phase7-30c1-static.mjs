@@ -552,7 +552,7 @@ assert.doesNotMatch(
 )
 assert.match(
   readme,
-  /C1はprivate optional-row lecture ownershipとPIN\/browser proofからdormant masterまでのatomic admissionをsource実装/,
+  /C1はprivate optional-row lecture ownershipとPIN\/browser proofからdormant masterまでのatomic admissionを実装/,
 )
 assert.doesNotMatch(
   readme,
@@ -562,7 +562,7 @@ assert.match(
   localEdge,
   /sourceOffC1Admission[\s\S]*authorizeMasterWithPin[\s\S]*503/,
 )
-assert.match(workflow, /B2\.2b\/C1 source-OFF checks/)
+assert.match(workflow, /gate-closed factor checks/)
 assert.equal(
   packageJson.scripts['test:phase7-30c1-static'],
   'node scripts/test-phase7-30c1-static.mjs',

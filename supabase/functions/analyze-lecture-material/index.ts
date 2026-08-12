@@ -1,19 +1,10 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   deriveGoogleAiChildGrantNonce,
-  parseBillingGrantToken,
   sha256Hex,
 } from '../_shared/aiBilling.ts'
-import {
-  getAdminActorId,
-  getAdminTokenClaims,
-  getAdminTokenSecret,
-} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
-import {
-  type GoogleAdminOperationContext,
-  verifyGoogleAdminOperationRequest,
-} from '../_shared/googleAdminOperations.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
 import {
   applyMaterialQualityGates,
   buildMaterialOpenAiRequest,
@@ -40,10 +31,8 @@ import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   action?: MaterialAction
-  adminToken?: string
   analysisId?: string | null
   appSessionToken?: string
-  billingGrant?: string
   documentId?: string
   documentVersion?: string
   extraction?: MaterialExtraction
@@ -142,15 +131,7 @@ Deno.serve(async (request) => {
   }
   const materialTransportEnabled =
     Deno.env.get('PHASE5_MATERIAL_ANALYSIS_ENABLED') === 'true'
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   const openAiKey = Deno.env.get('OPENAI_API_KEY')
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(
-      { message: 'Material analysis is not configured.', ok: false },
-      503,
-    )
-  }
 
   let body: RequestBody
   try {
@@ -167,14 +148,18 @@ Deno.serve(async (request) => {
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
-  const hasGoogleCredential =
-    typeof body.appSessionToken === 'string' &&
-    body.appSessionToken.trim().length > 0
-  const hasLegacyCredential =
-    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
-  if (hasGoogleCredential === hasLegacyCredential) {
+  if (hasLegacyAdminFields(body)) {
     return jsonResponse(
-      { message: 'Exactly one Admin credential is required.', ok: false },
+      { message: 'Legacy Admin credentials are not supported.', ok: false },
+      400,
+    )
+  }
+  if (
+    typeof body.appSessionToken !== 'string' ||
+    body.appSessionToken.trim().length === 0
+  ) {
+    return jsonResponse(
+      { message: 'appSessionToken is required.', ok: false },
       401,
     )
   }
@@ -193,11 +178,9 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    hasGoogleCredential &&
     (!isUuid(body.grantRequestId) ||
       !isUuid(body.startRequestId) ||
       body.grantRequestId.toLowerCase() === body.startRequestId.toLowerCase() ||
-      body.billingGrant !== undefined ||
       body.idempotencyKey !== undefined)
   ) {
     return jsonResponse(
@@ -208,26 +191,7 @@ Deno.serve(async (request) => {
       400,
     )
   }
-  if (
-    hasLegacyCredential &&
-    (!body.billingGrant ||
-      !body.idempotencyKey ||
-      !/^[a-zA-Z0-9:_-]{8,160}$/.test(body.idempotencyKey) ||
-      body.grantRequestId !== undefined ||
-      body.startRequestId !== undefined)
-  ) {
-    return jsonResponse(
-      { message: 'Legacy material analysis request is incomplete.', ok: false },
-      400,
-    )
-  }
-  if (hasLegacyCredential && !materialTransportEnabled) {
-    return jsonResponse(
-      { message: 'Material analysis is disabled.', ok: false },
-      503,
-    )
-  }
-  if (hasLegacyCredential && !openAiKey) {
+  if (!openAiKey) {
     return jsonResponse(
       { message: 'Material analysis is not configured.', ok: false },
       503,
@@ -249,53 +213,37 @@ Deno.serve(async (request) => {
     )
   }
 
+  const verification = await verifyGoogleAdminOperationRequest(
+    request,
+    body.appSessionToken,
+  )
+  if (!verification.ok) {
+    return jsonResponse(
+      {
+        code: verification.code,
+        message: verification.message,
+        ok: false,
+      },
+      verification.status,
+    )
+  }
+  const googleContext = verification
+  const supabase = verification.serviceClient
   let actorId: string | null = null
-  let googleContext: GoogleAdminOperationContext | null = null
-  let googleRpcIdentity: {
+  const googleRpcIdentity: {
     target_auth_user_id: string
     target_google_issuer: string
     target_provider_subject_hmac: string
     target_subject_pepper_version: number
     target_supabase_auth_session_id: string
     target_token_hash: string
-  } | null = null
-  let supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
-  if (hasGoogleCredential) {
-    const verification = await verifyGoogleAdminOperationRequest(
-      request,
-      body.appSessionToken!,
-    )
-    if (!verification.ok) {
-      return jsonResponse(
-        {
-          code: verification.code,
-          message: verification.message,
-          ok: false,
-        },
-        verification.status,
-      )
-    }
-    googleContext = verification
-    supabase = verification.serviceClient
-  } else {
-    try {
-      const claims = await getAdminTokenClaims(
-        body.adminToken!,
-        getAdminTokenSecret(),
-        request,
-      )
-      if (!claims) {
-        return jsonResponse(
-          { message: 'Invalid Admin session.', ok: false },
-          401,
-        )
-      }
-      actorId = getAdminActorId(claims)
-    } catch {
-      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
-    }
+  } = {
+    target_auth_user_id: googleContext.authUserId,
+    target_google_issuer: googleContext.googleIssuer,
+    target_provider_subject_hmac: googleContext.googleSubjectHmac,
+    target_subject_pepper_version: googleContext.subjectPepperVersion,
+    target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+    target_token_hash: googleContext.appSessionTokenHash,
   }
 
   let operationId: string | null = null
@@ -326,29 +274,15 @@ Deno.serve(async (request) => {
       accountedInputTokens,
       accountedOutputTokens,
     )
-    if (googleRpcIdentity && body.startRequestId) {
-      await supabase.rpc('fail_google_admin_material_ai_operation_v1', {
-        ...googleRpcIdentity,
-        actual_input_tokens: accountedInputTokens,
-        actual_microusd: actualMicrousd,
-        actual_output_tokens: accountedOutputTokens,
-        error_code: code.slice(0, 120),
-        provider_request_id: providerRequestId,
-        target_operation_id: operationId,
-        target_start_request_id: body.startRequestId,
-        target_status: 'failed',
-      })
-      return
-    }
-    if (!actorId) return
-    await supabase.rpc('admin_fail_material_ai_operation', {
+    await supabase.rpc('fail_google_admin_material_ai_operation_v1', {
+      ...googleRpcIdentity,
       actual_input_tokens: accountedInputTokens,
       actual_microusd: actualMicrousd,
       actual_output_tokens: accountedOutputTokens,
       error_code: code.slice(0, 120),
       provider_request_id: providerRequestId,
-      target_actor_id: actorId,
       target_operation_id: operationId,
+      target_start_request_id: body.startRequestId!,
       target_status: 'failed',
     })
   }
@@ -368,34 +302,6 @@ Deno.serve(async (request) => {
   }
 
   try {
-    if (actorId) {
-      const state = await readOperationState(body.idempotencyKey!, actorId)
-      if (!state?.found) {
-        // The legacy start below is the first attempt for this key.
-      } else if (state.status === 'succeeded' && state.result_saved) {
-        return jsonResponse({
-          idempotentReplay: true,
-          ok: true,
-          results: state.results,
-        })
-      } else {
-        return jsonResponse(
-          {
-            code:
-              state.status === 'running'
-                ? 'operation_in_progress'
-                : 'operation_not_retryable',
-            message:
-              state.status === 'running'
-                ? 'This material analysis is already running.'
-                : 'A new API usage authorization is required before retrying.',
-            ok: false,
-          },
-          409,
-        )
-      }
-    }
-
     const { data: documentData, error: documentError } = await supabase
       .from('lecture_pdf_documents')
       .select(
@@ -435,8 +341,7 @@ Deno.serve(async (request) => {
     reservedOutputTokens = reservation.estimatedOutputTokens
 
     let started: StartResult
-    if (googleContext) {
-      const { error: reapError } = await supabase.rpc(
+    const { error: reapError } = await supabase.rpc(
         'reap_stale_google_ai_provider_dispatches_v1',
         { job_limit: 10 },
       )
@@ -465,14 +370,6 @@ Deno.serve(async (request) => {
         )
       }
       const nonceHash = await sha256Hex(nonce)
-      googleRpcIdentity = {
-        target_auth_user_id: googleContext.authUserId,
-        target_google_issuer: googleContext.googleIssuer,
-        target_provider_subject_hmac: googleContext.googleSubjectHmac,
-        target_subject_pepper_version: googleContext.subjectPepperVersion,
-        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
-        target_token_hash: googleContext.appSessionTokenHash,
-      }
       const { data: childData, error: childError } = await supabase.rpc(
         'issue_google_material_ai_child_grant_v1',
         {
@@ -671,102 +568,8 @@ Deno.serve(async (request) => {
           409,
         )
       }
-      providerRequestId = claim.clientRequestId
-      ownsNewOperation = true
-    } else {
-      const { grantId, nonce } = parseBillingGrantToken(body.billingGrant!)
-      const { data: startedData, error: startError } = await supabase.rpc(
-        'admin_start_material_ai_operation',
-        {
-          estimated_input_tokens: reservation.estimatedInputTokens,
-          estimated_microusd: reservation.estimatedMicrousd,
-          estimated_output_tokens: reservation.estimatedOutputTokens,
-          target_actor_id: actorId,
-          target_analysis_id:
-            body.action === 'poll_suggestions' ? body.analysisId : null,
-          target_document_id: body.documentId,
-          target_document_version: body.documentVersion,
-          target_feature: body.action,
-          target_grant_id: grantId,
-          target_idempotency_key: body.idempotencyKey,
-          target_input_price_microusd_per_million:
-            PHASE5_INPUT_PRICE_MICROUSD_PER_MILLION,
-          target_lecture_session_id: body.lectureSessionId,
-          target_max_output_tokens: reservation.maxOutputTokens,
-          target_model_id: PHASE5_MODEL,
-          target_nonce_hash: await sha256Hex(nonce),
-          target_output_price_microusd_per_million:
-            PHASE5_OUTPUT_PRICE_MICROUSD_PER_MILLION,
-          target_page_end:
-            body.action === 'poll_suggestions' ? body.pageEnd : null,
-          target_page_start:
-            body.action === 'poll_suggestions' ? body.pageStart : null,
-          target_prompt_version: PHASE5_PROMPT_VERSION,
-          target_text_sha256: body.extraction.textSha256,
-        },
-      )
-      if (startError) {
-        const knownReason = [
-          'material_analysis_call_limit',
-          'poll_generation_limit',
-          'budget_limit',
-          'input_token_limit',
-          'output_token_limit',
-          'concurrency_limit',
-          'feature_disabled',
-          'ai_control_not_ready',
-        ].find((reason) => startError.message.includes(reason))
-        throw new MaterialAnalysisError(
-          knownReason ?? 'operation_rejected',
-          knownReason === 'material_analysis_call_limit'
-            ? 'The material analysis retry limit has been reached.'
-            : knownReason === 'concurrency_limit'
-              ? 'Another batch AI operation is still running.'
-              : 'The billed material analysis operation could not be started.',
-          409,
-        )
-      }
-      started = startedData as StartResult
-      operationId = started.operations?.[0]?.operation?.id ?? null
-      const legacyReplay = started.operations?.[0]?.idempotent_replay
-      if (
-        !started.accepted ||
-        !operationId ||
-        !actorId ||
-        typeof legacyReplay !== 'boolean'
-      ) {
-        throw new MaterialAnalysisError(
-          started.reason ?? 'operation_rejected',
-          'The material analysis operation was rejected by its usage limits.',
-          409,
-        )
-      }
-      if (legacyReplay) {
-        const state = await readOperationState(body.idempotencyKey!, actorId)
-        if (state?.status === 'succeeded' && state.result_saved) {
-          return jsonResponse({
-            idempotentReplay: true,
-            ok: true,
-            results: state.results,
-          })
-        }
-        return jsonResponse(
-          {
-            code:
-              state?.status === 'running'
-                ? 'operation_in_progress'
-                : 'operation_not_retryable',
-            message:
-              state?.status === 'running'
-                ? 'This material analysis is already running.'
-                : 'A new API usage authorization is required before retrying.',
-            ok: false,
-          },
-          409,
-        )
-      }
-      ownsNewOperation = true
-    }
+    providerRequestId = claim.clientRequestId
+    ownsNewOperation = true
 
     const { data: currentResults, error: resultError } = await supabase.rpc(
       'admin_list_material_ai_results',
@@ -859,38 +662,21 @@ Deno.serve(async (request) => {
       result: parsed.result,
     })
 
-    const completionRpc = googleRpcIdentity
-      ? 'complete_google_admin_material_ai_operation_v1'
-      : 'admin_complete_material_ai_operation'
-    const completionArgs = googleRpcIdentity
-      ? {
-          ...googleRpcIdentity,
-          actual_input_tokens: actualInputTokens,
-          actual_microusd: calculateCostMicrousd(
-            actualInputTokens,
-            actualOutputTokens,
-          ),
-          actual_output_tokens: actualOutputTokens,
-          provider_request_id: providerRequestId,
-          target_operation_id: operationId,
-          target_result: gatedResult,
-          target_start_request_id: body.startRequestId!,
-        }
-      : {
-          actual_input_tokens: actualInputTokens,
-          actual_microusd: calculateCostMicrousd(
-            actualInputTokens,
-            actualOutputTokens,
-          ),
-          actual_output_tokens: actualOutputTokens,
-          provider_request_id: providerRequestId,
-          target_actor_id: actorId,
-          target_operation_id: operationId,
-          target_result: gatedResult,
-        }
     const { data: completionData, error: completionError } = await supabase.rpc(
-      completionRpc,
-      completionArgs,
+      'complete_google_admin_material_ai_operation_v1',
+      {
+        ...googleRpcIdentity,
+        actual_input_tokens: actualInputTokens,
+        actual_microusd: calculateCostMicrousd(
+          actualInputTokens,
+          actualOutputTokens,
+        ),
+        actual_output_tokens: actualOutputTokens,
+        provider_request_id: providerRequestId,
+        target_operation_id: operationId,
+        target_result: gatedResult,
+        target_start_request_id: body.startRequestId!,
+      },
     )
     if (completionError) throw completionError
     const completion = completionData as {

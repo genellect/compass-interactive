@@ -325,7 +325,7 @@ export function AcademicAnswerControl({
         requestId,
       })
       setResults(nextResults)
-      setMessage('参考回答の処理を停止しました。停止にAPI PINは不要です。')
+      setMessage('参考回答の処理を停止しました。停止に個人AI PINは不要です。')
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -437,7 +437,7 @@ export function AcademicAnswerControl({
         {masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
+          <p className="note">講義中のAI許可を使用します。</p>
         ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。

@@ -2,13 +2,6 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const files = {
-  authorize: await readFile(
-    new URL(
-      '../supabase/functions/authorize-ai-start/index.ts',
-      import.meta.url,
-    ),
-    'utf8',
-  ),
   config: await readFile(
     new URL('../supabase/config.toml', import.meta.url),
     'utf8',
@@ -72,7 +65,9 @@ const files = {
 assert.match(files.env, /^VITE_PHASE5_MATERIAL_ANALYSIS=false$/m)
 assert.match(files.env, /^PHASE5_MATERIAL_ANALYSIS_ENABLED=false$/m)
 assert.doesNotMatch(files.env, /^VITE_OPENAI_API_KEY=/m)
-assert.match(files.authorize, /PHASE5_MATERIAL_ANALYSIS_ENABLED/)
+assert.match(files.edge, /PHASE5_MATERIAL_ANALYSIS_ENABLED/)
+assert.match(files.edge, /hasLegacyAdminFields\(body\)/)
+assert.match(files.edge, /issue_google_material_ai_child_grant_v1/)
 assert.match(
   files.config,
   /\[functions\.analyze-lecture-material\][\s\S]*verify_jwt = true/,
@@ -99,7 +94,7 @@ assert.doesNotMatch(files.retryMigration, /update public\.lecture_ai_control/)
 assert.match(files.edge, /readJsonBody<RequestBody>/)
 assert.match(files.requestBody, /request\.body\?\.getReader\(\)/)
 assert.match(files.requestBody, /totalBytes > maxBytes/)
-assert.match(files.manageAi, /Phase 5 operations must be finalized/)
+assert.match(files.manageAi, /provider_specific_authority_required/)
 
 for (const table of [
   'material_ai_operation_contexts',
@@ -125,7 +120,7 @@ assert.ok(
   verifyPublisherPosition >= 0 && verifyPublisherPosition < loadPosition,
 )
 assert.match(files.publisher, /verifyLectureAccessToken/)
-assert.match(files.ui, /API利用PIN（毎回）/)
+assert.doesNotMatch(files.ui, /API利用PIN/)
 assert.match(files.ui, /AI生成・未検証/)
 assert.match(files.ui, /通常の投票下書きへ追加/)
 assert.doesNotMatch(files.ui, /localStorage/)

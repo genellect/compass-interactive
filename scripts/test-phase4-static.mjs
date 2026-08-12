@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,12 +28,6 @@ const providerControlMigration = read(
 )
 const envExample = read('.env.local.example')
 const browserSource = readTree(join(root, 'src'))
-const authorize = read(
-  'supabase',
-  'functions',
-  'authorize-ai-start',
-  'index.ts',
-)
 const realtimeCallEndpoint = read(
   'supabase',
   'functions',
@@ -82,13 +76,18 @@ assert.doesNotMatch(
   /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY|BILLING_PIN\s*=/,
 )
 assert.doesNotMatch(browserSource, /sk-proj-|sk-[A-Za-z0-9_-]{20,}/)
-assert.match(authorize, /verifyBillingPin/)
-assert.match(authorize, /pin_succeeded: pinSucceeded/)
-assert.doesNotMatch(authorize, /billingPin[^\n]*(insert|update|rpc)/i)
+assert.equal(
+  existsSync(
+    join(root, 'supabase', 'functions', 'authorize-ai-start', 'index.ts'),
+  ),
+  false,
+)
 assert.match(realtimeCallEndpoint, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
-assert.match(realtimeCallEndpoint, /admin_consume_realtime_billing_grant/)
-assert.match(realtimeCallEndpoint, /admin_activate_realtime_provider_call/)
-assert.match(realtimeCallEndpoint, /admin_finish_realtime_caption_operation/)
+assert.match(realtimeCallEndpoint, /hasLegacyAdminFields/)
+assert.match(realtimeCallEndpoint, /issue_google_realtime_ai_child_grant_v1/)
+assert.match(realtimeCallEndpoint, /start_google_admin_realtime_operation_v1/)
+assert.match(realtimeCallEndpoint, /activate_google_admin_realtime_provider_v1/)
+assert.match(realtimeCallEndpoint, /fail_google_admin_realtime_provider_v1/)
 assert.match(realtimeCallEndpoint, /sdpOffer/)
 assert.match(realtimeCallEndpoint, /sdpAnswer/)
 assert.match(openAiRealtime, /\/v1\/realtime\/calls/)
@@ -111,7 +110,7 @@ assert.doesNotMatch(
   transcriptStore,
   /MediaRecorder|AudioBuffer|BlobEvent|arrayBuffer\(/,
 )
-assert.match(control, /setBillingPin\(''\)/)
+assert.doesNotMatch(control, /billingPin|API利用PIN/)
 assert.doesNotMatch(control, /localStorage|sessionStorage/)
 assert.match(control, /5_000/)
 assert.match(control, /15_000/)
@@ -169,7 +168,6 @@ assert.match(realtimeSweepEndpoint, /timingSafeEqual/)
 assert.match(realtimeSweepEndpoint, /runRealtimeProviderHangupSweep/)
 assert.match(envExample, /REALTIME_SWEEP_TRIGGER_SECRET=/)
 for (const functionName of [
-  'authorize-ai-start',
   'issue-realtime-client-secret',
   'publish-caption-window',
 ]) {
@@ -178,11 +176,12 @@ for (const functionName of [
     new RegExp(`\\[functions\\.${functionName}\\][\\s\\S]*?verify_jwt = true`),
   )
 }
+assert.doesNotMatch(config, /\[functions\.authorize-ai-start\]/)
 assert.match(
   config,
   /\[functions\.sweep-realtime-provider-calls\][\s\S]*?verify_jwt = false/,
 )
 
 console.log(
-  'Phase 4 static secret, billing, trusted signalling, provider shutdown, storage, and responsibility checks passed.',
+  'Phase 4 static Google authorization, trusted signalling, provider shutdown, storage, and responsibility checks passed.',
 )

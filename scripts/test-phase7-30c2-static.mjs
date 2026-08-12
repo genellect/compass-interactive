@@ -87,7 +87,6 @@ const readme = read('README.md')
 
 const operationalEdges = [
   'analyze-lecture-material',
-  'authorize-ai-start',
   'generate-academic-answer',
   'generate-lecture-summary',
   'issue-display-session',
@@ -107,6 +106,7 @@ const operationalEdges = [
   'publish-caption-window',
   'update-display-state',
 ].sort()
+const historicalPolicyEdges = [...operationalEdges, 'authorize-ai-start'].sort()
 
 assert.match(
   upgradeRunner,
@@ -164,7 +164,7 @@ assert.equal(policyRows.length, 75, 'C2 inventory must remain closed')
 assert.equal(new Set(policyRows.map(({ key }) => key)).size, 75)
 assert.deepEqual(
   [...new Set(policyRows.map(({ edge }) => edge))].sort(),
-  operationalEdges,
+  historicalPolicyEdges,
 )
 for (const policy of policyRows) {
   assert.equal(policy.key, `${policy.edge}.${policy.action}`)
@@ -972,12 +972,13 @@ assert.doesNotMatch(
 )
 assert.doesNotMatch(sharedEdge, /ADMIN_PIN|BILLING_PIN/)
 
-assert.match(manageLectures, /hasGoogleCredential === hasLegacyCredential/)
+assert.match(manageLectures, /hasLegacyAdminFields\(body\)/)
+assert.match(manageLectures, /!body\.appSessionToken\?\.trim\(\)/)
 assert.match(manageLectures, /verifyGoogleAdminOperationRequest/)
 assert.match(manageLectures, /manage_google_admin_lectures_v1/)
 assert.match(
   manageLectures,
-  /target_transport_enabled: googleContext\.transportEnabled/,
+  /target_transport_enabled: verification\.transportEnabled/,
 )
 for (const action of [
   'list',
@@ -990,8 +991,8 @@ for (const action of [
 ]) {
   assert.match(manageLectures, new RegExp(`['"]${action}['"]`))
 }
-assert.match(manageLectures, /Exactly one Admin credential is required/)
-assert.match(manageLectures, /Emergency stop requires Google Admin/)
+assert.match(manageLectures, /Google Admin credential is required/)
+assert.doesNotMatch(manageLectures, /getAdminTokenClaims|verifyAdminToken/)
 assert.equal(
   (manageLectures.match(/\.ok (?:===|!==) true/g) ?? []).length,
   3,
@@ -999,7 +1000,7 @@ assert.equal(
 )
 assert.match(
   manageLectures,
-  /googleRpcIdentity && !\(changed as \{ ok\?: boolean \}\)\.ok/,
+  /\(data as \{ ok\?: boolean \} \| null\)\?\.ok !== true/,
   'Google lifecycle mutations must validate the RPC result',
 )
 assert.match(
@@ -1056,7 +1057,8 @@ const legacyEdges = operationalEdges.filter((edgeName) =>
     read(`supabase/functions/${edgeName}/index.ts`),
   ),
 )
-assert.equal(legacyEdges.length, 20)
+assert.equal(operationalEdges.length, 19)
+assert.equal(legacyEdges.length, 0)
 for (const [name, source, rpc] of [
   [
     'manage-admin-sessions',
@@ -1082,14 +1084,15 @@ for (const [name, source, rpc] of [
   ],
   ['manage-polls', managePolls, 'manage_google_admin_polls_v1'],
 ]) {
-  assert.match(source, /hasGoogleCredential === hasLegacyCredential/)
+  assert.match(source, /hasLegacyAdminFields\(body\)/)
+  assert.match(source, /appSessionToken/)
   assert.match(source, /verifyGoogleAdminOperationRequest/)
   assert.ok(source.includes(rpc), `${name} must call its C2 facade`)
   assert.match(
     source,
-    /target_transport_enabled: googleContext\.transportEnabled/,
+    /target_transport_enabled: (?:googleContext|verification)\.transportEnabled/,
   )
-  assert.match(source, /Exactly one Admin credential is required/)
+  assert.doesNotMatch(source, /getAdminTokenClaims|verifyAdminToken/)
 }
 assert.match(manageAdminSessions, /get_google_admin_sessions_v1/)
 assert.match(manageAdminSessions, /body\.requestId[\s\S]*requestId is required/)
@@ -1098,15 +1101,11 @@ assert.match(
   /body\.action !== 'revoke' && body\.sessionId != null/,
   'Google logout and revoke-all reject an unrelated target session id',
 )
-assert.ok(
-  manageAdminSessions.indexOf('if (!trackedAdminSessionsEnabled())') >
-    manageAdminSessions.indexOf('if (body.appSessionToken)'),
-  'legacy tracked-session flag never blocks Google self-service controls',
-)
+assert.doesNotMatch(manageAdminSessions, /trackedAdminSessionsEnabled/)
 assert.match(manageComments, /requestId is required/)
 assert.match(manageComments, /Comment moderation could not be confirmed/)
 assert.match(managePolls, /body\.action !== 'list'[\s\S]*requestId is required/)
-assert.match(managePolls, /Google Admin poll creation was not confirmed/)
+assert.match(managePolls, /Google Admin poll operation was not confirmed/)
 assert.match(
   managePdfDocuments,
   /body\.action === 'register'[\s\S]*requestId is required/,
@@ -1116,11 +1115,14 @@ assert.match(
   managePdfDocuments,
   /target_expected_access_version:[\s\S]*target_manifest_etag:/,
 )
-assert.match(updateDisplayState, /body\.requestId[\s\S]*requestId is required/)
+assert.match(
+  updateDisplayState,
+  /!body\.requestId[\s\S]*!UUID_PATTERN\.test\(body\.requestId\)/,
+)
 assert.match(updateDisplayState, /PRESENTER_SYNC_ACTIVE/)
 assert.match(
   updateDisplayState,
-  /target_transport_enabled: googleContext\.transportEnabled/,
+  /target_transport_enabled: verification\.transportEnabled/,
 )
 assert.match(manageMaterialAnalysis, /get_google_admin_material_analysis_v1/)
 assert.match(manageMaterialAnalysis, /requestId is required/)
@@ -1151,9 +1153,10 @@ assert.doesNotMatch(
 )
 assert.match(
   manageMaterialAnalysis,
-  /続行するには、管理画面へ再度ログインしてください。/,
-  'public copy remains readable and does not expose development terminology',
+  /Google Admin credential is required/,
+  'the Google-only endpoint explains its required authority boundary',
 )
+assert.doesNotMatch(manageMaterialAnalysis, /ADMIN_PIN|BILLING_PIN|API PIN/)
 const hideSummaryRepositoryType =
   adminContentAiRepository.match(
     /\| \{\s*action: 'hideSummary'[\s\S]*?\n\s*\},/,
@@ -1184,7 +1187,8 @@ assert.match(
   /学生画面から非表示にする[\s\S]*非採用/,
   'feature-off UX keeps free hide and reject controls available',
 )
-assert.match(issuePdfAccessToken, /hasAdminToken === hasGoogleCredential/)
+assert.match(issuePdfAccessToken, /hasLegacyAdminFields\(body\)/)
+assert.match(issuePdfAccessToken, /const hasGoogleCredential/)
 assert.match(issuePdfAccessToken, /verifyGoogleAdminOperationRequest/)
 assert.match(issuePdfAccessToken, /issue_google_admin_pdf_access_claims_v1/)
 assert.match(
@@ -1195,11 +1199,15 @@ assert.match(issuePdfAccessToken, /requestId is required/)
 for (const preserved of [
   /getDisplayTokenClaims/,
   /getDisplayTerminalTokenClaims/,
-  /verify_display_realtime_session_v1/,
+  /verify_google_display_terminal_session_v1/,
   /get_pdf_access_claims_v1/,
 ]) {
   assert.match(issuePdfAccessToken, preserved)
 }
+assert.doesNotMatch(
+  issuePdfAccessToken,
+  /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1|getAdminTokenClaims|verifyAdminToken/,
+)
 assert.match(operatorLiveSnapshot, /verifyGoogleAdminOperationRequest/)
 assert.match(operatorLiveSnapshot, /get_google_admin_operator_live_snapshot_v1/)
 assert.match(
@@ -1208,17 +1216,20 @@ assert.match(
 )
 assert.match(
   operatorLiveSnapshot,
-  /\[body\.adminToken, body\.appSessionToken, body\.displayToken\][\s\S]*length !== 1/,
+  /\[body\.appSessionToken, body\.displayToken\]\.filter\(Boolean\)\.length !== 1/,
 )
 for (const preserved of [
   /getDisplayTokenClaims/,
   /getDisplayTerminalTokenClaims/,
-  /verify_display_realtime_session_v1/,
-  /verify_display_snapshot_fallback_v1/,
+  /verify_google_display_terminal_session_v1/,
   /admin_get_lecture_operator_snapshot_v2/,
 ]) {
   assert.match(operatorLiveSnapshot, preserved)
 }
+assert.doesNotMatch(
+  operatorLiveSnapshot,
+  /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1|getAdminTokenClaims|verifyAdminToken/,
+)
 
 assert.match(envExample, /^VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS=false$/m)
 assert.match(envExample, /^PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=false$/m)
@@ -1232,10 +1243,10 @@ assert.equal(
   'node scripts/test-phase7-30c2-static.mjs',
 )
 assert.match(nonlive, /'test:phase7-30c2-static'/)
-assert.match(docsTest, /72 non-live/)
-assert.match(ciDocs, /72 non-live/)
-assert.match(gateDocs, /test:ci:nonlive` \(72 groups\)/)
-assert.match(readme, /72 non-live groups/)
+assert.match(docsTest, /74 non-live/)
+assert.match(ciDocs, /74 non-live/)
+assert.match(gateDocs, /test:ci:nonlive` \(74 groups\)/)
+assert.match(readme, /74 non-live groups/)
 
 const googleMasterStatus = functionBlock(
   workspaceMigration,

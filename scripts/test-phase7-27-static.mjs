@@ -200,9 +200,13 @@ assert.match(
   /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/,
 )
 assert.match(manageLectures, /Journal Club preset creation is retired\./)
-assert.match(manageLectures, /admin_create_phase727_journal_club_run_v1/)
-assert.match(managePolls, /phase727_journal_club_poll_slots/)
-assert.match(managePolls, /return left\.templateOrder - right\.templateOrder/)
+assert.match(
+  manageLectures,
+  /manage_google_admin_lectures_v1[\s\S]*createWithUniqueCode\('createJournalClubRun'/,
+)
+assert.match(managePolls, /manage_google_admin_polls_v1/)
+assert.match(managePolls, /target_include_history: body\.includeHistory \?\? false/)
+assert.doesNotMatch(managePolls, /\.from\('phase727_/)
 assert.match(preset, /createJournalClubRun/)
 assert.match(
   adminPage,

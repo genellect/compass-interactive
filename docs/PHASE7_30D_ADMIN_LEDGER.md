@@ -1,8 +1,7 @@
 # Phase 7.30D Admin Ledger
 
-Status: default-OFF source/local candidate; dedicated mocked Chromium/WebKit
-browser coverage is locally PASS. Runtime database, Local Edge, exact-head CI,
-Hosted and Human evidence remain HOLD.
+Status: default-OFF source and exact-head database/Edge/browser evidence PASS.
+Hosted activation, real invitation delivery and Human evidence remain HOLD.
 
 ## Delivered boundary
 
@@ -47,18 +46,19 @@ snapshot, audit, demotion, suspension, revoke, AI disable and session revoke
 remain available. This keeps safe recovery usable without re-enabling shared
 Admin or billing PIN paths.
 
-## Required evidence before integration
+## Integration evidence
 
-- fresh migration apply, generated types and DB lint;
-- all pgTAP including the dedicated D authority test;
-- two-connection last-owner and invitation accept/revoke convergence;
-- populated invitation upgrade without fabricated identity or redemption data;
-- Local Edge CORS/auth/strict-body checks;
+- fresh migration apply, generated types and DB lint: PASS;
+- all pgTAP including the dedicated D authority test: PASS;
+- two-connection last-owner and invitation accept/revoke convergence: PASS;
+- populated invitation upgrade without fabricated identity or redemption data:
+  PASS;
+- Local Edge CORS/auth/strict-body checks: PASS;
 - Chromium and WebKit desktop/mobile browser coverage, including response-loss
   recovery, flag-OFF safe controls, no anonymous/legacy PIN transport,
-  accessibility and horizontal-overflow checks (local mocked gate: PASS);
-- independent security review and one exact-head CI run.
+  accessibility and horizontal-overflow checks: PASS; and
+- independent freeze review and one exact-head CI run: PASS.
 
 Hosted OAuth/provider settings, real invitations, production secrets, legacy
-PIN removal, external publication and activation are not authorized by this
-document and remain Phase 7.30E-F/Human gates.
+database cutover, external publication and activation are not authorized by
+this document and remain Phase 7.30E-F/Human gates.

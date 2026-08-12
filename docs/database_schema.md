@@ -1,6 +1,6 @@
 # COMPASS Interactive Database Responsibility Map
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-12
 Authority: `supabase/migrations/` and a clean local database generated from all
 migrations
 
@@ -264,7 +264,8 @@ timeout.
 The private schema adds seven B1 tables:
 
 - `admin_identity_runtime_gate` for the default-OFF Google issuance switch and
-  default-ON legacy-login compatibility switch;
+  the historical legacy-login compatibility switch. The E source has no legacy
+  issuer/UI; the database switch remains until the dormant operator cutover;
 - `admin_environments`, `admin_principals` and
   `admin_environment_memberships` for immutable environment-scoped Google
   identity and owner/instructor membership;
@@ -381,8 +382,54 @@ and helpers retain no runtime-role grants. Existing lectures and masters are
 not adopted. Legacy master/child/direct grant paths are permanently fenced for
 an owned lecture, including after master revoke or expiry.
 
-The B2/B2.2a/B2.2b/C1 source/static contracts are implemented. From-zero
-migration, all pgTAP, real database concurrency, populated Phase
-7.29/B1/B2/B2.2a/B2.2b-head upgrade, generated types and DB lint remain
-exact-head CI verification requirements. The all-operational Admin verifier,
-child/provider authority and Hosted/Human activation remain C2/later HOLD.
+The B2/B2.2a/B2.2b/C1 source/static contracts are implemented, and C2/D have
+exact-head runtime evidence. E adds the source and dormant authority described
+below; its from-zero migration, pgTAP, two-connection concurrency, populated
+C2/D-head upgrades, generated types and DB lint remain exact-head CI
+requirements. Hosted/Human activation remains HOLD.
+
+## 15. Phase 7.30C2-D unified authority and Admin ledger
+
+C2 stores one closed Admin operation-policy matrix and immutable intent,
+preflight, child, start, claim and dispatch evidence for Google application
+sessions. Public operational facades are service-role-only fixed-search-path
+definers; browser roles receive no private table access. Status, stop, close,
+revoke and other explicitly classified safe controls remain available when an
+admission gate is OFF.
+
+D adds private invitation-redemption evidence, owner-ledger operation receipts
+and bounded ledger policy/audit state. Owner-only mutations serialize by
+environment and request, consume a five-minute operation/digest-bound TOTP
+control grant and preserve the last active owner. Disabling AI drains persistent
+AI authority without ending the Admin session; suspension/revocation drains the
+target membership's sessions and descendants. All private evidence tables use
+RLS without browser policies and retain append-only or transition-constrained
+history.
+
+## 16. Phase 7.30E Google-only cutover objects
+
+The first E migration adds the service-only
+`verify_google_display_terminal_session_v1` facade. It locks durable Google
+Display issuance by JTI hash and rechecks lecture, issued/expires timestamps and
+Display Auth UID before terminal downgrade or archive access. Unknown legacy
+descendants and cross-UID claims are invalid.
+
+The dormant authority migration adds three RLS-enabled, policy-free private
+tables:
+
+| Table                                     | Responsibility                                                                     |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `admin_lecture_ownership_claim_approvals` | Immutable postgres-operator mapping and lecture status/lifecycle snapshot          |
+| `admin_lecture_ownership_claim_receipts`  | Exact-replay application of one approved `operator_claim` ownership                |
+| `admin_identity_cutover_receipts`         | Immutable Google-only tombstone, deployment-evidence digest and final guard counts |
+
+Approval and cutover functions are postgres-owner-only; `service_role`, browser
+roles and `PUBLIC` have no execute privilege. Claims derive every target from
+the immutable approval and never infer ownership from request input. The
+cutover function requires SERIALIZABLE isolation, environment/request mutexes
+and `ACCESS EXCLUSIVE NOWAIT` locks before its same-transaction guards and
+legacy-session revocation. Post-tombstone triggers prevent re-enabling legacy
+admission, creating/extending/resurrecting a legacy session or committing an
+active lecture without ownership. Applying the migration creates no approval,
+claim or tombstone and changes no active gate or session. Historical billing
+compatibility authority is a separate retirement boundary.

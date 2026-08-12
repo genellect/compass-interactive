@@ -1,5 +1,11 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
+import {
+  createMockGoogleAdminSession,
+  expectMockGoogleAdminCredential,
+  fulfillMockGoogleAdminRequest,
+  installMockGoogleAdminSession,
+} from '../helpers/mockGoogleAdminSession.js'
 
 test.skip(
   process.env.VITE_PHASE7_26_BROWSER_PDF_PUBLISHING !== 'true',
@@ -14,6 +20,7 @@ const expiresAt = '2099-07-21T00:00:00.000Z'
 const samplePdfPath = fileURLToPath(
   new URL('../../public/lecture-assets/m4-sample-v1.pdf', import.meta.url),
 )
+const googleAdmin = createMockGoogleAdminSession()
 
 type PublicationAction =
   'abort' | 'discover' | 'finalize' | 'initiate' | 'status'
@@ -118,58 +125,27 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 async function installAdminState(page: Page, recoverPublication: boolean) {
-  await page.addInitScript(
-    ({
-      expiresAt,
-      idempotencyKey,
-      lectureSessionId,
-      publicationId,
-      documentId,
-      recoverPublication,
-    }) => {
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-authenticated',
-        'true',
-      )
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-token',
-        'admin-session-playwright',
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-session-id',
-        lectureSessionId,
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-runtime-mode',
-        'live',
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-title',
+  await installMockGoogleAdminSession(page, googleAdmin, {
+    localStorage: {
+      'compass-interactive-lecture-runtime-mode': 'live',
+      'compass-interactive-lecture-session-id': lectureSessionId,
+      'compass-interactive-lecture-status': 'open',
+      'compass-interactive-lecture-title':
         'Phase 7.26 browser publication E2E',
-      )
-      window.localStorage.setItem('compass-interactive-lecture-status', 'open')
-      if (recoverPublication) {
-        window.sessionStorage.setItem(
-          `compass-interactive-browser-pdf-publication-v1:${lectureSessionId}`,
-          JSON.stringify({
-            documentId,
-            expiresAt,
-            idempotencyKey,
-            lectureSessionId,
-            publicationId,
-          }),
-        )
-      }
     },
-    {
-      documentId,
-      expiresAt,
-      idempotencyKey,
-      lectureSessionId,
-      publicationId,
-      recoverPublication,
-    },
-  )
+    sessionStorage: recoverPublication
+      ? {
+          [`compass-interactive-browser-pdf-publication-v1:${lectureSessionId}`]:
+            JSON.stringify({
+              documentId,
+              expiresAt,
+              idempotencyKey,
+              lectureSessionId,
+              publicationId,
+            }),
+        }
+      : {},
+  })
 }
 
 async function installNetworkMocks(
@@ -222,6 +198,8 @@ async function installNetworkMocks(
     const request = route.request()
     const url = new URL(request.url())
 
+    if (await fulfillMockGoogleAdminRequest(route, googleAdmin)) return
+
     if (url.pathname.startsWith('/auth/v1/')) {
       await fulfillJson(route, anonymousSessionResponse())
       return
@@ -234,6 +212,7 @@ async function installNetworkMocks(
 
     const functionName = url.pathname.split('/').at(-1)
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+    expectMockGoogleAdminCredential(body, googleAdmin)
     if (functionName === 'manage-lectures') {
       await fulfillJson(route, { lectures: [lectureResponse()], ok: true })
       return

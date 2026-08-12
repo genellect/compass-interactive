@@ -111,20 +111,6 @@ async function createDisplayTokenForClaims(
   return `${payload}.${signature}`
 }
 
-export async function createDisplayToken(
-  lectureSessionId: string,
-  expiresAt: number,
-  secret: string,
-) {
-  return createDisplayTokenForClaims(
-    lectureSessionId,
-    Math.floor(Date.now() / 1000),
-    expiresAt,
-    crypto.randomUUID(),
-    secret,
-  )
-}
-
 // Google Admin issuance uses the request UUID as the Display JTI and stores
 // only its hash plus the bounded timestamps in the database transaction. A
 // lost HTTP response can therefore recreate the exact same signed token

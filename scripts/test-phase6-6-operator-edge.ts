@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  createAdminToken,
-  getAdminTokenClaims,
-} from '../supabase/functions/_shared/adminToken.ts'
-import {
-  createDisplayToken,
+  createBoundDisplayToken,
   getDisplayTokenClaims,
   getDisplayTerminalTokenClaims,
 } from '../supabase/functions/_shared/displayToken.ts'
@@ -14,14 +10,21 @@ const secret = 'phase66-test-secret-with-at-least-32-bytes'
 const lectureId = '76600000-0000-4000-8000-000000000001'
 const otherLectureId = '76600000-0000-4000-8000-000000000002'
 const expiresAt = Math.floor(Date.now() / 1000) + 60
+const displaySessionId = '76600000-0000-4000-8000-000000000003'
 
-const displayToken = await createDisplayToken(lectureId, expiresAt, secret)
+const displayToken = await createBoundDisplayToken(
+  lectureId,
+  Math.floor(Date.now() / 1000),
+  expiresAt,
+  displaySessionId,
+  secret,
+)
 const displayClaims = await getDisplayTokenClaims(displayToken, secret)
 assert.equal(displayClaims?.lectureSessionId, lectureId)
 assert.equal(displayClaims?.scope, 'compass-display')
 assert.equal(displayClaims?.aud, 'operator-live-snapshot')
 assert.equal(displayClaims?.exp, expiresAt)
-assert.equal(await getAdminTokenClaims(displayToken, secret), null)
+assert.equal(displayClaims?.jti, displaySessionId)
 assert.equal(
   await getDisplayTokenClaims(
     displayToken,
@@ -33,9 +36,11 @@ assert.equal(
 const realDateNow = Date.now
 const terminalBaseMs = realDateNow()
 Date.now = () => terminalBaseMs
-const terminalToken = await createDisplayToken(
+const terminalToken = await createBoundDisplayToken(
   lectureId,
+  Math.floor(terminalBaseMs / 1000),
   Math.floor(terminalBaseMs / 1000) + 60,
+  '76600000-0000-4000-8000-000000000004',
   secret,
 )
 Date.now = () => terminalBaseMs + 120_000
@@ -49,16 +54,16 @@ Date.now = () => terminalBaseMs + 31 * 24 * 60 * 60 * 1000
 assert.equal(await getDisplayTerminalTokenClaims(terminalToken, secret), null)
 Date.now = realDateNow
 
-const adminToken = await createAdminToken(secret)
-assert.equal(await getDisplayTokenClaims(adminToken, secret), null)
 assert.equal(
   await getDisplayTokenClaims(`${displayToken.slice(0, -1)}x`, secret),
   null,
 )
 await assert.rejects(
-  createDisplayToken(
+  createBoundDisplayToken(
     otherLectureId,
+    Math.floor(Date.now() / 1000),
     Math.floor(Date.now() / 1000) + 96 * 60,
+    '76600000-0000-4000-8000-000000000005',
     secret,
   ),
   /Invalid display session claims/,
@@ -92,14 +97,11 @@ const [
   read('src/pdf/pdfDelivery.ts'),
 ])
 
-assert.match(issueDisplay, /getAdminTokenClaims/)
-assert.match(
-  issueDisplay,
-  /getAdminTokenClaims\([\s\S]*?body\.adminToken[\s\S]*?adminSecret[\s\S]*?request/,
-)
-assert.match(issueDisplay, /admin_get_lecture_operator_access_v1/)
-assert.match(issueDisplay, /access\.mode !== 'live'/)
-assert.match(issueDisplay, /hardStopSeconds \+ 5 \* 60/)
+assert.match(issueDisplay, /hasLegacyAdminFields\(body\)/)
+assert.match(issueDisplay, /verifyGoogleAdminOperationRequest/)
+assert.match(issueDisplay, /issue_google_admin_display_session_v1/)
+assert.match(issueDisplay, /createBoundDisplayToken/)
+assert.doesNotMatch(issueDisplay, /createDisplayToken\(/)
 assert.doesNotMatch(issueDisplay, /displayToken[\s\S]{0,80}console\./)
 
 assert.match(operatorSnapshot, /Provide exactly one operator credential/)
@@ -111,6 +113,9 @@ assert.match(operatorSnapshot, /include_hidden: credentialKind === 'admin'/)
 assert.match(operatorSnapshot, /credentialKind !== 'admin'/)
 assert.match(operatorSnapshot, /terminalOnly/)
 assert.match(operatorSnapshot, /credentialExpired: true/)
+assert.match(operatorSnapshot, /verify_and_claim_google_display_session_v1/)
+assert.match(operatorSnapshot, /verify_google_display_terminal_session_v1/g)
+assert.match(operatorSnapshot, /descendant\?\.recognized !== true/)
 assert.match(operatorSnapshot, /admin_get_lecture_operator_access_v1/)
 assert.match(operatorSnapshot, /admin_get_lecture_operator_comment_history_v1/)
 assert.match(operatorSnapshot, /Math\.min\(Math\.max\(body\.limit, 1\), 50\)/)
@@ -128,6 +133,9 @@ assert.match(
 )
 assert.match(issuePdfAccess, /admin_get_pdf_access_claims_v1/)
 assert.match(issuePdfAccess, /getDisplayTerminalTokenClaims/)
+assert.match(issuePdfAccess, /verify_and_claim_google_display_session_v1/)
+assert.match(issuePdfAccess, /verify_google_display_terminal_session_v1/g)
+assert.match(issuePdfAccess, /descendant\?\.recognized !== true/)
 assert.match(
   issuePdfAccess,
   /terminalOnly[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode !== 'terminal'/,
