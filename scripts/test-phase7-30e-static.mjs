@@ -37,6 +37,7 @@ const browserSafety = read('e2e/helpers/browserSafety.ts')
 const displayRealtimeBrowser = read(
   'e2e/local/display-realtime-integration.spec.ts',
 )
+const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
@@ -443,6 +444,31 @@ assert.match(
   localGoogleFixture,
   /delete from auth\.identities[\s\S]*provider <> 'google'/,
   'the local AAL2 fixture must expose one Google identity to strict operational verification',
+)
+assert.match(
+  adminIdentityBrowser,
+  /\/auth\/v1\/factors\/\$\{factorId\}\/challenge[\s\S]*\/auth\/v1\/factors\/\$\{factorId\}\/verify/,
+  'the identity demo must exercise the Supabase TOTP challenge and verification endpoints',
+)
+assert.match(
+  adminIdentityBrowser,
+  /action === 'completeStepUp'[\s\S]*appSessionToken[\s\S]*\.admin-workflow[\s\S]*getByRole\('button', \{ name: 'ログアウト', exact: true \}\)/,
+  'the identity demo must prove that Google plus TOTP enters the operational Admin workspace',
+)
+assert.match(
+  adminIdentityBrowser,
+  /\/functions\/v1\/manage-lectures[\s\S]*appSessionToken[\s\S]*authorization: `Bearer \$\{aal2AccessToken\}`/,
+  'the identity demo must pin the Google AAL2 bearer and application-session body used by the workspace',
+)
+assert.match(
+  adminIdentityBrowser,
+  /\/functions\/v1\/manage-admin-ledger[\s\S]*action === 'snapshot'[\s\S]*action === 'audit'[\s\S]*not\.toHaveProperty\('adminToken'\)/,
+  'the owner workspace must load safe ledger surfaces without the retired Admin credential field',
+)
+assert.doesNotMatch(
+  adminIdentityBrowser,
+  /card\.locator\('\.admin-identity-summary'\)/,
+  'the Google-only identity demo must not expect the retired identity-only ready card',
 )
 assert.match(
   adminRoute,
