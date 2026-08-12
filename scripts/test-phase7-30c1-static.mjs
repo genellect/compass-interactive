@@ -61,6 +61,14 @@ const migrationDdl = migration.slice(
     'create function private.reject_admin_c1_evidence_mutation_v1',
   ),
 )
+const pinAdmissionEdge = edge.slice(
+  edge.indexOf("if (action === 'authorizeMasterWithPin')"),
+  edge.indexOf("if (action === 'completeBrowserMasterAdmission')"),
+)
+const browserAdmissionEdge = edge.slice(
+  edge.indexOf("if (action === 'completeBrowserMasterAdmission')"),
+  edge.indexOf("if (action === 'preparePinMutation')"),
+)
 
 assert.match(
   migration,
@@ -79,6 +87,24 @@ assert.match(migration, /create table private\.admin_ai_master_reuse_receipts/)
 assert.match(
   migration,
   /get_admin_ai_unlock_runtime_gate_v1[\s\S]*google_ai_master_admission_enabled/,
+)
+assert.match(
+  edge,
+  /async function requireC1AdmissionGate[\s\S]*get_admin_ai_unlock_runtime_gate_v1[\s\S]*typeof gate\.ai_unlock_enabled !== 'boolean'[\s\S]*typeof gate\.google_ai_master_admission_enabled !== 'boolean'[\s\S]*typeof gate\.remembered_browser_enabled !== 'boolean'[\s\S]*feature_disabled/,
+)
+assert.ok(
+  pinAdmissionEdge.indexOf('replay_google_ai_master_admission_v1') <
+    pinAdmissionEdge.indexOf('requireC1AdmissionGate(false)') &&
+    pinAdmissionEdge.indexOf('requireC1AdmissionGate(false)') <
+      pinAdmissionEdge.indexOf('get_admin_ai_unlock_profile_v1'),
+  'PIN exact replay must precede the DB admission precheck and PIN profile work',
+)
+assert.ok(
+  browserAdmissionEdge.indexOf('replay_google_ai_master_admission_v1') <
+    browserAdmissionEdge.indexOf('requireC1AdmissionGate(true)') &&
+    browserAdmissionEdge.indexOf('requireC1AdmissionGate(true)') <
+      browserAdmissionEdge.indexOf('ADMIN_AI_BROWSER_CHALLENGE_SECRET'),
+  'browser exact replay must precede the DB admission precheck and proof work',
 )
 assert.doesNotMatch(
   migrationDdl,

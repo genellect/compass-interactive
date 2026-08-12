@@ -90,6 +90,12 @@ type AiProfile = {
   role?: string
 }
 
+type AiRuntimeGate = {
+  ai_unlock_enabled?: boolean
+  google_ai_master_admission_enabled?: boolean
+  remembered_browser_enabled?: boolean
+}
+
 const AI_ACTIONS = new Set<AiUnlockAction>([
   'beginBrowserAssertion',
   'beginBrowserEnrollment',
@@ -627,6 +633,42 @@ async function handleRequest(request: Request) {
     }
   }
 
+  async function requireC1AdmissionGate(requiresRememberedBrowser: boolean) {
+    const gateResult = await serviceClient.rpc(
+      'get_admin_ai_unlock_runtime_gate_v1',
+    )
+    if (gateResult.error) {
+      return rpcErrorResponse(jsonResponse, gateResult.error.code)
+    }
+    const gate = gateResult.data as AiRuntimeGate | null
+    if (
+      !gate ||
+      typeof gate.ai_unlock_enabled !== 'boolean' ||
+      typeof gate.google_ai_master_admission_enabled !== 'boolean' ||
+      typeof gate.remembered_browser_enabled !== 'boolean'
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'service_unavailable',
+        'Lecture AI authorization is not configured.',
+        503,
+      )
+    }
+    if (
+      gate.ai_unlock_enabled !== true ||
+      gate.google_ai_master_admission_enabled !== true ||
+      (requiresRememberedBrowser && gate.remembered_browser_enabled !== true)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'feature_disabled',
+        'Lecture AI authorization is not enabled.',
+        503,
+      )
+    }
+    return null
+  }
+
   if (action === 'masterStatus') {
     if (!isUuid(body.lectureSessionId)) {
       return errorResponse(
@@ -769,6 +811,8 @@ async function handleRequest(request: Request) {
         503,
       )
     }
+    const gateError = await requireC1AdmissionGate(false)
+    if (gateError) return gateError
 
     const profileResult = await serviceClient.rpc(
       'get_admin_ai_unlock_profile_v1',
@@ -902,6 +946,8 @@ async function handleRequest(request: Request) {
         503,
       )
     }
+    const gateError = await requireC1AdmissionGate(true)
+    if (gateError) return gateError
     if (
       Date.parse(parsed.expiresAt) <= Date.now() ||
       Date.parse(parsed.expiresAt) > Date.now() + 5 * 60 * 1_000
