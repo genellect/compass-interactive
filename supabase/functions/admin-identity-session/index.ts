@@ -35,6 +35,7 @@ type AdminIdentityRequest = {
   challengedFactorId?: string
   controlAction?: AdminControlAction
   controlIntentDigest?: string
+  controlOperationKey?: string
   controlRequestId?: string
   controlStepUpNonce?: string
   invitationToken?: string
@@ -47,6 +48,12 @@ type AdminControlAction =
   | 'ai_pin_revoke'
   | 'ai_pin_rotate'
   | 'environment_ai_policy_change'
+  | 'admin_global_revoke'
+  | 'admin_invitation_change'
+  | 'admin_membership_ai_change'
+  | 'admin_membership_role_change'
+  | 'admin_membership_status_change'
+  | 'admin_session_revoke'
   | 'totp_factor_add'
   | 'totp_factor_remove'
 
@@ -82,6 +89,12 @@ const ADMIN_CONTROL_ACTIONS = new Set<AdminControlAction>([
   'ai_pin_revoke',
   'ai_pin_rotate',
   'environment_ai_policy_change',
+  'admin_global_revoke',
+  'admin_invitation_change',
+  'admin_membership_ai_change',
+  'admin_membership_role_change',
+  'admin_membership_status_change',
+  'admin_session_revoke',
   'totp_factor_add',
   'totp_factor_remove',
 ])
@@ -89,6 +102,23 @@ const TOTP_FACTOR_CONTROL_ACTIONS = new Set<AdminControlAction>([
   'totp_factor_add',
   'totp_factor_remove',
 ])
+const OWNER_LEDGER_OPERATION_ACTIONS = new Map<string, AdminControlAction>([
+  ['manage-admin-ledger.issueInvitation', 'admin_invitation_change'],
+  ['manage-admin-ledger.revokeInvitation', 'admin_invitation_change'],
+  ['manage-admin-ledger.promoteOwner', 'admin_membership_role_change'],
+  ['manage-admin-ledger.demoteOwner', 'admin_membership_role_change'],
+  ['manage-admin-ledger.suspendMembership', 'admin_membership_status_change'],
+  [
+    'manage-admin-ledger.reactivateMembership',
+    'admin_membership_status_change',
+  ],
+  ['manage-admin-ledger.revokeMembership', 'admin_membership_status_change'],
+  ['manage-admin-ledger.enableAi', 'admin_membership_ai_change'],
+  ['manage-admin-ledger.disableAi', 'admin_membership_ai_change'],
+  ['manage-admin-ledger.revokeSession', 'admin_session_revoke'],
+  ['manage-admin-ledger.globalRevoke', 'admin_global_revoke'],
+])
+const ADMIN_INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -162,7 +192,7 @@ function rpcErrorResponse(
     response.headers.set('Retry-After', '300')
     return response
   }
-  if (errorCode === 'P7320' || errorCode === 'P7331') {
+  if (errorCode === 'P7320' || errorCode === 'P7331' || errorCode === 'P7337') {
     return errorResponse(
       jsonResponse,
       'feature_disabled',
@@ -315,28 +345,33 @@ async function handleRequest(request: Request) {
       ? ['action', 'invitationToken']
       : body.action === 'beginStepUp'
         ? ['action', 'challengedFactorId', 'invitationToken']
-      : body.action === 'completeStepUp'
-        ? ['action', 'stepUpNonce']
-        : body.action === 'beginControlStepUp'
-          ? [
-              'action',
-               'appSessionToken',
-               'controlAction',
-               'controlIntentDigest',
-               'controlRequestId',
-            ]
-          : body.action === 'completeControlStepUp'
+        : body.action === 'completeStepUp'
+          ? ['action', 'stepUpNonce']
+          : body.action === 'beginControlStepUp'
             ? [
                 'action',
-                 'appSessionToken',
-                 'controlAction',
-                 'controlIntentDigest',
-                 'controlRequestId',
-                'controlStepUpNonce',
+                'appSessionToken',
+                'controlAction',
+                'controlIntentDigest',
+                'controlOperationKey',
+                'controlRequestId',
+                ...(body.controlOperationKey === undefined
+                  ? []
+                  : ['controlStepUpNonce']),
               ]
-            : body.action === 'reconcileTotpFactorSet'
-              ? ['action']
-              : ['action', 'appSessionToken'],
+            : body.action === 'completeControlStepUp'
+              ? [
+                  'action',
+                  'appSessionToken',
+                  'controlAction',
+                  'controlIntentDigest',
+                  'controlOperationKey',
+                  'controlRequestId',
+                  'controlStepUpNonce',
+                ]
+              : body.action === 'reconcileTotpFactorSet'
+                ? ['action']
+                : ['action', 'appSessionToken'],
   )
   const rawBody = body as Record<string, unknown>
   if (
@@ -346,6 +381,7 @@ async function handleRequest(request: Request) {
       'challengedFactorId',
       'controlAction',
       'controlIntentDigest',
+      'controlOperationKey',
       'controlRequestId',
       'controlStepUpNonce',
       'invitationToken',
@@ -380,6 +416,13 @@ async function handleRequest(request: Request) {
       body.action === 'completeControlStepUp') &&
     (!body.controlAction ||
       !ADMIN_CONTROL_ACTIONS.has(body.controlAction) ||
+      (OWNER_LEDGER_OPERATION_ACTIONS.has(body.controlOperationKey ?? '')
+        ? OWNER_LEDGER_OPERATION_ACTIONS.get(body.controlOperationKey!) !==
+          body.controlAction
+        : body.controlOperationKey !== undefined ||
+          [...OWNER_LEDGER_OPERATION_ACTIONS.values()].includes(
+            body.controlAction,
+          )) ||
       !body.controlRequestId ||
       !UUID_PATTERN.test(body.controlRequestId) ||
       (body.action === 'completeControlStepUp' &&
@@ -683,6 +726,7 @@ async function handleRequest(request: Request) {
 
   if (body.action === 'beginControlStepUp') {
     const appSessionToken = body.appSessionToken?.trim() ?? ''
+    const ownerLedgerOperationKey = body.controlOperationKey ?? null
     if (!isGoogleAdminSessionToken(appSessionToken)) {
       return errorResponse(
         jsonResponse,
@@ -691,22 +735,55 @@ async function handleRequest(request: Request) {
         401,
       )
     }
-    const rawNonce = createAdminLoginNonce()
-    const { data, error } = await serviceClient.rpc(
-      'begin_admin_control_step_up_v1',
-      {
-        target_action: body.controlAction!,
-        target_auth_user_id: userData.user.id,
-        target_mutation_request_id: body.controlRequestId!,
-        target_nonce_hash: await sha256Hex(rawNonce),
-        target_prechallenge_jwt_hash: await sha256Hex(bearerToken),
-        target_supabase_auth_session_id: claims.sessionId,
-        target_token_hash: await sha256Hex(appSessionToken),
-        ...(body.controlIntentDigest
-          ? { target_intent_digest: body.controlIntentDigest }
-          : {}),
-      },
-    )
+    const rawNonce = ownerLedgerOperationKey
+      ? (body.controlStepUpNonce?.trim() ?? '')
+      : createAdminLoginNonce()
+    if (ownerLedgerOperationKey) {
+      try {
+        assertAdminLoginNonce(rawNonce)
+      } catch {
+        return errorResponse(
+          jsonResponse,
+          'request_invalid',
+          'Request is invalid.',
+          400,
+        )
+      }
+    }
+    const commonArgs = {
+      target_auth_user_id: userData.user.id,
+      target_mutation_request_id: body.controlRequestId!,
+      target_nonce_hash: await sha256Hex(rawNonce),
+      target_prechallenge_jwt_hash: await sha256Hex(bearerToken),
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: await sha256Hex(appSessionToken),
+      target_intent_digest: body.controlIntentDigest!,
+    }
+    const { data, error } = ownerLedgerOperationKey
+      ? await serviceClient.rpc('begin_google_admin_owner_control_step_up_v1', {
+          ...commonArgs,
+          target_google_issuer: googleIdentity.issuer,
+          target_operation_key: ownerLedgerOperationKey,
+          target_provider_subject_hmac: subjectHmac,
+          target_subject_pepper_version: pepperVersion,
+          target_transport_enabled:
+            Deno.env.get('PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED') ===
+              'true' &&
+            Deno.env.get('PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED') === 'true',
+        })
+      : await serviceClient.rpc('begin_admin_control_step_up_v1', {
+          target_action: body.controlAction!,
+          target_auth_user_id: commonArgs.target_auth_user_id,
+          target_mutation_request_id: commonArgs.target_mutation_request_id,
+          target_nonce_hash: commonArgs.target_nonce_hash,
+          target_prechallenge_jwt_hash: commonArgs.target_prechallenge_jwt_hash,
+          target_supabase_auth_session_id:
+            commonArgs.target_supabase_auth_session_id,
+          target_token_hash: commonArgs.target_token_hash,
+          ...(body.controlIntentDigest
+            ? { target_intent_digest: body.controlIntentDigest }
+            : {}),
+        })
     const result = data as {
       action?: string
       expires_at?: string
@@ -733,6 +810,9 @@ async function handleRequest(request: Request) {
     return jsonResponse({
       controlAction: result.action,
       controlIntentDigest: result.intent_digest,
+      ...(ownerLedgerOperationKey
+        ? { controlOperationKey: ownerLedgerOperationKey }
+        : {}),
       controlRequestId: result.request_id,
       controlStepUpNonce: rawNonce,
       expiresAt: result.expires_at,
@@ -829,6 +909,7 @@ async function handleRequest(request: Request) {
 
   if (body.action === 'completeControlStepUp') {
     const appSessionToken = body.appSessionToken?.trim() ?? ''
+    const ownerLedgerOperationKey = body.controlOperationKey ?? null
     const rawNonce = body.controlStepUpNonce?.trim() ?? ''
     const totpTimestamp = getFreshTotpAmrTimestamp(claims)
     if (!isGoogleAdminSessionToken(appSessionToken)) {
@@ -858,27 +939,42 @@ async function handleRequest(request: Request) {
       )
     }
 
-    const { data, error } = await serviceClient.rpc(
-      'complete_admin_control_step_up_v1',
-      {
-         target_action: body.controlAction!,
-         target_auth_user_id: userData.user.id,
-         target_current_jwt_hash: await sha256Hex(bearerToken),
-         target_current_jwt_iat: new Date(claims.issuedAt * 1000).toISOString(),
-         target_intent_digest: body.controlIntentDigest!,
-         target_mutation_request_id: body.controlRequestId!,
-        target_nonce_hash: await sha256Hex(rawNonce),
-        target_supabase_auth_session_id: claims.sessionId,
-        target_token_hash: await sha256Hex(appSessionToken),
-        target_totp_amr_method: claims.amr.some(
-          ({ method, timestamp }) =>
-            method === 'mfa/totp' && timestamp === totpTimestamp,
+    const commonArgs = {
+      target_auth_user_id: userData.user.id,
+      target_current_jwt_hash: await sha256Hex(bearerToken),
+      target_current_jwt_iat: new Date(claims.issuedAt * 1000).toISOString(),
+      target_intent_digest: body.controlIntentDigest!,
+      target_mutation_request_id: body.controlRequestId!,
+      target_nonce_hash: await sha256Hex(rawNonce),
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: await sha256Hex(appSessionToken),
+      target_totp_amr_method: claims.amr.some(
+        ({ method, timestamp }) =>
+          method === 'mfa/totp' && timestamp === totpTimestamp,
+      )
+        ? 'mfa/totp'
+        : 'totp',
+      target_totp_amr_at: new Date(totpTimestamp * 1000).toISOString(),
+    }
+    const { data, error } = ownerLedgerOperationKey
+      ? await serviceClient.rpc(
+          'complete_google_admin_owner_control_step_up_v1',
+          {
+            ...commonArgs,
+            target_google_issuer: googleIdentity.issuer,
+            target_operation_key: ownerLedgerOperationKey,
+            target_provider_subject_hmac: subjectHmac,
+            target_subject_pepper_version: pepperVersion,
+            target_transport_enabled:
+              Deno.env.get('PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED') ===
+                'true' &&
+              Deno.env.get('PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED') === 'true',
+          },
         )
-          ? 'mfa/totp'
-          : 'totp',
-        target_totp_amr_at: new Date(totpTimestamp * 1000).toISOString(),
-      },
-    )
+      : await serviceClient.rpc('complete_admin_control_step_up_v1', {
+          target_action: body.controlAction!,
+          ...commonArgs,
+        })
     const result = data as {
       action?: string
       expires_at?: string
@@ -906,6 +1002,9 @@ async function handleRequest(request: Request) {
     return jsonResponse({
       controlAction: result.action,
       controlIntentDigest: result.intent_digest,
+      ...(ownerLedgerOperationKey
+        ? { controlOperationKey: ownerLedgerOperationKey }
+        : {}),
       controlRequestId: result.request_id,
       expiresAt: result.expires_at,
       ok: true,

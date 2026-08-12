@@ -1,8 +1,8 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Incremental implementation, verification pending
-Gate state: Phase 7.30A-C2 is default-OFF and source implemented through all 20 operational Edge adapters plus the Google Admin workspace; exact-head runtime DB/Local Edge/browser CI is pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-C2 source/local candidate complete; D-F, legacy removal and activation HOLD
+Gate state: Phase 7.30A-D is default-OFF and source implemented through all 20 operational Edge adapters, the Google Admin workspace and owner ledger; D mocked Chromium/WebKit browser evidence passes locally, while C2 exact-head CI plus D runtime DB/Local Edge evidence are pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-D source/local candidate complete; E-F, legacy removal and activation HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
 Last verified: 2026-08-12
@@ -11,7 +11,8 @@ Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
 [`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md) and
 [`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md) and
-[`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md).
+[`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md) and
+[`PHASE7_30D_ADMIN_LEDGER.md`](PHASE7_30D_ADMIN_LEDGER.md).
 The narrow C1 ownership and atomic dormant-master integration record is
 [`PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`](PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md).
 
@@ -84,8 +85,10 @@ adds private optional-row lecture ownership and atomic PIN/browser-proof to
 dormant-master admission without inferred backfill or child/provider authority.
 It does not by itself implement the all-Admin verifier, complete operational
 Edge/RPC migration or AI Passkey. C2 now implements the all-Admin verifier,
-all 20 default-OFF operational paths and the workspace credential bridge. D-F,
-legacy removal, AI Passkey and every activation remain HOLD. The source
+all 20 default-OFF operational paths and the workspace credential bridge. D adds
+the owner-only invitation, membership, session and bounded-audit ledger with
+immutable request/step-up evidence and safe flag-OFF controls. E-F, legacy
+removal, AI Passkey and every activation remain HOLD. The source
 implementation adds no recurring fixed-cost dependency.
 
 ## Outcome

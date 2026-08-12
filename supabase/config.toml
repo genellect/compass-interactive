@@ -402,6 +402,9 @@ verify_jwt = true
 [functions.admin-identity-session]
 verify_jwt = true
 
+[functions.manage-admin-ledger]
+verify_jwt = true
+
 [functions.admin-ai-unlock]
 verify_jwt = true
 

@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
-SELECT plan(9);
+SELECT plan(16);
 
 SELECT is(
   (
@@ -108,6 +108,94 @@ SELECT ok(
     WHERE id = '73020000-0000-4000-8000-000000000004'::uuid
   ),
   'B1/B2 history does not infer an approved principal TOTP trust anchor'
+);
+
+SELECT ok(
+  (
+    SELECT status = 'accepted'
+      AND accepted_principal_id =
+        '73020000-0000-4000-8000-000000000004'::uuid
+      AND accepted_membership_id =
+        '73020000-0000-4000-8000-000000000005'::uuid
+      AND accepted_at IS NOT NULL
+    FROM private.admin_invitations
+    WHERE id = '73020000-0000-4000-8000-00000000000c'::uuid
+  ),
+  'D preserves accepted bootstrap invitation evidence'
+);
+
+SELECT ok(
+  (
+    SELECT status = 'pending'
+      AND revoked_at IS NULL
+      AND expired_at IS NULL
+      AND accepted_at IS NULL
+    FROM private.admin_invitations
+    WHERE id = '73020000-0000-4000-8000-00000000000e'::uuid
+  ),
+  'D preserves a pending legacy invitation without terminal evidence'
+);
+
+SELECT ok(
+  (
+    SELECT status = 'revoked'
+      AND revoked_at = updated_at
+      AND revocation_reason = 'legacy_terminal'
+      AND expired_at IS NULL
+    FROM private.admin_invitations
+    WHERE id = '73020000-0000-4000-8000-000000000010'::uuid
+  ),
+  'D backfills bounded evidence for a revoked legacy invitation'
+);
+
+SELECT ok(
+  (
+    SELECT status = 'expired'
+      AND expired_at = updated_at
+      AND revoked_at IS NULL
+    FROM private.admin_invitations
+    WHERE id = '73020000-0000-4000-8000-000000000012'::uuid
+  ),
+  'D backfills bounded evidence for an expired legacy invitation'
+);
+
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM private.admin_invitations
+    WHERE id IN (
+      '73020000-0000-4000-8000-00000000000c'::uuid,
+      '73020000-0000-4000-8000-00000000000e'::uuid,
+      '73020000-0000-4000-8000-000000000010'::uuid,
+      '73020000-0000-4000-8000-000000000012'::uuid
+    )
+      AND (
+        target_normalized_email IS NOT NULL
+        OR target_email_pepper_version IS NOT NULL
+        OR membership_expires_at IS NOT NULL
+      )
+  ),
+  'D never invents display identity or membership expiry for legacy invitations'
+);
+
+SELECT is(
+  (SELECT count(*)::integer FROM private.admin_invitation_redemption_receipts),
+  0,
+  'D does not fabricate redemption receipts for legacy accepted invitations'
+);
+
+SELECT ok(
+  (
+    SELECT google_admin_ledger_enabled IS FALSE
+    FROM private.admin_identity_runtime_gate
+    WHERE singleton
+  )
+  AND (
+    SELECT count(*) = 13
+    FROM private.admin_google_operation_policies
+    WHERE edge_function = 'manage-admin-ledger'
+  ),
+  'D installs the owner ledger dormant with its closed policy slice'
 );
 
 SELECT * FROM finish();

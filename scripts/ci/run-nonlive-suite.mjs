@@ -76,6 +76,7 @@ const safeTestScripts = [
   'test:phase7-30c2-static',
   'test:phase7-30c2-ai-provider-static',
   'test:phase7-30c2-operational-static',
+  'test:phase7-30d-static',
   'test:production-gate:static',
   'test:production-env',
   'test:admin-lifecycle',

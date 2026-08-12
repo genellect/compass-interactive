@@ -103,6 +103,7 @@ jobs:
       - run: npm run test:e2e:phase7-30:flag-off
       - run: npm run test:e2e:phase7-30
       - run: npm run test:e2e:phase7-30b22b-browser
+      - run: npm run test:e2e:phase7-30d-browser
       - name: Upload demo E2E evidence
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -179,6 +180,9 @@ jobs:
 
       - name: Verify populated Phase 7.28 upgrade through Phase 7.29
         run: npm run test:phase7-29-upgrade
+
+      - name: Run Admin ledger terminal-state and owner-invariant concurrency regression
+        run: npm run test:phase7-30d-concurrency
 
       - name: Verify populated Phase 7.29 through Phase 7.30 C2 provider upgrades
         run: npm run test:phase7-30-upgrade

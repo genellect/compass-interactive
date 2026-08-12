@@ -62,6 +62,7 @@ for (const functionName of [
   'issue-lecture-resume-token',
   'issue-realtime-client-secret',
   'manage-ai-control',
+  'manage-admin-ledger',
   'manage-admin-sessions',
   'manage-lecture-summaries',
   'manage-lectures',

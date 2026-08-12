@@ -340,3 +340,118 @@
 .admin-identity-summary dd {
   margin: 0;
 }
+
+.admin-ledger-panel {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.admin-ledger-heading {
+  align-items: start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.admin-ledger-heading h2,
+.admin-ledger-heading p {
+  margin-block: 0 0.4rem;
+}
+
+.admin-ledger-heading .secondary-button {
+  width: auto;
+}
+
+.admin-ledger-panel > details {
+  border-top: 1px solid var(--line);
+  padding-top: 0.8rem;
+}
+
+.admin-ledger-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.admin-ledger-form,
+.admin-ledger-confirmation {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.admin-ledger-checkbox {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 0.6rem;
+}
+
+.admin-ledger-checkbox input {
+  inline-size: auto;
+}
+
+.admin-ledger-invitation-link {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.admin-ledger-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.admin-ledger-card {
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem;
+}
+
+.admin-ledger-card h3,
+.admin-ledger-card p {
+  margin: 0;
+}
+
+.admin-ledger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-ledger-actions button,
+.admin-ledger-session button {
+  min-height: 2.4rem;
+}
+
+.admin-ledger-session {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 0.7rem;
+  justify-content: space-between;
+  padding-top: 0.55rem;
+}
+
+.admin-ledger-audit {
+  display: grid;
+  gap: 0.45rem;
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .admin-ledger-heading,
+  .admin-ledger-session {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-ledger-heading .secondary-button,
+  .admin-ledger-actions button,
+  .admin-ledger-session button {
+    width: 100%;
+  }
+}

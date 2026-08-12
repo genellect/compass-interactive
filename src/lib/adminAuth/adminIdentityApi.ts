@@ -1,5 +1,6 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { adminSupabase } from './adminSupabaseClient'
+import { notifyGoogleAdminSessionInvalid } from './adminOperationSessionEvents'
 
 export type GoogleAdminSession = {
   canUseAi: boolean
@@ -18,9 +19,28 @@ export type AdminControlAction =
   | 'ai_pin_reset'
   | 'ai_pin_revoke'
   | 'ai_pin_rotate'
+  | 'admin_global_revoke'
+  | 'admin_invitation_change'
+  | 'admin_membership_ai_change'
+  | 'admin_membership_role_change'
+  | 'admin_membership_status_change'
+  | 'admin_session_revoke'
   | 'environment_ai_policy_change'
   | 'totp_factor_add'
   | 'totp_factor_remove'
+
+export type AdminLedgerOperationKey =
+  | 'manage-admin-ledger.demoteOwner'
+  | 'manage-admin-ledger.disableAi'
+  | 'manage-admin-ledger.enableAi'
+  | 'manage-admin-ledger.globalRevoke'
+  | 'manage-admin-ledger.issueInvitation'
+  | 'manage-admin-ledger.promoteOwner'
+  | 'manage-admin-ledger.reactivateMembership'
+  | 'manage-admin-ledger.revokeInvitation'
+  | 'manage-admin-ledger.revokeMembership'
+  | 'manage-admin-ledger.revokeSession'
+  | 'manage-admin-ledger.suspendMembership'
 
 export class AdminIdentityError extends Error {
   readonly code: string
@@ -32,12 +52,23 @@ export class AdminIdentityError extends Error {
   }
 }
 
+export function createAdminControlStepUpNonce() {
+  const value = crypto.getRandomValues(new Uint8Array(32))
+  let binary = ''
+  for (const byte of value) binary += String.fromCharCode(byte)
+  return btoa(binary)
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '')
+}
+
 type IdentityResponse = {
   activeFactorSetPresent?: boolean
   appSessionToken?: string
   code?: string
   controlAction?: AdminControlAction
   controlIntentDigest?: string
+  controlOperationKey?: AdminLedgerOperationKey
   controlRequestId?: string
   controlStepUpNonce?: string
   eligible?: boolean
@@ -121,6 +152,14 @@ async function invoke(body: Record<string, unknown>) {
         : null) ??
       (await readIdentityErrorCode(error)) ??
       'identity_request_failed'
+    if (
+      typeof body.appSessionToken === 'string' &&
+      (code === 'aal2_required' ||
+        code === 'app_session_invalid' ||
+        code === 'identity_invalid')
+    ) {
+      notifyGoogleAdminSessionInvalid(body.appSessionToken)
+    }
     throw new AdminIdentityError(code, getIdentityMessage(code))
   }
   return data
@@ -191,19 +230,25 @@ export async function beginAdminControlStepUp(
   controlAction: AdminControlAction,
   controlIntentDigest: string | null,
   controlRequestId: string = crypto.randomUUID(),
+  controlOperationKey?: AdminLedgerOperationKey,
+  controlStepUpNonce?: string,
 ) {
   const result = await invoke({
     action: 'beginControlStepUp',
     appSessionToken,
     controlAction,
     controlIntentDigest: controlIntentDigest ?? undefined,
+    controlOperationKey,
     controlRequestId,
+    controlStepUpNonce,
   })
   if (
     !result.controlStepUpNonce ||
     !result.controlIntentDigest ||
     !result.expiresAt ||
     result.controlAction !== controlAction ||
+    (controlOperationKey !== undefined &&
+      result.controlOperationKey !== controlOperationKey) ||
     result.controlRequestId !== controlRequestId
   ) {
     throw new AdminIdentityError(
@@ -214,6 +259,7 @@ export async function beginAdminControlStepUp(
   return {
     controlAction,
     controlIntentDigest: result.controlIntentDigest,
+    ...(controlOperationKey ? { controlOperationKey } : {}),
     controlRequestId,
     controlStepUpNonce: result.controlStepUpNonce,
     expiresAt: result.expiresAt,
@@ -226,12 +272,14 @@ export async function completeAdminControlStepUp(
   controlRequestId: string,
   controlIntentDigest: string,
   controlStepUpNonce: string,
+  controlOperationKey?: AdminLedgerOperationKey,
 ) {
   const result = await invoke({
     action: 'completeControlStepUp',
     appSessionToken,
     controlAction,
     controlIntentDigest,
+    controlOperationKey,
     controlRequestId,
     controlStepUpNonce,
   })
@@ -240,6 +288,8 @@ export async function completeAdminControlStepUp(
     result.controlIntentDigest !== controlIntentDigest ||
     !result.verifiedTotpAmrAt ||
     result.controlAction !== controlAction ||
+    (controlOperationKey !== undefined &&
+      result.controlOperationKey !== controlOperationKey) ||
     result.controlRequestId !== controlRequestId
   ) {
     throw new AdminIdentityError(
@@ -250,6 +300,7 @@ export async function completeAdminControlStepUp(
   return {
     controlAction,
     controlIntentDigest,
+    ...(controlOperationKey ? { controlOperationKey } : {}),
     controlRequestId,
     expiresAt: result.expiresAt,
     verifiedTotpAmrAt: result.verifiedTotpAmrAt,

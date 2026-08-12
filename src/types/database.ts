@@ -4771,6 +4771,23 @@ export type Database = {
         }
         Returns: Json
       }
+      begin_google_admin_owner_control_step_up_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_intent_digest: string
+          target_mutation_request_id: string
+          target_nonce_hash: string
+          target_operation_key: string
+          target_prechallenge_jwt_hash: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       bootstrap_admin_environment_v1: {
         Args: {
           target_audience: string
@@ -4997,6 +5014,26 @@ export type Database = {
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
+        }
+        Returns: Json
+      }
+      complete_google_admin_owner_control_step_up_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_current_jwt_hash: string
+          target_current_jwt_iat: string
+          target_google_issuer: string
+          target_intent_digest: string
+          target_mutation_request_id: string
+          target_nonce_hash: string
+          target_operation_key: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_totp_amr_at: string
+          target_totp_amr_method: string
+          target_transport_enabled: boolean
         }
         Returns: Json
       }
@@ -5326,6 +5363,48 @@ export type Database = {
           target_supabase_auth_session_id: string
           target_token_hash: string
           target_transport_enabled?: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_ledger_audit_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_before_at?: string
+          target_before_id?: number
+          target_google_issuer: string
+          target_limit?: number
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_ledger_intent_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_payload: Json
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_ledger_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
         }
         Returns: Json
       }
@@ -5986,6 +6065,22 @@ export type Database = {
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_title?: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_ledger_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_intent_digest: string
+          target_payload: Json
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
           target_token_hash: string
           target_transport_enabled: boolean
         }

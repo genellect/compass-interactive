@@ -90,6 +90,58 @@ insert into private.admin_environment_memberships (
   statement_timestamp() - interval '1 hour'
 );
 
+insert into private.admin_invitations (
+  id, environment_id, invitation_kind, target_email_hmac, role, can_use_ai,
+  token_hash, inviter_membership_id, expires_at, status,
+  accepted_principal_id, accepted_membership_id, accepted_at,
+  request_id, created_at, updated_at
+) values
+  (
+    '73020000-0000-4000-8000-00000000000c'::uuid,
+    '73020000-0000-4000-8000-000000000003'::uuid,
+    'bootstrap', repeat('c', 64), 'owner', true, null, null,
+    statement_timestamp() + interval '7 days', 'accepted',
+    '73020000-0000-4000-8000-000000000004'::uuid,
+    '73020000-0000-4000-8000-000000000005'::uuid,
+    statement_timestamp() - interval '50 minutes',
+    '73020000-0000-4000-8000-00000000000d'::uuid,
+    statement_timestamp() - interval '1 hour',
+    statement_timestamp() - interval '50 minutes'
+  ),
+  (
+    '73020000-0000-4000-8000-00000000000e'::uuid,
+    '73020000-0000-4000-8000-000000000003'::uuid,
+    'invitation', repeat('d', 64), 'instructor', true, repeat('1', 64),
+    '73020000-0000-4000-8000-000000000005'::uuid,
+    statement_timestamp() + interval '7 days', 'pending',
+    null, null, null,
+    '73020000-0000-4000-8000-00000000000f'::uuid,
+    statement_timestamp() - interval '40 minutes',
+    statement_timestamp() - interval '40 minutes'
+  ),
+  (
+    '73020000-0000-4000-8000-000000000010'::uuid,
+    '73020000-0000-4000-8000-000000000003'::uuid,
+    'invitation', repeat('e', 64), 'instructor', false, repeat('2', 64),
+    '73020000-0000-4000-8000-000000000005'::uuid,
+    statement_timestamp() + interval '7 days', 'revoked',
+    null, null, null,
+    '73020000-0000-4000-8000-000000000011'::uuid,
+    statement_timestamp() - interval '30 minutes',
+    statement_timestamp() - interval '20 minutes'
+  ),
+  (
+    '73020000-0000-4000-8000-000000000012'::uuid,
+    '73020000-0000-4000-8000-000000000003'::uuid,
+    'invitation', repeat('f', 64), 'instructor', false, repeat('3', 64),
+    '73020000-0000-4000-8000-000000000005'::uuid,
+    statement_timestamp() - interval '5 minutes', 'expired',
+    null, null, null,
+    '73020000-0000-4000-8000-000000000013'::uuid,
+    statement_timestamp() - interval '30 minutes',
+    statement_timestamp() - interval '5 minutes'
+  );
+
 insert into private.admin_step_up_nonces (
   id,
   nonce_hash,
