@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase726BrowserPdfPublishingEnabled } from '../../lib/featureFlags'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import {
@@ -7,6 +11,7 @@ import {
   type AdminPdfDocument,
   type AdminPollProposal,
   type AiMasterAuthorization,
+  shouldRetainAdminProviderAttempt,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
 import {
@@ -15,7 +20,7 @@ import {
 } from './aiMasterAuthorization'
 
 type MaterialAnalysisControlProps = {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   documents: AdminPdfDocument[]
   generationEnabled: boolean
   lectureSessionId: string
@@ -75,7 +80,11 @@ export function MaterialAnalysisControl({
   onPollDraftCreated,
   publisherSessionToken,
 }: MaterialAnalysisControlProps) {
+  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
+  const googleProviderAttemptsRef = useRef(
+    new Map<string, { grantRequestId: string; startRequestId: string }>(),
+  )
   const [billingPin, setBillingPin] = useState('')
   const [results, setResults] = useState<AdminMaterialResults>({
     analysis: null,
@@ -96,6 +105,10 @@ export function MaterialAnalysisControl({
     masterAuthorizesFeature(masterAuthorization, 'material_analysis') &&
     masterAuthorizesFeature(masterAuthorization, 'poll_suggestions')
   const masterHeldByOther = masterAuthorizationHeldByOther(masterAuthorization)
+
+  useEffect(() => {
+    googleProviderAttemptsRef.current.clear()
+  }, [lectureSessionId])
 
   const selectedDocument = useMemo(
     () =>
@@ -156,6 +169,7 @@ export function MaterialAnalysisControl({
   }, [adminToken, lectureSessionId])
 
   async function runAnalysis(action: 'material_analysis' | 'poll_suggestions') {
+    let googleAttemptKey: string | null = null
     if (!generationEnabled) {
       setMessage(
         'AI生成は現在停止中です。既存結果の確認・非表示・非採用は引き続き利用できます。',
@@ -166,14 +180,16 @@ export function MaterialAnalysisControl({
       !selectedDocument ||
       (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
       masterHeldByOther ||
-      (!masterAuthorized && !billingPin.trim())
+      (!masterAuthorized && (googleCredential || !billingPin.trim()))
     ) {
       setMessage(
         masterHeldByOther
           ? '別の教員画面がAI許可を保持しています。'
           : masterAuthorized
             ? 'PDFの公開状態を確認してください。'
-            : 'PDFの公開状態とAPI利用PINを確認してください。',
+            : googleCredential
+              ? 'PDFの公開状態と講義中のAI許可を確認してください。'
+              : 'PDFの公開状態とAPI利用PINを確認してください。',
       )
       return
     }
@@ -204,27 +220,57 @@ export function MaterialAnalysisControl({
         lectureSessionId,
         publisherSessionToken,
       })
-      const authorization = await supabaseAdminRepository.authorizeAiStart({
-        actions: [action],
-        adminToken,
-        billingPin: masterAuthorized ? undefined : billingPin,
-        lectureSessionId,
-      })
+      const authorization = googleCredential
+        ? null
+        : await supabaseAdminRepository.authorizeAiStart({
+            actions: [action],
+            adminToken,
+            billingPin: masterAuthorized ? undefined : billingPin,
+            lectureSessionId,
+          })
       setBillingPin('')
+      const analysisId =
+        action === 'poll_suggestions' ? (results.analysis?.id ?? null) : null
+      googleAttemptKey = googleCredential
+        ? JSON.stringify({
+            action,
+            analysisId,
+            documentId: selectedDocument.documentId,
+            documentVersion: selectedDocument.documentVersion,
+            pageEnd: action === 'poll_suggestions' ? end : null,
+            pageStart: action === 'poll_suggestions' ? start : null,
+          })
+        : null
+      let googleAttempt = googleAttemptKey
+        ? googleProviderAttemptsRef.current.get(googleAttemptKey)
+        : undefined
+      if (googleAttemptKey && !googleAttempt) {
+        googleAttempt = {
+          grantRequestId: crypto.randomUUID(),
+          startRequestId: crypto.randomUUID(),
+        }
+        googleProviderAttemptsRef.current.set(googleAttemptKey, googleAttempt)
+      }
       const nextResults = await supabaseAdminRepository.analyzeLectureMaterial({
         action,
         adminToken,
-        analysisId:
-          action === 'poll_suggestions' ? (results.analysis?.id ?? null) : null,
-        billingGrant: authorization.billingGrant,
+        analysisId,
+        ...(googleCredential
+          ? googleAttempt!
+          : {
+              billingGrant: authorization!.billingGrant,
+              idempotencyKey: idempotencyKey(action, lectureSessionId),
+            }),
         documentId: selectedDocument.documentId,
         documentVersion: selectedDocument.documentVersion,
         extraction,
-        idempotencyKey: idempotencyKey(action, lectureSessionId),
         lectureSessionId,
         pageEnd: action === 'poll_suggestions' ? end : null,
         pageStart: action === 'poll_suggestions' ? start : null,
       })
+      if (googleAttemptKey) {
+        googleProviderAttemptsRef.current.delete(googleAttemptKey)
+      }
       setResults(nextResults)
       setSummaryDraft(
         nextResults.analysis
@@ -238,6 +284,9 @@ export function MaterialAnalysisControl({
           : '追加候補を作成しました。採用前に根拠と選択肢を確認してください。',
       )
     } catch (error) {
+      if (googleAttemptKey && !shouldRetainAdminProviderAttempt(error)) {
+        googleProviderAttemptsRef.current.delete(googleAttemptKey)
+      }
       setBillingPin('')
       setMessage(
         error instanceof Error
@@ -437,6 +486,10 @@ export function MaterialAnalysisControl({
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
           <p className="note">講義中のAPI許可を使用します。</p>
+        ) : googleCredential ? (
+          <p className="note">
+            上の「講義中のAI機能」で利用を許可してください。
+          </p>
         ) : (
           <label className="field compact-field">
             <span>API利用PIN（毎回）</span>
@@ -458,7 +511,7 @@ export function MaterialAnalysisControl({
             !selectedDocument ||
             (!publisherSessionToken &&
               !isPhase726BrowserPdfPublishingEnabled) ||
-            (!masterAuthorized && !billingPin.trim()) ||
+            (!masterAuthorized && (googleCredential || !billingPin.trim())) ||
             Boolean(results.analysis)
           }
           onClick={() => void runAnalysis('material_analysis')}
@@ -686,7 +739,9 @@ export function MaterialAnalysisControl({
             <small>
               {masterAuthorized
                 ? '講義中のAPI許可を使用します'
-                : '実行時にAPI利用PINをもう一度確認します'}
+                : googleCredential
+                  ? '講義中のAI許可が必要です'
+                  : '実行時にAPI利用PINをもう一度確認します'}
             </small>
           </div>
           <label className="field compact-field">
@@ -716,7 +771,7 @@ export function MaterialAnalysisControl({
             disabled={
               generationDisabled ||
               masterHeldByOther ||
-              (!masterAuthorized && !billingPin.trim())
+              (!masterAuthorized && (googleCredential || !billingPin.trim()))
             }
             onClick={() => void runAnalysis('poll_suggestions')}
             type="button"

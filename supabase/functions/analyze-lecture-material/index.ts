@@ -94,6 +94,16 @@ type GoogleChildResult = {
   status?: string
 }
 
+type GoogleDispatchClaimResult = {
+  accepted?: boolean
+  clientRequestId?: string
+  dispatchAllowed?: boolean
+  idempotentReplay?: boolean
+  leaseExpiresAt?: string
+  operationId?: string
+  staleRecovered?: boolean
+}
+
 function isUuid(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -292,6 +302,7 @@ Deno.serve(async (request) => {
   let actualInputTokens = 0
   let actualOutputTokens = 0
   let providerRequestId: string | null = null
+  let providerWasDispatched = false
   let reservedInputTokens = 0
   let reservedOutputTokens = 0
   let ownsNewOperation = false
@@ -301,7 +312,7 @@ Deno.serve(async (request) => {
     const definitelyUncharged =
       /^provider_http_(?:400|401|403|404|409|422|429)$/.test(code)
     const conservativeUnknownUsage =
-      providerRequestId !== null &&
+      providerWasDispatched &&
       actualInputTokens === 0 &&
       actualOutputTokens === 0 &&
       !definitelyUncharged
@@ -425,6 +436,17 @@ Deno.serve(async (request) => {
 
     let started: StartResult
     if (googleContext) {
+      const { error: reapError } = await supabase.rpc(
+        'reap_stale_google_ai_provider_dispatches_v1',
+        { job_limit: 10 },
+      )
+      if (reapError) {
+        throw new MaterialAnalysisError(
+          'provider_dispatch_cleanup_failed',
+          'Previous model activity could not be reconciled safely.',
+          503,
+        )
+      }
       let nonce: string
       let keyVersion: number
       try {
@@ -571,6 +593,11 @@ Deno.serve(async (request) => {
           409,
         )
       }
+      // A fresh start belongs to this invocation and is safe to settle if the
+      // subsequent dispatch claim fails before any provider request is sent.
+      // A replay is never owned until this invocation wins the append-only
+      // dispatch claim below.
+      ownsNewOperation = !started.idempotentReplay
       if (started.idempotentReplay) {
         const state = await readOperationState(body.startRequestId!, actorId)
         if (state?.status === 'succeeded' && state.result_saved) {
@@ -580,21 +607,71 @@ Deno.serve(async (request) => {
             results: state.results,
           })
         }
+        if (state?.status !== 'running') {
+          return jsonResponse(
+            {
+              code: 'operation_not_retryable',
+              message: 'Start a new material analysis attempt.',
+              ok: false,
+            },
+            409,
+          )
+        }
+      }
+
+      // Starting the DB operation and dispatching the external request are
+      // intentionally separate. A retry may claim a committed-but-undelivered
+      // start response, while an existing claim can never dispatch twice.
+      const { data: claimData, error: claimError } = await supabase.rpc(
+        'claim_google_ai_provider_dispatch_v1',
+        {
+          ...googleRpcIdentity,
+          target_client_request_id: body.startRequestId,
+          target_operation_id: operationId,
+          target_provider_family: 'openai_responses_v1',
+          target_start_request_id: body.startRequestId,
+          target_transport_enabled:
+            googleContext.transportEnabled &&
+            materialTransportEnabled &&
+            Boolean(openAiKey),
+        },
+      )
+      if (claimError) throw claimError
+      const claim = claimData as GoogleDispatchClaimResult | null
+      if (
+        !claim?.accepted ||
+        claim.operationId !== operationId ||
+        !isUuid(claim.clientRequestId)
+      ) {
+        throw new MaterialAnalysisError(
+          'provider_dispatch_not_authorized',
+          'The model request could not be authorized.',
+          409,
+        )
+      }
+      if (!claim.dispatchAllowed) {
+        if (claim.staleRecovered) {
+          return jsonResponse(
+            {
+              code: 'provider_dispatch_recovered',
+              message:
+                'The previous model request ended safely. Start a new analysis attempt.',
+              ok: false,
+            },
+            409,
+          )
+        }
         return jsonResponse(
           {
-            code:
-              state?.status === 'running'
-                ? 'operation_in_progress'
-                : 'operation_not_retryable',
-            message:
-              state?.status === 'running'
-                ? 'This material analysis is already running.'
-                : 'Start a new material analysis attempt.',
+            code: 'operation_in_progress',
+            message: 'This material analysis is already running.',
             ok: false,
+            retryAfter: claim.leaseExpiresAt,
           },
           409,
         )
       }
+      providerRequestId = claim.clientRequestId
       ownsNewOperation = true
     } else {
       const { grantId, nonce } = parseBillingGrantToken(body.billingGrant!)
@@ -734,7 +811,8 @@ Deno.serve(async (request) => {
     const safetyIdentifier = `compass_${(
       await sha256Hex(`phase5:${body.lectureSessionId}:${actorId}`)
     ).slice(0, 48)}`
-    providerRequestId = crypto.randomUUID()
+    providerRequestId ??= crypto.randomUUID()
+    providerWasDispatched = true
     const providerResponse = await fetch(
       'https://api.openai.com/v1/responses',
       {

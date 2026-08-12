@@ -105,7 +105,15 @@ assert.match(
   masterControl,
   /onAuthorizationChange\(next\?\.status === 'active'/,
 )
-assert.match(masterControl, /別の教員画面が許可を保持しています/)
+assert.match(
+  masterControl,
+  /同じ管理者の以前の画面で許可されています。停止後、この画面で許可し直せます。/,
+)
+assert.match(
+  masterControl,
+  /if \(busy \|\| authorization\?\.status !== 'active'\) return/,
+  'a replacement app session can revoke the same-principal master before reauthorizing',
+)
 assert.doesNotMatch(masterControl, /getUserMedia|createRealtimeCaptionCall/)
 assert.match(masterHelpers, /masterAuthorizesFeature/)
 assert.match(masterHelpers, /masterAuthorizationHeldByOther/)

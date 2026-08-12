@@ -1,4 +1,9 @@
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
+import {
+  isAdminOperationCredential,
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../lib/adminAuth/adminOperationCredential'
 import { isPresenterPairingTicket } from '../presenter/presenterBridgeProtocol.ts'
 
 import {
@@ -151,12 +156,13 @@ function isAdminToken(value: unknown): value is string {
 }
 
 function assertAdminRequest(request: {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   connectionId?: string
   lectureSessionId?: string
 }) {
   if (
-    !isAdminToken(request.adminToken) ||
+    (!isAdminToken(request.adminToken) &&
+      !isAdminOperationCredential(request.adminToken)) ||
     (request.connectionId !== undefined && !isUuid(request.connectionId)) ||
     (request.lectureSessionId !== undefined &&
       !isUuid(request.lectureSessionId))
@@ -360,7 +366,9 @@ async function invokePresenterAction<T>(input: {
   fallbackMessage: string
   parse: (value: unknown) => T | null
 }) {
-  await ensureAnonymousAuthSession()
+  if (!isGoogleAdminOperationCredential(input.body.adminToken)) {
+    await ensureAnonymousAuthSession()
+  }
   const { data, error } = await invokeEdgeFunction<unknown>(
     PRESENTER_EDGE_FUNCTION,
     {
@@ -388,7 +396,7 @@ async function invokePresenterAction<T>(input: {
 
 export const supabasePresenterBridgeRepository = {
   async issue(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
   }): Promise<IssuedPresenterConnection> {
     assertAdminRequest(request)
@@ -402,7 +410,7 @@ export const supabasePresenterBridgeRepository = {
   },
 
   async confirm(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     connectionId: string
   }): Promise<ConfirmedPresenterConnection> {
     assertAdminRequest(request)
@@ -416,7 +424,7 @@ export const supabasePresenterBridgeRepository = {
   },
 
   async status(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     lectureSessionId: string
   }): Promise<PresenterConnectionStatusResult> {
     assertAdminRequest(request)
@@ -432,7 +440,7 @@ export const supabasePresenterBridgeRepository = {
   },
 
   async revoke(request: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     connectionId: string
   }): Promise<RevokedPresenterConnection> {
     assertAdminRequest(request)

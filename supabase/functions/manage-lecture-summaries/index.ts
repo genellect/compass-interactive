@@ -1,11 +1,19 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
-import { parseBillingGrantToken, sha256Hex } from '../_shared/aiBilling.ts'
+import { createClient } from 'npm:@supabase/supabase-js@2'
+import {
+  deriveGoogleSummaryRunNonce,
+  parseBillingGrantToken,
+  sha256Hex,
+} from '../_shared/aiBilling.ts'
 import {
   getAdminActorId,
   getAdminTokenClaims,
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import {
   createSummaryRunNonce,
   formatSummaryRunToken,
@@ -29,21 +37,29 @@ type RequestBody = {
     | 'unpin'
     | 'revisePublish'
   adminToken?: string
-  academicSourcePolicy?:
-    | 'auto'
-    | 'biomedical_pubmed'
-    | 'multidisciplinary_doi'
+  academicSourcePolicy?: 'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
   autoAcademicAnswers?: boolean
+  appSessionToken?: string
   billingGrant?: string
   lectureSessionId?: string
   pinnedOrder?: number | null
   pinnedUntil?: string | null
   reason?: string | null
+  requestId?: string
   revisionBody?: {
     commentPulse?: string[]
     lectureRecap?: string[]
   } | null
   summaryId?: string
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
 }
 
 function errorResponse(
@@ -69,12 +85,8 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return jsonResponse({ message: 'Method not allowed.', ok: false }, 405)
   }
-  if (Deno.env.get('PHASE6_SUMMARIES_ENABLED') !== 'true') {
-    return jsonResponse(
-      { message: 'Five-minute summaries are disabled.', ok: false },
-      503,
-    )
-  }
+  const summariesTransportEnabled =
+    Deno.env.get('PHASE6_SUMMARIES_ENABLED') === 'true'
 
   let body: RequestBody
   try {
@@ -91,26 +103,69 @@ Deno.serve(async (request) => {
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
-  if (!body.action || !body.adminToken || !body.lectureSessionId) {
+  if (!body.action || !body.lectureSessionId) {
     return jsonResponse(
-      { message: 'Admin session, lecture and action are required.', ok: false },
+      { message: 'Lecture and action are required.', ok: false },
       400,
     )
   }
 
-  let actorId: string
-  try {
-    const claims = await getAdminTokenClaims(
-      body.adminToken,
-      getAdminTokenSecret(),
-      request,
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasGoogleCredential === hasLegacyCredential) {
+    return jsonResponse(
+      { message: 'Exactly one Admin credential is required.', ok: false },
+      401,
     )
-    if (!claims) {
-      return jsonResponse({ message: 'Invalid Admin session.', ok: false }, 401)
-    }
-    actorId = getAdminActorId(claims)
-  } catch {
-    return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
+  }
+  if (
+    !summariesTransportEnabled &&
+    !(hasGoogleCredential && ['status', 'stop', 'hide'].includes(body.action))
+  ) {
+    return jsonResponse(
+      { message: 'Five-minute summaries are disabled.', ok: false },
+      503,
+    )
+  }
+  const isGoogleMutationAction = [
+    'start',
+    'resume',
+    'stop',
+    'publish',
+    'hide',
+    'pin',
+    'unpin',
+    'revisePublish',
+  ].includes(body.action)
+  const isGoogleSupportedAction = [
+    'status',
+    'start',
+    'resume',
+    'stop',
+    'publish',
+    'hide',
+    'pin',
+    'unpin',
+    'revisePublish',
+  ].includes(body.action)
+  if (
+    hasGoogleCredential &&
+    (!isGoogleSupportedAction ||
+      (isGoogleMutationAction && !isUuid(body.requestId)) ||
+      body.billingGrant !== undefined)
+  ) {
+    return jsonResponse(
+      {
+        message: isGoogleSupportedAction
+          ? 'A valid summary request ID is required.'
+          : 'This summary action is not available for this sign-in.',
+        ok: false,
+      },
+      isGoogleSupportedAction ? 400 : 409,
+    )
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -121,12 +176,79 @@ Deno.serve(async (request) => {
       503,
     )
   }
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
+  let actorId: string | null = null
+  let googleContext: GoogleAdminOperationContext | null = null
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    try {
+      const claims = await getAdminTokenClaims(
+        body.adminToken!,
+        getAdminTokenSecret(),
+        request,
+      )
+      if (!claims) {
+        return jsonResponse(
+          { message: 'Invalid Admin session.', ok: false },
+          401,
+        )
+      }
+      actorId = getAdminActorId(claims)
+    } catch {
+      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
+    }
+  }
+
+  const googleRpcIdentity = googleContext
+    ? {
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+      }
+    : null
 
   try {
     if (body.action === 'status') {
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled:
+              googleContext.transportEnabled && summariesTransportEnabled,
+          },
+        )
+        if (error) throw error
+        if (!data) {
+          return jsonResponse(
+            { message: 'Summary status is not available.', ok: false },
+            409,
+          )
+        }
+        return jsonResponse({ ok: true, results: data })
+      }
       const { data, error } = await supabase.rpc(
         'admin_get_phase6_summary_results',
         { target_lecture_session_id: body.lectureSessionId },
@@ -137,10 +259,12 @@ Deno.serve(async (request) => {
 
     if (body.action === 'start') {
       if (!body.billingGrant) {
-        return jsonResponse(
-          { message: 'Billing authorization is required.', ok: false },
-          400,
-        )
+        if (!googleContext) {
+          return jsonResponse(
+            { message: 'Billing authorization is required.', ok: false },
+            400,
+          )
+        }
       }
       const sourcePolicy = body.academicSourcePolicy ?? 'auto'
       if (
@@ -158,16 +282,91 @@ Deno.serve(async (request) => {
         Deno.env.get('PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED') !== 'true'
       ) {
         return jsonResponse(
-          { message: 'Automatic academic reference answers are disabled.', ok: false },
+          {
+            message: 'Automatic academic reference answers are disabled.',
+            ok: false,
+          },
           503,
         )
       }
-      const billing = parseBillingGrantToken(body.billingGrant)
+      if (googleContext && googleRpcIdentity) {
+        let nonce: string
+        try {
+          nonce = await deriveGoogleSummaryRunNonce({
+            action: 'start',
+            lectureSessionId: body.lectureSessionId,
+            requestId: body.requestId!,
+          })
+        } catch {
+          return jsonResponse(
+            {
+              code: 'google_summary_not_configured',
+              message: 'Lecture summaries are not configured.',
+              ok: false,
+            },
+            503,
+          )
+        }
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_summary_run_v2',
+          {
+            ...googleRpcIdentity,
+            target_academic_source_policy: sourcePolicy,
+            target_action: 'start',
+            target_auto_academic_answers_enabled:
+              body.autoAcademicAnswers === true,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: null,
+            target_request_id: body.requestId,
+            target_run_token_hash: await sha256Hex(nonce),
+            target_transport_enabled:
+              googleContext.transportEnabled && summariesTransportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          accepted?: boolean
+          idempotentReplay?: boolean
+          reason?: string
+          refreshRequired?: boolean
+          results?: unknown
+          run?: { id?: string }
+        }
+        if (!result.accepted || !result.run?.id) {
+          return jsonResponse(
+            {
+              message: 'Summary run could not be started.',
+              ok: false,
+              reason: result.reason,
+            },
+            409,
+          )
+        }
+        if (result.refreshRequired) {
+          return jsonResponse(
+            {
+              code: 'summary_run_refresh_required',
+              message: 'Resume the current summary run to continue.',
+              ok: false,
+              results: result.results,
+            },
+            409,
+          )
+        }
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          results: result.results,
+          runToken: formatSummaryRunToken(result.run.id, nonce),
+        })
+      }
+
+      const billing = parseBillingGrantToken(body.billingGrant!)
       const nonce = createSummaryRunNonce()
       const { data, error } = await supabase.rpc(
         'admin_start_lecture_summary_run_v2',
         {
-          target_actor_id: actorId,
+          target_actor_id: actorId!,
           target_academic_source_policy: sourcePolicy,
           target_auto_academic_answers_enabled:
             body.autoAcademicAnswers === true,
@@ -202,11 +401,77 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'resume') {
+      if (googleContext && googleRpcIdentity) {
+        let nonce: string
+        try {
+          nonce = await deriveGoogleSummaryRunNonce({
+            action: 'resume',
+            lectureSessionId: body.lectureSessionId,
+            requestId: body.requestId!,
+          })
+        } catch {
+          return jsonResponse(
+            {
+              code: 'google_summary_not_configured',
+              message: 'Lecture summaries are not configured.',
+              ok: false,
+            },
+            503,
+          )
+        }
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_summary_run_v2',
+          {
+            ...googleRpcIdentity,
+            target_academic_source_policy: null,
+            target_action: 'resume',
+            target_auto_academic_answers_enabled: null,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: null,
+            target_request_id: body.requestId,
+            target_run_token_hash: await sha256Hex(nonce),
+            target_transport_enabled:
+              googleContext.transportEnabled && summariesTransportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          accepted?: boolean
+          idempotentReplay?: boolean
+          reason?: string
+          refreshRequired?: boolean
+          results?: unknown
+          run?: { id?: string }
+        }
+        if (!result.accepted || !result.run?.id || result.refreshRequired) {
+          return jsonResponse(
+            {
+              code: result.refreshRequired
+                ? 'summary_run_refresh_required'
+                : 'summary_run_not_active',
+              message: result.refreshRequired
+                ? 'Start a new resume request to continue.'
+                : 'The summary run is no longer active.',
+              ok: false,
+              reason: result.reason,
+              results: result.results,
+            },
+            409,
+          )
+        }
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          results: result.results,
+          runToken: formatSummaryRunToken(result.run.id, nonce),
+        })
+      }
+
       const nonce = createSummaryRunNonce()
       const { data, error } = await supabase.rpc(
         'admin_resume_lecture_summary_run',
         {
-          target_actor_id: actorId,
+          target_actor_id: actorId!,
           target_lecture_session_id: body.lectureSessionId,
           target_run_token_hash: await sha256Hex(nonce),
         },
@@ -234,10 +499,57 @@ Deno.serve(async (request) => {
 
     if (body.action === 'stop') {
       const reason = body.reason?.trim() || 'admin_manual_stop'
+      if (googleContext && googleRpcIdentity) {
+        const { data, error } = await supabase.rpc(
+          'manage_google_admin_summary_run_v2',
+          {
+            ...googleRpcIdentity,
+            target_academic_source_policy: null,
+            target_action: 'stop',
+            target_auto_academic_answers_enabled: null,
+            target_lecture_session_id: body.lectureSessionId,
+            target_reason: reason,
+            target_request_id: body.requestId,
+            target_run_token_hash: null,
+            target_transport_enabled: googleContext.transportEnabled,
+          },
+        )
+        if (error) throw error
+        const result = data as {
+          accepted?: boolean
+          idempotentReplay?: boolean
+          reason?: string
+        }
+        if (!result.accepted) {
+          return jsonResponse(
+            {
+              message: 'Summary run could not be stopped.',
+              ok: false,
+              reason: result.reason,
+            },
+            409,
+          )
+        }
+        const refreshed = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled: googleContext.transportEnabled,
+          },
+        )
+        return jsonResponse({
+          idempotentReplay: result.idempotentReplay === true,
+          ok: true,
+          results:
+            !refreshed.error && refreshed.data ? refreshed.data : undefined,
+        })
+      }
+
       const { data, error } = await supabase.rpc(
         'admin_stop_lecture_summary_run',
         {
-          target_actor_id: actorId,
+          target_actor_id: actorId!,
           target_lecture_session_id: body.lectureSessionId,
           target_reason: reason,
         },
@@ -269,11 +581,60 @@ Deno.serve(async (request) => {
           lecture_recap: body.revisionBody.lectureRecap ?? [],
         }
       : null
+    if (googleContext && googleRpcIdentity) {
+      const { data, error } = await supabase.rpc(
+        'manage_google_admin_summary_publication_v1',
+        {
+          ...googleRpcIdentity,
+          target_action: body.action,
+          target_lecture_session_id: body.lectureSessionId,
+          target_pinned_order: body.pinnedOrder ?? null,
+          target_pinned_until: body.pinnedUntil ?? null,
+          target_reason: body.reason ?? null,
+          target_request_id: body.requestId,
+          target_revision_body: revisionBody,
+          target_summary_id: body.summaryId,
+          target_transport_enabled:
+            googleContext.transportEnabled && summariesTransportEnabled,
+        },
+      )
+      if (error) throw error
+      const result = data as {
+        idempotentReplay?: boolean
+        ok?: boolean
+        refreshRequired?: boolean
+        results?: unknown
+      } | null
+      if (!result?.ok) {
+        return jsonResponse(
+          { message: 'Summary state could not be updated.', ok: false },
+          409,
+        )
+      }
+      let results = result.results
+      if (result.refreshRequired) {
+        const refreshed = await supabase.rpc(
+          'get_google_admin_summary_results_v1',
+          {
+            ...googleRpcIdentity,
+            target_lecture_session_id: body.lectureSessionId,
+            target_transport_enabled: googleContext.transportEnabled,
+          },
+        )
+        if (!refreshed.error && refreshed.data) results = refreshed.data
+      }
+      return jsonResponse({
+        idempotentReplay: result.idempotentReplay === true,
+        ok: true,
+        refreshRequired: result.refreshRequired === true && !results,
+        results,
+      })
+    }
     const { data, error } = await supabase.rpc(
       'admin_manage_summary_publication',
       {
         target_action: action,
-        target_actor_id: actorId,
+        target_actor_id: actorId!,
         target_body: revisionBody,
         target_lecture_session_id: body.lectureSessionId,
         target_pinned_order: body.pinnedOrder ?? null,

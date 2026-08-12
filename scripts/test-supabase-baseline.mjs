@@ -76,6 +76,20 @@ const phase730c2OperationalSurfacesMigrationName =
   '20260811123000_phase7_30c2_operational_surfaces.sql'
 const phase730c2GoogleAiProviderMigrationName =
   '20260811180000_phase7_30c2_google_ai_provider.sql'
+const phase730c2GoogleAiProviderDispatchMigrationName =
+  '20260811203000_phase7_30c2_google_ai_provider_dispatch.sql'
+const phase730c2GoogleSummarySchedulerMigrationName =
+  '20260811213000_phase7_30c2_google_summary_scheduler.sql'
+const phase730c2GoogleSummaryProviderMigrationName =
+  '20260811223000_phase7_30c2_google_summary_provider.sql'
+const phase730c2GoogleAcademicProviderMigrationName =
+  '20260811233000_phase7_30c2_google_academic_provider.sql'
+const phase730c2GoogleRealtimeControlMigrationName =
+  '20260812011500_phase7_30c2_google_realtime_control.sql'
+const phase730c2GoogleRealtimeProviderMigrationName =
+  '20260812023000_phase7_30c2_google_realtime_provider.sql'
+const phase730c2GoogleWorkspaceAuthorityMigrationName =
+  '20260812033000_phase7_30c2_google_workspace_authority.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -125,6 +139,13 @@ assert.deepEqual(
     phase730c2UnifiedAdminAuthorizationMigrationName,
     phase730c2OperationalSurfacesMigrationName,
     phase730c2GoogleAiProviderMigrationName,
+    phase730c2GoogleAiProviderDispatchMigrationName,
+    phase730c2GoogleSummarySchedulerMigrationName,
+    phase730c2GoogleSummaryProviderMigrationName,
+    phase730c2GoogleAcademicProviderMigrationName,
+    phase730c2GoogleRealtimeControlMigrationName,
+    phase730c2GoogleRealtimeProviderMigrationName,
+    phase730c2GoogleWorkspaceAuthorityMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

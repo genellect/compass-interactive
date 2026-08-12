@@ -1,4 +1,8 @@
 import type { JoinedLectureSession } from '../lib/joinedLecture'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../lib/adminAuth/adminOperationCredential'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { LiveComment, Poll, PollResponse } from '../types'
@@ -309,7 +313,9 @@ export const supabaseLiveStateRepository = {
     request: OperatorSnapshotRequest,
   ): Promise<LiveSnapshot> {
     assertSupabaseConfigured()
-    await ensureAnonymousAuthSession()
+    if (!isGoogleAdminOperationCredential(request.adminToken)) {
+      await ensureAnonymousAuthSession()
+    }
 
     const credential = request.adminToken
       ? { adminToken: request.adminToken }
@@ -363,13 +369,15 @@ export const supabaseLiveStateRepository = {
     lectureSessionId,
     limit = 50,
   }: {
-    adminToken: string
+    adminToken: AdminOperationCredentialInput
     before: CommentCursor
     lectureSessionId: string
     limit?: number
   }): Promise<CommentHistoryPage> {
     assertSupabaseConfigured()
-    await ensureAnonymousAuthSession()
+    if (!isGoogleAdminOperationCredential(adminToken)) {
+      await ensureAnonymousAuthSession()
+    }
 
     const { data, error } = await invokeEdgeFunction<
       Omit<OperatorFunctionResponse, 'result'> & {

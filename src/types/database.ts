@@ -2747,6 +2747,7 @@ export type Database = {
       }
       lecture_summary_runs: {
         Row: {
+          academic_authority_mode: string
           academic_authorization_grant_id: string | null
           academic_source_policy: string
           actor_id: string
@@ -2765,6 +2766,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          academic_authority_mode?: string
           academic_authorization_grant_id?: string | null
           academic_source_policy?: string
           actor_id: string
@@ -2783,6 +2785,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          academic_authority_mode?: string
           academic_authorization_grant_id?: string | null
           academic_source_policy?: string
           actor_id?: string
@@ -3595,6 +3598,23 @@ export type Database = {
           target_provider_subject_hmac: string
           target_publication_id: string
           target_reason_code: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      activate_google_admin_realtime_provider_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_call_id: string
+          target_provider_request_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
@@ -4796,6 +4816,22 @@ export type Database = {
         Args: { job_limit?: number; target_worker_id?: string }
         Returns: Json[]
       }
+      claim_google_ai_provider_dispatch_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_family: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       claim_lecture_archive_exports: {
         Args: { job_limit?: number }
         Returns: {
@@ -4926,6 +4962,26 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_google_admin_academic_answer_operation_v1: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          provider_request_id: string
+          target_auth_user_id: string
+          target_body: Json
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_quality_result: Json
+          target_sources: Json
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       complete_google_admin_material_ai_operation_v1: {
         Args: {
           actual_input_tokens: number
@@ -4937,6 +4993,26 @@ export type Database = {
           target_operation_id: string
           target_provider_subject_hmac: string
           target_result: Json
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      complete_google_admin_summary_window_operation_v1: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          provider_request_id: string
+          publish_recommended: boolean
+          target_ai_output: Json
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_quality_result: Json
           target_start_request_id: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
@@ -5062,7 +5138,64 @@ export type Database = {
         }
         Returns: Json
       }
+      fail_google_admin_academic_answer_operation_v1: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          error_code: string
+          provider_request_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_status: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       fail_google_admin_material_ai_operation_v1: {
+        Args: {
+          actual_input_tokens: number
+          actual_microusd: number
+          actual_output_tokens: number
+          error_code: string
+          provider_request_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_status: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
+      fail_google_admin_realtime_provider_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_client_request_id: string
+          target_error_code: string
+          target_google_issuer: string
+          target_operation_id: string
+          target_outcome: string
+          target_provider_call_id: string
+          target_provider_request_id: string
+          target_provider_subject_hmac: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      fail_google_admin_summary_window_operation_v1: {
         Args: {
           actual_input_tokens: number
           actual_microusd: number
@@ -5168,6 +5301,34 @@ export type Database = {
         }
         Returns: Json
       }
+      get_google_admin_academic_results_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_ai_control_configuration_intent_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_configuration: Json
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled?: boolean
+        }
+        Returns: Json
+      }
       get_google_admin_material_analysis_v1: {
         Args: {
           target_auth_user_id: string
@@ -5230,6 +5391,19 @@ export type Database = {
         Args: {
           target_auth_user_id: string
           target_google_issuer: string
+          target_provider_subject_hmac: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      get_google_admin_summary_results_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
           target_provider_subject_hmac: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
@@ -5485,6 +5659,40 @@ export type Database = {
         Returns: boolean
       }
       is_poll_open: { Args: { target_poll_id: string }; Returns: boolean }
+      issue_google_academic_answer_ai_child_grant_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_auth_user_id: string
+          target_estimated_input_tokens: number
+          target_estimated_microusd: number
+          target_estimated_output_tokens: number
+          target_google_issuer: string
+          target_grant_request_id: string
+          target_input_price_microusd_per_million: number
+          target_lecture_session_id: string
+          target_max_output_tokens: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_nonce_key_version: number
+          target_output_price_microusd_per_million: number
+          target_preflight_context_digest: string
+          target_preflight_request_id: string
+          target_prompt_version: string
+          target_provider_payload_sha256: string
+          target_provider_subject_hmac: string
+          target_publication_mode: string
+          target_resolved_source_route: string
+          target_run_id: string
+          target_source_set_sha256: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+          target_verified_primary_count: number
+          target_verified_source_count: number
+        }
+        Returns: Json
+      }
       issue_google_admin_display_session_v1: {
         Args: {
           target_auth_user_id: string
@@ -5572,6 +5780,62 @@ export type Database = {
         }
         Returns: Json
       }
+      issue_google_realtime_ai_child_grant_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_delay: string
+          target_estimated_microusd: number
+          target_google_issuer: string
+          target_language: string
+          target_lecture_session_id: string
+          target_model_id: string
+          target_nonce_hash: string
+          target_nonce_key_version: number
+          target_price_microusd_per_minute: number
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_requested_audio_seconds: number
+          target_sdp_offer_sha256: string
+          target_session_config_sha256: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      issue_google_summary_ai_child_grant_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_estimated_input_tokens: number
+          target_estimated_microusd: number
+          target_estimated_output_tokens: number
+          target_expected_attempt: number
+          target_google_issuer: string
+          target_input_price_microusd_per_million: number
+          target_language_reason: string
+          target_lecture_session_id: string
+          target_max_output_tokens: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_nonce_key_version: number
+          target_output_price_microusd_per_million: number
+          target_preflight_context_digest: string
+          target_preflight_request_id: string
+          target_prompt_version: string
+          target_provider_payload_sha256: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_resolved_language: string
+          target_run_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+          target_window_id: string
+        }
+        Returns: Json
+      }
       issue_presenter_connection_v1: {
         Args: {
           target_admin_auth_user_id: string
@@ -5616,6 +5880,60 @@ export type Database = {
           status: string
           title: string
         }[]
+      }
+      manage_google_admin_academic_results_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_action: string
+          target_answer_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_revision_body: Json
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_ai_control_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_configuration?: Json
+          target_control_intent_digest?: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_operation_id?: string
+          target_provider_subject_hmac: string
+          target_reason?: string
+          target_request_id?: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled?: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_ai_master_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_reason?: string
+          target_request_id?: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled?: boolean
+        }
+        Returns: Json
       }
       manage_google_admin_comments_v1: {
         Args: {
@@ -5777,6 +6095,79 @@ export type Database = {
         }
         Returns: Json
       }
+      manage_google_admin_summary_publication_v1: {
+        Args: {
+          target_action: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_pinned_order: number
+          target_pinned_until: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_revision_body: Json
+          target_subject_pepper_version: number
+          target_summary_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_summary_run_v1: {
+        Args: {
+          target_academic_source_policy: string
+          target_action: string
+          target_auth_user_id: string
+          target_auto_academic_answers_enabled: boolean
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_run_token_hash: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      manage_google_admin_summary_run_v2: {
+        Args: {
+          target_academic_source_policy: string
+          target_action: string
+          target_auth_user_id: string
+          target_auto_academic_answers_enabled: boolean
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_request_id: string
+          target_run_token_hash: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      mark_google_admin_academic_answer_insufficient_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_preflight_request_id: string
+          target_provider_subject_hmac: string
+          target_reason: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       mark_realtime_provider_creation_uncertain: {
         Args: {
           target_actor_id: string
@@ -5791,6 +6182,30 @@ export type Database = {
           target_participant_id: string
         }
         Returns: boolean
+      }
+      prepare_google_admin_academic_answer_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_idempotency_key: string
+          target_lecture_session_id: string
+          target_preflight_request_id: string
+          target_provider_subject_hmac: string
+          target_publication_mode: string
+          target_question: string
+          target_question_sha256: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_search_query_sha256: string
+          target_source_kind: string
+          target_source_policy: string
+          target_source_summary_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
       }
       prepare_google_admin_pdf_publication_finalize_v1: {
         Args: {
@@ -5809,6 +6224,52 @@ export type Database = {
           target_transport_enabled: boolean
         }
         Returns: Json
+      }
+      prepare_google_admin_summary_window_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_document_id: string
+          target_document_version: string
+          target_google_issuer: string
+          target_lecture_session_id: string
+          target_prompt_version: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_source_coverage: Json
+          target_source_hashes: Json
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+          target_window_index: number
+        }
+        Returns: Json
+      }
+      publish_google_admin_caption_window_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_language: string
+          target_last_item_id: string
+          target_lecture_session_id: string
+          target_operation_id: string
+          target_provider_subject_hmac: string
+          target_request_id: string
+          target_sequence: number
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_text: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      reap_stale_google_ai_provider_dispatches_v1: {
+        Args: { job_limit?: number }
+        Returns: number
       }
       reconcile_admin_totp_factor_set_v1: {
         Args: { target_auth_user_id: string; target_request_id: string }
@@ -5946,6 +6407,41 @@ export type Database = {
         Args: { target_enabled: boolean }
         Returns: Json
       }
+      start_google_admin_academic_answer_operation_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_auth_user_id: string
+          target_estimated_input_tokens: number
+          target_estimated_microusd: number
+          target_estimated_output_tokens: number
+          target_google_issuer: string
+          target_grant_id: string
+          target_input_price_microusd_per_million: number
+          target_lecture_session_id: string
+          target_max_output_tokens: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_output_price_microusd_per_million: number
+          target_preflight_context_digest: string
+          target_preflight_request_id: string
+          target_prompt_version: string
+          target_provider_intent_digest: string
+          target_provider_payload_sha256: string
+          target_provider_subject_hmac: string
+          target_publication_mode: string
+          target_resolved_source_route: string
+          target_run_id: string
+          target_source_set_sha256: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+          target_verified_primary_count: number
+          target_verified_source_count: number
+        }
+        Returns: Json
+      }
       start_google_admin_material_ai_operation_v1: {
         Args: {
           target_analysis_id: string
@@ -5975,6 +6471,65 @@ export type Database = {
           target_text_sha256: string
           target_token_hash: string
           target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      start_google_admin_realtime_operation_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_delay: string
+          target_estimated_microusd: number
+          target_google_issuer: string
+          target_grant_id: string
+          target_language: string
+          target_lecture_session_id: string
+          target_model_id: string
+          target_nonce_hash: string
+          target_price_microusd_per_minute: number
+          target_provider_intent_digest: string
+          target_provider_subject_hmac: string
+          target_requested_audio_seconds: number
+          target_sdp_offer_sha256: string
+          target_session_config_sha256: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
+      start_google_admin_summary_window_operation_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_estimated_input_tokens: number
+          target_estimated_microusd: number
+          target_estimated_output_tokens: number
+          target_expected_attempt: number
+          target_google_issuer: string
+          target_grant_id: string
+          target_input_price_microusd_per_million: number
+          target_language_reason: string
+          target_lecture_session_id: string
+          target_max_output_tokens: number
+          target_model_id: string
+          target_nonce_hash: string
+          target_output_price_microusd_per_million: number
+          target_preflight_context_digest: string
+          target_preflight_request_id: string
+          target_prompt_version: string
+          target_provider_intent_digest: string
+          target_provider_payload_sha256: string
+          target_provider_subject_hmac: string
+          target_resolved_language: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_start_request_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+          target_window_id: string
         }
         Returns: Json
       }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import {
   type AdminLecture,
   supabaseAdminRepository,
@@ -9,7 +10,7 @@ import { isPhase728DisplayRealtimeEnabled } from '../../lib/featureFlags'
 type Options = {
   activeAdminLecture: AdminLecture | undefined
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
 }
 
 async function copyDisplayUrl(value: string) {

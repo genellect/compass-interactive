@@ -1,12 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import {
+  isGoogleAdminOperationCredential,
+  type AdminOperationCredentialInput,
+} from '../../lib/adminAuth/adminOperationCredential'
 
 import { AppIcon } from '../AppIcon'
-import {
-  LectureSummaryControl,
-  MaterialAnalysisControl,
-  RealtimeCaptionControl,
-  AiMasterAuthorizationControl,
-} from '../AdminAiControl'
+import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
+import { MaterialAnalysisControl } from '../AdminAiControl/MaterialAnalysisControl'
+import { RealtimeCaptionControl } from '../AdminAiControl/RealtimeCaptionControl'
 import type {
   AiMasterAuthorization,
   AdminLecture,
@@ -22,10 +23,16 @@ const AcademicAnswerControl = lazy(() =>
   })),
 )
 
+const AiMasterAuthorizationControl = lazy(() =>
+  import('../AdminAiControl/AiMasterAuthorizationControl').then((module) => ({
+    default: module.AiMasterAuthorizationControl,
+  })),
+)
+
 type Props = {
   activeLecture: AdminLecture | undefined
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   academicEnabled: boolean
   documents: AdminPdfDocument[]
   displayState: DisplayState | null
@@ -91,18 +98,24 @@ export function AdminAiControlPanel({
           {anyEnabled ? '利用可能' : '停止中'}
         </span>
       </div>
-      {isPhase728AiMasterAuthorizationEnabled &&
+      {(isPhase728AiMasterAuthorizationEnabled ||
+        isGoogleAdminOperationCredential(adminToken)) &&
       adminToken &&
       activeLectureSessionId ? (
-        <AiMasterAuthorizationControl
-          adminToken={adminToken}
-          lectureSessionId={activeLectureSessionId}
-          lectureStatus={status}
-          onAuthorizationChange={setMasterAuthorization}
-        />
+        <Suspense
+          fallback={<p className="note">AI利用許可を確認しています…</p>}
+        >
+          <AiMasterAuthorizationControl
+            adminToken={adminToken}
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={status}
+            onAuthorizationChange={setMasterAuthorization}
+          />
+        </Suspense>
       ) : null}
-      {realtimeEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <RealtimeCaptionControl
+          admissionEnabled={realtimeEnabled}
           adminToken={adminToken}
           hardStopAt={
             activeLecture?.hardStopAt ?? fallbackHardStopAt ?? undefined
@@ -112,8 +125,9 @@ export function AdminAiControlPanel({
           masterAuthorization={masterAuthorization}
         />
       ) : null}
-      {summariesEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <LectureSummaryControl
+          admissionEnabled={summariesEnabled}
           adminToken={adminToken}
           displayState={displayState}
           documents={documents}
@@ -127,9 +141,10 @@ export function AdminAiControlPanel({
           masterAuthorization={masterAuthorization}
         />
       ) : null}
-      {academicEnabled && adminToken && activeLectureSessionId ? (
+      {adminToken && activeLectureSessionId ? (
         <Suspense fallback={<p className="note">参考回答を準備しています…</p>}>
           <AcademicAnswerControl
+            admissionEnabled={academicEnabled}
             adminToken={adminToken}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}

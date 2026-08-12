@@ -49,6 +49,43 @@ select is(
   0,
   'C2 fabricates no lecture operation receipt during upgrade'
 );
+select ok(
+  (
+    select run.auto_academic_answers_enabled
+      and run.academic_authority_mode = 'legacy_run_grant'
+      and run.academic_authorization_grant_id =
+        '73032000-0000-4000-8000-000000000002'::uuid
+    from public.lecture_summary_runs as run
+    where run.id = '73032000-0000-4000-8000-000000000003'::uuid
+  )
+  and (
+    select not run.auto_academic_answers_enabled
+      and run.academic_authority_mode = 'none'
+      and run.academic_authorization_grant_id is null
+    from public.lecture_summary_runs as run
+    where run.id = '73032000-0000-4000-8000-000000000004'::uuid
+  ),
+  'C2 normalizes populated legacy and non-automatic summary authority without changing grants'
+);
+select ok(
+  not exists (
+    select 1
+    from private.admin_google_summary_auto_receipts
+    where run_id in (
+      '73032000-0000-4000-8000-000000000003'::uuid,
+      '73032000-0000-4000-8000-000000000004'::uuid
+    )
+  )
+  and not exists (
+    select 1
+    from private.admin_google_academic_answer_preflight_receipts
+  )
+  and not exists (
+    select 1
+    from private.admin_google_academic_answer_start_bindings
+  ),
+  'C2 fabricates no Google summary or Academic evidence during populated upgrade'
+);
 
 set role service_role;
 select is(

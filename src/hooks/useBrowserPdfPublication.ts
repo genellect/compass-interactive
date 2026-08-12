@@ -5,12 +5,13 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import type { AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 import { rememberBrowserPdfExtraction } from '../pdf/adminPdfExtraction'
 import { preflightBrowserPdf } from '../pdf/browserPdfPreflight'
 
 type UseBrowserPdfPublicationInput = {
   activeLectureSessionId: string | null
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   browserPublishingEnabled: boolean
   isAuthenticated: boolean
   pdfDisplayName: string
@@ -19,7 +20,7 @@ type UseBrowserPdfPublicationInput = {
   requiredDocumentId?: string | null
   refreshAdminPdfDocuments: (
     lectureSessionId?: string,
-    token?: string,
+    token?: AdminOperationCredentialInput,
   ) => Promise<void>
   setPdfDisplayName: Dispatch<SetStateAction<string>>
   setPdfDocumentInput: Dispatch<SetStateAction<string>>

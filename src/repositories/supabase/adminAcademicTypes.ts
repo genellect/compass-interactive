@@ -1,7 +1,7 @@
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
+
 export type AcademicSourcePolicy =
-  | 'auto'
-  | 'biomedical_pubmed'
-  | 'multidisciplinary_doi'
+  'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
 
 export type AdminAcademicCandidate = {
   autoRequestId: string | null
@@ -73,45 +73,55 @@ export type AdminAcademicResults = {
 }
 
 export type ManageAcademicAnswersRequest =
-  | { action: 'status'; adminToken: string; lectureSessionId: string }
+  | {
+      action: 'status'
+      adminToken: AdminOperationCredentialInput
+      lectureSessionId: string
+    }
   | {
       action: 'cancel'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       lectureSessionId: string
       requestId: string
     }
   | {
       action: 'approve' | 'hide' | 'reject'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       answerId: string
       lectureSessionId: string
     }
   | {
       action: 'generate'
-      adminToken: string
-      billingGrant: string
-      idempotencyKey: string
+      adminToken: AdminOperationCredentialInput
+      billingGrant?: string
+      grantRequestId?: string
+      idempotencyKey?: string
       lectureSessionId: string
+      preflightRequestId?: string
       question: string
       searchQuery: string
       sourceKind: 'summary_candidate' | 'teacher_selected'
       sourceSummaryId: string | null
       sourcePolicy: AcademicSourcePolicy
+      startRequestId?: string
     }
   | {
       action: 'generateAuto'
-      adminToken: string
-      idempotencyKey: string
+      adminToken: AdminOperationCredentialInput
+      grantRequestId?: string
+      idempotencyKey?: string
       lectureSessionId: string
+      preflightRequestId?: string
       question: string
       runToken: string
       searchQuery: string
       sourcePolicy: AcademicSourcePolicy
       sourceSummaryId: string
+      startRequestId?: string
     }
   | {
       action: 'revise'
-      adminToken: string
+      adminToken: AdminOperationCredentialInput
       answerId: string
       lectureSessionId: string
       reason: string | null

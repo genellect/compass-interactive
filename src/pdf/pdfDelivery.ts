@@ -1,4 +1,5 @@
-import { supabase } from '../lib/supabaseClient'
+import type { AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
+import { invokeEdgeFunction } from '../repositories/supabase/transport'
 
 export type PdfAccessSession = {
   accessToken: string
@@ -77,7 +78,7 @@ async function getFunctionErrorMessage(error: unknown, fallback: string) {
 }
 
 export async function issuePdfAccessSession(input: {
-  adminToken?: string
+  adminToken?: AdminOperationCredentialInput
   displayToken?: string
   lectureSessionId: string
 }): Promise<PdfAccessSession> {
@@ -89,7 +90,7 @@ export async function issuePdfAccessSession(input: {
     : input.displayToken
       ? 'display'
       : 'member'
-  const { data, error } = await supabase.functions.invoke<AccessTokenResponse>(
+  const { data, error } = await invokeEdgeFunction<AccessTokenResponse>(
     'issue-pdf-access-token',
     {
       body: {
@@ -138,7 +139,10 @@ async function getMemberSession(lectureSessionId: string, force = false) {
   return session
 }
 
-async function getAdminSession(adminToken: string, lectureSessionId: string) {
+async function getAdminSession(
+  adminToken: AdminOperationCredentialInput,
+  lectureSessionId: string,
+) {
   return issuePdfAccessSession({
     adminToken,
     lectureSessionId,
@@ -175,7 +179,7 @@ async function requestWorkerJson<T>(url: string, accessToken: string) {
 }
 
 export async function resolveRuntimePdf(input: {
-  adminToken?: string
+  adminToken?: AdminOperationCredentialInput
   displayToken?: string
   documentId: string
   documentVersion: string

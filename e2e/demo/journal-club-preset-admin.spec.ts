@@ -346,9 +346,18 @@ async function installNetworkMocks(
       })
       return
     }
+    const safeAiStatusRead =
+      (functionName === 'manage-material-analysis' &&
+        body.action === 'list') ||
+      (body.action === 'status' &&
+        [
+          'generate-academic-answer',
+          'manage-ai-control',
+          'manage-lecture-summaries',
+        ].includes(functionName))
     if (
       /ai|academic|caption|material|realtime|summar/i.test(functionName) &&
-      !(functionName === 'manage-material-analysis' && body.action === 'list')
+      !safeAiStatusRead
     ) {
       state.aiFunctionCalls.push(functionName)
     }

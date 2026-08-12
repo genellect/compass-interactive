@@ -502,7 +502,7 @@ for (const [name, document] of [
   assert.match(
     document,
     /72 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(72 groups\)/,
-    `${name} must record the 69-group non-live suite`,
+    `${name} must record the 72-group non-live suite`,
   )
 }
 assert.match(

@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   createBillingGrantNonce,
   formatBillingGrantToken,
@@ -12,6 +12,10 @@ import {
   getAdminTokenSecret,
 } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
+import {
+  type GoogleAdminOperationContext,
+  verifyGoogleAdminOperationRequest,
+} from '../_shared/googleAdminOperations.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
@@ -21,10 +25,12 @@ type AuthorizeAiStartRequest = {
   action?: 'issueGrant' | 'authorizeMaster' | 'masterStatus' | 'revokeMaster'
   actions?: unknown
   adminToken?: string
+  appSessionToken?: string
   billingPin?: string
   lectureSessionId?: string
   masterScope?: unknown
   reason?: unknown
+  requestId?: string
 }
 
 type GrantResult = {
@@ -43,6 +49,15 @@ type MasterResult = {
   reason?: string
   retry_at?: string | null
   server_time?: string
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  )
 }
 
 function isMasterScope(value: unknown): value is MasterAuthorizationScope {
@@ -134,43 +149,179 @@ Deno.serve(async (request) => {
   }
 
   const action = body.action ?? 'issueGrant'
-  if (!body.adminToken || !body.lectureSessionId) {
-    return jsonResponse(
-      { ok: false, message: 'Admin session and lecture are required.' },
-      400,
-    )
-  }
-
-  let tokenSecret: string
-  try {
-    tokenSecret = getAdminTokenSecret()
-  } catch (error) {
+  const hasGoogleCredential =
+    typeof body.appSessionToken === 'string' &&
+    body.appSessionToken.trim().length > 0
+  const hasLegacyCredential =
+    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (!body.lectureSessionId || hasGoogleCredential === hasLegacyCredential) {
     return jsonResponse(
       {
         ok: false,
-        message: error instanceof Error ? error.message : 'Admin auth failed.',
+        message: body.lectureSessionId
+          ? 'Exactly one Admin credential is required.'
+          : 'Lecture is required.',
       },
-      500,
+      body.lectureSessionId ? 401 : 400,
     )
   }
-  const claims = await getAdminTokenClaims(
-    body.adminToken,
-    tokenSecret,
-    request,
-  )
-  if (!claims) {
-    return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
-  }
 
-  const actorId = getAdminActorId(claims)
-  const adminSessionId = claims.sid ?? null
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+  let supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
+  let actorId: string | null = null
+  let adminSessionId: string | null = null
+  let googleContext: GoogleAdminOperationContext | null = null
+  if (hasGoogleCredential) {
+    const verification = await verifyGoogleAdminOperationRequest(
+      request,
+      body.appSessionToken!,
+    )
+    if (!verification.ok) {
+      return jsonResponse(
+        {
+          code: verification.code,
+          message: verification.message,
+          ok: false,
+        },
+        verification.status,
+      )
+    }
+    googleContext = verification
+    supabase = verification.serviceClient
+  } else {
+    let tokenSecret: string
+    try {
+      tokenSecret = getAdminTokenSecret()
+    } catch (error) {
+      return jsonResponse(
+        {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : 'Admin auth failed.',
+        },
+        500,
+      )
+    }
+    const claims = await getAdminTokenClaims(
+      body.adminToken!,
+      tokenSecret,
+      request,
+    )
+    if (!claims) {
+      return jsonResponse({ ok: false, message: 'Invalid Admin session.' }, 401)
+    }
+    actorId = getAdminActorId(claims)
+    adminSessionId = claims.sid ?? null
+  }
   const masterEnabled =
     Deno.env.get('PHASE7_28_AI_MASTER_AUTH_ENABLED') === 'true'
   const trackedAdminSessionsEnabled =
     Deno.env.get('PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') === 'true'
+
+  if (googleContext) {
+    if (action === 'authorizeMaster') {
+      return jsonResponse(
+        {
+          code: 'google_ai_master_proof_required',
+          message:
+            'Authorize lecture AI from the personal AI authorization panel.',
+          ok: false,
+        },
+        409,
+      )
+    }
+    if (action === 'issueGrant') {
+      return jsonResponse(
+        {
+          code: 'google_ai_provider_start_required',
+          message:
+            'Start the selected AI feature directly. Its provider authorization is issued atomically.',
+          ok: false,
+        },
+        409,
+      )
+    }
+    if (!['masterStatus', 'revokeMaster'].includes(action)) {
+      return jsonResponse({ ok: false, message: 'Unknown action.' }, 400)
+    }
+    if (
+      action === 'revokeMaster' &&
+      (!isUuid(body.requestId) ||
+        body.requestId.toLowerCase() === body.lectureSessionId.toLowerCase())
+    ) {
+      return jsonResponse(
+        { ok: false, message: 'A valid revoke request ID is required.' },
+        400,
+      )
+    }
+    if (
+      body.billingPin !== undefined ||
+      body.actions !== undefined ||
+      body.masterScope !== undefined
+    ) {
+      return jsonResponse(
+        { ok: false, message: 'Google AI master request is invalid.' },
+        400,
+      )
+    }
+    const trimmedReason =
+      action === 'revokeMaster' && typeof body.reason === 'string'
+        ? body.reason.trim()
+        : ''
+    if (trimmedReason.length > 120) {
+      return jsonResponse(
+        { ok: false, message: 'The revoke reason is too long.' },
+        400,
+      )
+    }
+    const reason =
+      action === 'revokeMaster'
+        ? trimmedReason || 'admin_manual_revoke'
+        : null
+    const { data, error } = await supabase.rpc(
+      'manage_google_admin_ai_master_v1',
+      {
+        target_action: action,
+        target_auth_user_id: googleContext.authUserId,
+        target_google_issuer: googleContext.googleIssuer,
+        target_lecture_session_id: body.lectureSessionId,
+        target_provider_subject_hmac: googleContext.googleSubjectHmac,
+        target_reason: reason,
+        target_request_id:
+          action === 'revokeMaster' ? body.requestId : null,
+        target_subject_pepper_version: googleContext.subjectPepperVersion,
+        target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+        target_token_hash: googleContext.appSessionTokenHash,
+        target_transport_enabled: googleContext.transportEnabled,
+      },
+    )
+    if (error || !data) {
+      return jsonResponse(
+        {
+          message:
+            action === 'masterStatus'
+              ? 'AI authorization status is unavailable.'
+              : 'AI authorization could not be stopped.',
+          ok: false,
+        },
+        409,
+      )
+    }
+    const result = data as MasterResult
+    if (result.accepted !== true) {
+      return jsonResponse(
+        { message: 'AI authorization is unavailable.', ok: false },
+        409,
+      )
+    }
+    return jsonResponse({
+      authorization: result.authorization ?? null,
+      lectureOpen: result.lecture_open === true,
+      ok: true,
+      serverTime: result.server_time ?? null,
+    })
+  }
 
   if (
     ['masterStatus', 'authorizeMaster', 'revokeMaster'].includes(action) &&
@@ -193,7 +344,7 @@ Deno.serve(async (request) => {
       'admin_get_ai_master_authorization_status',
       {
         target_admin_session_id: adminSessionId,
-        target_actor_id: actorId,
+        target_actor_id: actorId!,
         target_lecture_session_id: body.lectureSessionId,
       },
     )
@@ -249,7 +400,7 @@ Deno.serve(async (request) => {
     const { data, error } = await supabase.rpc('admin_authorize_ai_master', {
       pin_succeeded: pinSucceeded,
       target_admin_session_id: adminSessionId,
-      target_actor_id: actorId,
+      target_actor_id: actorId!,
       target_lecture_session_id: body.lectureSessionId,
       target_scope: body.masterScope,
     })
@@ -300,7 +451,7 @@ Deno.serve(async (request) => {
       'admin_revoke_ai_master_authorization',
       {
         target_admin_session_id: adminSessionId,
-        target_actor_id: actorId,
+        target_actor_id: actorId!,
         target_lecture_session_id: body.lectureSessionId,
         target_reason: reason,
       },
@@ -370,7 +521,7 @@ Deno.serve(async (request) => {
     const { data, error } = await supabase.rpc('admin_issue_ai_billing_grant', {
       pin_succeeded: pinSucceeded,
       target_actions: actions,
-      target_actor_id: actorId,
+      target_actor_id: actorId!,
       target_lecture_session_id: body.lectureSessionId,
       target_nonce_hash: nonceHash,
     })
@@ -414,7 +565,7 @@ Deno.serve(async (request) => {
       {
         target_admin_session_id: adminSessionId,
         target_actions: actions,
-        target_actor_id: actorId,
+        target_actor_id: actorId!,
         target_lecture_session_id: body.lectureSessionId,
         target_nonce_hash: nonceHash,
       },

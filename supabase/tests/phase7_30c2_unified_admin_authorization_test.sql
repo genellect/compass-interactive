@@ -203,19 +203,23 @@ INSERT INTO c2_internal_functions(name) VALUES
   ('google_admin_operation_intent_digest_v1'),
   ('google_admin_lecture_intent_digest_v1'),
   ('get_google_admin_material_analysis_v1'),
+  ('get_google_admin_academic_results_v1'),
   ('get_google_admin_operator_live_snapshot_v1'),
   ('get_google_admin_sessions_v1'),
+  ('get_google_admin_summary_results_v1'),
   ('issue_google_admin_pdf_access_claims_v1'),
   ('list_google_admin_polls_v1'),
   ('list_google_admin_lectures_v1'),
   ('list_google_admin_pdf_documents_v1'),
   ('manage_google_admin_comments_v1'),
+  ('manage_google_admin_academic_results_v1'),
   ('manage_google_admin_display_state_v1'),
   ('manage_google_admin_lectures_v1'),
   ('manage_google_admin_material_analysis_v1'),
   ('manage_google_admin_pdf_documents_v1'),
   ('manage_google_admin_polls_v1'),
   ('manage_google_admin_sessions_v1'),
+  ('manage_google_admin_summary_publication_v1'),
   ('require_google_admin_operation_context_v1');
 
 SELECT is(
@@ -227,7 +231,7 @@ SELECT is(
       ON expected.name = procedure.proname
     WHERE namespace.nspname = 'private'
   ),
-  19,
+  23,
   'the complete current C2 private function inventory is present'
 );
 SELECT ok(
@@ -264,11 +268,15 @@ INSERT INTO c2_public_facades(signature) VALUES
   ('public.manage_google_admin_display_state_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,integer,text,text)'),
   ('public.manage_google_admin_lectures_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,text,text,text,timestamptz,timestamptz,text,boolean)'),
   ('public.get_google_admin_material_analysis_v1(text,uuid,uuid,text,text,integer,boolean,uuid)'),
+  ('public.get_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,uuid)'),
   ('public.get_google_admin_sessions_v1(text,uuid,uuid,text,text,integer,boolean)'),
+  ('public.get_google_admin_summary_results_v1(text,uuid,uuid,text,text,integer,boolean,uuid)'),
   ('public.manage_google_admin_material_analysis_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,uuid,text,text,text[],jsonb,text)'),
   ('public.manage_google_admin_pdf_documents_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,text,text,bigint,text,integer,bigint,integer,text,text,boolean,text,bigint)'),
   ('public.manage_google_admin_polls_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,text,text,text[],boolean)'),
   ('public.manage_google_admin_sessions_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid)'),
+  ('public.manage_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,uuid,jsonb,text)'),
+  ('public.manage_google_admin_summary_publication_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,jsonb,text,integer,timestamp with time zone)'),
   ('public.issue_google_admin_pdf_access_claims_v1(text,uuid,uuid,text,text,integer,boolean,uuid,uuid)'),
   ('public.get_google_admin_operator_live_snapshot_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,timestamp with time zone,uuid,integer,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,boolean)'),
   ('public.get_google_admin_operations_activation_preflight_v1()');
@@ -282,7 +290,7 @@ SELECT is(
       AND procedure.prosecdef
       AND procedure.proconfig @> ARRAY['search_path=""']::text[]
   ),
-  12,
+  16,
   'all C2 public facades are postgres-owned with an empty search_path'
 );
 SELECT ok(
@@ -296,6 +304,28 @@ SELECT ok(
       OR has_function_privilege('authenticated', facade.signature, 'EXECUTE')
   ),
   'only service_role can execute the C2 public facades'
+);
+
+SELECT alike(
+  pg_get_functiondef(
+    'private.get_google_ai_master_status_v1(text,uuid,uuid,uuid)'::regprocedure
+  ),
+  '%admin_ai_unlock_runtime_gate%for share%admin_ai_policies%for share%lecture_sessions%for update%admission_blocked_reason%allowed_scopes%pre_c1_master_remediated%',
+  'workspace master status binds gates, supported policy bundles and pre-C1 remediation'
+);
+SELECT alike(
+  pg_get_functiondef(
+    'private.manage_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,uuid,jsonb,text)'::regprocedure
+  ),
+  '%target_action = ''cancel''%from public.lecture_ai_control%from public.academic_answer_requests%from public.ai_usage_ledger%finish_lecture_ai_operation%',
+  'Google academic cancellation uses current lecture authority and exact accounting settlement'
+);
+SELECT unalike(
+  pg_get_functiondef(
+    'private.manage_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,uuid,uuid,uuid,jsonb,text)'::regprocedure
+  ),
+  '%admin_cancel_academic_answer_request%',
+  'Google academic cancellation does not inherit the historical app-session actor fence'
 );
 
 SET ROLE service_role;

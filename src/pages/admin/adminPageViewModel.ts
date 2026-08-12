@@ -14,6 +14,10 @@ export function makeJoinedLecture(lecture: AdminLecture) {
   }
 }
 
+export function fromDatetimeLocalValue(value: string) {
+  return value ? new Date(value).toISOString() : null
+}
+
 export function buildAdminPageView(input: {
   activeLectureSessionId: string | null
   adminPolls: AdminPoll[]

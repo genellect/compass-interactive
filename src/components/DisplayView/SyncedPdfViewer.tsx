@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import { useFullscreen } from '../../hooks/useFullscreen'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase3PrivatePdfEnabled } from '../../lib/featureFlags'
 import { getLecturePdfAsset } from '../../pdf/lectureAssets'
 import {
@@ -20,7 +21,7 @@ const MAX_RENDER_SCALE = 5
 const MIN_QUALITY_SCALE = 2
 
 type SyncedPdfViewerProps = {
-  adminToken?: string
+  adminToken?: AdminOperationCredentialInput
   archiveSession?: LectureArchiveSession | null
   displayToken?: string
   documentId: string | null

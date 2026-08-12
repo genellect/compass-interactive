@@ -1,10 +1,17 @@
 import { FunctionsHttpError } from '@supabase/supabase-js'
 import { adminSupabase } from './adminSupabaseClient'
+import { notifyGoogleAdminSessionInvalid } from './adminOperationSessionEvents'
 
 export type TotpFactorAction = 'totp_factor_add' | 'totp_factor_remove'
 export type RememberedBrowserScope =
   'all_except_captions' | 'all_including_captions'
 export type GoogleAiMasterScope = RememberedBrowserScope
+export type GoogleAiMasterPolicy = {
+  allowedActions: string[]
+  id: string
+  validUntil: string
+  version: number
+}
 
 export type AdminAiUnlockProfile = {
   activeBrowserCount: number
@@ -81,6 +88,13 @@ async function invoke(appSessionToken: string, body: Record<string, unknown>) {
           ? data.message
           : 'Admin AI control failed.',
       recoveryUnused: data?.recoveryUnused === true,
+    }
+    if (
+      ['aal2_required', 'app_session_invalid', 'identity_invalid'].includes(
+        detail.code,
+      )
+    ) {
+      notifyGoogleAdminSessionInvalid(appSessionToken)
     }
     throw new AdminAiUnlockError(
       detail.code,
@@ -185,10 +199,52 @@ export async function getGoogleAiMasterStatus(
   appSessionToken: string,
   lectureSessionId: string,
 ) {
-  return invoke(appSessionToken, {
+  const data = await invoke(appSessionToken, {
     action: 'masterStatus',
     lectureSessionId,
   })
+  const policy =
+    data.policy && typeof data.policy === 'object'
+      ? (data.policy as Record<string, unknown>)
+      : null
+  return {
+    admissionBlockedReason:
+      typeof data.admissionBlockedReason === 'string'
+        ? data.admissionBlockedReason
+        : null,
+    admissionEnabled: data.admissionEnabled === true,
+    allowedScopes: Array.isArray(data.allowedScopes)
+      ? data.allowedScopes.filter(
+          (scope): scope is GoogleAiMasterScope =>
+            scope === 'all_except_captions' ||
+            scope === 'all_including_captions',
+        )
+      : [],
+    authorization:
+      data.authorization && typeof data.authorization === 'object'
+        ? (data.authorization as Record<string, unknown>)
+        : null,
+    canUseAi: data.canUseAi === true,
+    lectureOpen: data.lectureOpen === true,
+    policy:
+      policy &&
+      typeof policy.id === 'string' &&
+      typeof policy.version === 'number' &&
+      Number.isSafeInteger(policy.version) &&
+      typeof policy.valid_until === 'string' &&
+      Array.isArray(policy.allowed_actions)
+        ? ({
+            allowedActions: policy.allowed_actions.filter(
+              (action): action is string => typeof action === 'string',
+            ),
+            id: policy.id,
+            validUntil: policy.valid_until,
+            version: policy.version,
+          } satisfies GoogleAiMasterPolicy)
+        : null,
+    reason: typeof data.reason === 'string' ? data.reason : null,
+    serverTime: typeof data.serverTime === 'string' ? data.serverTime : null,
+  }
 }
 
 export async function authorizeGoogleAiMasterWithPin(
@@ -211,7 +267,7 @@ export async function authorizeGoogleAiMasterWithPin(
 export async function downgradeGoogleAiMaster(
   appSessionToken: string,
   lectureSessionId: string,
-  requestId = crypto.randomUUID(),
+  requestId: string = crypto.randomUUID(),
 ) {
   return invoke(appSessionToken, {
     action: 'downgradeMaster',
@@ -224,7 +280,7 @@ export async function revokeGoogleAiMaster(
   appSessionToken: string,
   lectureSessionId: string,
   reason: string,
-  requestId = crypto.randomUUID(),
+  requestId: string = crypto.randomUUID(),
 ) {
   return invoke(appSessionToken, {
     action: 'revokeMaster',

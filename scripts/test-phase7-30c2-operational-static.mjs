@@ -17,6 +17,11 @@ const migration = read(
 const c2Foundation = read(
   'supabase/migrations/20260811012111_phase7_30c2_unified_admin_authorization.sql',
 )
+const finalOperationsMigration = read(
+  'supabase/migrations/20260812011500_phase7_30c2_google_realtime_control.sql',
+)
+const authorizeAiStart = read('supabase/functions/authorize-ai-start/index.ts')
+const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
 const issueDisplaySession = read(
   'supabase/functions/issue-display-session/index.ts',
 )
@@ -47,6 +52,159 @@ const presenterToken = read('supabase/functions/_shared/presenterToken.ts')
 const pdfWorker = read('cloudflare/asset-worker/src/pdfPublication.ts')
 const databaseTypes = read('src/types/database.ts')
 const pgTap = read('supabase/tests/phase7_30c2_operational_surfaces_test.sql')
+const providerPgTap = read(
+  'supabase/tests/phase7_30c2_google_ai_provider_test.sql',
+)
+
+assert.match(
+  finalOperationsMigration,
+  /set lecture_lock_mode = 'update'[\s\S]*authorize-ai-start\.masterStatus/,
+  'AI master status takes the lecture update lock before expiry reconciliation',
+)
+const aiMasterFacade = functionBlock(
+  finalOperationsMigration,
+  'private.manage_google_admin_ai_master_v1',
+)
+assert.match(
+  aiMasterFacade,
+  /target_action not in \('masterStatus', 'revokeMaster'\)[\s\S]*serialize_admin_ai_request_v1[\s\S]*require_google_admin_operation_context_v1[\s\S]*assert_google_admin_operation_gate_v1[\s\S]*assert_google_admin_operation_lecture_state_v1[\s\S]*get_google_ai_master_status_v1[\s\S]*revoke_google_ai_master_v1/,
+  'the typed Google AI master facade serializes revoke and rechecks current identity, ownership and lifecycle in one transaction',
+)
+assert.match(
+  finalOperationsMigration,
+  /revoke all on function private\.manage_google_admin_ai_master_v1\([\s\S]*from public, anon, authenticated, service_role;[\s\S]*revoke all on function public\.manage_google_admin_ai_master_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.manage_google_admin_ai_master_v1\([\s\S]*to service_role/,
+  'only the reviewed service Edge may enter the public AI master facade',
+)
+assert.match(
+  authorizeAiStart,
+  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*google_ai_master_proof_required[\s\S]*google_ai_provider_start_required[\s\S]*manage_google_admin_ai_master_v1/,
+  'authorize-ai-start keeps credentials exclusive and exposes only status/revoke to the Google browser transport',
+)
+assert.match(
+  authorizeAiStart,
+  /trimmedReason\.length > 120[\s\S]*target_reason: reason[\s\S]*target_request_id:/,
+  'Google revoke rejects oversized reasons instead of collapsing different intents by truncation',
+)
+assert.match(
+  databaseTypes,
+  /manage_google_admin_ai_master_v1: \{[\s\S]*target_action: string[\s\S]*target_request_id: string[\s\S]*Returns: Json/,
+  'generated types include the typed Google AI master facade',
+)
+assert.match(
+  providerPgTap,
+  /master status remains available while operational admission is disabled[\s\S]*master revoke remains available while operational admission is disabled[\s\S]*lost master-revoke response converges without restoring admission/,
+  'pgTAP proves gate-independent master status, revoke and exact replay',
+)
+assert.match(
+  providerPgTap,
+  /AI control status remains available while operational admission is disabled[\s\S]*safe feature disable remains available while operational admission is disabled[\s\S]*lost feature-disable response converges without restoring admission[\s\S]*default-OFF blocks new AI control writes without blocking status or stop[\s\S]*full stop remains available while operational admission is disabled[\s\S]*lost full-stop response converges without reactivating provider authority/,
+  'pgTAP proves gate-independent AI status, downscope and stop with exact replay',
+)
+assert.match(
+  providerPgTap,
+  /AI policy preview returns one request-bound server intent digest[\s\S]*AI policy mutation fails closed until its five-minute control grant exists[\s\S]*AI policy mutation consumes the exact five-minute control grant[\s\S]*lost AI policy mutation responses converge without another TOTP prompt[\s\S]*the same request cannot replace an accepted AI policy payload/,
+  'pgTAP proves rare AI policy mutation grant binding, replay and payload immutability',
+)
+
+assert.match(
+  finalOperationsMigration,
+  /operation_key = 'manage-ai-control\.setSummaryLanguage'[\s\S]*where operation_key = 'manage-ai-control\.startOperation'/,
+  'unsafe generic browser start becomes the normal summary-language control',
+)
+assert.match(
+  finalOperationsMigration,
+  /operation_key = 'manage-ai-control\.disableFeatures'[\s\S]*where operation_key = 'manage-ai-control\.finishOperation'/,
+  'unsafe generic browser start/finish policy slots become semantic classroom controls',
+)
+assert.match(
+  finalOperationsMigration,
+  /feature disable accepts false feature flags only[\s\S]*AI policy limits must be non-negative integers/,
+  'configuration normalization separates free downscope from rare policy expansion',
+)
+const aiControlIntentFacade = functionBlock(
+  finalOperationsMigration,
+  'private.get_google_admin_ai_control_configuration_intent_v1',
+)
+assert.match(
+  aiControlIntentFacade,
+  /normalize_google_admin_ai_control_configuration_v1[\s\S]*require_google_admin_operation_context_v1[\s\S]*assert_google_admin_operation_gate_v1[\s\S]*google_admin_operation_intent_digest_v1/,
+  'rare policy changes obtain their canonical server-side intent before TOTP',
+)
+const aiControlFacade = functionBlock(
+  finalOperationsMigration,
+  'private.manage_google_admin_ai_control_v1',
+)
+assert.match(
+  aiControlFacade,
+  /serialize_admin_ai_request_v1[\s\S]*require_google_admin_operation_context_v1[\s\S]*from private\.admin_google_operation_receipts[\s\S]*assert_google_admin_operation_gate_v1[\s\S]*assert_google_admin_operation_lecture_state_v1/,
+  'AI control mutations serialize and replay before the live gate and lifecycle checks',
+)
+assert.match(
+  aiControlFacade,
+  /consume_admin_control_step_up_grant_v1\([\s\S]*'environment_ai_policy_change'[\s\S]*target_request_id[\s\S]*intent_digest_value/,
+  'only numeric owner policy changes consume the request-bound five-minute control grant',
+)
+assert.match(
+  aiControlFacade,
+  /from public\.lecture_ai_control[\s\S]*for update;[\s\S]*from public\.lecture_summary_runs[\s\S]*for update;[\s\S]*stop_lecture_summary_run[\s\S]*stop_lecture_ai_control/,
+  'full stop derives the summary actor and terminalizes summary and global control atomically',
+)
+assert.match(
+  aiControlFacade,
+  /target_action = 'heartbeat'[\s\S]*heartbeat_realtime_caption_operation[\s\S]*jsonb_build_object\([\s\S]*'reason',[\s\S]*'should_stop'/,
+  'heartbeat stores the canonical snake-case stop signal for exact replay',
+)
+assert.match(
+  finalOperationsMigration,
+  /revoke all on function private\.manage_google_admin_ai_control_v1\([\s\S]*from public, anon, authenticated, service_role;[\s\S]*revoke all on function public\.manage_google_admin_ai_control_v1\([\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.manage_google_admin_ai_control_v1\([\s\S]*to service_role/,
+  'only the reviewed service Edge may enter the typed AI control facade',
+)
+for (const signature of [
+  'private.get_google_admin_ai_control_configuration_intent_v1(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,boolean)',
+  'private.google_admin_ai_control_payload_digest_v1(text,uuid,jsonb,text)',
+  'private.manage_google_admin_ai_control_v1(text,uuid,uuid,text,text,integer,text,uuid,uuid,uuid,jsonb,text,text,boolean)',
+  'private.normalize_google_admin_ai_control_configuration_v1(text,jsonb)',
+]) {
+  assert.ok(
+    pgTap.includes(signature),
+    `pgTAP inventories the private AI control entry ${signature}`,
+  )
+}
+assert.match(
+  pgTap,
+  /public\.get_google_admin_ai_control_configuration_intent_v1\(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,boolean\)[\s\S]*public\.manage_google_admin_ai_control_v1\(text,uuid,uuid,text,text,integer,text,uuid,uuid,uuid,jsonb,text,text,boolean\)[\s\S]*11,[\s\S]*C2 operational public facades are postgres-owned/,
+  'pgTAP fixes the public AI control signatures, owners and facade count',
+)
+const googleAiControlHandler = manageAiControl.slice(
+  manageAiControl.indexOf('if (googleContext)'),
+  manageAiControl.indexOf(
+    "\n    if (body.action === 'heartbeat')",
+    manageAiControl.indexOf('if (googleContext)'),
+  ),
+)
+assert.match(
+  manageAiControl,
+  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest/,
+  'AI control credentials are exclusive and Google verification never falls back to the legacy PIN transport',
+)
+assert.match(
+  googleAiControlHandler,
+  /provider_specific_authority_required[\s\S]*get_google_admin_ai_control_configuration_intent_v1[\s\S]*manage_google_admin_ai_control_v1/,
+  'Google browser control rejects generic provider accounting and uses typed DB authority only',
+)
+assert.doesNotMatch(
+  googleAiControlHandler,
+  /\.from\(['"](?:lecture_ai_control|ai_usage_ledger)['"]\)|admin_(?:configure|finish|heartbeat|stop|set_lecture)/,
+  'Google AI control never performs verify-then-read or calls a legacy mutation RPC',
+)
+assert.match(
+  databaseTypes,
+  /get_google_admin_ai_control_configuration_intent_v1: \{[\s\S]*target_configuration: Json[\s\S]*Returns: Json/,
+)
+assert.match(
+  databaseTypes,
+  /manage_google_admin_ai_control_v1: \{[\s\S]*target_control_intent_digest\?: string[\s\S]*target_operation_id\?: string[\s\S]*Returns: Json/,
+)
 
 assert.match(
   c2Foundation,

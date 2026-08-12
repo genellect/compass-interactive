@@ -122,6 +122,36 @@ export async function deriveGoogleAiChildGrantNonce(input: {
   }
 }
 
+/**
+ * Recreates the browser-facing summary-run credential for one request. The
+ * action is part of the domain so a start request can never be replayed as a
+ * resume. Only its SHA-256 hash crosses the database boundary.
+ */
+export async function deriveGoogleSummaryRunNonce(input: {
+  action: 'start' | 'resume'
+  lectureSessionId: string
+  requestId: string
+}) {
+  const lectureSessionId = assertUuid(input.lectureSessionId, 'Lecture ID')
+  const requestId = assertUuid(input.requestId, 'Summary request ID')
+  const keyVersion = getGoogleAiChildGrantKeyVersion()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    textEncoder.encode(getGoogleAiChildGrantSecret()),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    textEncoder.encode(
+      `compass:phase7.30c2:google-summary-run-nonce:v1|version=${keyVersion}|request=${requestId}|lecture=${lectureSessionId}|action=${input.action}`,
+    ),
+  )
+  return bytesToBase64Url(new Uint8Array(signature))
+}
+
 export function formatBillingGrantToken(grantId: string, nonce: string) {
   return `${grantId}.${nonce}`
 }

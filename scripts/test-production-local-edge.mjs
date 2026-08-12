@@ -56,6 +56,7 @@ assert.ok(authData.session?.access_token)
 for (const functionName of [
   'analyze-lecture-material',
   'authorize-ai-start',
+  'generate-academic-answer',
   'generate-lecture-summary',
   'issue-pdf-access-token',
   'issue-lecture-resume-token',

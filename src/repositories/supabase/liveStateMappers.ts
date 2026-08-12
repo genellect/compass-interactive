@@ -1,4 +1,5 @@
 import type { JoinedLectureSession } from '../../lib/joinedLecture'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase65CommentNicknamesEnabled } from '../../lib/featureFlags'
 import { normalizeCommentNickname } from '../../lib/commentNickname'
 import type { LiveComment, Poll, PollResponse } from '../../types'
@@ -298,7 +299,7 @@ export type RawArchiveV2 = {
 }
 
 type OperatorCredential =
-  | { adminToken: string; displayToken?: never }
+  | { adminToken: AdminOperationCredentialInput; displayToken?: never }
   | { adminToken?: never; displayToken: string }
 
 export type OperatorSnapshotRequest = SnapshotRequest & OperatorCredential

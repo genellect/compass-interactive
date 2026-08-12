@@ -38,13 +38,6 @@ Deno.serve(async (request) => {
   if (request.method !== 'POST') {
     return jsonResponse({ message: 'Method not allowed.', ok: false }, 405)
   }
-  if (Deno.env.get('PHASE4_REALTIME_CAPTIONS_ENABLED') !== 'true') {
-    return jsonResponse(
-      { message: 'Realtime captions are disabled.', ok: false },
-      503,
-    )
-  }
-
   const triggerSecret = Deno.env.get('REALTIME_SWEEP_TRIGGER_SECRET') ?? ''
   if (
     new TextEncoder().encode(triggerSecret).byteLength < 32 ||

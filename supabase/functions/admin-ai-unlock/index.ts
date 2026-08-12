@@ -653,11 +653,15 @@ async function handleRequest(request: Request) {
       )
     }
     return jsonResponse({
+      admissionBlockedReason: value.admission_blocked_reason ?? null,
+      admissionEnabled: value.admission_enabled === true,
+      allowedScopes: value.allowed_scopes ?? [],
       authorization: value.authorization ?? null,
       canUseAi: value.can_use_ai === true,
       dormantAuthority: true,
       lectureOpen: value.lecture_open === true,
       ok: true,
+      policy: value.policy ?? null,
       providerAuthorityIssued: false,
       reason: value.reason ?? null,
       serverTime: value.server_time ?? null,

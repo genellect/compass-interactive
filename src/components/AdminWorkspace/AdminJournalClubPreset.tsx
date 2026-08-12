@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import {
   type AdminLecture,
   supabaseAdminRepository,
 } from '../../repositories/supabaseAdminRepository'
 
 type AdminJournalClubPresetProps = {
-  adminToken: string
+  adminToken: AdminOperationCredentialInput
   isLoading: boolean
   lectures: AdminLecture[]
   onLoadingChange: (isLoading: boolean) => void

@@ -1,11 +1,11 @@
 # Phase 7.30 Google Admin Identity, AAL2 and RBAC Plan
 
 Status: Incremental implementation, verification pending
-Gate state: Phase 7.30A-B1 exact-head and post-merge CI PASS; B2/B2.2a/B2.2b/C1 and C2.1 default-OFF source implemented, exact-head runtime DB/Local Edge CI pending; Hosted/Human HOLD
-Implementation scope: Phase 7.30A-C1 plus C2.1 foundation and 9 of 20 operational Edge adapters; remaining C2 domains and D-F HOLD
+Gate state: Phase 7.30A-C2 is default-OFF and source implemented through all 20 operational Edge adapters plus the Google Admin workspace; exact-head runtime DB/Local Edge/browser CI is pending; Hosted/Human HOLD
+Implementation scope: Phase 7.30A-C2 source/local candidate complete; D-F, legacy removal and activation HOLD
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
-Last verified: 2026-08-11
+Last verified: 2026-08-12
 
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
@@ -54,14 +54,16 @@ never infers approval. B2.2b now implements default-OFF add/remove rare-control:
 one aggregate live snapshot, a fresh existing-set control grant and an exact
 expected post-set advance the principal anchor while draining old authority.
 Its maximum 30-minute hash-only recovery is capped by the same Auth session.
-C2.1 now adds the shared Google-only Edge verifier, a closed 75-action policy
+C2 now adds the shared Google-only Edge verifier, a closed 75-action policy
 matrix and same-transaction database facades for lecture lifecycle, comments,
 polls, Admin self-session controls, PDF documents and Admin access claims,
-Admin operator snapshots, Display state and material-analysis curation. Nine of
-the exact 20 operational Admin Edge functions have a default-OFF dual transport;
-the remaining eleven AI/provider, Presenter, Display-admission and PDF-
-publication paths remain C2 HOLD. The legacy workspace client remains explicit
-compatibility-only until D connects a distinct Google credential transport.
+Admin operator snapshots, Display state, Presenter and PDF publication,
+material-analysis, Summary, Academic and Realtime provider continuations. All
+20 operational Admin Edge functions have a default-OFF dual transport. The
+Admin workspace routes the Google app-session credential through its distinct
+AAL2 Supabase client while preserving the raw-string legacy compatibility
+transport. Status, hide, stop and revoke remain available when admission flags
+are OFF; provider starts retain request-bound IDs across ambiguous responses.
 
 The B2 source additionally implements nine private AI-unlock tables, service-
 role-only public wrappers, fixed-search-path private helpers, bcrypt cost-12 of
@@ -81,10 +83,10 @@ CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1 then
 adds private optional-row lecture ownership and atomic PIN/browser-proof to
 dormant-master admission without inferred backfill or child/provider authority.
 It does not by itself implement the all-Admin verifier, complete operational
-Edge/RPC migration or AI Passkey. C2.1 has begun that migration for nine
-default-OFF operational paths, but the remaining C2 domains, D-F and every
-activation remain HOLD. The source implementation adds no recurring fixed-cost
-dependency.
+Edge/RPC migration or AI Passkey. C2 now implements the all-Admin verifier,
+all 20 default-OFF operational paths and the workspace credential bridge. D-F,
+legacy removal, AI Passkey and every activation remain HOLD. The source
+implementation adds no recurring fixed-cost dependency.
 
 ## Outcome
 
@@ -542,6 +544,23 @@ idempotency before issuing its short-lived single-use `ai_billing_grants` child.
 Budget exhaustion blocks child calls with an explanatory status but does not
 silently clear the lecture's activated scope. Results arriving after a terminal
 transition are discarded.
+
+Summary run start and resume are scheduler controls and therefore consume no
+provider child. Each five-minute window that actually reaches the model consumes
+its own short-lived child and immutable dispatch claim. Insufficient-source
+windows skip without cost, a lost response converges on the same window, and a
+stale or revoked request settles without publishing late content. These recovery
+paths never require another TOTP or AI PIN while the current Admin session and
+master scope remain valid.
+
+Academic-answer source preflight is free and persists only bounded hashes and
+source coverage. Manual and Summary-derived automatic answers each issue and
+consume one short-lived child only when a provider dispatch is admitted. Exact
+replay converges on the same preflight, child, operation and dispatch claim;
+session, membership, ownership, policy or master drift settles the already
+reserved operation without publishing late content. Normal retries and
+continuations require neither another TOTP nor another AI PIN while the current
+Admin session and master scope remain valid.
 
 A retry of the same active scope is idempotent and does not prompt again. A
 change from `all_except_captions` to `all_including_captions` is a cost/scope
