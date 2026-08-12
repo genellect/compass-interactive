@@ -282,6 +282,10 @@ test('Admin coalesces deltas, orders terminal messages and Display uses a privat
   assert.match(displayClient, /private: true/)
   assert.match(displayClient, /broadcast: \{ ack: true, self: false \}/)
   assert.match(displayClient, /supabase\.realtime\.setAuth/)
+  assert.match(
+    displayClient,
+    /adminSupabase\.functions\.invoke<[\s\S]*?>\('broadcast-display-caption'/,
+  )
   assert.match(displayClient, /supabase\.removeChannel\(channel\)/)
   assert.match(
     displayClient,
