@@ -2,10 +2,11 @@
 
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
-Last reconciled: 2026-08-10
-Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-C1
-source implemented; B2-C1 exact-head runtime DB/Local Edge CI, Phase 7.30C2 onward and
-Hosted/Human gates remain HOLD
+Last reconciled: 2026-08-12
+Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-D
+source implemented as default-OFF candidates. D's dedicated mocked
+Chromium/WebKit browser gate passes locally; C2 exact-head runtime CI and D
+database/exact-head evidence are pending. E-F and Hosted/Human gates remain HOLD.
 
 ## 1. Numbering decision
 
@@ -774,6 +775,14 @@ are C2 scope and remain HOLD.
   change ends it.
 
 ### 7.30D - Google, MFA and Admin-ledger UX
+
+Source status: owner-only ledger Database/Edge/client UI, immutable invitation
+redemption evidence, strict five-minute owner control step-up, last-owner guard,
+session/factor authority drain and response-loss recovery are implemented
+default-OFF. Static/non-live/build checks pass locally. Fresh migration, pgTAP,
+two-connection concurrency, populated upgrade, Local Edge and exact-head CI
+remain HOLD. The dedicated desktop Chromium/mobile WebKit response-loss,
+accessibility and overflow gate passes locally.
 
 - Provide one Google sign-in CTA, concise TOTP enrollment/challenge,
   account/role display, own session list and owner-only membership/lecture/audit

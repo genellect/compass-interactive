@@ -33,6 +33,7 @@ SELECT is(
   (
     SELECT count(*)::integer
     FROM private.admin_google_operation_policies
+    WHERE edge_function <> 'manage-admin-ledger'
   ),
   75,
   'the C2 policy matrix contains exactly 75 approved operations'
@@ -41,6 +42,7 @@ SELECT is(
   (
     SELECT count(DISTINCT edge_function)::integer
     FROM private.admin_google_operation_policies
+    WHERE edge_function <> 'manage-admin-ledger'
   ),
   20,
   'the policy matrix covers exactly 20 operational Admin Edge functions'
@@ -162,6 +164,7 @@ SELECT is(
     SELECT count(*)::integer
     FROM private.admin_google_operation_policies
     WHERE operation_class <> 'read'
+      AND edge_function <> 'manage-admin-ledger'
       AND lecture_lock_mode <> 'update'
   ),
   0,

@@ -108,6 +108,13 @@ export const isPhase730GoogleAdminOperationsEnabled =
   isPhase730AdminIdentityEnabled &&
   import.meta.env.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS === 'true'
 
+// This flag opens only new/elevating owner-ledger mutations. The owner panel
+// remains mounted with Google operations so safe status and revoke controls
+// stay available while admission is disabled.
+export const isPhase730GoogleAdminLedgerAdmissionEnabled =
+  isPhase730GoogleAdminOperationsEnabled &&
+  import.meta.env.VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER === 'true'
+
 // Expand-first rollback stays available unless explicitly disabled. The Edge
 // and database gates remain authoritative even when this UI branch is shown.
 export const isLegacyAdminPinLoginEnabled =

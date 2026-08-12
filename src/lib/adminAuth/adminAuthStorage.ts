@@ -6,6 +6,8 @@ export const ADMIN_APP_SESSION_STORAGE_KEY =
   'compass-interactive-admin-google-app-session-v1'
 export const ADMIN_OAUTH_ATTEMPT_STORAGE_KEY =
   'compass-interactive-admin-oauth-attempt-v1'
+export const ADMIN_LEDGER_PENDING_STORAGE_KEY =
+  'compass-interactive-admin-ledger-pending-v1'
 
 const PROVIDER_TOKEN_FIELDS = new Set([
   'provider_token',
@@ -128,6 +130,7 @@ export function clearAdminAuthStorage() {
   window.localStorage.removeItem(`${ADMIN_AUTH_STORAGE_KEY}-code-verifier`)
   window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
+  window.sessionStorage.removeItem(ADMIN_LEDGER_PENDING_STORAGE_KEY)
 }
 
 export function beginAdminOAuthAttempt() {

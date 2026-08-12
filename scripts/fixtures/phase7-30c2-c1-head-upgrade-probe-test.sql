@@ -32,7 +32,11 @@ select is(
   'C2 operational authorization remains default OFF after populated upgrade'
 );
 select is(
-  (select count(*)::integer from private.admin_google_operation_policies),
+  (
+    select count(*)::integer
+    from private.admin_google_operation_policies
+    where edge_function <> 'manage-admin-ledger'
+  ),
   75,
   'the closed C2 operation matrix is installed exactly once'
 );

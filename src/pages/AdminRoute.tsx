@@ -17,6 +17,7 @@ import {
   isPhase730AdminAiUnlockEnabled,
   isPhase730AdminIdentityEnabled,
   isPhase730AdminTotpFactorMutationEnabled,
+  isPhase730GoogleAdminLedgerAdmissionEnabled,
   isPhase730GoogleAdminOperationsEnabled,
 } from '../lib/featureFlags'
 import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
@@ -62,6 +63,11 @@ import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
 import './AdminPage.css'
 
 const AdminLegacyApp = lazy(() => import('./AdminLegacyApp'))
+const AdminLedgerPanel = lazy(() =>
+  import('../components/AdminLedgerPanel').then((module) => ({
+    default: module.AdminLedgerPanel,
+  })),
+)
 
 type IdentityPhase =
   | 'booting'
@@ -811,6 +817,16 @@ export function AdminRoute() {
                     membershipId: session.membershipId,
                     principalId: session.principalId,
                   }}
+                />
+              ) : null}
+              {session.role === 'owner' ? (
+                <AdminLedgerPanel
+                  adminCredential={googleAdminCredential}
+                  appSessionToken={appSessionToken}
+                  clientAdmissionEnabled={
+                    isPhase730GoogleAdminLedgerAdmissionEnabled
+                  }
+                  onReloginRequired={logout}
                 />
               ) : null}
             </details>

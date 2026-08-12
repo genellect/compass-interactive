@@ -269,6 +269,36 @@ export async function hmacIdentityValue(
   return bytesToHex(new Uint8Array(signature))
 }
 
+export async function deriveAdminInvitationToken(
+  environmentId: string,
+  requestId: string,
+  emailHmac: string,
+  invitationSecret: string,
+) {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      environmentId,
+    ) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      requestId,
+    ) ||
+    !/^[0-9a-f]{64}$/.test(emailHmac)
+  ) {
+    throw new Error('Invalid Admin invitation binding.')
+  }
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await importHmacKey(invitationSecret),
+    encoder.encode(
+      'phase730d:admin-invitation:v1' +
+        `|environment_id=${environmentId.toLowerCase()}` +
+        `|request_id=${requestId.toLowerCase()}` +
+        `|email_hmac=${emailHmac}`,
+    ),
+  )
+  return bytesToBase64Url(new Uint8Array(signature))
+}
+
 export async function createGoogleAdminSessionToken(
   rawNonce: string,
   adminSessionSecret: string,

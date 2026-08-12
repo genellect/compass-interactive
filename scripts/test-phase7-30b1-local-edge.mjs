@@ -655,8 +655,18 @@ try {
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_step_up_nonces
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      alter table private.admin_invitation_redemption_receipts
+        disable trigger admin_invitation_redemptions_append_only;
+      delete from private.admin_invitation_redemption_receipts
+      where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      alter table private.admin_invitation_redemption_receipts
+        enable trigger admin_invitation_redemptions_append_only;
+      alter table private.admin_invitations
+        disable trigger enforce_admin_invitation_transition;
       delete from private.admin_invitations
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
+      alter table private.admin_invitations
+        enable trigger enforce_admin_invitation_transition;
       delete from private.admin_environment_memberships
       where environment_id = ${sqlLiteral(environmentId)}::uuid;
       delete from private.admin_principals

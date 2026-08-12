@@ -125,5 +125,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head and C1-head states upgrade through Phase 7.30 C2 with explicit trust anchors, no ownership/browser/receipt inference, eight-hour cap and dormant gates intact.',
+  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head and C1-head states upgrade through Phase 7.30D with explicit trust anchors, invitation lifecycle evidence, no ownership/browser/receipt inference, eight-hour cap and dormant gates intact.',
 )

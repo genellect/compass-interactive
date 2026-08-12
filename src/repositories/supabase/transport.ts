@@ -28,6 +28,7 @@ const GOOGLE_ADMIN_SESSION_INVALID_CODES = new Set([
 const GOOGLE_REQUEST_ID_FREE_ACTIONS = new Map<string, ReadonlySet<string>>([
   ['generate-academic-answer', new Set(['status'])],
   ['manage-admin-sessions', new Set(['list'])],
+  ['manage-admin-ledger', new Set(['audit', 'snapshot'])],
   ['manage-ai-control', new Set(['status'])],
   ['manage-lecture-summaries', new Set(['status'])],
   ['manage-lectures', new Set(['list'])],

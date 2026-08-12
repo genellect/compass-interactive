@@ -10,6 +10,7 @@ const defaultSpecs = {
   'demo-admin-identity-off': [
     'e2e/demo/phase7-30-admin-identity-flag-off.spec.ts',
   ],
+  'demo-admin-ledger': ['e2e/demo/phase7-30d-admin-ledger.spec.ts'],
   'demo-presenter': ['e2e/demo/phase7-29-presenter.spec.ts'],
   'demo-presenter-off': ['e2e/demo/phase7-29-presenter-flag-off.spec.ts'],
 }
@@ -27,7 +28,8 @@ const demoMode =
   mode === 'demo-presenter' ||
   mode === 'demo-presenter-off' ||
   mode === 'demo-admin-identity' ||
-  mode === 'demo-admin-identity-off'
+  mode === 'demo-admin-identity-off' ||
+  mode === 'demo-admin-ledger'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
 
@@ -73,13 +75,14 @@ if (
     'demo-presenter-off',
     'demo-admin-identity',
     'demo-admin-identity-off',
+    'demo-admin-ledger',
     'local',
     'local-jc',
     'local-ai',
   ].includes(mode)
 ) {
   throw new Error(
-    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|demo-presenter|demo-presenter-off|demo-admin-identity|demo-admin-identity-off|local|local-jc|local-ai>',
+    'Usage: node scripts/ci/run-browser-e2e.mjs <demo|demo-pdf|demo-pdf-off|demo-jc|demo-jc-off|demo-presenter|demo-presenter-off|demo-admin-identity|demo-admin-identity-off|demo-admin-ledger|local|local-jc|local-ai>',
   )
 }
 
@@ -223,8 +226,15 @@ const appEnvironment = {
   VITE_PHASE7_28_AI_MASTER_AUTH: mode === 'local-ai' ? 'true' : 'false',
   VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_IDENTITY:
-    mode === 'demo-admin-identity' ? 'true' : 'false',
-  VITE_PHASE7_30_LEGACY_ADMIN_PIN: 'true',
+    mode === 'demo-admin-identity' || mode === 'demo-admin-ledger'
+      ? 'true'
+      : 'false',
+  VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS:
+    mode === 'demo-admin-ledger' ? 'true' : 'false',
+  VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER:
+    mode === 'demo-admin-ledger' ? 'true' : 'false',
+  VITE_PHASE7_30_LEGACY_ADMIN_PIN:
+    mode === 'demo-admin-ledger' ? 'false' : 'true',
   VITE_PDF_WORKER_BASE_URL:
     mode === 'local-jc'
       ? 'http://127.0.0.1:8787'
