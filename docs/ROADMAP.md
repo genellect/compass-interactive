@@ -861,8 +861,9 @@ exact-head source/local gate remains pending until integration.
   neither changes repository visibility nor invites contest reviewers, and the
   formal integrated Phase 7.33 Gate remains HOLD.
 
-Passing 7.30F authorizes only the bounded Google-identity migration described
-above. It does not declare the repository public, invite contest reviewers,
+Passing 7.30F permits only a request for the next separately approved bounded
+Google-identity migration step described above; it does not authorize that
+step. It does not declare the repository public, invite contest reviewers,
 complete commercial readiness or satisfy the formal Phase 7.33 Production
 Gate.
 
