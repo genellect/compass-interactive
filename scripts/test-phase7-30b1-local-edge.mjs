@@ -561,7 +561,7 @@ try {
           ${sqlLiteral(randomUUID())}::uuid,
           ${sqlLiteral(environmentId)}::uuid,
           ${sqlLiteral(completed.session.membershipId)}::uuid,
-          array['academic_answers', 'captions', 'material_analysis', 'summaries']::text[],
+          array['academic_answers', 'captions', 'material_analysis', 'poll_suggestions', 'summaries']::text[],
           array['test-model']::text[],
           10, 100, 10000, 100000, 10000, 100000,
           100000, 1000000, 30, 300, 1,

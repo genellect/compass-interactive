@@ -500,6 +500,11 @@ assert.match(
   /if \(browserFixtureAiPin\) \{[\s\S]*?const stalePinControl = await invoke\([\s\S]*?action: 'completeControlStepUp'[\s\S]*?409,[\s\S]*?stalePinControl\.code, 'step_up_invalid'[\s\S]*?await waitForNextTotpWindow\(\)[\s\S]*?authClient\.auth\.mfa\.challengeAndVerify\([\s\S]*?assert\.notEqual\(pinControlAal2, aal2\)[\s\S]*?browserAal2 = pinControlAal2[\s\S]*?accessToken: browserAal2/,
   'the local AI-PIN fixture must prove stale-bearer rejection and export a real post-challenge bearer',
 )
+assert.match(
+  localGoogleFixture,
+  /insert into private\.admin_ai_policies[\s\S]*?array\[[\s\S]*?'academic_answers',[\s\S]*?'captions',[\s\S]*?'material_analysis',[\s\S]*?'poll_suggestions',[\s\S]*?'summaries'[\s\S]*?\]::text\[\]/,
+  'the local AI-PIN fixture policy must cover every action required by the current master scopes',
+)
 assert.doesNotMatch(
   localGoogleFixture,
   /const pinControlAal2 = accessToken\(status,[\s\S]{0,160}?totpTimestamp: Math\.floor\(Date\.now\(\) \/ 1_000\)/,
