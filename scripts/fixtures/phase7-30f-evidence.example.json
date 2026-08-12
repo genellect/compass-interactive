@@ -6,7 +6,7 @@
     "environment": {
       "target": "staging",
       "alias": "staging-example",
-      "sourceCommitSha": "5f396c34729c13bf767b11ebd0281281cdc4f674",
+      "sourceCommitSha": "0123456789abcdef0123456789abcdef01234567",
       "capturedAt": null,
       "environmentIdConfigured": false
     },

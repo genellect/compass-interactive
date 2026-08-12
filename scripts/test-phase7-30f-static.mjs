@@ -52,6 +52,11 @@ const schema = JSON.parse(
 )
 const fixtureSource = read('scripts/fixtures/phase7-30f-evidence.example.json')
 const fixture = parsePhase730FEvidence(fixtureSource)
+assert.equal(
+  fixture.configuration.environment.sourceCommitSha,
+  '0123456789abcdef0123456789abcdef01234567',
+  'the tracked example must use a synthetic SHA rather than a release head',
+)
 const validatorSource = read('scripts/phase7-30f-readiness.mjs')
 const supabaseConfig = read('supabase/config.toml')
 const gitignore = read('.gitignore')
@@ -579,7 +584,12 @@ assert.equal(fixtureCliResult.decision, PHASE730F_HOLD)
 assert.equal(fixtureCliResult.sourceReadiness, 'SOURCE_READY')
 assert.equal(fixtureCliResult.productionAuthorized, false)
 assert.equal(fixtureCliResult.canaryAuthorized, false)
-assert.doesNotMatch(fixtureCli.stdout, /5f396c34729c13bf/)
+assert.ok(
+  !fixtureCli.stdout.includes(
+    fixture.configuration.environment.sourceCommitSha,
+  ),
+  'redacted CLI output must not echo the supplied source SHA',
+)
 
 const invalidArgumentsCli = spawnSync(
   process.execPath,
