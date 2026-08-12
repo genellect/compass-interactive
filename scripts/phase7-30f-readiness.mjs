@@ -1127,6 +1127,54 @@ function validateSemanticConsistency(evidence) {
     }
   }
 
+  if (evidence.evidenceMode === 'HOSTED_HUMAN_STAGING') {
+    const frontend = evidence.configuration.frontendFlags
+    const server = evidence.configuration.serverFlags
+    const gates = evidence.configuration.databaseGates
+    const topology = [
+      [
+        frontend.VITE_PHASE7_30_ADMIN_IDENTITY,
+        server.PHASE730_ADMIN_IDENTITY_ENABLED,
+        gates.googleSessionIssueEnabled,
+      ],
+      [
+        frontend.VITE_PHASE7_30_ADMIN_AI_UNLOCK,
+        server.PHASE730_ADMIN_AI_UNLOCK_ENABLED,
+        gates.aiUnlockEnabled,
+      ],
+      [
+        frontend.VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION,
+        server.PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED,
+        gates.totpFactorMutationEnabled,
+      ],
+      [
+        frontend.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS,
+        server.PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED,
+        gates.googleOperationalAuthorizationEnabled,
+      ],
+      [
+        frontend.VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER,
+        server.PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED,
+        gates.googleAdminLedgerEnabled,
+      ],
+      [
+        server.PHASE730_C1_GOOGLE_AI_MASTER_ENABLED,
+        gates.googleAiMasterAdmissionEnabled,
+      ],
+    ]
+    if (
+      topology.some((states) => states.some((state) => state !== states[0]))
+    ) {
+      errors.push(
+        issue(
+          'HOSTED_GATE_TOPOLOGY_MISMATCH',
+          '$.configuration',
+          'Hosted frontend, Edge and database gate metadata must agree.',
+        ),
+      )
+    }
+  }
+
   if (evidence.rollbackEvidence.immutableGoogleOnlyRevision) {
     if (
       evidence.rollbackEvidence.immutableGoogleOnlyRevision !==
@@ -1405,13 +1453,9 @@ function readinessFailures(evidence) {
   )
   addHold(
     failures,
-    Object.values(evidence.configuration.frontendFlags).every(
-      (enabled) => !enabled,
-    ) &&
-      Object.values(evidence.configuration.serverFlags).every(
-        (enabled) => !enabled,
-      ),
-    'ACTIVATION_FLAGS_MUST_REMAIN_OFF',
+    Object.values(evidence.configuration.frontendFlags).every(Boolean) &&
+      Object.values(evidence.configuration.serverFlags).every(Boolean),
+    'HOSTED_ACTIVATION_FLAGS_NOT_READY',
   )
   addHold(
     failures,

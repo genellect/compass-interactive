@@ -348,6 +348,12 @@ complete.evidenceMode = 'HOSTED_HUMAN_STAGING'
 complete.generatedAt = '2026-08-12T14:08:00Z'
 complete.configuration.environment.capturedAt = '2026-08-12T14:07:00Z'
 complete.configuration.environment.environmentIdConfigured = true
+complete.configuration.frontendFlags = Object.fromEntries(
+  Object.keys(complete.configuration.frontendFlags).map((name) => [name, true]),
+)
+complete.configuration.serverFlags = Object.fromEntries(
+  Object.keys(complete.configuration.serverFlags).map((name) => [name, true]),
+)
 complete.configuration.databaseGates = {
   legacyPinLoginEnabled: false,
   googleSessionIssueEnabled: true,
@@ -479,6 +485,14 @@ assert.deepEqual(completeResult.holdReasons, [])
 assert.equal(completeResult.decision, PHASE730F_MAXIMUM_DECISION)
 assert.equal(completeResult.productionAuthorized, false)
 assert.equal(completeResult.canaryAuthorized, false)
+
+const mismatchedHostedTopology = clone(complete)
+mismatchedHostedTopology.configuration.serverFlags.PHASE730_ADMIN_IDENTITY_ENABLED = false
+assert.ok(
+  validatePhase730FEvidence(mismatchedHostedTopology).some(
+    (error) => error.code === 'HOSTED_GATE_TOPOLOGY_MISMATCH',
+  ),
+)
 
 const oauthWithoutApproval = clone(complete)
 oauthWithoutApproval.approvals.oauthProviderConfiguration = {
