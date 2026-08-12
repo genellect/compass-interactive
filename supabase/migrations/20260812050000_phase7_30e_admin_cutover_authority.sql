@@ -802,10 +802,10 @@ begin
 
   if exists (
     select 1
-    from public.lecture_ai_master_authorizations as authorization
-    where authorization.lecture_session_id = approval_row.lecture_session_id
-      and authorization.status = 'active'
-      and authorization.principal_id is null
+    from public.lecture_ai_master_authorizations as master_authorization
+    where master_authorization.lecture_session_id = approval_row.lecture_session_id
+      and master_authorization.status = 'active'
+      and master_authorization.principal_id is null
   ) or exists (
     select 1
     from public.ai_billing_grants as grant_row
@@ -1216,9 +1216,9 @@ as $$
   select jsonb_build_object(
     'activeLegacyMasterCount', (
       select pg_catalog.count(*)
-      from public.lecture_ai_master_authorizations as authorization
-      where authorization.status = 'active'
-        and authorization.principal_id is null
+      from public.lecture_ai_master_authorizations as master_authorization
+      where master_authorization.status = 'active'
+        and master_authorization.principal_id is null
     ),
     'activeLegacySessionCount', (
       select pg_catalog.count(*)
@@ -1593,9 +1593,9 @@ begin
 
   select pg_catalog.count(*)::integer
   into active_legacy_master_count
-  from public.lecture_ai_master_authorizations as authorization
-  where authorization.status = 'active'
-    and authorization.principal_id is null;
+  from public.lecture_ai_master_authorizations as master_authorization
+  where master_authorization.status = 'active'
+    and master_authorization.principal_id is null;
 
   select pg_catalog.count(*)::integer
   into issued_legacy_grant_count
