@@ -477,8 +477,12 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     expect(studentChannelStatus).not.toBe('SUBSCRIBED')
 
     // Stop Admin background polling before the test deliberately revokes its
-    // tracked session from the service-role fixture.
-    await adminPage.goto('/join')
+    // tracked session from the service-role fixture. Closing the page avoids
+    // turning an in-flight Admin request cancelled by navigation into a
+    // WebKit page error; the revoked-session bootstrap is proven below on a
+    // fresh page in this same browser context.
+    await adminSafety.assertClean()
+    await adminPage.close()
     const disabled = await service.rpc('set_display_realtime_runtime_v1', {
       target_enabled: false,
     })
@@ -560,8 +564,11 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // The regression intentionally revokes the issuing Google Admin session.
     // Replacement issuance is covered by the separate Google-session fixture;
     // this browser must now remain unable to elevate or resume operations.
-    await adminSafety.assertClean()
-    const invalidSessionResponsePromise = adminPage.waitForResponse(
+    const invalidAdminPage = await adminContext.newPage()
+    const invalidAdminSafety =
+      await installBrowserSafetyMonitor(invalidAdminPage)
+    await installGoogleAdminSession(invalidAdminPage, appSessionToken)
+    const invalidSessionResponsePromise = invalidAdminPage.waitForResponse(
       (response) => {
         const request = response.request()
         if (
@@ -577,24 +584,24 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         return body.action === 'status'
       },
     )
-    await adminPage.goto('/admin')
+    await invalidAdminPage.goto('/admin')
     const invalidSessionResponse = await invalidSessionResponsePromise
     expect(await invalidSessionResponse.json()).toMatchObject({
       code: 'app_session_invalid',
       ok: false,
     })
     await expect(
-      adminPage.getByRole('heading', { name: '教員としてログイン' }),
+      invalidAdminPage.getByRole('heading', { name: '教員としてログイン' }),
     ).toBeVisible()
-    await expect(adminPage.locator('.admin-workflow')).toHaveCount(0)
+    await expect(invalidAdminPage.locator('.admin-workflow')).toHaveCount(0)
 
-    await adminSafety.expectConsoleErrorOnce({
+    await invalidAdminSafety.expectConsoleErrorOnce({
       message:
         'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
       url: invalidSessionResponse.url(),
     })
     await displaySafety.assertClean()
-    await adminSafety.assertClean()
+    await invalidAdminSafety.assertClean()
   } finally {
     if (displayContext) await displayContext.close()
     await adminContext.close()

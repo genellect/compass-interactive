@@ -546,13 +546,18 @@ const revokedDisplayBrowserPhase = displayRealtimeBrowser.slice(
   revokedDisplayBrowserPhaseStart,
 )
 assert.match(
-  revokedDisplayBrowserPhase,
-  /await adminSafety\.assertClean\(\)[\s\S]*adminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*await adminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
-  'the final Display phase must prove the exact fail-closed Admin status response after a clean checkpoint',
+  displayRealtimeBrowser,
+  /await adminSafety\.assertClean\(\)[\s\S]*await adminPage\.close\(\)[\s\S]*set_display_realtime_runtime_v1[\s\S]*phase728b_e2e_revoke/,
+  'the Display regression must stop the original clean Admin page before revoking its tracked session',
 )
 assert.match(
   revokedDisplayBrowserPhase,
-  /await adminSafety\.expectConsoleErrorOnce\(\{[\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await adminSafety\.assertClean\(\)/,
+  /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
+  'the final Display phase must prove the exact fail-closed Admin status response on a fresh page in the same browser context',
+)
+assert.match(
+  revokedDisplayBrowserPhase,
+  /await invalidAdminSafety\.expectConsoleErrorOnce\(\{[\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
   'the Display regression may consume only the proven status 401 before its final safety checks',
 )
 assert.match(
