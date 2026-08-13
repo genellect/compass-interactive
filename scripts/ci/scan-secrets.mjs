@@ -31,8 +31,9 @@ const forbiddenTrackedEvidencePath =
 const findings = trackedFiles
   .map((relative) => relative.replaceAll('\\', '/'))
   .filter((relative) => forbiddenTrackedEvidencePath.test(relative))
-  .map((relative) =>
-    `${relative} [Forbidden tracked Phase 7.30F operator evidence]`,
+  .map(
+    (relative) =>
+      `${relative} [Forbidden tracked Phase 7.30F operator evidence]`,
   )
 
 for (const relative of scannedFiles) {
