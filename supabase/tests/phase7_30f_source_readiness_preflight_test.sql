@@ -126,21 +126,21 @@ SELECT ok(
   'preflight composes the reviewed E, identity, AI, Auth, receipt, trigger and ACL authorities'
 );
 
-SELECT unlike(
+SELECT unalike(
   lower(pg_get_functiondef(
     'private.get_phase7_30f_source_readiness_preflight_v1(uuid)'::regprocedure
   )),
   '%insert into%',
   'preflight contains no INSERT mutation'
 );
-SELECT unlike(
+SELECT unalike(
   lower(pg_get_functiondef(
     'private.get_phase7_30f_source_readiness_preflight_v1(uuid)'::regprocedure
   )),
   '%update %',
   'preflight contains no UPDATE mutation'
 );
-SELECT unlike(
+SELECT unalike(
   lower(pg_get_functiondef(
     'private.get_phase7_30f_source_readiness_preflight_v1(uuid)'::regprocedure
   )),

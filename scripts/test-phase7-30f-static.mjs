@@ -1408,6 +1408,16 @@ assert.match(
   preflightPgTap,
   /all four readiness triggers have exact table, function, timing\/event, enabled and constraint identities/i,
 )
+assert.equal(
+  [...preflightPgTap.matchAll(/\bunalike\(/g)].length,
+  3,
+  'pgTAP must use the supported unalike assertion for all three mutation guards',
+)
+assert.doesNotMatch(
+  preflightPgTap,
+  /\bunlike\(/,
+  'pgTAP does not expose an unlike assertion',
+)
 assert.match(
   preflightPgTap,
   /absolute\/idle trigger covers the exact six authority and lifetime columns/i,
