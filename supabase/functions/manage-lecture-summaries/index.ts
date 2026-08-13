@@ -1,23 +1,11 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   deriveGoogleSummaryRunNonce,
-  parseBillingGrantToken,
   sha256Hex,
 } from '../_shared/aiBilling.ts'
-import {
-  getAdminActorId,
-  getAdminTokenClaims,
-  getAdminTokenSecret,
-} from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
-import {
-  type GoogleAdminOperationContext,
-  verifyGoogleAdminOperationRequest,
-} from '../_shared/googleAdminOperations.ts'
-import {
-  createSummaryRunNonce,
-  formatSummaryRunToken,
-} from '../_shared/lectureSummaries.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
+import { formatSummaryRunToken } from '../_shared/lectureSummaries.ts'
 import {
   readJsonBody,
   RequestBodyTooLargeError,
@@ -36,11 +24,9 @@ type RequestBody = {
     | 'pin'
     | 'unpin'
     | 'revisePublish'
-  adminToken?: string
   academicSourcePolicy?: 'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
   autoAcademicAnswers?: boolean
   appSessionToken?: string
-  billingGrant?: string
   lectureSessionId?: string
   pinnedOrder?: number | null
   pinnedUntil?: string | null
@@ -110,20 +96,24 @@ Deno.serve(async (request) => {
     )
   }
 
-  const hasGoogleCredential =
-    typeof body.appSessionToken === 'string' &&
-    body.appSessionToken.trim().length > 0
-  const hasLegacyCredential =
-    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
-  if (hasGoogleCredential === hasLegacyCredential) {
+  if (hasLegacyAdminFields(body)) {
     return jsonResponse(
-      { message: 'Exactly one Admin credential is required.', ok: false },
+      { message: 'Legacy Admin credentials are not supported.', ok: false },
+      400,
+    )
+  }
+  if (
+    typeof body.appSessionToken !== 'string' ||
+    body.appSessionToken.trim().length === 0
+  ) {
+    return jsonResponse(
+      { message: 'appSessionToken is required.', ok: false },
       401,
     )
   }
   if (
     !summariesTransportEnabled &&
-    !(hasGoogleCredential && ['status', 'stop', 'hide'].includes(body.action))
+    !['status', 'stop', 'hide'].includes(body.action)
   ) {
     return jsonResponse(
       { message: 'Five-minute summaries are disabled.', ok: false },
@@ -152,10 +142,8 @@ Deno.serve(async (request) => {
     'revisePublish',
   ].includes(body.action)
   if (
-    hasGoogleCredential &&
-    (!isGoogleSupportedAction ||
-      (isGoogleMutationAction && !isUuid(body.requestId)) ||
-      body.billingGrant !== undefined)
+    !isGoogleSupportedAction ||
+    (isGoogleMutationAction && !isUuid(body.requestId))
   ) {
     return jsonResponse(
       {
@@ -168,23 +156,9 @@ Deno.serve(async (request) => {
     )
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(
-      { message: 'Lecture summaries are not configured.', ok: false },
-      503,
-    )
-  }
-  let supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
-  let actorId: string | null = null
-  let googleContext: GoogleAdminOperationContext | null = null
-  if (hasGoogleCredential) {
-    const verification = await verifyGoogleAdminOperationRequest(
+  const verification = await verifyGoogleAdminOperationRequest(
       request,
-      body.appSessionToken!,
+      body.appSessionToken,
     )
     if (!verification.ok) {
       return jsonResponse(
@@ -196,29 +170,9 @@ Deno.serve(async (request) => {
         verification.status,
       )
     }
-    googleContext = verification
-    supabase = verification.serviceClient
-  } else {
-    try {
-      const claims = await getAdminTokenClaims(
-        body.adminToken!,
-        getAdminTokenSecret(),
-        request,
-      )
-      if (!claims) {
-        return jsonResponse(
-          { message: 'Invalid Admin session.', ok: false },
-          401,
-        )
-      }
-      actorId = getAdminActorId(claims)
-    } catch {
-      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
-    }
-  }
-
-  const googleRpcIdentity = googleContext
-    ? {
+  const googleContext = verification
+  const supabase = verification.serviceClient
+  const googleRpcIdentity = {
         target_auth_user_id: googleContext.authUserId,
         target_google_issuer: googleContext.googleIssuer,
         target_provider_subject_hmac: googleContext.googleSubjectHmac,
@@ -226,12 +180,10 @@ Deno.serve(async (request) => {
         target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
         target_token_hash: googleContext.appSessionTokenHash,
       }
-    : null
 
   try {
     if (body.action === 'status') {
-      if (googleContext && googleRpcIdentity) {
-        const { data, error } = await supabase.rpc(
+      const { data, error } = await supabase.rpc(
           'get_google_admin_summary_results_v1',
           {
             ...googleRpcIdentity,
@@ -247,25 +199,10 @@ Deno.serve(async (request) => {
             409,
           )
         }
-        return jsonResponse({ ok: true, results: data })
-      }
-      const { data, error } = await supabase.rpc(
-        'admin_get_phase6_summary_results',
-        { target_lecture_session_id: body.lectureSessionId },
-      )
-      if (error) throw error
       return jsonResponse({ ok: true, results: data })
     }
 
     if (body.action === 'start') {
-      if (!body.billingGrant) {
-        if (!googleContext) {
-          return jsonResponse(
-            { message: 'Billing authorization is required.', ok: false },
-            400,
-          )
-        }
-      }
       const sourcePolicy = body.academicSourcePolicy ?? 'auto'
       if (
         !['auto', 'biomedical_pubmed', 'multidisciplinary_doi'].includes(
@@ -289,8 +226,7 @@ Deno.serve(async (request) => {
           503,
         )
       }
-      if (googleContext && googleRpcIdentity) {
-        let nonce: string
+      let nonce: string
         try {
           nonce = await deriveGoogleSummaryRunNonce({
             action: 'start',
@@ -353,56 +289,16 @@ Deno.serve(async (request) => {
             409,
           )
         }
-        return jsonResponse({
+      return jsonResponse({
           idempotentReplay: result.idempotentReplay === true,
           ok: true,
           results: result.results,
           runToken: formatSummaryRunToken(result.run.id, nonce),
-        })
-      }
-
-      const billing = parseBillingGrantToken(body.billingGrant!)
-      const nonce = createSummaryRunNonce()
-      const { data, error } = await supabase.rpc(
-        'admin_start_lecture_summary_run_v2',
-        {
-          target_actor_id: actorId!,
-          target_academic_source_policy: sourcePolicy,
-          target_auto_academic_answers_enabled:
-            body.autoAcademicAnswers === true,
-          target_grant_id: billing.grantId,
-          target_grant_nonce_hash: await sha256Hex(billing.nonce),
-          target_lecture_session_id: body.lectureSessionId,
-          target_run_token_hash: await sha256Hex(nonce),
-        },
-      )
-      if (error) throw error
-      const result = data as {
-        accepted?: boolean
-        reason?: string
-        results?: unknown
-        run?: { id?: string }
-      }
-      if (!result.accepted || !result.run?.id) {
-        return jsonResponse(
-          {
-            message: 'Summary run could not be started.',
-            ok: false,
-            reason: result.reason,
-          },
-          409,
-        )
-      }
-      return jsonResponse({
-        ok: true,
-        results: result.results,
-        runToken: formatSummaryRunToken(result.run.id, nonce),
       })
     }
 
     if (body.action === 'resume') {
-      if (googleContext && googleRpcIdentity) {
-        let nonce: string
+      let nonce: string
         try {
           nonce = await deriveGoogleSummaryRunNonce({
             action: 'resume',
@@ -459,48 +355,17 @@ Deno.serve(async (request) => {
             409,
           )
         }
-        return jsonResponse({
+      return jsonResponse({
           idempotentReplay: result.idempotentReplay === true,
           ok: true,
           results: result.results,
           runToken: formatSummaryRunToken(result.run.id, nonce),
-        })
-      }
-
-      const nonce = createSummaryRunNonce()
-      const { data, error } = await supabase.rpc(
-        'admin_resume_lecture_summary_run',
-        {
-          target_actor_id: actorId!,
-          target_lecture_session_id: body.lectureSessionId,
-          target_run_token_hash: await sha256Hex(nonce),
-        },
-      )
-      if (error) throw error
-      const result = data as {
-        accepted?: boolean
-        reason?: string
-        results?: unknown
-        run?: { id?: string }
-      }
-      if (!result.accepted || !result.run?.id) {
-        return jsonResponse({
-          ok: true,
-          reason: result.reason,
-          results: result.results,
-        })
-      }
-      return jsonResponse({
-        ok: true,
-        results: result.results,
-        runToken: formatSummaryRunToken(result.run.id, nonce),
       })
     }
 
     if (body.action === 'stop') {
       const reason = body.reason?.trim() || 'admin_manual_stop'
-      if (googleContext && googleRpcIdentity) {
-        const { data, error } = await supabase.rpc(
+      const { data, error } = await supabase.rpc(
           'manage_google_admin_summary_run_v2',
           {
             ...googleRpcIdentity,
@@ -538,42 +403,16 @@ Deno.serve(async (request) => {
             target_transport_enabled: googleContext.transportEnabled,
           },
         )
-        return jsonResponse({
+      return jsonResponse({
           idempotentReplay: result.idempotentReplay === true,
           ok: true,
           results:
             !refreshed.error && refreshed.data ? refreshed.data : undefined,
-        })
-      }
-
-      const { data, error } = await supabase.rpc(
-        'admin_stop_lecture_summary_run',
-        {
-          target_actor_id: actorId!,
-          target_lecture_session_id: body.lectureSessionId,
-          target_reason: reason,
-        },
-      )
-      if (error) throw error
-      return jsonResponse({
-        ok: true,
-        results: (data as { results?: unknown }).results,
       })
     }
 
     if (!body.summaryId) {
       return jsonResponse({ message: 'summaryId is required.', ok: false }, 400)
-    }
-    const actionMap = {
-      hide: 'hide',
-      pin: 'pin',
-      publish: 'publish',
-      revisePublish: 'revise_publish',
-      unpin: 'unpin',
-    } as const
-    const action = actionMap[body.action as keyof typeof actionMap]
-    if (!action) {
-      return jsonResponse({ message: 'Unknown action.', ok: false }, 400)
     }
     const revisionBody = body.revisionBody
       ? {
@@ -581,8 +420,7 @@ Deno.serve(async (request) => {
           lecture_recap: body.revisionBody.lectureRecap ?? [],
         }
       : null
-    if (googleContext && googleRpcIdentity) {
-      const { data, error } = await supabase.rpc(
+    const { data, error } = await supabase.rpc(
         'manage_google_admin_summary_publication_v1',
         {
           ...googleRpcIdentity,
@@ -623,28 +461,12 @@ Deno.serve(async (request) => {
         )
         if (!refreshed.error && refreshed.data) results = refreshed.data
       }
-      return jsonResponse({
+    return jsonResponse({
         idempotentReplay: result.idempotentReplay === true,
         ok: true,
         refreshRequired: result.refreshRequired === true && !results,
         results,
-      })
-    }
-    const { data, error } = await supabase.rpc(
-      'admin_manage_summary_publication',
-      {
-        target_action: action,
-        target_actor_id: actorId!,
-        target_body: revisionBody,
-        target_lecture_session_id: body.lectureSessionId,
-        target_pinned_order: body.pinnedOrder ?? null,
-        target_pinned_until: body.pinnedUntil ?? null,
-        target_reason: body.reason ?? null,
-        target_summary_id: body.summaryId,
-      },
-    )
-    if (error) throw error
-    return jsonResponse({ ok: true, results: data })
+    })
   } catch (error) {
     return errorResponse(jsonResponse, error)
   }

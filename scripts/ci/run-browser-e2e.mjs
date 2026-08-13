@@ -2,6 +2,10 @@ import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
+import {
+  startGoogleAdminAal2Fixture,
+  stopGoogleAdminAal2Fixture,
+} from '../test-fixtures/google-admin-aal2-process.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const mode = process.argv[2]
@@ -32,6 +36,72 @@ const demoMode =
   mode === 'demo-admin-ledger'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
+const googleAdminWorkspaceMode =
+  localMode ||
+  [
+    'demo-pdf',
+    'demo-pdf-off',
+    'demo-jc',
+    'demo-jc-off',
+    'demo-presenter',
+    'demo-presenter-off',
+    'demo-admin-ledger',
+  ].includes(mode)
+const googleAdminIdentityMode =
+  googleAdminWorkspaceMode || mode === 'demo-admin-identity'
+const defaultLocalProjects = [
+  'local-supabase-chromium',
+  'local-supabase-webkit',
+  'local-supabase-mobile-chromium',
+]
+
+function selectedLocalProjects() {
+  const projects = []
+  const args = process.argv.slice(3)
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (argument === '--project' && args[index + 1]) {
+      projects.push(args[index + 1])
+      index += 1
+      continue
+    }
+    if (argument.startsWith('--project=')) {
+      projects.push(argument.slice('--project='.length))
+    }
+  }
+  return [...new Set(projects.length > 0 ? projects : defaultLocalProjects)]
+}
+
+function configuredCountOption(optionName, fallback, minimum) {
+  const args = process.argv.slice(3)
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    const optionPrefix = `${optionName}=`
+    const rawValue = argument.startsWith(optionPrefix)
+      ? argument.slice(optionPrefix.length)
+      : argument === optionName
+        ? args[index + 1]
+        : null
+    if (rawValue === null) continue
+    if (!/^\d+$/.test(rawValue ?? '')) {
+      throw new Error(`${optionName} must be an integer.`)
+    }
+    const value = Number(rawValue)
+    if (!Number.isSafeInteger(value) || value < minimum) {
+      throw new Error(`${optionName} must be at least ${minimum}.`)
+    }
+    return value
+  }
+  return fallback
+}
+
+function configuredRetryCount() {
+  return configuredCountOption('--retries', process.env.CI ? 1 : 0, 0)
+}
+
+function configuredRepeatEachCount() {
+  return configuredCountOption('--repeat-each', 1, 1)
+}
 
 async function allocateLoopbackPort() {
   return await new Promise((resolve, reject) => {
@@ -151,12 +221,6 @@ function readLocalSupabaseEnvironment() {
   if (!['127.0.0.1', 'localhost'].includes(parsedUrl.hostname)) {
     throw new Error('Browser E2E refuses non-local Supabase URLs.')
   }
-  if (!process.env.TEST_ADMIN_PIN?.trim()) {
-    throw new Error(
-      'TEST_ADMIN_PIN is required and must match the local Edge Functions env.',
-    )
-  }
-
   return {
     TEST_SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
     TEST_SUPABASE_URL: supabaseUrl,
@@ -218,23 +282,21 @@ const appEnvironment = {
   VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION:
     mode === 'demo-jc' || mode === 'local-jc' ? 'true' : 'false',
   VITE_PHASE7_28_DISPLAY_REALTIME:
+    mode === 'local' ||
     mode === 'local-jc' ||
     mode === 'demo-presenter' ||
     mode === 'demo-presenter-off'
       ? 'true'
       : 'false',
-  VITE_PHASE7_28_AI_MASTER_AUTH: mode === 'local-ai' ? 'true' : 'false',
   VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
-  VITE_PHASE7_30_ADMIN_IDENTITY:
-    mode === 'demo-admin-identity' || mode === 'demo-admin-ledger'
-      ? 'true'
-      : 'false',
-  VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS:
-    mode === 'demo-admin-ledger' ? 'true' : 'false',
+  VITE_PHASE7_30_ADMIN_IDENTITY: googleAdminIdentityMode ? 'true' : 'false',
+  VITE_PHASE7_30_ADMIN_AI_UNLOCK: mode === 'local-ai' ? 'true' : 'false',
+  VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION: 'false',
+  VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: googleAdminWorkspaceMode
+    ? 'true'
+    : 'false',
   VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER:
     mode === 'demo-admin-ledger' ? 'true' : 'false',
-  VITE_PHASE7_30_LEGACY_ADMIN_PIN:
-    mode === 'demo-admin-ledger' ? 'false' : 'true',
   VITE_PDF_WORKER_BASE_URL:
     mode === 'local-jc'
       ? 'http://127.0.0.1:8787'
@@ -434,6 +496,8 @@ async function stopVite() {
 }
 
 let exitCode = 1
+const googleAdminFixtureHandles = []
+let cleanupError = null
 try {
   await waitForServer()
   if (!baseURL) {
@@ -445,6 +509,45 @@ try {
   const playwrightEnvironment = {
     ...appEnvironment,
     PLAYWRIGHT_BASE_URL: baseURL,
+  }
+  if (localMode) {
+    const retryCount = configuredRetryCount()
+    const repeatEachCount = configuredRepeatEachCount()
+    const fixturesByProject = {}
+    for (const projectName of selectedLocalProjects()) {
+      const projectFixtures = []
+      for (
+        let repeatEachIndex = 0;
+        repeatEachIndex < repeatEachCount;
+        repeatEachIndex += 1
+      ) {
+        for (let retry = 0; retry <= retryCount; retry += 1) {
+          const handle = await startGoogleAdminAal2Fixture({
+            cwd: root,
+            env: {
+              ...appEnvironment,
+              TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
+                mode === 'local-ai' ? '1357' : '',
+            },
+            retainEnvironment: true,
+          })
+          googleAdminFixtureHandles.push(handle)
+          projectFixtures.push({
+            appSessionToken: handle.fixture.appSessionToken,
+            authStorageValue: handle.fixture.authStorageValue,
+          })
+        }
+      }
+      fixturesByProject[projectName] = projectFixtures
+    }
+    const primaryFixture = Object.values(fixturesByProject)[0][0]
+    Object.assign(playwrightEnvironment, {
+      TEST_GOOGLE_ADMIN_BROWSER_FIXTURES: JSON.stringify(fixturesByProject),
+      TEST_GOOGLE_ADMIN_BROWSER_RETRY_STRIDE: String(retryCount + 1),
+      TEST_GOOGLE_ADMIN_APP_SESSION_TOKEN: primaryFixture.appSessionToken,
+      TEST_GOOGLE_ADMIN_AUTH_STORAGE_VALUE: primaryFixture.authStorageValue,
+      TEST_GOOGLE_ADMIN_AI_PIN: mode === 'local-ai' ? '1357' : '',
+    })
   }
   const config = localMode
     ? 'playwright.local.config.ts'
@@ -468,8 +571,28 @@ try {
   const [code] = await once(playwrightProcess, 'exit')
   exitCode = typeof code === 'number' ? code : 1
 } finally {
-  await stopVite()
-  await stopPresenterFixture()
+  for (const cleanup of [
+    async () => {
+      let fixtureCleanupError = null
+      for (const handle of googleAdminFixtureHandles.toReversed()) {
+        try {
+          await stopGoogleAdminAal2Fixture(handle)
+        } catch (error) {
+          fixtureCleanupError ??= error
+        }
+      }
+      if (fixtureCleanupError) throw fixtureCleanupError
+    },
+    () => stopVite(),
+    () => stopPresenterFixture(),
+  ]) {
+    try {
+      await cleanup()
+    } catch (error) {
+      cleanupError ??= error
+    }
+  }
 }
 
+if (cleanupError) throw cleanupError
 process.exit(exitCode)

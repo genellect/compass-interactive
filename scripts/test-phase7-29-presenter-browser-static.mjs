@@ -55,7 +55,9 @@ test('Admin Edge repository exposes only the four approved lifecycle actions', (
     repository,
     /action: '(?:inspect|claim|apply|heartbeat|enableRuntime)'/,
   )
-  assert.match(repository, /ensureAnonymousAuthSession\(\)/)
+  assert.match(repository, /isAdminOperationCredential\(request\.adminToken\)/)
+  assert.match(repository, /invokeEdgeFunction<unknown>\(/)
+  assert.doesNotMatch(repository, /ensureAnonymousAuthSession\(\)/)
   assert.match(repository, /SUPABASE_REQUEST_TIMEOUT_MS\.adminFunction/)
   assert.match(
     repository,

@@ -60,10 +60,12 @@ jobs:
           VITE_PHASE7_27_JOURNAL_CLUB: 'true'
           VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION: 'false'
           VITE_PHASE7_28_DISPLAY_REALTIME: 'false'
-          VITE_PHASE7_28_AI_MASTER_AUTH: 'false'
           VITE_PHASE7_29_POWERPOINT_SYNC: 'false'
           VITE_PHASE7_30_ADMIN_IDENTITY: 'false'
-          VITE_PHASE7_30_LEGACY_ADMIN_PIN: 'true'
+          VITE_PHASE7_30_ADMIN_AI_UNLOCK: 'false'
+          VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION: 'false'
+          VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: 'false'
+          VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER: 'false'
         run: npm run build
       - run: npm run test:phase6-9-bundle
       - name: Generate CycloneDX SBOM
@@ -110,8 +112,8 @@ jobs:
         with:
           name: demo-e2e-evidence-${{ github.run_attempt }}
           path: |
-            playwright-report/
             test-results/demo/
+            test-results/reports/demo/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -121,9 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      TEST_ADMIN_PIN: '246810'
       TEST_ADMIN_SESSION_SECRET: compass-ci-only-admin-session-secret-2026-at-least-32-bytes
-      TEST_BILLING_PIN: '135790'
       TEST_ALLOWED_ORIGIN: http://127.0.0.1:4173
       TEST_ADMIN_IDENTITY_PEPPER: compass-ci-only-admin-identity-pepper-at-least-32-bytes
     steps:
@@ -187,6 +187,9 @@ jobs:
       - name: Verify populated Phase 7.29 through Phase 7.30 C2 provider upgrades
         run: npm run test:phase7-30-upgrade
 
+      - name: Run Google-only Admin cutover serialization and writer-fence regression
+        run: npm run test:phase7-30e-concurrency
+
       - name: Lint the local database
         run: npx supabase db lint --local --fail-on error
 
@@ -211,12 +214,9 @@ jobs:
           set -euo pipefail
           edge_env="$RUNNER_TEMP/compass-edge.env"
           cat > "$edge_env" <<'EOF'
-          ADMIN_PIN=246810
           ADMIN_SESSION_SECRET=compass-ci-only-admin-session-secret-2026-at-least-32-bytes
-          PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true
           PHASE68_RESUME_TOKENS_ENABLED=true
           LECTURE_RESUME_TOKEN_SECRET=compass-ci-only-lecture-resume-token-secret-at-least-32-bytes
-          BILLING_PIN=135790
           COMPASS_EDGE_ALLOWED_ORIGINS=http://127.0.0.1:4173
           PHASE4_REALTIME_CAPTIONS_ENABLED=true
           PHASE5_MATERIAL_ANALYSIS_ENABLED=true
@@ -228,18 +228,21 @@ jobs:
           PHASE7_27_JOURNAL_CLUB_ENABLED=true
           PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED=true
           PHASE728_DISPLAY_REALTIME_ENABLED=true
-          PHASE7_28_AI_MASTER_AUTH_ENABLED=true
           PHASE729_POWERPOINT_SYNC_ENABLED=false
-          PHASE730_ADMIN_IDENTITY_ENABLED=false
-          PHASE730_ADMIN_AI_UNLOCK_ENABLED=false
+          PHASE730_ADMIN_IDENTITY_ENABLED=true
+          PHASE730_ADMIN_AI_UNLOCK_ENABLED=true
           PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED=false
-          PHASE730_LEGACY_ADMIN_PIN_ENABLED=true
+          PHASE730_C1_GOOGLE_AI_MASTER_ENABLED=true
+          PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=true
+          PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED=false
           PHASE730_ADMIN_ENVIRONMENT_ID=00000000-0000-4000-8000-000000000730
           ADMIN_IDENTITY_PEPPER_VERSION=1
           ADMIN_AI_PIN_PEPPER_VERSION=1
           ADMIN_AI_PIN_PEPPER=compass-ci-only-admin-ai-pin-pepper-at-least-32-bytes
           ADMIN_AI_NETWORK_PEPPER=compass-ci-only-admin-ai-network-pepper-at-least-32-bytes
           ADMIN_AI_BROWSER_CHALLENGE_SECRET=compass-ci-only-browser-challenge-secret-at-least-32-bytes
+          ADMIN_AI_CHILD_GRANT_SECRET=compass-ci-only-admin-ai-child-grant-secret-at-least-32-bytes
+          ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1
           PRESENTER_BRIDGE_TOKEN_SECRET=compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
           PRESENTER_BRIDGE_GATEWAY_SECRET=compass-ci-only-presenter-gateway-secret-at-least-32-bytes
           LITERATURE_API_CONTACT_EMAIL=ci@example.test
@@ -254,26 +257,8 @@ jobs:
       - name: Verify local Auth, CORS and fail-closed paid features
         run: npm run test:production-local-edge
 
-      - name: Restart local Edge Functions with Admin identity enabled
-        run: |
-          node scripts/ci/manage-local-edge.mjs stop
-          node scripts/ci/set-local-admin-identity-edge.mjs on
-          node scripts/ci/manage-local-edge.mjs start
-
-      - name: Wait for Admin-identity-enabled local Edge Functions
-        run: node scripts/ci/wait-for-local-edge.mjs
-
-      - name: Run local GoTrue TOTP and signed Google identity through Edge and database, then admin-ai-unlock B2.2b/C1 source-OFF checks
+      - name: Run local GoTrue TOTP and signed Google identity through Edge and database, then gate-closed factor checks
         run: npm run test:phase7-30b1-local-edge
-
-      - name: Restore dormant Admin identity configuration
-        run: |
-          node scripts/ci/manage-local-edge.mjs stop
-          node scripts/ci/set-local-admin-identity-edge.mjs off
-          node scripts/ci/manage-local-edge.mjs start
-
-      - name: Wait for dormant Admin identity configuration
-        run: node scripts/ci/wait-for-local-edge.mjs
 
       - name: Restart local Edge Functions with Presenter proof enabled
         run: |
@@ -335,8 +320,8 @@ jobs:
         with:
           name: local-integration-evidence-${{ github.run_attempt }}
           path: |
-            playwright-report/
             test-results/local/
+            test-results/reports/local/
             ${{ runner.temp }}/compass-edge.log
           if-no-files-found: ignore
           retention-days: 7

@@ -1,8 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
+import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
-const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
 const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const decodeQrPixels = jsQR as unknown as (
   data: Uint8ClampedArray,
@@ -19,6 +19,25 @@ async function openMonitoredPage(context: BrowserContext) {
 async function closeContext(context: BrowserContext, page: Page) {
   if (!page.isClosed()) await page.close()
   await context.close()
+}
+
+async function installClipboardCapture(page: Page) {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          window.sessionStorage.setItem('lifecycle-display-url', value)
+        },
+      },
+    })
+  })
+}
+
+async function copiedDisplayUrl(page: Page) {
+  return page.evaluate(
+    () => window.sessionStorage.getItem('lifecycle-display-url') ?? '',
+  )
 }
 
 async function decodeQrImage(page: Page, selector: string) {
@@ -51,10 +70,6 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   browser,
 }) => {
   test.setTimeout(150_000)
-  expect(
-    adminPin,
-    'TEST_ADMIN_PIN must match the local Edge test env.',
-  ).not.toBe('')
 
   const adminContext = await browser.newContext()
   const studentContext = await browser.newContext()
@@ -66,11 +81,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   const lectureTitle = `CI講義 ${Date.now()}`
 
   try {
+    await installGoogleAdminSession(admin.page)
     await admin.page.goto('/admin')
-    await admin.page.getByLabel('管理PIN').fill(adminPin)
-    await admin.page
-      .getByRole('button', { name: '講義コントロールを開く' })
-      .click()
     await expect(
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()
@@ -78,7 +90,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       admin.page.getByRole('heading', { name: '管理セッション' }),
     ).toBeVisible()
-    await expect(admin.page.getByText('現在のセッション')).toBeVisible()
+    await expect(
+      admin.page.getByText('現在のセッション', { exact: true }),
+    ).toBeVisible()
 
     await admin.page.getByLabel('講義タイトル').fill(lectureTitle)
     await admin.page.getByRole('button', { name: '新しい講義を作成' }).click()
@@ -157,18 +171,42 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       canonicalJoinUrl,
     )
 
-    const isolatedSession = await issuedDisplaySession
+    const popupSession = await issuedDisplaySession
+    await installClipboardCapture(admin.page)
+    const isolatedDisplaySessionResponse = admin.page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/issue-display-session') &&
+        response.status() === 200,
+    )
+    await admin.page
+      .getByRole('button', { name: '別ブラウザ用リンクをコピー' })
+      .click()
+    const isolatedSession = (
+      await isolatedDisplaySessionResponse
+    ).json() as Promise<{
+      displayToken: string
+      lectureSessionId: string
+    }>
+    await expect(
+      admin.page.getByRole('button', { name: 'リンクをコピーしました' }),
+    ).toBeVisible()
+    const isolatedDisplayUrl = await copiedDisplayUrl(admin.page)
+    const issuedIsolatedSession = await isolatedSession
+    expect(issuedIsolatedSession.lectureSessionId).toBe(
+      popupSession.lectureSessionId,
+    )
+    expect(issuedIsolatedSession.displayToken).not.toBe(
+      popupSession.displayToken,
+    )
+    expect(isolatedDisplayUrl).toContain('/display#')
+    expect(isolatedDisplayUrl).toContain(
+      encodeURIComponent(issuedIsolatedSession.displayToken),
+    )
     isolatedDisplayContext = await browser.newContext()
     isolatedDisplayPage = await isolatedDisplayContext.newPage()
     const isolatedDisplaySafety =
       await installBrowserSafetyMonitor(isolatedDisplayPage)
-    const isolatedDisplayUrl = new URL('/display', appBaseUrl)
-    isolatedDisplayUrl.hash = new URLSearchParams({
-      code: lectureCode ?? '',
-      lecture: isolatedSession.lectureSessionId,
-      token: isolatedSession.displayToken,
-    }).toString()
-    await isolatedDisplayPage.goto(isolatedDisplayUrl.toString())
+    await isolatedDisplayPage.goto(isolatedDisplayUrl)
     await expect(
       isolatedDisplayPage.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()
@@ -282,7 +320,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     ).toBeDisabled()
 
     await admin.page.getByRole('button', { name: 'ログアウト' }).click()
-    await expect(admin.page.getByLabel('管理PIN')).toBeVisible()
+    await expect(
+      admin.page.getByRole('heading', { name: '教員としてログイン' }),
+    ).toBeVisible()
 
     await admin.safety.assertClean()
     await student.safety.assertClean()

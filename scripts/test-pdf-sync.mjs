@@ -25,10 +25,13 @@ assert.match(migration, /set schema private/)
 assert.match(migration, /pdf_document_id/)
 assert.doesNotMatch(migration, /create table public\.lecture_materials/)
 
-assert.match(updateDisplay, /from\('lecture_live_state'\)/)
-assert.match(updateDisplay, /rpc\('admin_update_pdf_display'/)
-assert.match(updateDisplay, /getPdfAsset/)
-assert.match(updateDisplay, /pageCount/)
+assert.match(updateDisplay, /verifyGoogleAdminOperationRequest/)
+assert.match(updateDisplay, /manage_google_admin_display_state_v1/)
+assert.match(updateDisplay, /target_pdf_document_id: body\.pdfDocumentId \?\? null/)
+assert.match(updateDisplay, /target_current_pdf_page: body\.currentPdfPage \?\? null/)
+assert.match(updateDisplay, /displayState: result\.displayState/)
+assert.doesNotMatch(updateDisplay, /admin_update_pdf_display/)
+assert.doesNotMatch(updateDisplay, /from\('lecture_live_state'\)/)
 assert.doesNotMatch(updateDisplay, /from\('lecture_display_state'\)/)
 
 for (const catalog of [edgeCatalog, frontendCatalog]) {

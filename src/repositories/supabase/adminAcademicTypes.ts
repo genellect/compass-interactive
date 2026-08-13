@@ -93,31 +93,28 @@ export type ManageAcademicAnswersRequest =
   | {
       action: 'generate'
       adminToken: AdminOperationCredentialInput
-      billingGrant?: string
-      grantRequestId?: string
-      idempotencyKey?: string
+      grantRequestId: string
       lectureSessionId: string
-      preflightRequestId?: string
+      preflightRequestId: string
       question: string
       searchQuery: string
       sourceKind: 'summary_candidate' | 'teacher_selected'
       sourceSummaryId: string | null
       sourcePolicy: AcademicSourcePolicy
-      startRequestId?: string
+      startRequestId: string
     }
   | {
       action: 'generateAuto'
       adminToken: AdminOperationCredentialInput
-      grantRequestId?: string
-      idempotencyKey?: string
+      grantRequestId: string
       lectureSessionId: string
-      preflightRequestId?: string
+      preflightRequestId: string
       question: string
       runToken: string
       searchQuery: string
       sourcePolicy: AcademicSourcePolicy
       sourceSummaryId: string
-      startRequestId?: string
+      startRequestId: string
     }
   | {
       action: 'revise'

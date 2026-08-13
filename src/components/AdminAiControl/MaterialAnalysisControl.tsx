@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase726BrowserPdfPublishingEnabled } from '../../lib/featureFlags'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import {
@@ -28,13 +25,6 @@ type MaterialAnalysisControlProps = {
   masterAuthorization: AiMasterAuthorization | null
   onPollDraftCreated: () => void | Promise<void>
   publisherSessionToken: string
-}
-
-function idempotencyKey(
-  action: 'material_analysis' | 'poll_suggestions',
-  lectureSessionId: string,
-) {
-  return `phase5-${action}-${lectureSessionId}-${crypto.randomUUID()}`
 }
 
 function proposalTypeLabel(type: AdminPollProposal['proposalType']) {
@@ -80,12 +70,10 @@ export function MaterialAnalysisControl({
   onPollDraftCreated,
   publisherSessionToken,
 }: MaterialAnalysisControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [selectedDocumentId, setSelectedDocumentId] = useState('')
   const googleProviderAttemptsRef = useRef(
     new Map<string, { grantRequestId: string; startRequestId: string }>(),
   )
-  const [billingPin, setBillingPin] = useState('')
   const [results, setResults] = useState<AdminMaterialResults>({
     analysis: null,
     publication: null,
@@ -180,16 +168,14 @@ export function MaterialAnalysisControl({
       !selectedDocument ||
       (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
       masterHeldByOther ||
-      (!masterAuthorized && (googleCredential || !billingPin.trim()))
+      !masterAuthorized
     ) {
       setMessage(
         masterHeldByOther
           ? '別の教員画面がAI許可を保持しています。'
           : masterAuthorized
             ? 'PDFの公開状態を確認してください。'
-            : googleCredential
-              ? 'PDFの公開状態と講義中のAI許可を確認してください。'
-              : 'PDFの公開状態とAPI利用PINを確認してください。',
+            : 'PDFの公開状態と講義中のAI許可を確認してください。',
       )
       return
     }
@@ -220,27 +206,16 @@ export function MaterialAnalysisControl({
         lectureSessionId,
         publisherSessionToken,
       })
-      const authorization = googleCredential
-        ? null
-        : await supabaseAdminRepository.authorizeAiStart({
-            actions: [action],
-            adminToken,
-            billingPin: masterAuthorized ? undefined : billingPin,
-            lectureSessionId,
-          })
-      setBillingPin('')
       const analysisId =
         action === 'poll_suggestions' ? (results.analysis?.id ?? null) : null
-      googleAttemptKey = googleCredential
-        ? JSON.stringify({
-            action,
-            analysisId,
-            documentId: selectedDocument.documentId,
-            documentVersion: selectedDocument.documentVersion,
-            pageEnd: action === 'poll_suggestions' ? end : null,
-            pageStart: action === 'poll_suggestions' ? start : null,
-          })
-        : null
+      googleAttemptKey = JSON.stringify({
+        action,
+        analysisId,
+        documentId: selectedDocument.documentId,
+        documentVersion: selectedDocument.documentVersion,
+        pageEnd: action === 'poll_suggestions' ? end : null,
+        pageStart: action === 'poll_suggestions' ? start : null,
+      })
       let googleAttempt = googleAttemptKey
         ? googleProviderAttemptsRef.current.get(googleAttemptKey)
         : undefined
@@ -255,12 +230,7 @@ export function MaterialAnalysisControl({
         action,
         adminToken,
         analysisId,
-        ...(googleCredential
-          ? googleAttempt!
-          : {
-              billingGrant: authorization!.billingGrant,
-              idempotencyKey: idempotencyKey(action, lectureSessionId),
-            }),
+        ...googleAttempt!,
         documentId: selectedDocument.documentId,
         documentVersion: selectedDocument.documentVersion,
         extraction,
@@ -287,7 +257,6 @@ export function MaterialAnalysisControl({
       if (googleAttemptKey && !shouldRetainAdminProviderAttempt(error)) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
       }
-      setBillingPin('')
       setMessage(
         error instanceof Error
           ? `AI処理を完了できませんでした: ${error.message}`
@@ -485,23 +454,11 @@ export function MaterialAnalysisControl({
         ) : masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
-        ) : googleCredential ? (
+          <p className="note">講義中のAI許可を使用します。</p>
+        ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。
           </p>
-        ) : (
-          <label className="field compact-field">
-            <span>API利用PIN（毎回）</span>
-            <input
-              autoComplete="off"
-              disabled={generationDisabled}
-              inputMode="numeric"
-              onChange={(event) => setBillingPin(event.target.value)}
-              type="password"
-              value={billingPin}
-            />
-          </label>
         )}
         <button
           className="primary-button"
@@ -511,7 +468,7 @@ export function MaterialAnalysisControl({
             !selectedDocument ||
             (!publisherSessionToken &&
               !isPhase726BrowserPdfPublishingEnabled) ||
-            (!masterAuthorized && (googleCredential || !billingPin.trim())) ||
+            !masterAuthorized ||
             Boolean(results.analysis)
           }
           onClick={() => void runAnalysis('material_analysis')}
@@ -738,10 +695,8 @@ export function MaterialAnalysisControl({
             <strong>指定ページから追加候補</strong>
             <small>
               {masterAuthorized
-                ? '講義中のAPI許可を使用します'
-                : googleCredential
-                  ? '講義中のAI許可が必要です'
-                  : '実行時にAPI利用PINをもう一度確認します'}
+                ? '講義中のAI許可を使用します'
+                : '講義中のAI許可が必要です'}
             </small>
           </div>
           <label className="field compact-field">
@@ -771,7 +726,7 @@ export function MaterialAnalysisControl({
             disabled={
               generationDisabled ||
               masterHeldByOther ||
-              (!masterAuthorized && (googleCredential || !billingPin.trim()))
+              !masterAuthorized
             }
             onClick={() => void runAnalysis('poll_suggestions')}
             type="button"

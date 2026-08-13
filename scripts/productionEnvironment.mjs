@@ -21,8 +21,12 @@ const featureFlags = [
 const optionalFeatureFlags = [
   'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
   'VITE_PHASE7_28_DISPLAY_REALTIME',
-  'VITE_PHASE7_28_AI_MASTER_AUTH',
   'VITE_PHASE7_29_POWERPOINT_SYNC',
+  'VITE_PHASE7_30_ADMIN_IDENTITY',
+  'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
+  'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER',
 ]
 
 const forbiddenPublicNames = [
@@ -142,20 +146,23 @@ export function validateProductionEnvironment(environment) {
     'VITE_PHASE7_28_DISPLAY_REALTIME',
     'VITE_PHASE7_1_CLASSROOM_EXTENSIONS',
   )
-  for (const dependency of [
-    'VITE_PHASE4_REALTIME_CAPTIONS',
-    'VITE_PHASE5_MATERIAL_ANALYSIS',
-    'VITE_PHASE6_SUMMARIES',
-    'VITE_PHASE6_8_SECURITY',
-    'VITE_PHASE7_2_ACADEMIC_ANSWERS',
-    'VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS',
-  ]) {
-    requireFlag('VITE_PHASE7_28_AI_MASTER_AUTH', dependency)
-  }
   requireFlag('VITE_PHASE7_29_POWERPOINT_SYNC', 'VITE_PHASE3_PRIVATE_PDF')
   requireFlag(
     'VITE_PHASE7_29_POWERPOINT_SYNC',
     'VITE_PHASE7_28_DISPLAY_REALTIME',
+  )
+  requireFlag('VITE_PHASE7_30_ADMIN_AI_UNLOCK', 'VITE_PHASE7_30_ADMIN_IDENTITY')
+  requireFlag(
+    'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
+    'VITE_PHASE7_30_ADMIN_IDENTITY',
+  )
+  requireFlag(
+    'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
+    'VITE_PHASE7_30_ADMIN_IDENTITY',
+  )
+  requireFlag(
+    'VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER',
+    'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
   )
 
   if (enabled('VITE_PHASE3_PRIVATE_PDF')) {
@@ -180,7 +187,6 @@ export function validateProductionServerEnvironment(environment) {
     environment,
     'PHASE728_DISPLAY_REALTIME_ENABLED',
   )
-  const masterEnabled = value(environment, 'PHASE7_28_AI_MASTER_AUTH_ENABLED')
   const presenterEnabled = value(
     environment,
     'PHASE729_POWERPOINT_SYNC_ENABLED',
@@ -193,10 +199,18 @@ export function validateProductionServerEnvironment(environment) {
       'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED must be true, false or omitted.',
     )
   }
-  if (masterEnabled && !['false', 'true'].includes(masterEnabled)) {
-    errors.push(
-      'PHASE7_28_AI_MASTER_AUTH_ENABLED must be true, false or omitted.',
-    )
+  const googleAdminFlags = [
+    'PHASE730_ADMIN_IDENTITY_ENABLED',
+    'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
+    'PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED',
+    'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+    'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
+  ]
+  for (const name of googleAdminFlags) {
+    const configuredValue = value(environment, name)
+    if (configuredValue && !['false', 'true'].includes(configuredValue)) {
+      errors.push(`${name} must be true, false or omitted.`)
+    }
   }
   if (presenterEnabled && !['false', 'true'].includes(presenterEnabled)) {
     errors.push(
@@ -221,43 +235,37 @@ export function validateProductionServerEnvironment(environment) {
   }
   if (
     displayRealtimeEnabled === 'true' &&
-    value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
+    value(environment, 'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED') !== 'true'
   ) {
     errors.push(
-      'PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
+      'PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=true.',
     )
   }
-  if (
-    masterEnabled === 'true' &&
-    value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
-  ) {
-    errors.push(
-      'PHASE7_28_AI_MASTER_AUTH_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
-    )
-  }
-  if (masterEnabled === 'true') {
-    for (const dependency of [
-      'PHASE4_REALTIME_CAPTIONS_ENABLED',
-      'PHASE5_MATERIAL_ANALYSIS_ENABLED',
-      'PHASE6_SUMMARIES_ENABLED',
-      'PHASE7_2_ACADEMIC_ANSWERS_ENABLED',
-      'PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED',
-    ]) {
-      if (value(environment, dependency) !== 'true') {
-        errors.push(
-          `PHASE7_28_AI_MASTER_AUTH_ENABLED=true requires ${dependency}=true.`,
-        )
-      }
-    }
-  }
-  if (presenterEnabled === 'true') {
+  const requireServerFlag = (feature, dependency) => {
     if (
-      value(environment, 'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED') !== 'true'
+      value(environment, feature) === 'true' &&
+      value(environment, dependency) !== 'true'
     ) {
-      errors.push(
-        'PHASE729_POWERPOINT_SYNC_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true.',
-      )
+      errors.push(`${feature}=true requires ${dependency}=true.`)
     }
+  }
+  requireServerFlag(
+    'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
+    'PHASE730_ADMIN_IDENTITY_ENABLED',
+  )
+  requireServerFlag(
+    'PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED',
+    'PHASE730_ADMIN_IDENTITY_ENABLED',
+  )
+  requireServerFlag(
+    'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+    'PHASE730_ADMIN_IDENTITY_ENABLED',
+  )
+  requireServerFlag(
+    'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
+    'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+  )
+  if (presenterEnabled === 'true') {
     if (value(environment, 'PHASE728_DISPLAY_REALTIME_ENABLED') !== 'true') {
       errors.push(
         'PHASE729_POWERPOINT_SYNC_ENABLED=true requires PHASE728_DISPLAY_REALTIME_ENABLED=true.',

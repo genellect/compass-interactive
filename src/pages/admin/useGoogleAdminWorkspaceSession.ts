@@ -1,8 +1,5 @@
 import { useRef } from 'react'
-import {
-  type AdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import { type AdminOperationCredential } from '../../lib/adminAuth/adminOperationCredential'
 import { supabaseAdminRepository } from '../../repositories/supabaseAdminRepository'
 
 const INVALID_ADMIN_SESSION_MESSAGES = [
@@ -17,26 +14,19 @@ const INVALID_ADMIN_SESSION_MESSAGES = [
 export function useGoogleAdminWorkspaceSession({
   activeLectureSessionId,
   adminCredential,
-  adminToken,
   clearLocalWorkspace,
   onAdminLogout,
-  securityEnabled,
-  setAuthError,
 }: {
   activeLectureSessionId: string | null
-  adminCredential?: AdminOperationCredential
-  adminToken: AdminOperationCredentialInput | ''
+  adminCredential: AdminOperationCredential
   clearLocalWorkspace: () => void
-  onAdminLogout?: () => Promise<void>
-  securityEnabled: boolean
-  setAuthError: (message: string) => void
+  onAdminLogout: () => Promise<void>
 }) {
   const logoutInFlightRef = useRef(false)
 
   function expireAdminSession() {
     clearLocalWorkspace()
-    setAuthError('管理者認証の有効期限が切れました。再度ログインしてください。')
-    if (!adminCredential || !onAdminLogout || logoutInFlightRef.current) return
+    if (logoutInFlightRef.current) return
 
     logoutInFlightRef.current = true
     void onAdminLogout()
@@ -60,37 +50,21 @@ export function useGoogleAdminWorkspaceSession({
   }
 
   async function handleLogout() {
-    if (adminCredential && onAdminLogout) {
-      if (activeLectureSessionId) {
-        try {
-          await supabaseAdminRepository.manageAiControl({
-            action: 'stop',
-            adminToken: adminCredential,
-            lectureSessionId: activeLectureSessionId,
-            reason: 'admin_logout',
-          })
-        } catch {
-          // Session revocation and the durable provider sweep remain the
-          // authoritative fail-safe if the best-effort lecture stop is lost.
-        }
-      }
-      clearLocalWorkspace()
-      await onAdminLogout()
-      return
-    }
-
-    try {
-      if (securityEnabled && adminToken) {
-        await supabaseAdminRepository.manageAdminSessions({
-          action: 'logout',
-          adminToken,
+    if (activeLectureSessionId) {
+      try {
+        await supabaseAdminRepository.manageAiControl({
+          action: 'stop',
+          adminToken: adminCredential,
+          lectureSessionId: activeLectureSessionId,
+          reason: 'admin_logout',
         })
+      } catch {
+        // Session revocation and the durable provider sweep remain the
+        // authoritative fail-safe if the best-effort lecture stop is lost.
       }
-    } catch {
-      // Local logout is fail-safe even when the revoke request times out.
-    } finally {
-      clearLocalWorkspace()
     }
+    clearLocalWorkspace()
+    await onAdminLogout()
   }
 
   return {

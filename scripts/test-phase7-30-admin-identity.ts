@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -169,7 +169,6 @@ const migration = read(
   'supabase/migrations/20260809143000_phase7_30b1_admin_identity_aal2.sql',
 )
 const edge = read('supabase/functions/admin-identity-session/index.ts')
-const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
 const studentClient = read('src/lib/supabaseClient.ts')
 const anonymousAuth = read('src/lib/anonymousAuth.ts')
 const adminClient = read('src/lib/adminAuth/adminSupabaseClient.ts')
@@ -224,9 +223,11 @@ assert.match(edge, /requestOrigin/)
 assert.doesNotMatch(edge, /user_metadata/)
 assert.doesNotMatch(edge, /body\.environment/)
 
-assert.match(verifyPin, /user\.is_anonymous !== true/)
-assert.match(verifyPin, /PHASE730_LEGACY_ADMIN_PIN_ENABLED/)
-assert.match(verifyPin, /get_admin_identity_runtime_gate_v1/)
+assert.equal(
+  existsSync(join(root, 'supabase/functions/verify-admin-pin/index.ts')),
+  false,
+  'the shared Admin PIN issuer must stay removed',
+)
 assert.match(studentClient, /detectSessionInUrl: false/)
 assert.match(anonymousAuth, /user\.is_anonymous === true/)
 assert.match(adminClient, /flowType: 'pkce'/)
@@ -239,7 +240,7 @@ assert.match(adminStorage, /provider_token/)
 assert.match(adminRoute, /exchangeCodeForSession/)
 assert.match(adminRoute, /window\.history\.replaceState\(\{\}, '', '\/admin'\)/)
 assert.match(adminRoute, /challengeAndVerify/)
-assert.match(adminRoute, /従来PINで講義操作へ/)
+assert.doesNotMatch(adminRoute, /従来PIN|AdminLegacyApp/)
 assert.match(app, /location\.pathname\.startsWith\('\/admin'\)/)
 assert.match(
   config,

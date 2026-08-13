@@ -1,7 +1,4 @@
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import type { PublisherExtraction } from '../../pdf/publisherClient'
 import type {
   AdminMaterialPublication,
@@ -85,11 +82,8 @@ export const adminContentAiRepository = {
   async manageAcademicAnswers(
     request: ManageAcademicAnswersRequest,
   ): Promise<AdminAcademicResults> {
-    const googleCredential = isGoogleAdminOperationCredential(
-      request.adminToken,
-    )
     const requestBody =
-      googleCredential && request.action === 'cancel'
+      request.action === 'cancel'
         ? {
             ...request,
             academicRequestId: request.requestId,
@@ -108,7 +102,6 @@ export const adminContentAiRepository = {
     )
     if (
       response.error &&
-      googleCredential &&
       request.action !== 'status' &&
       (await providerAttemptIsAmbiguous(response.error))
     ) {
@@ -130,8 +123,7 @@ export const adminContentAiRepository = {
         '文献に基づく参考回答の操作に失敗しました。',
       )
       if (
-        googleCredential &&
-        (request.action === 'generate' || request.action === 'generateAuto')
+        request.action === 'generate' || request.action === 'generateAuto'
       ) {
         throw new AdminProviderAttemptError(
           message,
@@ -140,7 +132,7 @@ export const adminContentAiRepository = {
       }
       throw new Error(message)
     }
-    if (data?.ok && !data.results && data.refreshRequired && googleCredential) {
+    if (data?.ok && !data.results && data.refreshRequired) {
       const refreshed = await invokeEdgeFunction<AcademicFunctionResponse>(
         'generate-academic-answer',
         {
@@ -172,16 +164,14 @@ export const adminContentAiRepository = {
     action: 'material_analysis' | 'poll_suggestions'
     adminToken: AdminOperationCredentialInput
     analysisId?: string | null
-    billingGrant?: string
     documentId: string
     documentVersion: string
     extraction: PublisherExtraction
-    grantRequestId?: string
-    idempotencyKey?: string
+    grantRequestId: string
     lectureSessionId: string
     pageEnd?: number | null
     pageStart?: number | null
-    startRequestId?: string
+    startRequestId: string
   }): Promise<AdminMaterialResults> {
     let response = await invokeEdgeFunction<MaterialFunctionResponse>(
       'analyze-lecture-material',
@@ -189,7 +179,6 @@ export const adminContentAiRepository = {
     )
     if (
       response.error &&
-      isGoogleAdminOperationCredential(request.adminToken) &&
       (await providerAttemptIsAmbiguous(response.error))
     ) {
       response = await invokeEdgeFunction<MaterialFunctionResponse>(
@@ -203,13 +192,10 @@ export const adminContentAiRepository = {
         error,
         'Material analysis failed.',
       )
-      if (isGoogleAdminOperationCredential(request.adminToken)) {
-        throw new AdminProviderAttemptError(
-          message,
-          await providerAttemptIsAmbiguous(error),
-        )
-      }
-      throw new Error(message)
+      throw new AdminProviderAttemptError(
+        message,
+        await providerAttemptIsAmbiguous(error),
+      )
     }
     if (!data?.ok || !data.results) {
       throw new Error(data?.message ?? 'Material analysis failed.')
@@ -285,7 +271,6 @@ export const adminContentAiRepository = {
             'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
           adminToken: AdminOperationCredentialInput
           autoAcademicAnswers: boolean
-          billingGrant?: string
           lectureSessionId: string
         }
       | {

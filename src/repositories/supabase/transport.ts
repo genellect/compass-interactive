@@ -96,12 +96,18 @@ export async function invokeEdgeFunction<T>(
   functionName: string,
   options: EdgeFunctionInvokeOptions,
 ) {
+  const suppliedAdminCredential =
+    options.body && typeof options.body === 'object'
+      ? (options.body as Record<string, unknown>).adminToken
+      : undefined
   if (
-    options.body &&
-    typeof options.body === 'object' &&
-    isAdminOperationCredential(
-      (options.body as Record<string, unknown>).adminToken,
-    )
+    suppliedAdminCredential !== undefined &&
+    !isAdminOperationCredential(suppliedAdminCredential)
+  ) {
+    throw new Error('Google Admin credential is required.')
+  }
+  if (
+    isAdminOperationCredential(suppliedAdminCredential)
   ) {
     const { adminToken: credential, ...body } = options.body as Record<
       string,

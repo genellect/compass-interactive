@@ -271,8 +271,9 @@ assert.equal(
 )
 assert.match(
   browserRunner,
-  /demo-admin-ledger[\s\S]*VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS[\s\S]*VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER[\s\S]*VITE_PHASE7_30_LEGACY_ADMIN_PIN/,
+  /demo-admin-ledger[\s\S]*VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS[\s\S]*VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER/,
 )
+assert.doesNotMatch(browserRunner, /VITE_PHASE7_30_LEGACY_ADMIN_PIN/)
 assert.match(
   browserSpec,
   /ledgerAdmissionEnabled[\s\S]*idempotentReplay[\s\S]*更新結果を再確認/,

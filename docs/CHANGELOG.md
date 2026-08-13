@@ -3,6 +3,27 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-12 - Phase 7.30E Google-only source and dormant identity cutover
+
+- Removed the shared Admin PIN UI, issuer, browser storage, active flags and
+  legacy Admin wire transport. The 19 remaining operational Admin Edge
+  adapters require a Google app session and reject legacy Admin/billing fields;
+  the personal four-digit AI PIN remains an in-session intent factor.
+- Added durable Google Display terminal provenance for live-invalid and expired
+  descendants, including exact JTI/lecture/time binding and cross-UID denial.
+- Added private append-only operator approvals and exact-replay receipts for
+  explicit legacy lecture ownership claims. No request, title, creator or email
+  may infer ownership.
+- Added a dormant SERIALIZABLE/NOWAIT operator cutover that rechecks two owners,
+  all active ownership, gates, legacy sessions and unresolved AI/PDF authority
+  in one transaction before disabling legacy admission and writing an
+  immutable tombstone.
+- Replaced local/demo shared-PIN fixtures with separate Google AAL2 app sessions
+  per browser project. Added E pgTAP, populated C2/D upgrade and two-connection
+  serialization contracts. Hosted deployment attestation, operator cutover,
+  secret removal, billing compatibility retirement and real-account activation
+  remain HOLD.
+
 ## 2026-08-10 - Phase 7.30C1 dormant lecture AI-master admission
 
 - Added private optional-row lecture ownership without inferred backfill or

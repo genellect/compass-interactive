@@ -4,9 +4,11 @@ Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
 Last reconciled: 2026-08-12
 Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-D
-source implemented as default-OFF candidates. D's dedicated mocked
-Chromium/WebKit browser gate passes locally; C2 exact-head runtime CI and D
-database/exact-head evidence are pending. E-F and Hosted/Human gates remain HOLD.
+source and exact-head runtime evidence pass with all gates default OFF. Phase
+7.30E Google-only application transport and dormant cutover authority are a
+source/local candidate; its exact-head database and Local Edge freeze is
+pending. The irreversible cutover, Phase 7.30F and Hosted/Human gates remain
+HOLD.
 
 ## 1. Numbering decision
 
@@ -643,37 +645,22 @@ AI-unlock factor, owner-managed policy and the existing lecture master
 authorization. Both shared PIN systems are removed before Production; rollback
 uses a Google-only immutable revision and operator owner recovery.
 
-**2026-08-10 checkpoint:** Phase 7.30A, the bounded B1 identity foundation and
-the B2 default-OFF Admin AI-unlock database foundation are implemented in
-source. Database Google issuance and
-Edge admission are the two independently default-OFF authorization gates; the
-separately default-OFF frontend flag controls only UI exposure. Normal
-activation enables all three together, while legacy Admin PIN compatibility
-remains default ON. B1 includes trusted Google-subject HMAC binding, a
-five-minute digest-only TOTP nonce whose exact same-caller/session/JWT retry is
-idempotent, fresh TOTP AMR timestamp verification, and an opaque AAL2
-application session with an eight-hour absolute and 30-minute inactivity
-limit. It does not grant operational Admin authority. That lifetime remains a
-historical B1 fact. See `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
+**2026-08-12 checkpoint:** Phase 7.30A-D passes exact-head migration, pgTAP,
+concurrency, populated-upgrade, database lint, Local Edge and browser evidence
+with all admission gates default OFF. B1's 30-minute idle limit is a historical
+fact; B2 anchors the current application session to the backing Auth session's
+eight-hour cap. C2 supplies the closed Google authorization matrix and provider
+authority, and D supplies the owner ledger and invitation/session controls.
 
-B2 now implements the source database migration that removes the idle limit,
-anchors the cap to `auth.sessions.created_at + 8 hours`, requires the backing
-Auth session, adds nine private AI-unlock/policy/rate/receipt/browser tables and
-expands lecture-master provenance. It is default OFF. Source/static evidence is
-PASS; clean/populated upgrade, pgTAP, real database concurrency, generated types
-and lint await exact-head CI. B2.2a source adds a principal-approved TOTP
-factor-set trust anchor, completed JWT/AMR evidence for session issuance,
-changed-factor-set invalidation and single-use rare-control grants; its runtime
-DB and Local Edge evidence await exact-head CI. B2.2b source adds the dedicated
-raw-PIN/HMAC Edge, PIN lifecycle UI, non-extractable IndexedDB P-256 key and
-dormant ES256 assertion, plus approved TOTP add/remove transitions with bounded
-hash-only recovery. Chromium/WebKit storage E2E passes locally; Docker-backed
-DB/Local Edge evidence is still pending. Phase 7.30C1 source adds private,
-no-backfill lecture ownership and atomic PIN/browser-proof-to-master admission,
-while deliberately fencing provider/child authority. Phase 7.30C2 still has to
-complete the unified verifier across every operational Admin Edge/RPC path.
-AI Passkey, real OAuth and Hosted/Human evidence remain HOLD. See
-`docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`.
+Phase 7.30E removes the shared Admin PIN application transport and makes the 19
+remaining operational Admin Edge adapters Google-app-session only. It adds
+Display terminal issuance provenance, explicit operator-reviewed ownership
+approval/claim evidence and a dormant SERIALIZABLE/NOWAIT database cutover.
+Migration application does not activate or tombstone legacy identity. E
+database/Local Edge exact-head evidence, independent Hosted deployment digest,
+operator cutover, real OAuth and Human evidence remain HOLD. Historical billing
+compatibility retirement and AI Passkey are separate later boundaries. See
+`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`.
 
 ### 7.30A - asset, IAM and threat inventory
 
@@ -692,7 +679,8 @@ AI Passkey, real OAuth and Hosted/Human evidence remain HOLD. See
 Implementation is intentionally split. B1 is the dormant identity/session
 foundation described above. B2 now implements the default-OFF database source
 for AI unlock, policy, rate/receipt/browser state, session continuity and
-master provenance; its exact-head runtime DB gate remains pending.
+master provenance; its exact-head runtime DB gate passes while activation
+remains default OFF.
 
 - Add private principal, environment membership, invitation, tracked session,
   append-only audit, AI-unlock factor, browser-profile credential, one-time
@@ -723,7 +711,7 @@ master provenance; its exact-head runtime DB gate remains pending.
   principal-approved/live/session factor sets, completed JWT/AMR issuance
   evidence and rare-control grants. B2.2b adds default-OFF PIN/browser Edge/UI
   and approved factor add/remove transitions without issuing a lecture master;
-  runtime DB/Local Edge exact-head CI is pending. Phase 7.30C1 adds private
+  runtime DB/Local Edge exact-head CI passes. Phase 7.30C1 adds private
   no-backfill ownership plus atomic dormant master admission. Phase 7.30C2 then
   completes the unified verifier across all operational Admin Edge/RPC paths.
   Dedicated AI Passkey is
@@ -779,10 +767,9 @@ are C2 scope and remain HOLD.
 Source status: owner-only ledger Database/Edge/client UI, immutable invitation
 redemption evidence, strict five-minute owner control step-up, last-owner guard,
 session/factor authority drain and response-loss recovery are implemented
-default-OFF. Static/non-live/build checks pass locally. Fresh migration, pgTAP,
-two-connection concurrency, populated upgrade, Local Edge and exact-head CI
-remain HOLD. The dedicated desktop Chromium/mobile WebKit response-loss,
-accessibility and overflow gate passes locally.
+default-OFF. Fresh migration, pgTAP, two-connection concurrency, populated
+upgrade, Local Edge, desktop/mobile Chromium/WebKit and exact-head CI pass. The
+feature remains default OFF and Hosted/Human activation remains HOLD.
 
 - Provide one Google sign-in CTA, concise TOTP enrollment/challenge,
   account/role display, own session list and owner-only membership/lecture/audit
@@ -803,6 +790,16 @@ accessibility and overflow gate passes locally.
   sanitizer, expiry, recovery and ledger E2E are mandatory.
 
 ### 7.30E - Google-only cutover and full regression
+
+Source status: the Admin client and 19 remaining operational Admin Edge
+adapters are Google-app-session only; the shared Admin PIN issuer, UI, storage,
+flags, `verify-admin-pin` and `authorize-ai-start` are removed. Explicit
+operator-reviewed ownership approval/claim evidence, Display terminal
+provenance and a dormant SERIALIZABLE/NOWAIT identity-cutover transaction are
+implemented. Static, type, non-live and mocked browser checks pass locally.
+Migration application is non-activating; database runtime, Local Edge and
+exact-head evidence are pending. Hosted deployment attestation, secret removal,
+operator cutover execution and real-account activation remain HOLD.
 
 - Use expand-first schema and explicit ownership claim/backfill, but cut
   operational authorization to Google-only after every Admin Edge/RPC path has

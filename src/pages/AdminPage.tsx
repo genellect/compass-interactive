@@ -1,12 +1,10 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   type AdminOperationCredential,
-  type AdminOperationCredentialInput,
 } from '../lib/adminAuth/adminOperationCredential'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
-  AdminAuthPanel,
   AdminJournalClubPreset,
   AdminLectureControl,
   AdminModerationPanel,
@@ -48,11 +46,8 @@ import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceSession'
 import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
 import {
-  ADMIN_SESSION_STORAGE_KEY,
-  ADMIN_TOKEN_SESSION_STORAGE_KEY,
   PUBLISHER_SESSION_STORAGE_KEY,
-  restoreAdminSession,
-  restoreAdminToken,
+  purgeLegacyAdminSessionStorage,
   restorePublisherSessionToken,
 } from './admin/adminSessionStorage'
 import './AdminPage.css'
@@ -62,10 +57,10 @@ export function AdminPage({
   identitySettings,
   onAdminLogout,
 }: {
-  adminCredential?: AdminOperationCredential
+  adminCredential: AdminOperationCredential
   identitySettings?: ReactNode
-  onAdminLogout?: () => Promise<void>
-} = {}) {
+  onAdminLogout: () => Promise<void>
+}) {
   const {
     activeLectureSessionId,
     comments,
@@ -84,30 +79,20 @@ export function AdminPage({
     selectLectureSession,
     visibleCommentCount,
   } = useCompassState()
-  const [isLegacyAuthenticated, setIsLegacyAuthenticated] =
-    useState(restoreAdminSession)
-  const [legacyAdminToken, setLegacyAdminToken] = useState(restoreAdminToken)
-  const adminToken: AdminOperationCredentialInput | '' =
-    adminCredential || legacyAdminToken
-  const isAuthenticated = Boolean(adminCredential) || isLegacyAuthenticated
+  const adminToken = adminCredential
+  const isAuthenticated = true
   const [adminSessions, setAdminSessions] = useState<AdminSessionSummary[]>([])
   const [adminCurrentSessionId, setAdminCurrentSessionId] = useState('')
   const [adminSessionsError, setAdminSessionsError] = useState('')
   const [adminSessionsLoading, setAdminSessionsLoading] = useState(false)
   const [showAdminSessions, setShowAdminSessions] = useState(false)
-  const [pin, setPin] = useState('')
-  const [authError, setAuthError] = useState('')
   const { expireAdminSession, handleInvalidAdminSession, handleLogout } =
     useGoogleAdminWorkspaceSession({
       activeLectureSessionId,
       adminCredential,
-      adminToken,
       clearLocalWorkspace: clearLocalAdminSession,
       onAdminLogout,
-      securityEnabled: isPhase68SecurityEnabled,
-      setAuthError,
     })
-  const [isVerifying, setIsVerifying] = useState(false)
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
@@ -503,30 +488,6 @@ export function AdminPage({
     await publishPdfDocumentWithLocalPublisher()
   }
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setIsVerifying(true)
-    setAuthError('')
-
-    try {
-      const verifiedAdminToken =
-        await supabaseAdminRepository.verifyAdminPin(pin)
-      window.sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, 'true')
-      window.sessionStorage.setItem(
-        ADMIN_TOKEN_SESSION_STORAGE_KEY,
-        verifiedAdminToken,
-      )
-      setLegacyAdminToken(verifiedAdminToken)
-      setIsLegacyAuthenticated(true)
-      setPin('')
-      await refreshLectures(verifiedAdminToken)
-    } catch {
-      setAuthError('PINを確認できませんでした。入力内容を確認してください。')
-    } finally {
-      setIsVerifying(false)
-    }
-  }
-
   useEffect(() => {
     if (!isAuthenticated || !adminToken) {
       setLectures([])
@@ -618,11 +579,8 @@ export function AdminPage({
 
   function clearLocalAdminSession() {
     clearAdminPdfExtractionCache()
-    window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
-    window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
-    setIsLegacyAuthenticated(false)
-    setLegacyAdminToken('')
-    setPin('')
+    // One-time cleanup for browsers that used the removed shared-PIN flow.
+    purgeLegacyAdminSessionStorage()
     setAdminPolls([])
     setAdminPollsHasMore(false)
     setAdminPollsError(null)
@@ -1052,18 +1010,6 @@ export function AdminPage({
     }
 
     void updateDisplayState('goToPage', { currentPdfPage: nextPage })
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <AdminAuthPanel
-        authError={authError}
-        isVerifying={isVerifying}
-        onPinChange={setPin}
-        onSubmit={handleLogin}
-        pin={pin}
-      />
-    )
   }
 
   return (

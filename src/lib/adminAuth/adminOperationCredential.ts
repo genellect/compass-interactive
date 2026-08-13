@@ -3,7 +3,9 @@ export type AdminOperationCredential = {
   kind: 'google'
 }
 
-export type AdminOperationCredentialInput = AdminOperationCredential | string
+// Phase 7.30E removes the shared-PIN transport. Keep the compatibility type
+// name while making every Admin operation require the Google app session.
+export type AdminOperationCredentialInput = AdminOperationCredential
 
 export function createGoogleAdminCredential(
   appSessionToken: string,

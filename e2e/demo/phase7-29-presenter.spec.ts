@@ -1,12 +1,18 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
+import {
+  createMockGoogleAdminSession,
+  expectMockGoogleAdminCredential,
+  fulfillMockGoogleAdminRequest,
+  installMockGoogleAdminSession,
+} from '../helpers/mockGoogleAdminSession.js'
 
 test.skip(
   process.env.VITE_PHASE7_29_POWERPOINT_SYNC !== 'true',
   'Phase 7.29 Presenter sync requires its dedicated flag-on runner.',
 )
 
-const adminToken = 'admin-session-playwright-phase729-1234567890'
+const googleAdmin = createMockGoogleAdminSession()
 const lectureSessionId = '72900000-0000-4000-8000-000000000001'
 const connectionId = '72900000-0000-4000-8000-000000000002'
 const documentId = 'phase729-presenter-e2e'
@@ -208,32 +214,14 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 }
 
 async function installAdminState(page: Page) {
-  await page.addInitScript(
-    ({ adminToken, lectureSessionId }) => {
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-authenticated',
-        'true',
-      )
-      window.sessionStorage.setItem(
-        'compass-interactive-admin-token',
-        adminToken,
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-session-id',
-        lectureSessionId,
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-runtime-mode',
-        'live',
-      )
-      window.localStorage.setItem(
-        'compass-interactive-lecture-title',
-        'Phase 7.29 Presenter E2E',
-      )
-      window.localStorage.setItem('compass-interactive-lecture-status', 'open')
+  await installMockGoogleAdminSession(page, googleAdmin, {
+    localStorage: {
+      'compass-interactive-lecture-runtime-mode': 'live',
+      'compass-interactive-lecture-session-id': lectureSessionId,
+      'compass-interactive-lecture-status': 'open',
+      'compass-interactive-lecture-title': 'Phase 7.29 Presenter E2E',
     },
-    { adminToken, lectureSessionId },
-  )
+  })
 }
 
 async function installNetworkMocks(
@@ -311,6 +299,7 @@ async function installNetworkMocks(
   await page.route('https://example.supabase.co/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (await fulfillMockGoogleAdminRequest(route, googleAdmin)) return
     if (url.pathname.startsWith('/auth/v1/')) {
       await fulfillJson(route, anonymousSessionResponse())
       return
@@ -322,6 +311,9 @@ async function installNetworkMocks(
 
     const functionName = url.pathname.split('/').at(-1) ?? ''
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+    if (functionName !== 'lecture-live-snapshot') {
+      expectMockGoogleAdminCredential(body, googleAdmin)
+    }
     if (functionName === 'manage-lectures') {
       await fulfillJson(route, { lectures: [lectureResponse()], ok: true })
       return
@@ -343,7 +335,7 @@ async function installNetworkMocks(
     }
     if (functionName === 'issue-pdf-access-token') {
       expect(body.action).toBe('admin')
-      expect(body.adminToken).toBe(adminToken)
+      expect(body.appSessionToken).toBe(googleAdmin.appSessionToken)
       expect(body.lectureSessionId).toBe(lectureSessionId)
       await fulfillJson(route, {
         accessToken: workerAccessToken,
@@ -358,7 +350,7 @@ async function installNetworkMocks(
     if (functionName === 'manage-presenter-connection') {
       const action = body.action as PresenterAction
       state.presenterActions.push(action)
-      expect(body.adminToken).toBe(adminToken)
+      expect(body.appSessionToken).toBe(googleAdmin.appSessionToken)
       if (action === 'issue') {
         expect(body.lectureSessionId).toBe(lectureSessionId)
         state.connectionIssued = true

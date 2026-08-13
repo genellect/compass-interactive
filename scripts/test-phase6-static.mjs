@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [env, flags, config, migration, generate, manage, control, live, context] =
+const [env, flags, config, migration, generate, manage, model, control, live, context] =
   await Promise.all([
     read('.env.local.example'),
     read('src/lib/featureFlags.ts'),
@@ -10,6 +10,7 @@ const [env, flags, config, migration, generate, manage, control, live, context] 
     read('supabase/migrations/20260716013632_phase6_five_minute_summaries.sql'),
     read('supabase/functions/generate-lecture-summary/index.ts'),
     read('supabase/functions/manage-lecture-summaries/index.ts'),
+    read('supabase/functions/_shared/lectureSummaries.ts'),
     read('src/components/AdminAiControl/LectureSummaryControl.tsx'),
     read('src/repositories/supabaseLiveStateRepository.ts'),
     read('src/context/CompassStateContext.tsx'),
@@ -23,13 +24,17 @@ assert.match(config, /\[functions\.manage-lecture-summaries\]\s+verify_jwt = tru
 assert.match(generate, /Deno\.env\.get\('OPENAI_API_KEY'\)/)
 assert.doesNotMatch(control, /OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/)
 assert.doesNotMatch(env, /sk-(?:proj-)?[A-Za-z0-9_-]{20,}/)
-assert.match(generate, /PHASE6_MIN_SOURCE_CHARACTERS/)
+assert.match(model, /PHASE6_MIN_SOURCE_CHARACTERS/)
 assert.match(generate, /skipped: true/)
-assert.match(generate, /for \(let localAttempt = 1; localAttempt <= 2/)
+assert.match(generate, /claim_google_ai_provider_dispatch_v1/)
+assert.match(generate, /X-Client-Request-Id/)
 assert.match(generate, /AbortSignal\.timeout\(45_000\)/)
-assert.match(manage, /parseBillingGrantToken\(body\.billingGrant!?\)/)
-assert.match(manage, /admin_start_lecture_summary_run/)
-assert.match(control, /API利用PIN（開始時のみ）/)
+assert.match(generate, /issue_google_summary_ai_child_grant_v1/)
+assert.match(generate, /start_google_admin_summary_window_operation_v1/)
+assert.match(manage, /hasLegacyAdminFields\(body\)/)
+assert.match(manage, /manage_google_admin_summary_publication_v1/)
+assert.doesNotMatch(control, /API利用PIN/)
+assert.match(control, /個人AI PINは不要/)
 assert.doesNotMatch(control, /localStorage.*runToken|sessionStorage.*runToken/)
 assert.match(control, /getServerNow\(\)/)
 assert.match(context, /estimateServerTimeMs\(sample, performance\.now\(\)\)/)

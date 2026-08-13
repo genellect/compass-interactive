@@ -49,13 +49,11 @@ const preset = read(
   'AdminWorkspace',
   'AdminJournalClubPreset.tsx',
 )
+const browserSpec = read('e2e', 'demo', 'journal-club-preset-admin.spec.ts')
 
 assert.match(envExample, /^VITE_PHASE7_27_JOURNAL_CLUB=false$/m)
 assert.match(envExample, /^PHASE7_27_JOURNAL_CLUB_ENABLED=false$/m)
-assert.match(
-  envExample,
-  /^VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION=false$/m,
-)
+assert.match(envExample, /^VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION=false$/m)
 assert.match(
   envExample,
   /^PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED=false$/m,
@@ -195,14 +193,18 @@ assert.match(migration, /private\.phase6_public_summaries_json\([\s\S]*?18/)
 
 assert.match(manageLectures, /action: 'createJournalClubRun'/)
 assert.match(manageLectures, /PHASE7_27_JOURNAL_CLUB_ENABLED/)
+assert.match(manageLectures, /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/)
+assert.match(manageLectures, /Journal Club preset creation is retired\./)
 assert.match(
   manageLectures,
-  /PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED/,
+  /manage_google_admin_lectures_v1[\s\S]*createWithUniqueCode\('createJournalClubRun'/,
 )
-assert.match(manageLectures, /Journal Club preset creation is retired\./)
-assert.match(manageLectures, /admin_create_phase727_journal_club_run_v1/)
-assert.match(managePolls, /phase727_journal_club_poll_slots/)
-assert.match(managePolls, /return left\.templateOrder - right\.templateOrder/)
+assert.match(managePolls, /manage_google_admin_polls_v1/)
+assert.match(
+  managePolls,
+  /target_include_history: body\.includeHistory \?\? false/,
+)
+assert.doesNotMatch(managePolls, /\.from\('phase727_/)
 assert.match(preset, /createJournalClubRun/)
 assert.match(
   adminPage,
@@ -212,6 +214,16 @@ assert.match(preset, /prepare\('rehearsal'\)/)
 assert.match(preset, /prepare\('production'\)/)
 assert.match(preset, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)
 assert.match(preset, /資料公開後、一覧の「開始」を押してください/)
+assert.match(
+  browserSpec,
+  /const originalConfirm = window\.confirm[\s\S]*window\.confirm = originalConfirm[\s\S]*return false[\s\S]*await productionButton\.click\(\)[\s\S]*toHaveLength\(0\)/,
+  'the cancellation browser contract must use a trusted click without leaving a dismissed native dialog',
+)
+assert.match(
+  browserSpec,
+  /waitForEvent\('dialog'\)[\s\S]*dialog\.message\(\)[\s\S]*dialog\.accept\(\)[\s\S]*7\/23 本番を一覧に追加/,
+  'the accepted production path must still verify the real confirmation dialog',
+)
 assert.match(
   adminPage,
   /journalClubPreset={[\s\S]*?isPhase728JournalClubPresetCreationEnabled\s*\?\s*\(/,

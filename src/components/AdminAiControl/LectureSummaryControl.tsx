@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { listCompletedCaptionSegments } from '../../caption/captionTranscriptStore'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
@@ -87,8 +84,6 @@ export function LectureSummaryControl({
   publisherSessionToken,
   startedAt,
 }: LectureSummaryControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
-  const [billingPin, setBillingPin] = useState('')
   const [results, setResults] = useState<AdminSummaryResults>(emptyResults)
   const [runToken, setRunToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -287,25 +282,21 @@ export function LectureSummaryControl({
             }
             return
           }
-          const googleRequestIds = googleCredential
-            ? (academicRequestIdsRef.current.get(candidate.summaryId) ?? {
-                grantRequestId: crypto.randomUUID(),
-                preflightRequestId: crypto.randomUUID(),
-                startRequestId: crypto.randomUUID(),
-              })
-            : null
-          if (googleRequestIds) {
-            academicRequestIdsRef.current.set(
-              candidate.summaryId,
-              googleRequestIds,
-            )
+          const googleRequestIds = academicRequestIdsRef.current.get(
+            candidate.summaryId,
+          ) ?? {
+            grantRequestId: crypto.randomUUID(),
+            preflightRequestId: crypto.randomUUID(),
+            startRequestId: crypto.randomUUID(),
           }
+          academicRequestIdsRef.current.set(
+            candidate.summaryId,
+            googleRequestIds,
+          )
           await supabaseAdminRepository.manageAcademicAnswers({
             action: 'generateAuto',
             adminToken,
-            ...(googleRequestIds ?? {
-              idempotencyKey: `phase7-25:auto:${lectureSessionId}:${candidate.summaryId}`,
-            }),
+            ...googleRequestIds,
             lectureSessionId,
             question: candidate.question,
             runToken: token,
@@ -313,9 +304,7 @@ export function LectureSummaryControl({
             sourcePolicy: automation.sourcePolicy,
             sourceSummaryId: candidate.summaryId,
           })
-          if (googleRequestIds) {
-            academicRequestIdsRef.current.delete(candidate.summaryId)
-          }
+          academicRequestIdsRef.current.delete(candidate.summaryId)
           onAcademicAnswerChanged?.()
         }
       } catch (error) {
@@ -339,7 +328,6 @@ export function LectureSummaryControl({
     [
       admissionEnabled,
       adminToken,
-      googleCredential,
       lectureSessionId,
       lectureStatus,
       onAcademicAnswerChanged,
@@ -451,22 +439,20 @@ export function LectureSummaryControl({
           '資料公開アプリに接続できないため、PDFの内容を含めずに要約判定を続けます。',
         )
       }
-      const googleRequestIds = googleCredential
-        ? (summaryWindowRequestIdsRef.current.get(summaryWindow.index) ?? {
-            grantRequestId: crypto.randomUUID(),
-            preflightRequestId: crypto.randomUUID(),
-            startRequestId: crypto.randomUUID(),
-          })
-        : null
-      if (googleRequestIds) {
-        summaryWindowRequestIdsRef.current.set(
-          summaryWindow.index,
-          googleRequestIds,
-        )
+      const googleRequestIds = summaryWindowRequestIdsRef.current.get(
+        summaryWindow.index,
+      ) ?? {
+        grantRequestId: crypto.randomUUID(),
+        preflightRequestId: crypto.randomUUID(),
+        startRequestId: crypto.randomUUID(),
       }
+      summaryWindowRequestIdsRef.current.set(
+        summaryWindow.index,
+        googleRequestIds,
+      )
       const generated = await supabaseAdminRepository.generateLectureSummary({
         adminToken,
-        ...(googleRequestIds ?? {}),
+        ...googleRequestIds,
         lectureSessionId,
         pdfContext,
         runToken: token,
@@ -478,9 +464,7 @@ export function LectureSummaryControl({
         })),
         windowIndex: summaryWindow.index,
       })
-      if (googleRequestIds) {
-        summaryWindowRequestIdsRef.current.delete(summaryWindow.index)
-      }
+      summaryWindowRequestIdsRef.current.delete(summaryWindow.index)
       setResults(generated.results)
       if (generated.results.run?.autoAcademicAnswersEnabled) {
         void dispatchAutomaticAcademicAnswers(token)
@@ -512,7 +496,6 @@ export function LectureSummaryControl({
     getPdfContext,
     getServerNow,
     hardStopAt,
-    googleCredential,
     lectureSessionId,
     lectureStatus,
     processedIndexes,
@@ -554,38 +537,20 @@ export function LectureSummaryControl({
   async function startRun() {
     if (
       !admissionEnabled ||
-      (!masterAuthorizedForStart && (googleCredential || !billingPin.trim())) ||
+      !masterAuthorizedForStart ||
       masterHeldByOther ||
       lectureStatus !== 'open'
     )
       return
     setBusy(true)
-    setMessage(
-      googleCredential
-        ? '講義中のAI許可と講義状態を確認しています…'
-        : 'API利用PINと講義状態を確認しています…',
-    )
+    setMessage('講義中のAI許可と講義状態を確認しています…')
     try {
-      const authorization = googleCredential
-        ? null
-        : await supabaseAdminRepository.authorizeAiStart({
-            actions:
-              isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers
-                ? ['summaries', 'academic_answers']
-                : ['summaries'],
-            adminToken,
-            billingPin: masterAuthorizedForStart ? undefined : billingPin,
-            lectureSessionId,
-          })
       const started = await supabaseAdminRepository.manageLectureSummaries({
         action: 'start',
         academicSourcePolicy,
         adminToken,
         autoAcademicAnswers:
           isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers,
-        ...(googleCredential
-          ? {}
-          : { billingGrant: authorization!.billingGrant }),
         lectureSessionId,
       })
       setResults(started.results)
@@ -600,7 +565,6 @@ export function LectureSummaryControl({
         error instanceof Error ? error.message : '要約を開始できませんでした。',
       )
     } finally {
-      setBillingPin('')
       setBusy(false)
     }
   }
@@ -652,7 +616,7 @@ export function LectureSummaryControl({
         window.clearTimeout(academicRetryTimerRef.current)
         academicRetryTimerRef.current = null
       }
-      setMessage('5分要約を停止しました。停止にAPI利用PINは不要です。')
+      setMessage('5分要約を停止しました。停止に個人AI PINは不要です。')
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : '要約を停止できませんでした。',
@@ -878,28 +842,11 @@ export function LectureSummaryControl({
         {masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorizedForStart ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
-        ) : googleCredential ? (
+          <p className="note">講義中のAI許可を使用します。</p>
+        ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。
           </p>
-        ) : (
-          <label className="field compact-field">
-            <span>API利用PIN（開始時のみ）</span>
-            <input
-              autoComplete="off"
-              disabled={
-                busy ||
-                runActive ||
-                !admissionEnabled ||
-                lectureStatus !== 'open'
-              }
-              inputMode="numeric"
-              onChange={(event) => setBillingPin(event.target.value)}
-              type="password"
-              value={billingPin}
-            />
-          </label>
         )}
         <button
           className="primary-button"
@@ -908,8 +855,7 @@ export function LectureSummaryControl({
             runActive ||
             !admissionEnabled ||
             masterHeldByOther ||
-            (!masterAuthorizedForStart &&
-              (googleCredential || !billingPin.trim())) ||
+            !masterAuthorizedForStart ||
             lectureStatus !== 'open'
           }
           onClick={() => void startRun()}

@@ -54,9 +54,9 @@ assert.match(
 assert.match(
   validateProductionEnvironment({
     ...safeEnvironment,
-    VITE_PHASE7_28_AI_MASTER_AUTH: 'true',
+    VITE_PHASE7_30_ADMIN_AI_UNLOCK: 'true',
   }).join('\n'),
-  /requires VITE_PHASE4_REALTIME_CAPTIONS=true/,
+  /requires VITE_PHASE7_30_ADMIN_IDENTITY=true/,
 )
 assert.match(
   validateProductionEnvironment({
@@ -76,11 +76,12 @@ assert.match(
   validateProductionServerEnvironment({
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
   }).join('\n'),
-  /requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+  /requires PHASE728_DISPLAY_REALTIME_ENABLED=true/,
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET: 'short',
@@ -91,7 +92,8 @@ assert.match(
 )
 assert.deepEqual(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET:
@@ -103,7 +105,8 @@ assert.deepEqual(
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET:
@@ -115,7 +118,8 @@ assert.match(
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
     PHASE729_POWERPOINT_SYNC_ENABLED: 'true',
     PRESENTER_BRIDGE_TOKEN_SECRET:
@@ -132,43 +136,39 @@ assert.match(
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'false',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
   }).join('\n'),
-  /PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+  /PHASE728_DISPLAY_REALTIME_ENABLED=true requires PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=true/,
 )
 assert.deepEqual(
   validateProductionServerEnvironment({
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
     PHASE728_DISPLAY_REALTIME_ENABLED: 'true',
   }),
   [],
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'false',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
   }).join('\n'),
-  /requires PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=true/,
+  /requires PHASE730_ADMIN_IDENTITY_ENABLED=true/,
 )
 assert.deepEqual(
   validateProductionServerEnvironment({
-    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
-    PHASE4_REALTIME_CAPTIONS_ENABLED: 'true',
-    PHASE5_MATERIAL_ANALYSIS_ENABLED: 'true',
-    PHASE6_SUMMARIES_ENABLED: 'true',
-    PHASE7_2_ACADEMIC_ANSWERS_ENABLED: 'true',
-    PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED: 'true',
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_ADMIN_AI_UNLOCK_ENABLED: 'true',
+    PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED: 'true',
   }),
   [],
 )
 assert.match(
   validateProductionServerEnvironment({
-    PHASE7_28_AI_MASTER_AUTH_ENABLED: 'true',
-    PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED: 'true',
   }).join('\n'),
-  /requires PHASE4_REALTIME_CAPTIONS_ENABLED=true/,
+  /requires PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED=true/,
 )
 assert.match(
   validateProductionServerEnvironment({

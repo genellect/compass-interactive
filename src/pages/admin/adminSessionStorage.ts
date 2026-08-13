@@ -4,12 +4,9 @@ export const ADMIN_TOKEN_SESSION_STORAGE_KEY = 'compass-interactive-admin-token'
 export const PUBLISHER_SESSION_STORAGE_KEY =
   'compass-interactive-publisher-session-token'
 
-export function restoreAdminSession() {
-  return window.sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY) === 'true'
-}
-
-export function restoreAdminToken() {
-  return window.sessionStorage.getItem(ADMIN_TOKEN_SESSION_STORAGE_KEY) ?? ''
+export function purgeLegacyAdminSessionStorage() {
+  window.sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY)
+  window.sessionStorage.removeItem(ADMIN_TOKEN_SESSION_STORAGE_KEY)
 }
 
 export function restorePublisherSessionToken() {

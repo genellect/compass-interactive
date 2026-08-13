@@ -68,10 +68,8 @@ assert.doesNotMatch(
   /ADMIN_SESSION_SECRET'\)\s*\?\?\s*adminPin/,
 )
 assert.match(adminTokenSource, /byteLength < 32/)
-assert.match(
-  adminRepository,
-  /await ensureAnonymousAuthSession\(\)[\s\S]*?verify-admin-pin/,
-)
+assert.doesNotMatch(adminRepository, /verifyAdminPin|verify-admin-pin/)
+assert.doesNotMatch(supabaseConfig, /\[functions\.verify-admin-pin\]/)
 
 assert.match(workerConfig, /"crons": \["\*\/30 \* \* \* \*"\]/)
 assert.match(workerConfig, /"bucket_name": "compass-private-pdf-assets"/)

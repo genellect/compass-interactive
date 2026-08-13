@@ -1,14 +1,7 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   deriveGoogleAiChildGrantNonce,
-  parseBillingGrantToken,
   sha256Hex,
 } from '../_shared/aiBilling.ts'
-import {
-  getAdminActorId,
-  getAdminTokenClaims,
-  getAdminTokenSecret,
-} from '../_shared/adminToken.ts'
 import {
   AcademicAnswerError,
   applyAcademicAnswerQualityGates,
@@ -27,10 +20,8 @@ import {
   type VerifiedAcademicSource,
 } from '../_shared/academicAnswers.ts'
 import { handleCors } from '../_shared/cors.ts'
-import {
-  type GoogleAdminOperationContext,
-  verifyGoogleAdminOperationRequest,
-} from '../_shared/googleAdminOperations.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
 import {
   readJsonBody,
   RequestBodyTooLargeError,
@@ -49,11 +40,9 @@ type RequestBody = {
     | 'reject'
     | 'revise'
     | 'status'
-  adminToken?: string
   academicRequestId?: string
   appSessionToken?: string
   answerId?: string
-  billingGrant?: string
   grantRequestId?: string
   idempotencyKey?: string
   lectureSessionId?: string
@@ -77,21 +66,6 @@ type PreparedRequest = {
   id?: string
   operation_id?: string | null
   status?: string
-}
-
-type PrepareResult = {
-  accepted?: boolean
-  claim_acquired?: boolean
-  idempotent_replay?: boolean
-  request?: PreparedRequest
-  results?: unknown
-}
-
-type StartResult = {
-  accepted?: boolean
-  operation?: { id?: string }
-  operations?: Array<{ operation?: { id?: string } }>
-  reason?: string
 }
 
 type GooglePreflightResult = {
@@ -295,23 +269,24 @@ Deno.serve(async (request) => {
     }
     return jsonResponse({ message: 'Invalid JSON body.', ok: false }, 400)
   }
-  const hasGoogleCredential =
-    typeof body.appSessionToken === 'string' &&
-    body.appSessionToken.trim().length > 0
-  const hasLegacyCredential =
-    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
-  if (hasGoogleCredential === hasLegacyCredential) {
+  if (hasLegacyAdminFields(body) || body.idempotencyKey !== undefined) {
     return jsonResponse(
-      { message: 'Exactly one Admin credential is required.', ok: false },
+      { message: 'Legacy Admin credentials are not supported.', ok: false },
+      400,
+    )
+  }
+  if (
+    typeof body.appSessionToken !== 'string' ||
+    body.appSessionToken.trim().length === 0
+  ) {
+    return jsonResponse(
+      { message: 'appSessionToken is required.', ok: false },
       401,
     )
   }
   if (
     !academicTransportEnabled &&
-    !(
-      hasGoogleCredential &&
-      ['status', 'cancel', 'hide', 'reject'].includes(body.action)
-    )
+    !['status', 'cancel', 'hide', 'reject'].includes(body.action)
   ) {
     return jsonResponse(
       { message: 'Academic reference answers are disabled.', ok: false },
@@ -325,7 +300,6 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    hasGoogleCredential &&
     ![
       'approve',
       'cancel',
@@ -347,7 +321,6 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    hasGoogleCredential &&
     ['generate', 'generateAuto'].includes(body.action) &&
     (!isUuid(body.preflightRequestId) ||
       !isUuid(body.grantRequestId) ||
@@ -364,26 +337,12 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    hasGoogleCredential &&
     ['approve', 'cancel', 'hide', 'reject', 'revise'].includes(body.action) &&
     (!isUuid(body.requestId) ||
       (body.action === 'cancel' && !isUuid(body.academicRequestId)))
   ) {
     return jsonResponse(
       { message: 'Google academic control request is invalid.', ok: false },
-      400,
-    )
-  }
-  if (
-    hasLegacyCredential &&
-    (body.academicRequestId !== undefined ||
-      body.preflightRequestId !== undefined ||
-      body.grantRequestId !== undefined ||
-      body.startRequestId !== undefined ||
-      body.appSessionToken !== undefined)
-  ) {
-    return jsonResponse(
-      { message: 'Legacy academic request is invalid.', ok: false },
       400,
     )
   }
@@ -400,73 +359,37 @@ Deno.serve(async (request) => {
     )
   }
 
-  let actorId: string | null = null
-  let googleContext: GoogleAdminOperationContext | null = null
-  let googleRpcIdentity: {
+  const verification = await verifyGoogleAdminOperationRequest(
+    request,
+    body.appSessionToken,
+  )
+  if (!verification.ok) {
+    return jsonResponse(
+      {
+        code: verification.code,
+        message: verification.message,
+        ok: false,
+      },
+      verification.status,
+    )
+  }
+  const googleContext = verification
+  const googleRpcIdentity: {
     target_auth_user_id: string
     target_google_issuer: string
     target_provider_subject_hmac: string
     target_subject_pepper_version: number
     target_supabase_auth_session_id: string
     target_token_hash: string
-  } | null = null
-  if (hasGoogleCredential) {
-    const verification = await verifyGoogleAdminOperationRequest(
-      request,
-      body.appSessionToken!,
-    )
-    if (!verification.ok) {
-      return jsonResponse(
-        {
-          code: verification.code,
-          message: verification.message,
-          ok: false,
-        },
-        verification.status,
-      )
-    }
-    googleContext = verification
-  } else {
-    try {
-      const claims = await getAdminTokenClaims(
-        body.adminToken!,
-        getAdminTokenSecret(),
-        request,
-      )
-      if (!claims) {
-        return jsonResponse(
-          { message: 'Invalid Admin session.', ok: false },
-          401,
-        )
-      }
-      actorId = getAdminActorId(claims)
-    } catch {
-      return jsonResponse({ message: 'Admin auth failed.', ok: false }, 500)
-    }
+  } = {
+    target_auth_user_id: googleContext.authUserId,
+    target_google_issuer: googleContext.googleIssuer,
+    target_provider_subject_hmac: googleContext.googleSubjectHmac,
+    target_subject_pepper_version: googleContext.subjectPepperVersion,
+    target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
+    target_token_hash: googleContext.appSessionTokenHash,
   }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(
-      { message: 'Academic reference answers are not configured.', ok: false },
-      503,
-    )
-  }
-  let supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
-  if (googleContext) {
-    supabase = googleContext.serviceClient
-    googleRpcIdentity = {
-      target_auth_user_id: googleContext.authUserId,
-      target_google_issuer: googleContext.googleIssuer,
-      target_provider_subject_hmac: googleContext.googleSubjectHmac,
-      target_subject_pepper_version: googleContext.subjectPepperVersion,
-      target_supabase_auth_session_id: googleContext.supabaseAuthSessionId,
-      target_token_hash: googleContext.appSessionTokenHash,
-    }
-  }
+  const supabase = googleContext.serviceClient
 
   try {
     if (body.action === 'status') {
@@ -489,15 +412,6 @@ Deno.serve(async (request) => {
         }
         return jsonResponse({ ok: true, results: data })
       }
-      await supabase.rpc('admin_reap_stale_academic_answer_operations', {
-        job_limit: 10,
-      })
-      const { data, error } = await supabase.rpc(
-        'admin_list_academic_answer_results',
-        { target_lecture_session_id: body.lectureSessionId },
-      )
-      if (error) throw error
-      return jsonResponse({ ok: true, results: data })
     }
 
     if (body.action === 'cancel') {
@@ -553,22 +467,6 @@ Deno.serve(async (request) => {
           results,
         })
       }
-      if (!body.requestId) {
-        return jsonResponse(
-          { message: 'requestId is required.', ok: false },
-          400,
-        )
-      }
-      const { data, error } = await supabase.rpc(
-        'admin_cancel_academic_answer_request',
-        {
-          target_actor_id: actorId,
-          target_lecture_session_id: body.lectureSessionId,
-          target_request_id: body.requestId,
-        },
-      )
-      if (error) throw error
-      return jsonResponse({ ok: true, results: data })
     }
 
     if (['approve', 'hide', 'reject'].includes(body.action)) {
@@ -630,17 +528,6 @@ Deno.serve(async (request) => {
           results,
         })
       }
-      const { data, error } = await supabase.rpc(
-        'admin_manage_academic_answer_publication',
-        {
-          target_action: body.action,
-          target_actor_id: actorId,
-          target_answer_id: body.answerId,
-          target_lecture_session_id: body.lectureSessionId,
-        },
-      )
-      if (error) throw error
-      return jsonResponse({ ok: true, results: data })
     }
 
     if (body.action === 'revise') {
@@ -704,18 +591,6 @@ Deno.serve(async (request) => {
           results,
         })
       }
-      const { data, error } = await supabase.rpc(
-        'admin_revise_academic_answer_publication',
-        {
-          target_actor_id: actorId,
-          target_answer_id: body.answerId,
-          target_body: revisedBody,
-          target_lecture_session_id: body.lectureSessionId,
-          target_reason: reason,
-        },
-      )
-      if (error) throw error
-      return jsonResponse({ ok: true, results: data })
     }
 
     const automatic = body.action === 'generateAuto'
@@ -723,9 +598,7 @@ Deno.serve(async (request) => {
     const searchQuery = boundedText(body.searchQuery, 3, 240)
     const selectedPolicy = sourcePolicy(body.sourcePolicy ?? 'auto')
     const sourceKind = automatic ? 'summary_candidate' : body.sourceKind
-    const effectiveIdempotencyKey = googleContext
-      ? body.preflightRequestId
-      : body.idempotencyKey
+    const effectiveIdempotencyKey = body.preflightRequestId
     if (
       !['generate', 'generateAuto'].includes(body.action) ||
       !question ||
@@ -736,7 +609,6 @@ Deno.serve(async (request) => {
       !['summary_candidate', 'teacher_selected'].includes(sourceKind ?? '') ||
       (sourceKind === 'summary_candidate' && !body.sourceSummaryId) ||
       (sourceKind === 'teacher_selected' && body.sourceSummaryId) ||
-      (!googleContext && !automatic && !body.billingGrant) ||
       (automatic && !body.runToken)
     ) {
       return jsonResponse(
@@ -870,132 +742,13 @@ Deno.serve(async (request) => {
           409,
         )
       }
-    } else {
-      const prepareRpc = automatic
-        ? 'admin_prepare_auto_academic_answer_request'
-        : 'admin_prepare_academic_answer_request_v2'
-      const prepareArguments = automatic
-        ? {
-            target_actor_id: actorId,
-            target_idempotency_key: body.idempotencyKey,
-            target_lecture_session_id: body.lectureSessionId,
-            target_question: question,
-            target_question_sha256: await sha256Hex(question),
-            target_run_id: runCredentials?.runId,
-            target_run_token_hash: runTokenHash,
-            target_search_query_sha256: await sha256Hex(searchQuery),
-            target_source_policy: selectedPolicy,
-            target_source_summary_id: body.sourceSummaryId,
-          }
-        : {
-            target_actor_id: actorId,
-            target_idempotency_key: body.idempotencyKey,
-            target_lecture_session_id: body.lectureSessionId,
-            target_question: question,
-            target_question_sha256: await sha256Hex(question),
-            target_search_query_sha256: await sha256Hex(searchQuery),
-            target_source_kind: sourceKind,
-            target_source_policy: selectedPolicy,
-            target_source_summary_id: body.sourceSummaryId ?? null,
-          }
-      const { data: prepareData, error: prepareError } = await supabase.rpc(
-        prepareRpc,
-        prepareArguments,
-      )
-      if (prepareError) throw prepareError
-      const prepared = prepareData as PrepareResult
-      requestState = prepared.request ?? {}
-      if (!requestState.id) {
-        throw new AcademicAnswerError(
-          'request_prepare_failed',
-          'The academic answer request could not be prepared.',
-          409,
-        )
-      }
-      if (automatic && prepared.accepted === false) {
-        throw new AcademicAnswerError(
-          String(
-            (prepareData as { reason?: string }).reason ?? 'auto_not_admitted',
-          ),
-          'This summary candidate was not admitted for automatic publication.',
-          409,
-        )
-      }
-      if (automatic && prepared.claim_acquired === false) {
-        if (
-          ['awaiting_review', 'published', 'hidden'].includes(
-            requestState.status ?? '',
-          )
-        ) {
-          return jsonResponse({
-            idempotentReplay: true,
-            ok: true,
-            results: prepared.results,
-          })
-        }
-        if (
-          ['evidence_checking', 'running'].includes(requestState.status ?? '')
-        ) {
-          return jsonResponse(
-            {
-              idempotentReplay: true,
-              inProgress: true,
-              ok: true,
-              results: prepared.results,
-            },
-            202,
-          )
-        }
-        throw new AcademicAnswerError(
-          'operation_not_retryable',
-          'This automatic reference answer is no longer retryable.',
-          409,
-        )
-      }
-      if (!automatic && prepared.idempotent_replay) {
-        if (
-          ['awaiting_review', 'published', 'hidden'].includes(
-            requestState.status ?? '',
-          )
-        ) {
-          return jsonResponse({
-            idempotentReplay: true,
-            ok: true,
-            results: prepared.results,
-          })
-        }
-        throw new AcademicAnswerError(
-          requestState.status === 'running'
-            ? 'operation_in_progress'
-            : 'operation_not_retryable',
-          requestState.status === 'running'
-            ? 'This reference answer is already running.'
-            : 'A new explicit action and API usage PIN are required.',
-          409,
-        )
-      }
     }
 
-    let retrieval
-    try {
-      retrieval = await retrieveVerifiedAcademicSources({
-        contactEmail,
-        searchQuery,
-        sourcePolicy: selectedPolicy,
-      })
-    } catch (error) {
-      if (!googleContext && !automatic) {
-        await supabase.rpc('admin_mark_academic_answer_insufficient', {
-          target_actor_id: actorId,
-          target_reason:
-            error instanceof AcademicAnswerError
-              ? error.code
-              : 'metadata_failed',
-          target_request_id: requestState.id,
-        })
-      }
-      throw error
-    }
+    const retrieval = await retrieveVerifiedAcademicSources({
+      contactEmail,
+      searchQuery,
+      sourcePolicy: selectedPolicy,
+    })
     const sources = retrieval.sources
     if (!sources.some((source) => source.sourceRole === 'primary')) {
       if (googleContext && googleRpcIdentity) {
@@ -1020,12 +773,6 @@ Deno.serve(async (request) => {
             503,
           )
         }
-      } else {
-        await supabase.rpc('admin_mark_academic_answer_insufficient', {
-          target_actor_id: actorId,
-          target_reason: 'insufficient_verified_primary_evidence',
-          target_request_id: requestState.id,
-        })
       }
       throw new AcademicAnswerError(
         'insufficient_verified_primary_evidence',
@@ -1051,14 +798,7 @@ Deno.serve(async (request) => {
     const reservation = estimateAcademicAnswerReservation(
       sources.reduce((sum, source) => sum + source.abstract.length, 0),
     )
-    const safetyIdentity = googleContext?.authUserId ?? actorId
-    if (!safetyIdentity) {
-      throw new AcademicAnswerError(
-        'academic_identity_missing',
-        'The Admin identity could not be bound to this model request.',
-        401,
-      )
-    }
+    const safetyIdentity = googleContext.authUserId
     const safetyIdentifier = `compass_${(
       await sha256Hex(`phase725:${body.lectureSessionId}:${safetyIdentity}`)
     ).slice(0, 48)}`
@@ -1066,12 +806,14 @@ Deno.serve(async (request) => {
       buildAcademicAnswerOpenAiRequest({ question, safetyIdentifier, sources }),
     )
 
-    if (
-      googleContext &&
-      googleRpcIdentity &&
-      googlePreflightContextDigest &&
-      requestState.id
-    ) {
+    if (!googlePreflightContextDigest || !requestState.id) {
+      throw new AcademicAnswerError(
+        'request_prepare_failed',
+        'The academic answer request lost its authorization binding.',
+        409,
+      )
+    }
+    {
       const transportEnabled =
         googleContext.transportEnabled && academicTransportEnabled
       const { error: reapError } = await supabase.rpc(
@@ -1222,7 +964,6 @@ Deno.serve(async (request) => {
         )
       }
 
-      actorId = started.actorId
       const operationId = started.operationId
       let actualInputTokens = 0
       let actualOutputTokens = 0
@@ -1415,196 +1156,6 @@ Deno.serve(async (request) => {
         await finishGoogleFailure(code).catch(() => undefined)
         throw error
       }
-    }
-
-    const commonStartArguments = {
-      estimated_input_tokens: reservation.estimatedInputTokens,
-      estimated_microusd: reservation.estimatedMicrousd,
-      estimated_output_tokens: reservation.estimatedOutputTokens,
-      target_actor_id: actorId,
-      target_input_price_microusd_per_million:
-        PHASE72_INPUT_PRICE_MICROUSD_PER_MILLION,
-      target_model_id: PHASE72_MODEL,
-      target_output_price_microusd_per_million:
-        PHASE72_OUTPUT_PRICE_MICROUSD_PER_MILLION,
-      target_prompt_version: PHASE72_PROMPT_VERSION,
-      target_request_id: requestState.id,
-      target_resolved_source_route: retrieval.route,
-      target_source_set_sha256: sourceSetHash,
-      target_verified_primary_count: sources.filter(
-        (source) => source.sourceRole === 'primary',
-      ).length,
-      target_verified_source_count: sources.length,
-    }
-    const manualGrant = automatic
-      ? null
-      : parseBillingGrantToken(body.billingGrant ?? '')
-    const { data: startData, error: startError } = await supabase.rpc(
-      automatic
-        ? 'admin_start_auto_academic_answer_operation'
-        : 'admin_start_academic_answer_operation_v2',
-      automatic
-        ? {
-            ...commonStartArguments,
-            target_run_id: runCredentials?.runId,
-            target_run_token_hash: await sha256Hex(runCredentials?.nonce ?? ''),
-          }
-        : {
-            ...commonStartArguments,
-            target_grant_id: manualGrant?.grantId,
-            target_nonce_hash: await sha256Hex(manualGrant?.nonce ?? ''),
-          },
-    )
-    if (startError) throw startError
-    const started = startData as StartResult
-    const operationId = automatic
-      ? started.operation?.id
-      : started.operations?.[0]?.operation?.id
-    if (!started.accepted || !operationId) {
-      throw new AcademicAnswerError(
-        started.reason ?? 'operation_rejected',
-        'The reference-answer operation was rejected by its limits.',
-        409,
-      )
-    }
-
-    let actualInputTokens = 0
-    let actualOutputTokens = 0
-    let providerRequestId: string | null = crypto.randomUUID()
-    let providerDispatched = false
-    let accountingSettled = false
-    async function finishFailure(code: string) {
-      if (accountingSettled) return
-      const definitelyUncharged =
-        /^provider_http_(?:400|401|403|404|409|422|429)$/.test(code)
-      const conservative =
-        providerDispatched &&
-        actualInputTokens === 0 &&
-        actualOutputTokens === 0 &&
-        !definitelyUncharged
-      const accountedInput = conservative
-        ? reservation.estimatedInputTokens
-        : actualInputTokens
-      const accountedOutput = conservative
-        ? reservation.estimatedOutputTokens
-        : actualOutputTokens
-      await supabase.rpc('admin_fail_academic_answer_operation', {
-        actual_input_tokens: accountedInput,
-        actual_microusd: calculateAcademicAnswerCostMicrousd(
-          accountedInput,
-          accountedOutput,
-        ),
-        actual_output_tokens: accountedOutput,
-        provider_request_id: providerRequestId,
-        target_actor_id: actorId,
-        target_error_code: conservative ? `${code}_ambiguous` : code,
-        target_operation_id: operationId,
-        target_request_id: requestState.id,
-      })
-      accountingSettled = true
-    }
-
-    try {
-      const marked = await supabase.rpc(
-        'admin_mark_academic_provider_dispatched',
-        {
-          target_actor_id: actorId,
-          target_operation_id: operationId,
-          target_request_id: requestState.id,
-        },
-      )
-      if (marked.error || marked.data !== true) {
-        throw new AcademicAnswerError(
-          'provider_dispatch_not_authorized',
-          'The provider request could not be authorized.',
-          409,
-        )
-      }
-      providerDispatched = true
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        body: serializedProviderBody,
-        headers: {
-          Authorization: `Bearer ${openAiKey}`,
-          'Content-Type': 'application/json',
-          'X-Client-Request-Id': providerRequestId,
-        },
-        method: 'POST',
-        redirect: 'error',
-        signal: AbortSignal.timeout(55_000),
-      })
-      const parsed = parseAcademicAnswerOpenAiResponse(
-        await readProviderJson(response),
-      )
-      actualInputTokens = parsed.inputTokens
-      actualOutputTokens = parsed.outputTokens
-      providerRequestId = parsed.providerRequestId ?? providerRequestId
-      const gated = applyAcademicAnswerQualityGates({
-        result: parsed.result,
-        sources,
-      })
-      if (!gated.supported) {
-        await finishFailure('insufficient_model_evidence')
-        throw new AcademicAnswerError(
-          'insufficient_model_evidence',
-          'The verified evidence was insufficient for a supported answer.',
-          422,
-        )
-      }
-      const { data: completionData, error: completionError } =
-        await supabase.rpc('admin_complete_academic_answer_operation', {
-          actual_input_tokens: actualInputTokens,
-          actual_microusd: calculateAcademicAnswerCostMicrousd(
-            actualInputTokens,
-            actualOutputTokens,
-          ),
-          actual_output_tokens: actualOutputTokens,
-          provider_request_id: providerRequestId,
-          target_actor_id: actorId,
-          target_body: gated.body,
-          target_operation_id: operationId,
-          target_quality_result: {
-            ...gated.qualityResult,
-            resolved_source_route: retrieval.route,
-            source_set_sha256: sourceSetHash,
-          },
-          target_request_id: requestState.id,
-          target_sources: sources.map(toStoredSource),
-        })
-      if (completionError) throw completionError
-      accountingSettled = true
-      const completion = completionData as {
-        accepted?: boolean
-        result_saved?: boolean
-        results?: unknown
-      }
-      if (!completion.accepted || !completion.result_saved) {
-        throw new AcademicAnswerError(
-          'late_result_discarded',
-          'The lecture ended before the answer could be accepted.',
-          409,
-        )
-      }
-      return jsonResponse({
-        actualInputTokens,
-        actualMicrousd: calculateAcademicAnswerCostMicrousd(
-          actualInputTokens,
-          actualOutputTokens,
-        ),
-        actualOutputTokens,
-        model: PHASE72_MODEL,
-        ok: true,
-        operationId,
-        results: completion.results,
-      })
-    } catch (error) {
-      const code =
-        error instanceof AcademicAnswerError
-          ? error.code
-          : error instanceof DOMException && error.name === 'TimeoutError'
-            ? 'provider_timeout'
-            : 'academic_answer_failed'
-      await finishFailure(code).catch(() => undefined)
-      throw error
     }
   } catch (error) {
     return errorResponse(jsonResponse, error)

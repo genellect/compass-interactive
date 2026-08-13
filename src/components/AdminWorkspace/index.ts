@@ -1,4 +1,4 @@
-export { AdminAuthPanel, AdminSessionPanel } from './AdminAuthPanel'
+export { AdminSessionPanel } from './AdminSessionPanel'
 export { AdminLectureControl } from './AdminLectureControl'
 export { AdminJournalClubPreset } from './AdminJournalClubPreset'
 export { AdminPdfControl } from './AdminPdfControl'

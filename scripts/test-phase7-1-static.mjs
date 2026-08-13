@@ -30,8 +30,8 @@ assert.match(historyPage, /historyScope === 'mine'/)
 assert.doesNotMatch(historyPage, /setInterval|setTimeout/)
 assert.equal(
   (generate.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? []).length,
-  2,
-  'Google and legacy summary transports each own one bounded provider call site',
+  1,
+  'the Google-only summary transport owns one bounded provider call site',
 )
 assert.doesNotMatch(qrComponent, /fetch\(|supabase|cloudflare|r2/i)
 

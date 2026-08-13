@@ -111,7 +111,7 @@ flowchart LR
     GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
     Workspace --> Demo["Secret-free /demo"]
     Workspace --> Local["Isolated local Supabase"]
-    Demo --> Gate["Type / lint / 72 non-live groups\nChromium + WebKit E2E"]
+    Demo --> Gate["Type / lint / 74 non-live groups\nChromium + WebKit E2E"]
     Local --> Gate
     Gate --> PR["Commit / Pull Request / CI"]
     PR --> Review["Browser / mobile review"]
@@ -126,13 +126,14 @@ flowchart LR
 - Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。Phase 7.29 PowerPoint連携はdefault-OFFの候補で、Native・Device・Human・activation Gateとは分離します。
 - Phase 6.7で、README、Architecture、Security、Data Policy、Roadmap、Runbookを正本文書として整備しました。
 - Phase 7.29Bのdormant配置は機能有効化や正式なProduction Gate合格を意味しません。次の正式な統合判定はPhase 7.33であり、Presenter有効化、Google Admin/AAL2、GitHub保護・公開監査、審査員用独立実環境、商用運用品質がすべて揃うまでHOLDです。
-- Phase 7.30A-B1は、個別Google Admin identity、Supabase TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。通常activationは3つを同時に有効化し、legacy Admin PINは`VITE_PHASE7_30_LEGACY_ADMIN_PIN=true`を含めdefault-ONです。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。8時間絶対・30分無操作期限はB1時点のhistorical implementation factです。
+- Phase 7.30A-B1は、個別Google Admin identity、Supabase TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。B1当時はlegacy Admin PINをdefault-ON compatibilityとして残していましたが、現在のE sourceからそのUI/flag/transportは削除されています。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。8時間絶対・30分無操作期限もB1時点のhistorical implementation factです。
 - Phase 7.30B2のdefault-OFF database foundationとB2.2a identity/context hardeningはsource実装済みです。B2はAdmin sessionを`auth.sessions.created_at + 8時間`へ固定して30分idle失効を廃止し、personal AI PIN、AI policy、atomic rate/receipt、remembered-browser用nonce・public credential・one-time challenge、権限drain、lecture master provenanceのdatabase契約を追加しました。B2.2aはverified TOTP factor-setのlive hashに加え、Admin principalへapproved hash/version/countをtrust anchorとして保持し、approved/live/sessionの完全一致、completion RPCが書くpost-challenge JWT/AMR evidence、default-OFF session issue gateを新規Google session INSERTでも必須にします。変更時のreason付きsession/AI authority drain、action/request/session/factor-set/JWT/AMRとDB再計算するcanonical mutation-intentにboundしたsingle-use 5分control grant、PIN revoke/reset/profile RPCも追加しました。TOTP完了後に同じrequest IDでPIN/policy payloadを差し替えることはできません。移行前Google sessionや既存factor-setは推測backfillせず、sessionは`totp_factor_set_migration`で失効しprincipal approvalはunboundのままです。既存setの採用はEdge未配線・別gate default OFF・Google issuance OFF時だけのservice-role/operator RPCで、Hosted/Human HOLDです。private table、public wrapper、fixed-search-path helperはbrowserから直接利用できずservice-role-onlyです。全gateはdefault OFFで、runtime/Hosted/Human verificationはHOLDです。
 - Phase 7.30B2.2bは、専用`admin-ai-unlock` Edge、Admin専用client transport、personal AI PIN lifecycle、WebCrypto P-256のnon-extractable private keyをIndexedDBだけに保持するopt-in remembered-browser、approved TOTP factor add/removeのrare-control transitionをdefault-OFF sourceとして追加しました。raw 4桁PINはbounded TLS bodyでのみEdgeへ渡り、browser storage・log・audit・errorには残りません。factor変更は既存approved setのfresh proof、canonical intent、最大30分かつ8時間session cap内のhash-only recovery credential、expected post-setをboundし、完了時にanchor更新と旧session/AI authority drainを同一DB transactionで行います。factor UIはAI gateや`can_use_ai`から独立し、通常講義・通常PIN verifyにはfresh TOTPを追加しません。remembered-browser assertionはdormant proofまででlecture masterやpaid provider authorityを発行しません。`VITE_PHASE7_30_ADMIN_AI_UNLOCK=false`、`VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION=false`を含む全gateはdefault OFFです。Chromium/WebKitのlocal browser storage E2EはPASS、Docker/Local Edge/Hosted/Human/activationはHOLDです。
-- Phase 7.30Dは、owner専用の管理台帳をGoogle Admin workspaceへdefault-OFFで追加します。招待、role/status、AI利用権、個別・全session失効は環境単位の直列化、5分のTOTP control grant、厳密なrequest binding、last-owner保護、append-only receipt/auditを同一transactionで処理します。招待tokenはEdgeだけがretry-stableに導出し、Database・audit・browser storageにはhash以外を残しません。状態確認、権限縮小、session失効はadmission flag OFFでも維持します。source/static/non-live/buildと専用mock browser（desktop Chromium / mobile WebKit、response-loss replay、Axe、横overflow）はローカルPASSですが、fresh migration、pgTAP、2接続競合、populated upgrade、Local Edgeとexact-head CIは未実行のためHOLDです。
+- Phase 7.30Dは、owner専用の管理台帳をGoogle Admin workspaceへdefault-OFFで追加しました。招待、role/status、AI利用権、個別・全session失効は環境単位の直列化、5分のTOTP control grant、厳密なrequest binding、last-owner保護、append-only receipt/auditを同一transactionで処理します。招待tokenはEdgeだけがretry-stableに導出し、Database・audit・browser storageにはhash以外を残しません。状態確認、権限縮小、session失効はadmission flag OFFでも維持します。fresh migration、pgTAP、2接続競合、populated upgrade、Local Edge、desktop/mobile Chromium/WebKitとexact-head CIはPASS済みです。Hosted/Human activationは引き続きHOLDです。
+- Phase 7.30Eは、Admin application transportをGoogle app sessionだけへ収束し、共有Admin PINのUI、issuer、storage、flags、`verify-admin-pin`と`authorize-ai-start`をsourceから撤去します。残る19本の運用Admin Edgeはlegacy wire fieldを明示拒否し、Google verifierとclosed policy matrixだけを使います。既存講義ownershipは推測せず、operator-reviewed mappingからだけclaimできるappend-only evidenceと、SERIALIZABLE・NOWAIT・同一transaction再検証による不可逆Google-only database cutoverをdormant migrationとして追加します。migration適用だけではgate/session/ownershipを変更しません。Hosted旧Edgeの停止、deployment evidence digest、secret撤去、operator cutover実行、real-account evidenceはHOLDです。personal AI PINは維持し、`BILLING_PIN`互換RPCの最終撤去は別の後続境界です。
 - MFAはGoogle Authenticator等に対応するSupabase標準TOTPだけを使い、メールMFAや独自MFAを追加しません。Admin app sessionは講義中に周期的なTOTPを要求しません。5分fresh TOTPはowner/principal、role/status、TOTP factor、environment AI policy、global revokeと、AI PIN factorのenrollment/rotation/revoke/resetという稀なcontrol-plane変更だけに使います。login直後かつfactor履歴がない初回AI PIN enrollmentはlogin時TOTPが既にfreshなので追加promptを出しません。通常の講義操作、緊急停止、AI PIN verification、remembered-browser、AI master、scope/cost escalation、個別AI callではfresh TOTPを要求しません。
-- personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revoke/resetはAI authorityをdrainしてもAdmin sessionを維持します。TOTP factor-set fingerprintとrare-control identity EdgeはB2.2a、raw 4桁のEdge peppered-HMAC経路、実browser CryptoKey/ES256 dormant assertion、TOTP factor-set transitionはB2.2bでsource実装済みです。C1はprivate optional-row lecture ownershipとPIN/browser proofからdormant masterまでのatomic admissionをsource実装し、既存講義を推測backfillせずchild/provider authorityをC2へfenceします。C2は75 actionのclosed policy matrixとGoogle-only共通verifierを追加し、20本すべての運用EdgeとAdmin workspaceをdefault-OFF dual transportへ移行します。Summary runはprovider呼出しないscheduler controlとし、Summary window、資料分析、Academic answer、Realtime字幕は実際のdispatchごとにshort-lived single-use childを発行・consumeします。通常操作は一度のGoogle＋TOTPログインを継続し、personal AI PINは講義masterの許可時だけ使用します。AI Passkey、実Google OAuth、Hosted/Human evidence、legacy撤去とProduction activationはHOLDです。今回のsource実装に固定費は発生しません。
-- Phase 7.30C移行後は`ADMIN_PIN`をProduction前に完全撤去し、失効済みhistorical session rowはFK/audit用途だけ残せます。personal AI PIN E2E後は`BILLING_PIN`と互換RPCもProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
+- personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revoke/resetはAI authorityをdrainしてもAdmin sessionを維持します。TOTP factor-set fingerprintとrare-control identity EdgeはB2.2a、raw 4桁のEdge peppered-HMAC経路、実browser CryptoKey/ES256 dormant assertion、TOTP factor-set transitionはB2.2bでsource実装済みです。C1はprivate optional-row lecture ownershipとPIN/browser proofからdormant masterまでのatomic admissionを実装し、既存講義を推測backfillせずchild/provider authorityをC2へfenceします。C2は75 actionのclosed policy matrixとGoogle共通verifierを全Admin surfaceへ追加しました。Eでは削除した`authorize-ai-start`を除く19本の運用EdgeをGoogle-onlyへ収束します。Summary runはprovider呼出ししないscheduler controlとし、Summary window、資料分析、Academic answer、Realtime字幕は実際のdispatchごとにshort-lived single-use childを発行・consumeします。通常操作は一度のGoogle＋TOTPログインを継続し、personal AI PINは講義masterの許可時だけ使用します。AI Passkey、実Google OAuth、Hosted/Human evidence、database cutover実行とProduction activationはHOLDです。今回のsource実装に固定費は発生しません。
+- Phase 7.30E sourceは`ADMIN_PIN`の現行application経路を撤去します。database verifierとlegacy sessionを不可逆にfenceするoperator cutoverはHosted旧Edge停止の独立証拠後だけ実行し、失効済みhistorical rowはFK/audit用途に残せます。personal AI PIN E2E後は`BILLING_PIN`互換RPCも別境界でProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
 - 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
 
@@ -165,7 +166,7 @@ flowchart LR
 
 ### Admin
 
-- 現行sourceではlegacy Admin PIN管理セッション。Phase 7.30C以降は個別Google＋Supabase TOTP AAL2へ移行し、Production前に共有PINを撤去
+- 個別Google identity＋Supabase TOTP AAL2＋追跡可能なGoogle Admin app session。共有Admin PINの現行UI／issuer／wire transportはPhase 7.30E sourceから撤去済み
 - 講義の作成、開始、終了、再利用
 - PDF公開と表示ページ制御
 - コメント管理とライブ投票の作成・進行
@@ -499,14 +500,12 @@ Feature flagはdefault-OFFかつfail-closedです。対応するmigration、Edge
 - `VITE_PHASE7_27_JOURNAL_CLUB`
 - `VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION`
 - `VITE_PHASE7_28_DISPLAY_REALTIME`
-- `VITE_PHASE7_28_AI_MASTER_AUTH`
 - `VITE_PHASE7_29_POWERPOINT_SYNC`
 - `VITE_PHASE7_30_ADMIN_IDENTITY`
 - `VITE_PHASE7_30_ADMIN_AI_UNLOCK`
 - `VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION`
 - `VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS`
 - `VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER`
-- `VITE_PHASE7_30_LEGACY_ADMIN_PIN`
 
 </details>
 
@@ -618,6 +617,7 @@ READMEは、現行システムの全体像と開発の入口を示します。�
 | [`docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md)                                   | Phase 7.30B2.2a factor-set・rare-control hardening          |
 | [`docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Phase 7.30B2.2b Edge・browser・factor transition readiness  |
 | [`docs/PHASE7_30D_ADMIN_LEDGER.md`](docs/PHASE7_30D_ADMIN_LEDGER.md)                                                             | Phase 7.30D owner管理台帳・招待・session revoke契約         |
+| [`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                               | Phase 7.30E Google-only transport・ownership・cutover契約   |
 | [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画 |
 | [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                       |
 | [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                    |

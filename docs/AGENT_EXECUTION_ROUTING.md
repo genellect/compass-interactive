@@ -1,8 +1,8 @@
 # Agent Execution and Reasoning Routing
 
-Status: Planned
+Status: Operational through the Phase 7.30E source candidate
 Scope: agent responsibilities and reasoning budget for Phase 7.29 onward
-Last verified: 2026-08-10
+Last verified: 2026-08-12
 
 ## General rule
 
@@ -25,7 +25,7 @@ Production secrets or independent deployment authority.
 | 7.29B dormant placement                          | **Ultra**                                                                 | Supabase/Edge/Cloudflare read-only evidence review                                         | Multi-service sequencing and rollback must prove zero activation                                                                                                                            |
 | 7.29C signed activation                          | **Ultra**                                                                 | External Claude Code Opus Max plus Windows/Office and security specialists                 | Code signing, COM/STA, localhost/PNA, installer and venue risks intersect                                                                                                                   |
 | 7.30A asset/IAM/threat inventory                 | **Ultra**                                                                 | External IAM and threat-model review recommended                                           | COMPASS design assets, environment boundaries, credentials, roles, recovery and cost-control policy must be fixed before code                                                               |
-| 7.30B additive identity and AI-unlock foundation | **Ultra**                                                                 | Supabase Auth/RLS, token-storage, account-recovery and factor-abuse review                 | B1 first proved separate Admin client, trusted Google binding and mandatory TOTP; B2 now has a default-OFF database source foundation whose exact-head runtime verification remains pending |
+| 7.30B additive identity and AI-unlock foundation | **Ultra**                                                                 | Supabase Auth/RLS, token-storage, account-recovery and factor-abuse review                 | B1 first proved separate Admin client, trusted Google binding and mandatory TOTP; B2 has a default-OFF database source foundation with exact-head runtime evidence                           |
 | 7.30C RBAC and all server authorization          | **Ultra**                                                                 | RLS/ownership/concurrency/cost review                                                      | Capability, lecture ownership, all Edge/RPC checks, revoke, last-owner, AI policy and lecture master authorization must remain transaction-authoritative                                    |
 | 7.30D Google/MFA/AI-unlock/Admin-ledger UX       | Extra High                                                                | Ultra security and accessibility review                                                    | UI work is bounded once the identity and AI-intent contracts are fixed                                                                                                                      |
 | 7.30E Google-only cutover and regression         | **Ultra**                                                                 | Old-client, explicit backfill and immutable-rollback review                                | Ownership claim/backfill, full Phase 0-7.29 regression and complete shared-PIN removal must avoid lockout or privilege expansion                                                            |
@@ -96,15 +96,18 @@ owner/principal, role/status, verified TOTP-factor-set, environment AI-policy,
 global-revoke and AI PIN factor enrollment/rotation/revoke/reset changes. Initial PIN
 enrollment immediately after login uses the already-fresh login TOTP without an
 extra prompt; normal lecture, emergency stop, PIN verification, browser proof,
-AI-master escalation and child calls never prompt. `ADMIN_PIN` is removed after
-the C migration and `BILLING_PIN` after
-personal-AI-PIN E2E, both before Production. Rollback uses a Google-only
+AI-master escalation and child calls never prompt. Phase E removes the
+`ADMIN_PIN` application path and keeps its irreversible database fence behind
+independent Hosted deployment evidence. Historical `BILLING_PIN` compatibility
+is retired after personal-AI-PIN evidence, before Production. Rollback uses a Google-only
 immutable revision and operator owner recovery, never a shared PIN.
 
 The authoritative Phase 7.30 implementation contract is
 [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md).
 Agents must read it before changing Google Auth, Admin sessions, roles, lecture
 ownership or MFA.
+The exact Google-only source and dormant cutover boundary is
+[`PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](PHASE7_30E_GOOGLE_ONLY_CUTOVER.md).
 
 The authoritative contest-publication and commercial-readiness contract is
 [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md).

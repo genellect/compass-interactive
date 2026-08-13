@@ -26,6 +26,8 @@ const requiredDocuments = [
   'docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md',
   'docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md',
   'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
+  'docs/PHASE7_30D_ADMIN_LEDGER.md',
+  'docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
@@ -180,7 +182,7 @@ for (const requiredText of [
   '`auth.sessions.created_at + 8 hours`',
   'Phase 7.30B2 now implements the default-OFF',
   'B2.2a additionally',
-  'still has to complete its unified verifier',
+  'completed its unified verifier',
   'no email MFA',
   'Role changes are enforced live',
   '`ADMIN_PIN` is removed after the Phase 7.30C authorization migration',
@@ -296,8 +298,8 @@ for (const [name, document] of [
 }
 assert.match(
   googleAdminPlan,
-  /`BILLING_PIN` and its\s+compatibility RPC are removed after personal-AI-PIN E2E/,
-  'Google Admin contract must remove BILLING_PIN and its RPC after personal AI PIN E2E',
+  /historical\s+database compatibility RPCs remain until the separate billing cutover after\s+personal-AI-PIN evidence/,
+  'Google Admin contract must isolate historical billing compatibility until the separate personal-AI-PIN cutover',
 )
 assert.match(
   googleAdminPlan,
@@ -441,11 +443,12 @@ assert.doesNotMatch(
 for (const requiredText of [
   '7.30B additive identity and AI-unlock foundation',
   '7.30C RBAC and all server authorization',
-  'B2 now has a default-OFF database source foundation',
+  'B2 has a default-OFF database source foundation',
   'personal four-digit AI PIN',
   'remembered-browser proof',
   'caption-scope/cost escalation requires a new AI proof',
-  'the C migration and `BILLING_PIN` after',
+  'Phase E removes the',
+  'Historical `BILLING_PIN` compatibility',
 ]) {
   assert.ok(
     agentRouting.includes(requiredText),
@@ -501,14 +504,14 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /72 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(72 groups\)/,
-    `${name} must record the 72-group non-live suite`,
+    /74 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(74 groups\)/,
+    `${name} must record the 74-group non-live suite`,
   )
 }
 assert.match(
   agentRouting,
-  /`ADMIN_PIN` is removed after\s+the C migration and `BILLING_PIN` after\s+personal-AI-PIN E2E/,
-  'Agent routing must remove both shared PIN paths before Production',
+  /Phase E removes the\s+`ADMIN_PIN` application path[\s\S]{0,240}Historical `BILLING_PIN` compatibility\s+is retired after personal-AI-PIN evidence/,
+  'Agent routing must separate the Admin source cutover from billing compatibility retirement',
 )
 for (const gate of ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) {
   assert.ok(roadmap.includes(gate), `Roadmap missing ${gate}`)

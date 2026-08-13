@@ -1,17 +1,10 @@
 import assert from 'node:assert/strict'
 import {
-  createBillingGrantNonce,
-  formatBillingGrantToken,
+  deriveGoogleAiChildGrantNonce,
+  deriveGoogleSummaryRunNonce,
   normalizeAiFeatures,
-  parseBillingGrantToken,
   sha256Hex,
-  verifyBillingPin,
 } from '../supabase/functions/_shared/aiBilling.ts'
-import {
-  createAdminToken,
-  getAdminActorId,
-  getAdminTokenClaims,
-} from '../supabase/functions/_shared/adminToken.ts'
 import {
   createOpenAiRealtimeCall,
   createRealtimeTranscriptionSessionConfig,
@@ -27,32 +20,48 @@ assert.deepEqual(normalizeAiFeatures(['summaries', 'captions', 'summaries']), [
 assert.throws(() => normalizeAiFeatures([]), /valid AI actions/)
 assert.throws(() => normalizeAiFeatures(['unknown']), /Invalid AI action/)
 
-const nonce = createBillingGrantNonce()
-const grantId = '12345678-1234-4123-8123-123456789012'
-assert.deepEqual(
-  parseBillingGrantToken(formatBillingGrantToken(grantId, nonce)),
-  {
-    grantId,
-    nonce,
+globalThis.Deno = {
+  env: {
+    get(name) {
+      if (name === 'ADMIN_AI_CHILD_GRANT_SECRET') {
+        return 'test-only-google-child-secret-with-sufficient-length'
+      }
+      if (name === 'ADMIN_AI_CHILD_GRANT_SECRET_VERSION') return '1'
+      return undefined
+    },
   },
-)
-assert.throws(() => parseBillingGrantToken('broken'), /Invalid billing/)
-assert.equal((await sha256Hex('billing')).length, 64)
-assert.equal(await verifyBillingPin('separate-pin', 'separate-pin'), true)
-assert.equal(await verifyBillingPin('wrong-pin', 'separate-pin'), false)
-assert.equal(await verifyBillingPin('short', 'short'), false)
-
-const token = await createAdminToken('test-only-secret-with-sufficient-length')
-const claims = await getAdminTokenClaims(
-  token,
-  'test-only-secret-with-sufficient-length',
-)
-assert.ok(claims?.sid)
-assert.match(getAdminActorId(claims), /^admin-session:[0-9a-f-]+$/)
+}
+const lectureSessionId = '12345678-1234-4123-8123-123456789012'
+const requestId = '22345678-1234-4123-8123-123456789012'
+const child = await deriveGoogleAiChildGrantNonce({
+  feature: 'captions',
+  lectureSessionId,
+  requestId,
+})
+assert.equal(child.keyVersion, 1)
 assert.equal(
-  await getAdminTokenClaims(token, 'different-test-only-secret'),
-  null,
+  child.nonce,
+  (
+    await deriveGoogleAiChildGrantNonce({
+      feature: 'captions',
+      lectureSessionId,
+      requestId,
+    })
+  ).nonce,
 )
+assert.notEqual(
+  await deriveGoogleSummaryRunNonce({
+    action: 'start',
+    lectureSessionId,
+    requestId,
+  }),
+  await deriveGoogleSummaryRunNonce({
+    action: 'resume',
+    lectureSessionId,
+    requestId,
+  }),
+)
+assert.equal((await sha256Hex('google-child')).length, 64)
 
 const sessionConfig = createRealtimeTranscriptionSessionConfig({
   delay: 'low',
@@ -234,6 +243,4 @@ assert.deepEqual(finalized, [
   },
 ])
 
-console.log(
-  'Phase 4 Edge billing, token, trusted SDP, and provider hangup helpers passed.',
-)
+console.log('Phase 4 Google AI, trusted SDP, and provider hangup helpers passed.')

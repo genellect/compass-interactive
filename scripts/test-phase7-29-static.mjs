@@ -219,20 +219,24 @@ assert.match(
   /PRESENTER_ACTIONS = new Set\(\['confirm', 'issue', 'revoke', 'status'\]\)/,
 )
 assert.match(manageConnection, /!isPresenterAction\(body\.action\)/)
-assert.match(manageConnection, /getAdminTokenClaims/)
-assert.match(manageConnection, /service\.auth\.getUser\(userJwt\)/)
+assert.match(manageConnection, /hasLegacyAdminFields\(body\)/)
+assert.match(manageConnection, /verifyGoogleAdminOperationRequest/)
+assert.match(manageConnection, /body\.appSessionToken\.trim\(\)\.length === 0/)
+assert.match(manageConnection, /requestRequired && !UUID_PATTERN\.test\(body\.requestId/)
+assert.match(manageConnection, /target_transport_enabled: googleContext\.transportEnabled/)
+assert.doesNotMatch(manageConnection, /getAdminTokenClaims|verifyAdminToken/)
 assert.match(manageConnection, /handleCors\(request\)/)
 assert.match(manageConnection, /getAllowedCorsOrigin\(request\)/)
 assert.match(manageConnection, /createPresenterPairingToken/)
 assert.match(
   manageConnection,
-  /pairingTicketExpiresAt = new Date\(Date\.now\(\) \+ 55_000\)/,
+  /issued\.pairingTicketExpiresAt/,
 )
 assert.match(
   manageConnection,
-  /manualCodeExpiresAt = new Date\(Date\.now\(\) \+ 5 \* 60_000\)/,
+  /issued\.manualExpiresAt/,
 )
-assert.match(manageConnection, /issue_presenter_connection_v2/)
+assert.match(manageConnection, /manage_google_admin_presenter_connection_v1/)
 assert.match(
   manageConnection,
   /readJsonBody<RequestBody>\(request, 8 \* 1024\)/,
@@ -320,8 +324,13 @@ assert.match(
 )
 assert.match(
   updateDisplay,
-  /PHASE729_POWERPOINT_SYNC_ENABLED[\s\S]*?admin_update_pdf_display_with_presenter_fence_v1[\s\S]*?admin_update_pdf_display_v3/,
-  'manual Admin path must preserve the old RPC when the flag is OFF',
+  /verifyGoogleAdminOperationRequest[\s\S]*?manage_google_admin_display_state_v1[\s\S]*?target_transport_enabled: verification\.transportEnabled/,
+  'manual Admin display updates must pass through the Google authority facade',
+)
+assert.match(updateDisplay, /hasLegacyAdminFields\(body\)/)
+assert.doesNotMatch(
+  updateDisplay,
+  /admin_update_pdf_display_with_presenter_fence_v1|admin_update_pdf_display_v3|getAdminTokenClaims|verifyAdminToken/,
 )
 
 for (const studentOrDisplaySource of [displayPage, lecturePage, adaptiveSync]) {

@@ -4,8 +4,7 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 test.skip(
   process.env.VITE_PHASE7_30_ADMIN_IDENTITY !== 'true' ||
     process.env.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS !== 'true' ||
-    process.env.VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER !== 'true' ||
-    process.env.VITE_PHASE7_30_LEGACY_ADMIN_PIN !== 'false',
+    process.env.VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER !== 'true',
   'Phase 7.30D Admin ledger requires its dedicated Google-only runner.',
 )
 

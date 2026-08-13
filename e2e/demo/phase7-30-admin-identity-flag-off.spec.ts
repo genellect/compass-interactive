@@ -94,7 +94,7 @@ async function installFlagOffMocks(page: Page) {
   return requests
 }
 
-test('default OFF preserves the existing numeric Admin PIN surface without invoking Google identity', async ({
+test('default OFF fails closed without exposing a retired Admin PIN surface', async ({
   page,
 }) => {
   const pageErrors: string[] = []
@@ -103,14 +103,11 @@ test('default OFF preserves the existing numeric Admin PIN surface without invok
 
   await page.goto('/admin')
 
-  const legacyForm = page.locator('main form.join-card')
-  const pin = legacyForm.locator('input[type="password"][inputmode="numeric"]')
-  await expect(legacyForm.locator('.eyebrow')).toHaveText('FOR EDUCATORS')
-  await expect(legacyForm.getByText('PIN', { exact: true })).toBeVisible()
-  await expect(pin).toHaveAttribute('autocomplete', 'off')
-  await pin.fill('2468')
-  await expect(pin).toHaveValue('2468')
-  await expect(legacyForm.locator('button[type="submit"]')).toBeEnabled()
+  const identityCard = page.locator('main .admin-identity-card')
+  await expect(identityCard.locator('.eyebrow')).toHaveText('ADMIN IDENTITY')
+  await expect(identityCard).toBeVisible()
+  await expect(page.locator('input[type="password"]')).toHaveCount(0)
+  await expect(page.locator('#admin-live')).toHaveCount(0)
 
   const adminIdentityStorage = await page.evaluate(() => ({
     appSession: window.sessionStorage.getItem(

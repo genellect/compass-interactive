@@ -155,25 +155,13 @@ Deno.serve(async (request) => {
     }
   }
 
-  let result = googleBinding?.realtime as ClaimResult | null
   if (googleBinding?.recognized !== true) {
-    const { data, error } = await service.rpc(
-      'claim_display_realtime_session_v1',
-      {
-        target_display_auth_user_id: authData.user.id,
-        target_lecture_session_id: body.lectureSessionId,
-        target_token_jti_hash: tokenJtiHash,
-      },
+    return jsonResponse(
+      { message: 'Invalid Display session.', ok: false },
+      401,
     )
-    if (error) {
-      return jsonResponse(
-        { message: 'Display Realtime claim failed.', ok: false },
-        500,
-      )
-    }
-    result = (data ?? {}) as ClaimResult
   }
-  result ??= {}
+  const result = (googleBinding.realtime ?? {}) as ClaimResult
   if (result.status === 'claimed_by_other') {
     return jsonResponse(
       { message: 'This Display link is already in use.', ok: false },

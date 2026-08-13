@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-12
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -43,6 +43,8 @@ secret change and paid call still require an explicit task.
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
 | Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
+| Phase 7.30D owner ledger       | `docs/PHASE7_30D_ADMIN_LEDGER.md`                                |
+| Phase 7.30E Google-only source | `docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`                         |
 | Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
 | Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
 | Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`                   |
@@ -161,13 +163,13 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (A-C1 source; runtime/activation HOLD)
+## 6. Google Admin identity and MFA (A-D exact-head PASS; E cutover/activation HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
 - Implemented source/local boundary, dormant controls, evidence scope and
   rollback: `docs/PHASE7_30A_B1_IMPLEMENTATION.md`.
-- Implemented B2 default-OFF database boundary and pending verification:
+- Implemented B2 default-OFF database foundation (historical source record):
   `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`.
 - Implemented B2.2a trust-anchor/control hardening:
   `docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`.
@@ -175,14 +177,20 @@ Local writer while browser mode is active.
   `docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`.
 - Implemented C1 private ownership and atomic dormant master admission:
   `docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`.
+- Implemented D owner ledger, invitation and membership/session controls:
+  `docs/PHASE7_30D_ADMIN_LEDGER.md`.
+- Implemented E Google-only application source and dormant operator cutover:
+  `docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
 - Google session issuance is authorized only when the database runtime control
   and `PHASE730_ADMIN_IDENTITY_ENABLED` are both enabled. The separate
   `VITE_PHASE7_30_ADMIN_IDENTITY` flag controls UI exposure, not authorization;
-  normal activation still enables all three together. Legacy Admin PIN
-  compatibility remains default ON. Do not enable any Google control as
-  evidence that the others pass.
+  normal activation still enables all three together. The current application
+  source has no shared Admin PIN login path. E's legacy database gate and
+  historical rows remain until the separately authorized operator cutover; do
+  not enable any Google control or apply the migration as evidence that the
+  cutover is safe.
 - B1 HMAC-binds the trusted Google subject, consumes a digest-only nonce within
   five minutes, verifies a fresh TOTP AMR timestamp, and only then creates one
   opaque AAL2 application session with eight-hour absolute and 30-minute idle
@@ -191,11 +199,12 @@ Local writer while browser mode is active.
   behavior; B1 does not grant lecture-workspace authority.
 - The Phase 7.30B2 source migration now removes the idle expiry and anchors the
   application cap to `auth.sessions.created_at + 8 hours`. B2 implements the
-  default-OFF continuous-session lifetime/invalidation database behavior; C completes
-  its unified verifier across every operational Admin Edge/RPC path. It never
-  prompts for TOTP periodically during a lecture. Logout, backing
+  default-OFF continuous-session lifetime/invalidation database behavior; C2
+  completed its unified verifier across every operational Admin Edge/RPC path.
+  It never prompts for TOTP periodically during a lecture. Logout, backing
   `auth.sessions` removal, principal/environment/membership invalidation or the
-  cap. B2.2a stores an approved factor-set hash/version/count on the principal
+  cap requires login again. B2.2a stores an approved factor-set
+  hash/version/count on the principal
   and issues a dormant Google Admin session only when approval, the live set,
   the session binding and completed post-challenge JWT/AMR nonce evidence agree.
   Changed sets are reason-revoked and drain pending AI authority. The only
@@ -203,11 +212,12 @@ Local writer while browser mode is active.
   factor during fresh completion. Existing verified but unbound sets require
   Edge-unwired, default-OFF operator adoption while issuance is OFF; migration
   performs no inferred backfill. B2.2b adds default-OFF factor add/remove
-  rare-control with an exact pre/post-set transition and hash-only recovery;
-  its Docker/Local Edge/Hosted/Human evidence remains HOLD. C1 adds private
+  rare-control with an exact pre/post-set transition and hash-only recovery. C1 adds private
   no-backfill lecture ownership and atomic PIN/browser proof-to-master admission
   while fencing child/provider authority. C2 applies the verifier to every
-  operational Admin Edge/RPC path.
+  operational Admin Edge/RPC path. D adds the owner ledger. E makes the 19
+  remaining operational Admin Edge adapters Google-app-session only and adds
+  explicit ownership claim/cutover evidence without activating it.
   Role changes take effect live; `can_use_ai=false` drains AI authority without
   ending the Admin session.
 - Reuse from COMPASS is read-only and design-led. Interactive requires separate
@@ -217,12 +227,13 @@ Local writer while browser mode is active.
   separately verified Supabase Authenticator App TOTP AAL2 session in the
   initial implementation. The standard flow supports Google Authenticator;
   COMPASS configures no email MFA or custom MFA.
-- No real Google/Supabase Hosted mutation or Human MFA evidence was executed in
-  A-C1. B2-C1 runtime exact-head DB/Local Edge CI, Phase 7.30C2-F and Production activation
-  remain HOLD. Run the clean migration, all pgTAP, B2 two-transaction
-  concurrency, populated Phase 7.29/B1 upgrade, generated types and DB lint in
-  the local/CI database gate before claiming runtime verification.
-- The B2 database foundation and planned C integration retire repeated API-use PIN entry from the
+- Phase 7.30D exact-head DB/Local Edge/browser CI is recorded as PASS. E source
+  evidence does not prove a Hosted release or authorize its irreversible
+  database tombstone. Before E cutover, require fresh migration, pgTAP,
+  two-connection concurrency, populated C2/D-head upgrades, generated types,
+  DB lint, Google AAL2 browser coverage, an independently reviewed Hosted
+  function/secret inventory and a two-owner recovery rehearsal.
+- The B2 foundation and completed C integration retire repeated shared API-use PIN entry from the
   normal paid-AI UX. The initial path requires Google plus TOTP AAL2, active
   `can_use_ai`, an owner-managed server policy, a personal four-digit AI PIN (or
   its valid remembered-browser proof) and one lecture master CTA. The AI PIN is
@@ -243,11 +254,13 @@ Local writer while browser mode is active.
   immediately after login uses the already-fresh login TOTP with no additional
   prompt. Normal lecture operation, emergency stop, PIN verification, browser
   proof, AI master/escalation and child calls never prompt.
-- After the Phase 7.30C authorization migration, remove `ADMIN_PIN` completely
-  before Production; revoked historical rows may remain only for FK/audit.
-  After personal-AI-PIN E2E, remove `BILLING_PIN` and its compatibility RPC
-  before Production. Rollback is an immutable Google-only revision plus
-  operator owner recovery, never a shared PIN.
+- E removes the `ADMIN_PIN` UI, issuer, browser storage and accepted application
+  transport. Do not call its postgres-only cutover until every Hosted Admin Edge
+  is independently confirmed Google-only and the deployment evidence digest is
+  recorded. After personal-AI-PIN evidence, retire historical `BILLING_PIN`
+  compatibility authority in a separate default-OFF migration before
+  Production. Rollback is an immutable Google-only revision plus operator owner
+  recovery, never a shared PIN.
 
 ## 7. Contest publication and commercial readiness (planned)
 

@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  isGoogleAdminOperationCredential,
-  type AdminOperationCredentialInput,
-} from '../../lib/adminAuth/adminOperationCredential'
+import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 
 import { buildDoiUrl } from '../../lib/academicSourceLinks'
 import {
@@ -56,7 +53,6 @@ export function AcademicAnswerControl({
   masterAuthorization,
   refreshVersion = 0,
 }: AcademicAnswerControlProps) {
-  const googleCredential = isGoogleAdminOperationCredential(adminToken)
   const [results, setResults] = useState<AdminAcademicResults>(emptyResults)
   const [sourceMode, setSourceMode] = useState<
     'summary_candidate' | 'teacher_selected'
@@ -67,7 +63,6 @@ export function AcademicAnswerControl({
   const [sourcePolicy, setSourcePolicy] = useState<
     'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
   >('auto')
-  const [billingPin, setBillingPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [message, setMessage] = useState('')
@@ -105,9 +100,7 @@ export function AcademicAnswerControl({
     let cancelled = false
     setResults(emptyResults)
     setMessage('')
-    if (googleCredential) {
-      setSourceMode('teacher_selected')
-    }
+    setSourceMode('teacher_selected')
     void supabaseAdminRepository
       .manageAcademicAnswers({
         action: 'status',
@@ -138,7 +131,7 @@ export function AcademicAnswerControl({
     return () => {
       cancelled = true
     }
-  }, [adminToken, googleCredential, lectureSessionId, refreshVersion])
+  }, [adminToken, lectureSessionId, refreshVersion])
 
   useEffect(() => {
     if (!busy) return
@@ -172,7 +165,7 @@ export function AcademicAnswerControl({
     const normalizedSearchQuery = searchQuery.trim()
     if (
       !admissionEnabled ||
-      (!masterAuthorized && (googleCredential || !billingPin.trim())) ||
+      !masterAuthorized ||
       masterHeldByOther ||
       normalizedQuestion.length < 10 ||
       normalizedQuestion.length > 500 ||
@@ -185,9 +178,7 @@ export function AcademicAnswerControl({
           ? '別の教員画面がAI許可を保持しています。'
           : masterAuthorized
             ? '質問と文献検索語を確認してください。'
-            : googleCredential
-              ? '質問・文献検索語・講義中のAI許可を確認してください。'
-              : '質問・文献検索語・API PINを確認してください。',
+            : '質問・文献検索語・講義中のAI許可を確認してください。',
       )
       return
     }
@@ -195,27 +186,16 @@ export function AcademicAnswerControl({
     setBusy(true)
     setMessage('一次文献を検証してから、参考回答の下書きを作成します…')
     try {
-      const authorization = googleCredential
-        ? null
-        : await supabaseAdminRepository.authorizeAiStart({
-            actions: ['academic_answers'],
-            adminToken,
-            billingPin: masterAuthorized ? undefined : billingPin,
-            lectureSessionId,
-          })
-      setBillingPin('')
       const sourceSummaryId =
         sourceMode === 'summary_candidate' ? selectedSummaryId : null
-      googleAttemptKey = googleCredential
-        ? JSON.stringify({
-            lectureSessionId,
-            question: normalizedQuestion,
-            searchQuery: normalizedSearchQuery,
-            sourceKind: sourceMode,
-            sourcePolicy,
-            sourceSummaryId,
-          })
-        : null
+      googleAttemptKey = JSON.stringify({
+        lectureSessionId,
+        question: normalizedQuestion,
+        searchQuery: normalizedSearchQuery,
+        sourceKind: sourceMode,
+        sourcePolicy,
+        sourceSummaryId,
+      })
       let googleAttempt = googleAttemptKey
         ? googleProviderAttemptsRef.current.get(googleAttemptKey)
         : undefined
@@ -230,12 +210,7 @@ export function AcademicAnswerControl({
       const nextResults = await supabaseAdminRepository.manageAcademicAnswers({
         action: 'generate',
         adminToken,
-        ...(googleCredential
-          ? googleAttempt!
-          : {
-              billingGrant: authorization!.billingGrant,
-              idempotencyKey: `phase7-2-${lectureSessionId}-${crypto.randomUUID()}`,
-            }),
+        ...googleAttempt!,
         lectureSessionId,
         question: normalizedQuestion,
         searchQuery: normalizedSearchQuery,
@@ -254,7 +229,6 @@ export function AcademicAnswerControl({
       if (googleAttemptKey && !shouldRetainAdminProviderAttempt(error)) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
       }
-      setBillingPin('')
       setMessage(
         error instanceof Error
           ? `参考回答を作成できませんでした: ${error.message}`
@@ -351,7 +325,7 @@ export function AcademicAnswerControl({
         requestId,
       })
       setResults(nextResults)
-      setMessage('参考回答の処理を停止しました。停止にAPI PINは不要です。')
+      setMessage('参考回答の処理を停止しました。停止に個人AI PINは不要です。')
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -463,23 +437,11 @@ export function AcademicAnswerControl({
         {masterHeldByOther ? (
           <p className="note">別の教員画面がAI許可を保持しています。</p>
         ) : masterAuthorized ? (
-          <p className="note">講義中のAPI許可を使用します。</p>
-        ) : googleCredential ? (
+          <p className="note">講義中のAI許可を使用します。</p>
+        ) : (
           <p className="note">
             上の「講義中のAI機能」で利用を許可してください。
           </p>
-        ) : (
-          <label className="field">
-            <span>API PIN</span>
-            <input
-              autoComplete="off"
-              disabled={generationDisabled}
-              inputMode="numeric"
-              onChange={(event) => setBillingPin(event.target.value)}
-              type="password"
-              value={billingPin}
-            />
-          </label>
         )}
         <button
           className="secondary-button"
@@ -488,7 +450,7 @@ export function AcademicAnswerControl({
             !admissionEnabled ||
             masterHeldByOther ||
             callsUsed >= callLimit ||
-            (!masterAuthorized && googleCredential)
+            !masterAuthorized
           }
           onClick={() => void generateAnswer()}
           type="button"

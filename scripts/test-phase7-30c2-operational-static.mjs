@@ -20,7 +20,7 @@ const c2Foundation = read(
 const finalOperationsMigration = read(
   'supabase/migrations/20260812011500_phase7_30c2_google_realtime_control.sql',
 )
-const authorizeAiStart = read('supabase/functions/authorize-ai-start/index.ts')
+const adminAiUnlock = read('supabase/functions/admin-ai-unlock/index.ts')
 const manageAiControl = read('supabase/functions/manage-ai-control/index.ts')
 const issueDisplaySession = read(
   'supabase/functions/issue-display-session/index.ts',
@@ -76,13 +76,13 @@ assert.match(
   'only the reviewed service Edge may enter the public AI master facade',
 )
 assert.match(
-  authorizeAiStart,
-  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest[\s\S]*google_ai_master_proof_required[\s\S]*google_ai_provider_start_required[\s\S]*manage_google_admin_ai_master_v1/,
-  'authorize-ai-start keeps credentials exclusive and exposes only status/revoke to the Google browser transport',
+  adminAiUnlock,
+  /action === 'masterStatus'[\s\S]*get_google_ai_master_status_v1[\s\S]*action === 'revokeMaster'[\s\S]*revoke_google_ai_master_v1/,
+  'admin-ai-unlock keeps Google master status and revoke available without the retired billing endpoint',
 )
 assert.match(
-  authorizeAiStart,
-  /trimmedReason\.length > 120[\s\S]*target_reason: reason[\s\S]*target_request_id:/,
+  adminAiUnlock,
+  /reason\.length > 120[\s\S]*target_reason: reason[\s\S]*target_request_id:/,
   'Google revoke rejects oversized reasons instead of collapsing different intents by truncation',
 )
 assert.match(
@@ -175,17 +175,11 @@ assert.match(
   /public\.get_google_admin_ai_control_configuration_intent_v1\(text,uuid,uuid,text,text,integer,uuid,uuid,jsonb,boolean\)[\s\S]*public\.manage_google_admin_ai_control_v1\(text,uuid,uuid,text,text,integer,text,uuid,uuid,uuid,jsonb,text,text,boolean\)[\s\S]*11,[\s\S]*C2 operational public facades are postgres-owned/,
   'pgTAP fixes the public AI control signatures, owners and facade count',
 )
-const googleAiControlHandler = manageAiControl.slice(
-  manageAiControl.indexOf('if (googleContext)'),
-  manageAiControl.indexOf(
-    "\n    if (body.action === 'heartbeat')",
-    manageAiControl.indexOf('if (googleContext)'),
-  ),
-)
+const googleAiControlHandler = manageAiControl
 assert.match(
   manageAiControl,
-  /hasGoogleCredential === hasLegacyCredential[\s\S]*verifyGoogleAdminOperationRequest/,
-  'AI control credentials are exclusive and Google verification never falls back to the legacy PIN transport',
+  /hasLegacyAdminFields\(body\)[\s\S]*appSessionToken is required[\s\S]*verifyGoogleAdminOperationRequest/,
+  'AI control requires the Google application session and rejects legacy Admin fields',
 )
 assert.match(
   googleAiControlHandler,
@@ -336,7 +330,8 @@ assert.match(
   displayToken,
   /createDisplayTokenForClaims\([\s\S]*issuedAt[\s\S]*expiresAt[\s\S]*jti[\s\S]*expiresAt > issuedAt \+ MAX_TOKEN_TTL_SECONDS/,
 )
-assert.match(issueDisplaySession, /hasGoogleCredential === hasLegacyCredential/)
+assert.match(issueDisplaySession, /hasLegacyAdminFields\(body\)/)
+assert.match(issueDisplaySession, /body\.appSessionToken\.trim\(\)\.length === 0/)
 assert.match(issueDisplaySession, /verifyGoogleAdminOperationRequest/)
 assert.match(issueDisplaySession, /issue_google_admin_display_session_v1/)
 assert.match(issueDisplaySession, /target_request_id: body\.requestId/)
@@ -346,7 +341,7 @@ assert.match(
 )
 assert.match(
   issueDisplaySession,
-  /createBoundDisplayToken\([\s\S]*body\.requestId!/,
+  /createBoundDisplayToken\([\s\S]*body\.requestId,/,
   'lost-response retry recreates the same signed Display capability',
 )
 assert.match(
@@ -354,17 +349,29 @@ assert.match(
   /display_session_refresh_required/,
   'an expired receipt asks for a fresh issuance instead of minting from stale evidence',
 )
-assert.match(issueDisplaySession, /getAdminTokenClaims/)
-assert.match(issueDisplaySession, /register_display_realtime_session_v1/)
+assert.doesNotMatch(
+  issueDisplaySession,
+  /getAdminTokenClaims|verifyAdminToken|register_display_realtime_session_v1|createDisplayToken\(/,
+)
 for (const consumer of [operatorLiveSnapshot, issuePdfAccessToken]) {
   assert.match(consumer, /verify_and_claim_google_display_session_v1/)
-  assert.match(consumer, /googleDisplayBinding\?\.recognized !== true/)
+  assert.match(consumer, /googleDisplayBinding\?\.recognized === true/)
+  assert.match(consumer, /verify_google_display_terminal_session_v1/)
+  assert.match(consumer, /descendant\?\.recognized !== true/)
   assert.match(consumer, /claimed_by_other/)
+  assert.doesNotMatch(
+    consumer,
+    /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1/,
+  )
 }
 assert.match(
   claimDisplayRealtimeSession,
-  /verify_and_claim_google_display_session_v1[\s\S]*googleBinding\?\.recognized === true[\s\S]*googleBinding\.realtimeAvailable !== true[\s\S]*googleBinding\?\.recognized !== true[\s\S]*claim_display_realtime_session_v1/,
-  'Google Display Realtime claims use the atomic root/public facade and never fall through to the legacy claim',
+  /verify_and_claim_google_display_session_v1[\s\S]*googleBinding\?\.recognized === true[\s\S]*googleBinding\.realtimeAvailable !== true[\s\S]*googleBinding\?\.recognized !== true[\s\S]*Invalid Display session/,
+  'Google Display Realtime claims use the atomic root facade and fail closed for unrecognized roots',
+)
+assert.doesNotMatch(
+  claimDisplayRealtimeSession,
+  /claim_display_realtime_session_v1|verify_display_realtime_session_v1/,
 )
 
 const presenterSql = functionBlock(
@@ -440,7 +447,7 @@ assert.match(
 )
 assert.match(
   managePresenterConnection,
-  /hasLegacyCredential === hasGoogleCredential/,
+  /hasLegacyAdminFields\(body\)/,
 )
 assert.match(managePresenterConnection, /verifyGoogleAdminOperationRequest/)
 assert.match(
@@ -454,11 +461,13 @@ assert.match(
 )
 assert.match(
   managePresenterConnection,
-  /if \(hasGoogleCredential\)[\s\S]*manage_google_admin_presenter_connection_v1[\s\S]*if \(Deno\.env\.get\('PHASE729_POWERPOINT_SYNC_ENABLED'\) !== 'true'\)/,
-  'Google status/revoke reach the DB facade before the legacy transport flag check',
+  /target_presenter_transport_enabled: presenterTransportEnabled[\s\S]*target_transport_enabled: googleContext\.transportEnabled[\s\S]*manage_google_admin_presenter_connection_v1/,
+  'Presenter status/revoke reach the typed DB facade with both admission gates',
 )
-assert.match(managePresenterConnection, /issue_presenter_connection_v2/)
-assert.match(managePresenterConnection, /get_presenter_connection_status_v1/)
+assert.doesNotMatch(
+  managePresenterConnection,
+  /issue_presenter_connection_v2|get_presenter_connection_status_v1|getAdminTokenClaims|verifyAdminToken/,
+)
 
 assert.match(
   databaseTypes,
@@ -621,7 +630,7 @@ for (const name of [
 
 assert.match(
   managePdfPublications,
-  /hasLegacyCredential === hasGoogleCredential/,
+  /hasLegacyAdminFields\(body\)/,
 )
 assert.match(managePdfPublications, /verifyGoogleAdminOperationRequest/)
 assert.match(
@@ -662,8 +671,12 @@ assert.doesNotMatch(
 )
 assert.match(
   managePdfPublications,
-  /if \(hasGoogleCredential\)[\s\S]*handleGooglePdfPublication[\s\S]*PHASE726_BROWSER_PDF_PUBLICATION_ENABLED/,
-  'Google read/abort/continuation routes are not hidden behind the legacy transport switch',
+  /appSessionToken\.trim\(\)\.length === 0[\s\S]*Action, lecture and Admin session are required[\s\S]*handleGooglePdfPublication/,
+  'Google read/abort/continuation routes require the application session and share one handler',
+)
+assert.doesNotMatch(
+  managePdfPublications,
+  /getAdminTokenClaims|verifyAdminToken|admin_issue_pdf_publication|admin_abort_pdf_publication/,
 )
 assert.match(pdfPublicationToken, /derivePdfPublicationNonce/)
 assert.match(pdfPublicationToken, /derivePdfPublicationUuid/)

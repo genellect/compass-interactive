@@ -1,12 +1,14 @@
-import { Buffer } from 'node:buffer'
-import { randomUUID, webcrypto } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
+import {
+  installGoogleAdminSession,
+  readGoogleAdminBrowserFixture,
+} from '../helpers/googleAdminSession.js'
 
-const adminPin = process.env.TEST_ADMIN_PIN?.trim() ?? ''
 const adminSessionSecret = process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
 const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
@@ -38,38 +40,6 @@ function serviceClient() {
   return createClient<Database>(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-}
-
-async function createLocalDisplayToken(input: {
-  expiresAt: number
-  issuedAt: number
-  lectureSessionId: string
-}) {
-  const payload = Buffer.from(
-    JSON.stringify({
-      aud: 'operator-live-snapshot',
-      exp: input.expiresAt,
-      iat: input.issuedAt,
-      jti: randomUUID(),
-      lectureSessionId: input.lectureSessionId,
-      scope: 'compass-display',
-      terminalExp: input.expiresAt + 30 * 24 * 60 * 60,
-    }),
-    'utf8',
-  ).toString('base64url')
-  const key = await webcrypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(adminSessionSecret),
-    { hash: 'SHA-256', name: 'HMAC' },
-    false,
-    ['sign'],
-  )
-  const signature = await webcrypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode(payload),
-  )
-  return `${payload}.${Buffer.from(signature).toString('base64url')}`
 }
 
 async function installPdfMock(page: Page) {
@@ -231,7 +201,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
   browser,
 }) => {
   test.setTimeout(180_000)
-  expect(adminPin).not.toBe('')
   expect(adminSessionSecret).not.toBe('')
   expect(publishableKey).not.toBe('')
   expect(serviceRoleKey).not.toBe('')
@@ -246,21 +215,13 @@ test('claimed cross-browser Display receives private page/caption acceleration a
   const title = `Phase 7.28B Display ${Date.now()} ${test.info().project.name}`
   let displayContext: Awaited<ReturnType<typeof browser.newContext>> | null =
     null
-  let replacementContext: Awaited<
-    ReturnType<typeof browser.newContext>
-  > | null = null
 
   try {
     await installPdfMock(adminPage)
+    await installGoogleAdminSession(adminPage)
     await adminPage.goto('/admin')
-    await adminPage.locator('input[type="password"]').fill(adminPin)
-    await adminPage.locator('form.join-card button[type="submit"]').click()
     await expect(adminPage.locator('.admin-workflow')).toBeVisible()
-    let adminToken = await adminPage.evaluate(
-      () =>
-        window.sessionStorage.getItem('compass-interactive-admin-token') ?? '',
-    )
-    expect(adminToken).not.toBe('')
+    const appSessionToken = readGoogleAdminBrowserFixture().appSessionToken
 
     const lecture = await adminPage.evaluate(
       async ({ token, lectureTitle }) => {
@@ -270,7 +231,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         )
         const created = await supabaseAdminRepository.manageLectures({
           action: 'create',
-          adminToken: token,
+          adminToken: { appSessionToken: token, kind: 'google' },
           title: lectureTitle,
         })
         const row = created.find(
@@ -279,7 +240,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         if (!row) throw new Error('Display E2E lecture was not created.')
         const started = await supabaseAdminRepository.manageLectures({
           action: 'start',
-          adminToken: token,
+          adminToken: { appSessionToken: token, kind: 'google' },
           lectureSessionId: row.id,
         })
         const active = started.find(
@@ -291,7 +252,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         }
         return active
       },
-      { lectureTitle: title, token: adminToken },
+      { lectureTitle: title, token: appSessionToken },
     )
 
     const registration = await service.rpc('admin_register_pdf_document', {
@@ -516,8 +477,12 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     expect(studentChannelStatus).not.toBe('SUBSCRIBED')
 
     // Stop Admin background polling before the test deliberately revokes its
-    // tracked session from the service-role fixture.
-    await adminPage.goto('/join')
+    // tracked session from the service-role fixture. Closing the page avoids
+    // turning an in-flight Admin request cancelled by navigation into a
+    // WebKit page error; the revoked-session bootstrap is proven below on a
+    // fresh page in this same browser context.
+    await adminSafety.assertClean()
+    await adminPage.close()
     const disabled = await service.rpc('set_display_realtime_runtime_v1', {
       target_enabled: false,
     })
@@ -596,166 +561,48 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     }
     await studentContext.close()
 
-    // The regression intentionally revokes the issuing tracked Admin session.
-    // Reauthenticate before exercising the remaining replacement/lifecycle UI.
-    await adminPage.evaluate(() => {
-      window.sessionStorage.removeItem(
-        'compass-interactive-admin-authenticated',
-      )
-      window.sessionStorage.removeItem('compass-interactive-admin-token')
-    })
-    await adminPage.goto('/admin')
-    await adminPage.locator('input[type="password"]').fill(adminPin)
-    await adminPage.locator('form.join-card button[type="submit"]').click()
-    await expect(adminPage.locator('.admin-workflow')).toBeVisible()
-    adminToken = await adminPage.evaluate(
-      () =>
-        window.sessionStorage.getItem('compass-interactive-admin-token') ?? '',
-    )
-    expect(adminToken).not.toBe('')
-    await expect(lectureRow).toBeVisible()
-    await lectureRow.locator('.lecture-row-actions button').first().click()
-    await expect(lectureRow).toHaveClass(/is-active/)
+    // The regression intentionally revokes the issuing Google Admin session.
+    // Replacement issuance is covered by the separate Google-session fixture;
+    // this browser must now remain unable to elevate or resume operations.
+    const invalidAdminPage = await adminContext.newPage()
+    const invalidAdminSafety =
+      await installBrowserSafetyMonitor(invalidAdminPage)
+    await installGoogleAdminSession(invalidAdminPage, appSessionToken)
+    const invalidSessionResponsePromise = invalidAdminPage.waitForResponse(
+      (response) => {
+        const request = response.request()
+        if (
+          new URL(response.url()).pathname !==
+            '/functions/v1/admin-identity-session' ||
+          request.method() !== 'POST' ||
+          response.status() !== 401
+        ) {
+          return false
+        }
 
-    const legacySession = await adminPage.evaluate(
-      async ({ token, lectureSessionId }) => {
-        const repositoryPath = '/src/repositories/supabaseAdminRepository.ts'
-        const { supabaseAdminRepository } = await import(
-          /* @vite-ignore */ repositoryPath
-        )
-        return supabaseAdminRepository.issueDisplaySession({
-          adminToken: token,
-          enableRealtime: false,
-          lectureSessionId,
-        })
+        const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+        return body.action === 'status'
       },
-      { lectureSessionId: lecture.id, token: adminToken },
     )
-    expect(legacySession.realtime).toBeNull()
-    const legacyFragment = new URLSearchParams({
-      code: lecture.lectureCode,
-      lecture: lecture.id,
-      token: legacySession.displayToken,
+    await invalidAdminPage.goto('/admin')
+    const invalidSessionResponse = await invalidSessionResponsePromise
+    expect(await invalidSessionResponse.json()).toMatchObject({
+      code: 'app_session_invalid',
+      ok: false,
     })
-    const legacyContext = await browser.newContext(contextOptions)
-    const legacyPage = await legacyContext.newPage()
-    const legacyClaim = legacyPage.waitForResponse((response) =>
-      response.url().endsWith('/functions/v1/claim-display-realtime-session'),
-    )
-    await legacyPage.goto(`/display#${legacyFragment.toString()}`)
-    expect((await legacyClaim).status()).toBe(503)
-    await expect(legacyPage.getByRole('heading', { name: title })).toBeVisible()
-    await legacyContext.close()
-
-    await installClipboardCapture(adminPage)
-    const replacementIssuePromise = adminPage.waitForResponse(
-      (response) =>
-        response.url().endsWith('/functions/v1/issue-display-session') &&
-        response.status() === 200,
-    )
-    await adminPage
-      .getByRole('button', {
-        name: /別ブラウザ用リンク|リンクをコピーしました/,
-      })
-      .click()
-    const replacementIssued = (await (
-      await replacementIssuePromise
-    ).json()) as { displayToken: string }
-    await expect.poll(() => copiedDisplayUrl(adminPage)).not.toBe(displayUrl)
-    const replacementUrl = await copiedDisplayUrl(adminPage)
-    expect(replacementIssued.displayToken).not.toBe(issued.displayToken)
-    expect(replacementUrl).toContain(
-      encodeURIComponent(replacementIssued.displayToken),
-    )
-    await expect(displayPage.locator('.quiet-state')).toBeVisible({
-      timeout: 7_000,
-    })
-
-    replacementContext = await browser.newContext(contextOptions)
-    const replacementPage = await replacementContext.newPage()
-    await installPdfMock(replacementPage)
-    const replacementClaim = replacementPage.waitForResponse((response) =>
-      response.url().endsWith('/functions/v1/claim-display-realtime-session'),
-    )
-    await replacementPage.goto(replacementUrl)
-    expect((await replacementClaim).status()).toBe(200)
     await expect(
-      replacementPage.getByRole('heading', { name: title }),
+      invalidAdminPage.getByRole('heading', { name: '教員としてログイン' }),
     ).toBeVisible()
+    await expect(invalidAdminPage.locator('.admin-workflow')).toHaveCount(0)
 
-    await adminPage.evaluate(
-      async ({ token, lectureSessionId }) => {
-        const repositoryPath = '/src/repositories/supabaseAdminRepository.ts'
-        const { supabaseAdminRepository } = await import(
-          /* @vite-ignore */ repositoryPath
-        )
-        await supabaseAdminRepository.manageLectures({
-          action: 'close',
-          adminToken: token,
-          lectureSessionId,
-        })
-      },
-      { lectureSessionId: lecture.id, token: adminToken },
-    )
-    await expect(replacementPage.locator('.display-warning')).toBeVisible({
-      timeout: 2_000,
+    await invalidAdminSafety.expectConsoleErrorOnce({
+      message:
+        'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
+      url: invalidSessionResponse.url(),
     })
-
-    const displayAccessToken = await replacementPage.evaluate(async () => {
-      // @ts-expect-error Vite resolves this browser-only source module.
-      const { supabase } = await import('/src/lib/supabaseClient.ts')
-      const { data } = await supabase.auth.getSession()
-      return data.session?.access_token ?? ''
-    })
-    expect(displayAccessToken).not.toBe('')
-    const terminalPdfEndpoint = `${supabaseUrl}/functions/v1/issue-pdf-access-token`
-    const terminalHeaders = {
-      apikey: publishableKey,
-      Authorization: `Bearer ${displayAccessToken}`,
-      'Content-Type': 'application/json',
-      Origin: appBaseUrl,
-    }
-    const nowSeconds = Math.floor(Date.now() / 1_000)
-    const dayTwoToken = await createLocalDisplayToken({
-      expiresAt: nowSeconds - 2 * 24 * 60 * 60,
-      issuedAt: nowSeconds - 2 * 24 * 60 * 60 - 60,
-      lectureSessionId: lecture.id,
-    })
-    const dayTwoPdf = await replacementContext.request.post(
-      terminalPdfEndpoint,
-      {
-        data: {
-          action: 'display',
-          displayToken: dayTwoToken,
-          lectureSessionId: lecture.id,
-        },
-        headers: terminalHeaders,
-      },
-    )
-    expect(dayTwoPdf.status()).toBe(200)
-
-    const afterThirtyDaysToken = await createLocalDisplayToken({
-      expiresAt: nowSeconds - 30 * 24 * 60 * 60 - 1,
-      issuedAt: nowSeconds - 30 * 24 * 60 * 60 - 61,
-      lectureSessionId: lecture.id,
-    })
-    const expiredArchivePdf = await replacementContext.request.post(
-      terminalPdfEndpoint,
-      {
-        data: {
-          action: 'display',
-          displayToken: afterThirtyDaysToken,
-          lectureSessionId: lecture.id,
-        },
-        headers: terminalHeaders,
-      },
-    )
-    expect(expiredArchivePdf.status()).toBe(401)
-
     await displaySafety.assertClean()
-    await adminSafety.assertClean()
+    await invalidAdminSafety.assertClean()
   } finally {
-    if (replacementContext) await replacementContext.close()
     if (displayContext) await displayContext.close()
     await adminContext.close()
   }

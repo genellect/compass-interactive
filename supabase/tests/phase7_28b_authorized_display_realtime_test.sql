@@ -675,6 +675,7 @@ SELECT is(
 );
 
 RESET ROLE;
+SET CONSTRAINTS lecture_sessions_google_only_active_ownership IMMEDIATE;
 ALTER TABLE public.lecture_sessions
   DISABLE TRIGGER lecture_sessions_revoke_display_realtime;
 SET LOCAL ROLE service_role;

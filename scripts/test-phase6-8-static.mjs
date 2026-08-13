@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -22,31 +22,13 @@ function sourceFiles(directory) {
   })
 }
 
-function callArguments(source, functionName) {
-  const calls = []
-  let searchFrom = 0
-  const marker = `${functionName}(`
-  while (true) {
-    const start = source.indexOf(marker, searchFrom)
-    if (start < 0) return calls
-    let depth = 1
-    let cursor = start + marker.length
-    while (cursor < source.length && depth > 0) {
-      if (source[cursor] === '(') depth += 1
-      if (source[cursor] === ')') depth -= 1
-      cursor += 1
-    }
-    assert.equal(depth, 0, `${functionName} call is not balanced`)
-    calls.push(source.slice(start + marker.length, cursor - 1))
-    searchFrom = cursor
-  }
-}
-
 const migration = read(
   'supabase/migrations/20260718193306_phase6_8_security_sessions_resume.sql',
 )
 const adminToken = read('supabase/functions/_shared/adminToken.ts')
-const verifyPin = read('supabase/functions/verify-admin-pin/index.ts')
+const googleAdminOperations = read(
+  'supabase/functions/_shared/googleAdminOperations.ts',
+)
 const resumeIssuer = read(
   'supabase/functions/issue-lecture-resume-token/index.ts',
 )
@@ -78,13 +60,21 @@ for (const contract of [
 assert.match(migration, /enable row level security/)
 assert.match(migration, /revoke all[\s\S]*authenticated/)
 assert.match(migration, /security definer[\s\S]*set search_path = ''/)
-assert.match(adminToken, /token_hash: await sha256Hex\(token\)/)
-assert.doesNotMatch(adminToken, /\.insert\([\s\S]{0,500}\btoken:/)
-assert.match(adminToken, /auth\.getUser\(bearerToken\)/)
-assert.match(adminToken, /auth_user_id[\s\S]{0,200}authData\.user\.id/)
-assert.match(verifyPin, /consume_admin_pin_rate_limit/)
-assert.match(verifyPin, /timingSafeEqual/)
-assert.match(verifyPin, /auth\.getUser/)
+assert.doesNotMatch(
+  adminToken,
+  /createAdminToken|getAdminTokenClaims|verifyAdminToken|ADMIN_PIN/,
+)
+assert.match(googleAdminOperations, /auth\.getUser\(bearerToken\)/)
+assert.match(
+  googleAdminOperations,
+  /authUserId: userData\.user\.id/,
+)
+assert.match(googleAdminOperations, /appSessionTokenHash/)
+assert.equal(
+  existsSync(resolve(root, 'supabase/functions/verify-admin-pin/index.ts')),
+  false,
+  'the legacy shared-PIN issuer must stay removed',
+)
 assert.match(resumeIssuer, /auth_user_id/)
 assert.match(resumeIssuer, /resume_token_version/)
 assert.match(worker, /\/v1\/archives\/resume/)
@@ -92,11 +82,11 @@ assert.match(worker, /archives\/by-public-id/)
 
 for (const flag of [
   'VITE_PHASE6_8_SECURITY=false',
-  'PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED=false',
   'PHASE68_RESUME_TOKENS_ENABLED=false',
 ]) {
   assert.ok(envExample.includes(flag), `default-OFF flag missing: ${flag}`)
 }
+assert.doesNotMatch(envExample, /PHASE68_TRACKED_ADMIN_SESSIONS_ENABLED/)
 assert.match(envExample, /^LECTURE_RESUME_TOKEN_SECRET=$/m)
 assert.doesNotMatch(envExample, /VITE_LECTURE_RESUME_TOKEN_SECRET/)
 assert.doesNotMatch(envExample, /VITE_ADMIN_SESSION_SECRET/)
@@ -149,15 +139,11 @@ for (const sourcePath of exposedFunctions) {
     /request\.json\(\)/,
     `${sourcePath} bypasses the bounded JSON reader`,
   )
-  for (const functionName of ['getAdminTokenClaims', 'verifyAdminToken']) {
-    for (const argumentsSource of callArguments(source, functionName)) {
-      assert.match(
-        argumentsSource,
-        /\brequest\b/,
-        `${sourcePath} does not bind ${functionName} to the request Auth user`,
-      )
-    }
-  }
+  assert.doesNotMatch(
+    source,
+    /getAdminTokenClaims|verifyAdminToken|createAdminToken/,
+    `${sourcePath} retains a legacy Admin-token transport`,
+  )
 }
 
 const valid = await readJsonBody(

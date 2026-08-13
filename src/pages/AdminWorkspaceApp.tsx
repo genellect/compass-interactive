@@ -1,16 +1,16 @@
+import type { ReactNode } from 'react'
 import { CompassStateProvider } from '../context/CompassStateContext'
 import type { AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
-import type { ReactNode } from 'react'
 import { AdminPage } from './AdminPage'
 
-export default function AdminLegacyApp({
+export default function AdminWorkspaceApp({
   adminCredential,
   identitySettings,
   onAdminLogout,
 }: {
-  adminCredential?: AdminOperationCredential
+  adminCredential: AdminOperationCredential
   identitySettings?: ReactNode
-  onAdminLogout?: () => Promise<void>
+  onAdminLogout: () => Promise<void>
 }) {
   return (
     <CompassStateProvider>

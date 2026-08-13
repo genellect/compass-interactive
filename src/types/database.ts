@@ -6681,6 +6681,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      verify_google_display_terminal_session_v1: {
+        Args: {
+          target_display_auth_user_id: string
+          target_lecture_session_id: string
+          target_token_expires_at: string
+          target_token_issued_at: string
+          target_token_jti_hash: string
+        }
+        Returns: Json
+      }
       worker_claim_pdf_publication_nonce_v1: {
         Args: {
           target_allowed_origin: string

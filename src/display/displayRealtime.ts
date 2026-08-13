@@ -1,6 +1,7 @@
 import type { CaptionBroadcastMessage } from '../caption/captionBroadcast'
 import { isCaptionBroadcastMessage } from '../caption/captionBroadcast'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
+import { adminSupabase } from '../lib/adminAuth/adminSupabaseClient'
 import { isPhase728DisplayRealtimeEnabled } from '../lib/featureFlags'
 import { supabase } from '../lib/supabaseClient'
 import {
@@ -188,7 +189,7 @@ async function relayCaption(message: CaptionBroadcastMessage) {
   const sends = [...lecturePublishers.values()]
     .filter((registration) => registration.expiresAt > Date.now())
     .map(async (registration) => {
-      const { data, error } = await invokeEdgeFunction<{
+      const { data, error } = await adminSupabase.functions.invoke<{
         message?: string
         ok?: boolean
       }>('broadcast-display-caption', {

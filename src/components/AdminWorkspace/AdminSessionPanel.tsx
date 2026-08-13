@@ -1,55 +1,4 @@
-import type { FormEventHandler } from 'react'
-import { AppIcon } from '../AppIcon'
 import type { AdminSessionSummary } from '../../repositories/supabaseAdminRepository'
-
-type AdminAuthPanelProps = {
-  authError: string
-  isVerifying: boolean
-  onPinChange: (pin: string) => void
-  onSubmit: FormEventHandler<HTMLFormElement>
-  pin: string
-}
-
-export function AdminAuthPanel({
-  authError,
-  isVerifying,
-  onPinChange,
-  onSubmit,
-  pin,
-}: AdminAuthPanelProps) {
-  return (
-    <main className="page-shell join-page">
-      <form className="join-card" onSubmit={onSubmit}>
-        <span className="admin-login-icon">
-          <AppIcon name="compass" size={25} />
-        </span>
-        <p className="eyebrow">FOR EDUCATORS</p>
-        <h1>講義を運営する</h1>
-        <p>管理PINを入力して、講義コントロールを開きます。</p>
-        <label className="field">
-          <span>PIN</span>
-          <input
-            aria-label="管理PIN"
-            autoComplete="off"
-            disabled={isVerifying}
-            inputMode="numeric"
-            onChange={(event) => onPinChange(event.target.value)}
-            type="password"
-            value={pin}
-          />
-        </label>
-        {authError ? <p className="error-note">{authError}</p> : null}
-        <button
-          className="primary-button"
-          disabled={isVerifying || pin.trim().length === 0}
-          type="submit"
-        >
-          {isVerifying ? '確認中…' : '講義コントロールを開く'}
-        </button>
-      </form>
-    </main>
-  )
-}
 
 type AdminSessionPanelProps = {
   currentSessionId: string
@@ -90,7 +39,7 @@ export function AdminSessionPanel({
                     : '有効なセッション'}
               </strong>
               <small>
-                最終確認 {new Date(session.lastSeenAt).toLocaleString('ja-JP')}
+                最終確認: {new Date(session.lastSeenAt).toLocaleString('ja-JP')}
               </small>
             </span>
             <button

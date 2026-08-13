@@ -1,9 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import {
-  getAdminTokenSecret,
-  sha256Hex,
-  verifyAdminToken,
-} from '../_shared/adminToken.ts'
+import { sha256Hex } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   getDisplayTokenClaims,
@@ -11,13 +7,13 @@ import {
   getDisplayTerminalTokenClaims,
 } from '../_shared/displayToken.ts'
 import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { signPdfAccessToken } from '../_shared/pdfAccessToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type RequestBody = {
   action?: 'admin' | 'display' | 'member'
-  adminToken?: string
   appSessionToken?: string
   displayToken?: string
   lectureSessionId?: string
@@ -72,20 +68,22 @@ Deno.serve(async (request) => {
       400,
     )
   }
-  const hasAdminToken =
-    typeof body.adminToken === 'string' && body.adminToken.trim().length > 0
+  if (hasLegacyAdminFields(body)) {
+    return jsonResponse(
+      { message: 'Legacy Admin credentials are not supported.', ok: false },
+      400,
+    )
+  }
   const hasGoogleCredential =
     typeof body.appSessionToken === 'string' &&
     body.appSessionToken.trim().length > 0
   const hasDisplayToken =
     typeof body.displayToken === 'string' && body.displayToken.trim().length > 0
   if (
-    (body.action === 'admin' &&
-      (hasAdminToken === hasGoogleCredential || hasDisplayToken)) ||
+    (body.action === 'admin' && (!hasGoogleCredential || hasDisplayToken)) ||
     (body.action === 'display' &&
-      (!hasDisplayToken || hasAdminToken || hasGoogleCredential)) ||
-    (body.action === 'member' &&
-      (hasAdminToken || hasGoogleCredential || hasDisplayToken))
+      (!hasDisplayToken || hasGoogleCredential)) ||
+    (body.action === 'member' && (hasGoogleCredential || hasDisplayToken))
   ) {
     return jsonResponse(
       {
@@ -96,9 +94,7 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    body.action === 'admin' &&
-    hasGoogleCredential &&
-    !UUID_PATTERN.test(body.requestId ?? '')
+    body.action === 'admin' && !UUID_PATTERN.test(body.requestId ?? '')
   ) {
     return jsonResponse({ message: 'requestId is required.', ok: false }, 400)
   }
@@ -115,8 +111,7 @@ Deno.serve(async (request) => {
 
   let claims: AccessClaimRow | null = null
   if (body.action === 'admin') {
-    if (hasGoogleCredential) {
-      const verification = await verifyGoogleAdminOperationRequest(
+    const verification = await verifyGoogleAdminOperationRequest(
         request,
         body.appSessionToken!,
       )
@@ -155,38 +150,6 @@ Deno.serve(async (request) => {
         )
       }
       claims = result.claims as AccessClaimRow
-    } else {
-      let adminSecret: string
-      try {
-        adminSecret = getAdminTokenSecret()
-      } catch (error) {
-        return jsonResponse(
-          {
-            message:
-              error instanceof Error ? error.message : 'Admin auth failed.',
-            ok: false,
-          },
-          500,
-        )
-      }
-      if (!(await verifyAdminToken(body.adminToken!, adminSecret, request))) {
-        return jsonResponse(
-          { message: 'Invalid Admin session.', ok: false },
-          401,
-        )
-      }
-      const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false },
-      })
-      const { data, error } = await serviceClient.rpc(
-        'admin_get_pdf_access_claims_v1',
-        { target_lecture_session_id: body.lectureSessionId },
-      )
-      if (error) {
-        return jsonResponse({ message: error.message, ok: false }, 500)
-      }
-      claims = data as AccessClaimRow | null
-    }
   } else if (body.action === 'display') {
     let displayClaims
     let terminalOnly = false
@@ -276,6 +239,32 @@ Deno.serve(async (request) => {
             401,
           )
         }
+        const { data: descendantData, error: descendantError } =
+          await serviceClient.rpc('verify_google_display_terminal_session_v1', {
+            target_display_auth_user_id: authData.user.id,
+            target_lecture_session_id: body.lectureSessionId,
+            target_token_expires_at: new Date(
+              displayClaims.exp * 1_000,
+            ).toISOString(),
+            target_token_issued_at: new Date(
+              displayClaims.iat * 1_000,
+            ).toISOString(),
+            target_token_jti_hash: tokenJtiHash,
+          })
+        const descendant = descendantData as {
+          recognized?: unknown
+          valid?: unknown
+        } | null
+        if (
+          descendantError ||
+          descendant?.recognized !== true ||
+          descendant.valid !== true
+        ) {
+          return jsonResponse(
+            { message: 'Invalid Display session.', ok: false },
+            descendantError ? 503 : 401,
+          )
+        }
         const { data: accessData, error: accessError } =
           await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
             target_lecture_session_id: body.lectureSessionId,
@@ -294,84 +283,54 @@ Deno.serve(async (request) => {
         terminalAccessVerified = true
       }
       if (googleDisplayBinding?.recognized !== true) {
-        const { data: bindingValid, error: bindingError } =
-          await serviceClient.rpc('verify_display_realtime_session_v1', {
-            target_display_auth_user_id: authData.user.id,
-            target_lecture_session_id: body.lectureSessionId,
-            target_token_jti_hash: tokenJtiHash,
-          })
-        if (bindingError) {
-          return jsonResponse(
-            { message: 'Display session verification failed.', ok: false },
-            503,
-          )
-        }
-        if (bindingValid !== true) {
-          const { data: realtimeBinding, error: realtimeBindingError } =
-            await serviceClient
-              .from('display_realtime_sessions')
-              .select('id, display_auth_user_id, revoke_reason')
-              .eq('lecture_session_id', body.lectureSessionId)
-              .eq('token_jti_hash', tokenJtiHash)
-              .maybeSingle()
-          if (realtimeBindingError) {
-            return jsonResponse(
-              { message: 'Display session verification failed.', ok: false },
-              503,
-            )
-          }
-          // Legacy clients have no binding and intentionally keep the pre-7.28
-          // signed-token PDF path during staged rollout. A registered token may
-          // downgrade only when the DB runtime gate is OFF and a service-only RPC
-          // revalidates its browser, lecture, binding, and issuing Admin session.
-          let snapshotFallbackValid = false
-          if (realtimeBinding) {
-            const { data: fallbackValid, error: fallbackError } =
-              await serviceClient.rpc('verify_display_snapshot_fallback_v1', {
-                target_display_auth_user_id: authData.user.id,
-                target_lecture_session_id: body.lectureSessionId,
-                target_token_jti_hash: tokenJtiHash,
-              })
-            if (fallbackError) {
-              return jsonResponse(
-                { message: 'Display session verification failed.', ok: false },
-                503,
-              )
-            }
-            snapshotFallbackValid = fallbackValid === true
-          }
-          if (realtimeBinding && !snapshotFallbackValid) {
-            const { data: accessData, error: accessError } =
-              await serviceClient.rpc('admin_get_lecture_operator_access_v1', {
-                target_lecture_session_id: body.lectureSessionId,
-              })
-            const access = accessData as {
-              mode?: unknown
-              terminal?: unknown
-            } | null
-            if (
-              accessError ||
-              access?.mode !== 'terminal' ||
-              !access.terminal
-            ) {
-              if (realtimeBinding.display_auth_user_id === authData.user.id) {
-                return jsonResponse({
-                  credentialExpired: true,
-                  message: 'Display session has ended.',
-                  ok: false,
-                })
-              }
-              return jsonResponse(
-                { message: 'Invalid Display session.', ok: false },
-                401,
-              )
-            }
-            terminalAccessVerified = true
-          }
-        }
+        return jsonResponse(
+          { message: 'Invalid Display session.', ok: false },
+          401,
+        )
       }
     }
     if (terminalOnly && !terminalAccessVerified) {
+      const authorization = request.headers.get('Authorization') ?? ''
+      const bearerToken = authorization.startsWith('Bearer ')
+        ? authorization.slice('Bearer '.length).trim()
+        : ''
+      const { data: authData, error: authError } = bearerToken
+        ? await serviceClient.auth.getUser(bearerToken)
+        : { data: { user: null }, error: new Error('Missing bearer token.') }
+      if (authError || !authData.user) {
+        return jsonResponse(
+          { message: 'Invalid Display session.', ok: false },
+          401,
+        )
+      }
+      const { data: descendantData, error: descendantError } =
+        await serviceClient.rpc('verify_google_display_terminal_session_v1', {
+          target_display_auth_user_id: authData.user.id,
+          target_lecture_session_id: body.lectureSessionId,
+          target_token_expires_at: new Date(
+            displayClaims.exp * 1_000,
+          ).toISOString(),
+          target_token_issued_at: new Date(
+            displayClaims.iat * 1_000,
+          ).toISOString(),
+          target_token_jti_hash: await sha256Hex(displayClaims.jti),
+        })
+      if (descendantError) {
+        return jsonResponse(
+          { message: 'Display session verification failed.', ok: false },
+          503,
+        )
+      }
+      const descendant = descendantData as {
+        recognized?: unknown
+        valid?: unknown
+      } | null
+      if (descendant?.recognized !== true || descendant.valid !== true) {
+        return jsonResponse(
+          { message: 'Invalid Display session.', ok: false },
+          401,
+        )
+      }
       const { data: accessData, error: accessError } = await serviceClient.rpc(
         'admin_get_lecture_operator_access_v1',
         {

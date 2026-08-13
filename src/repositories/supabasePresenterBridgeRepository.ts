@@ -1,7 +1,5 @@
-import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
 import {
   isAdminOperationCredential,
-  isGoogleAdminOperationCredential,
   type AdminOperationCredentialInput,
 } from '../lib/adminAuth/adminOperationCredential'
 import { isPresenterPairingTicket } from '../presenter/presenterBridgeProtocol.ts'
@@ -146,23 +144,13 @@ function isNullablePageCount(value: unknown): value is number | null {
   )
 }
 
-function isAdminToken(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length >= 32 &&
-    value.length <= 4_096 &&
-    !hasAsciiControl(value, true)
-  )
-}
-
 function assertAdminRequest(request: {
   adminToken: AdminOperationCredentialInput
   connectionId?: string
   lectureSessionId?: string
 }) {
   if (
-    (!isAdminToken(request.adminToken) &&
-      !isAdminOperationCredential(request.adminToken)) ||
+    !isAdminOperationCredential(request.adminToken) ||
     (request.connectionId !== undefined && !isUuid(request.connectionId)) ||
     (request.lectureSessionId !== undefined &&
       !isUuid(request.lectureSessionId))
@@ -366,9 +354,6 @@ async function invokePresenterAction<T>(input: {
   fallbackMessage: string
   parse: (value: unknown) => T | null
 }) {
-  if (!isGoogleAdminOperationCredential(input.body.adminToken)) {
-    await ensureAnonymousAuthSession()
-  }
   const { data, error } = await invokeEdgeFunction<unknown>(
     PRESENTER_EDGE_FUNCTION,
     {

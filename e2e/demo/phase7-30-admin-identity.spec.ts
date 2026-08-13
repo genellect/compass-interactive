@@ -17,6 +17,7 @@ const factorId = '73000000-0000-4000-8000-000000000003'
 const abandonedFactorId = '73000000-0000-4000-8000-000000000006'
 const challengeId = '73000000-0000-4000-8000-000000000004'
 const appSessionToken = `g1.${'a'.repeat(43)}`
+const studentParticipantId = '73000000-0000-4000-8000-000000000099'
 
 type EdgeCall = {
   action: string
@@ -36,6 +37,8 @@ type MockState = {
   edgeCalls: EdgeCall[]
   factorChallengeBodies: Record<string, unknown>[]
   factorVerifyBodies: Record<string, unknown>[]
+  ledgerCalls: EdgeCall[]
+  lectureCalls: EdgeCall[]
   pkceBodies: Record<string, unknown>[]
   unexpectedRequests: string[]
   verified: boolean
@@ -206,6 +209,52 @@ function trackedSession() {
   }
 }
 
+function ledgerSnapshot() {
+  const session = trackedSession()
+  const now = new Date().toISOString()
+  return {
+    currentMembershipId: session.membershipId,
+    currentPrincipalId: session.principalId,
+    currentSessionId: session.id,
+    environmentId: session.environmentId,
+    environmentKind: 'staging',
+    invitations: [],
+    ledgerAdmissionEnabled: false,
+    memberships: [
+      {
+        canUseAi: false,
+        createdAt: now,
+        displayName: 'Current Owner',
+        expiresAt: null,
+        membershipId: session.membershipId,
+        normalizedEmail: 'educator@example.test',
+        principalId: session.principalId,
+        principalStatus: 'active',
+        role: 'owner',
+        status: 'active',
+        statusReason: null,
+        updatedAt: now,
+      },
+    ],
+    ok: true,
+    ownerships: [],
+    sessions: [
+      {
+        expiresAt: session.expiresAt,
+        idleExpiresAt: session.idleExpiresAt,
+        isCurrent: true,
+        issuedAt: session.stepUpVerifiedAt,
+        lastSeenAt: session.stepUpVerifiedAt,
+        membershipId: session.membershipId,
+        revokeReason: null,
+        revokedAt: null,
+        sessionId: session.id,
+        status: 'active',
+      },
+    ],
+  }
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     body: JSON.stringify(body),
@@ -224,12 +273,13 @@ async function installExistingStudentStorage(
       studentSessionSentinelKey,
       studentStorageSentinelKey,
       studentStorageValue,
+      studentParticipantId,
     }) => {
       window.localStorage.setItem(studentAuthStorageKey, studentStorageValue)
       window.localStorage.setItem(studentStorageSentinelKey, 'student-local')
       window.localStorage.setItem(
         'compass-interactive-participant-id',
-        'phase730-student-participant',
+        studentParticipantId,
       )
       window.sessionStorage.setItem(
         studentSessionSentinelKey,
@@ -241,6 +291,7 @@ async function installExistingStudentStorage(
       studentSessionSentinelKey,
       studentStorageSentinelKey,
       studentStorageValue,
+      studentParticipantId,
     },
   )
 }
@@ -285,6 +336,8 @@ async function installNetworkMocks(
     edgeCalls: [],
     factorChallengeBodies: [],
     factorVerifyBodies: [],
+    ledgerCalls: [],
+    lectureCalls: [],
     pkceBodies: [],
     unexpectedRequests: [],
     verified: options.initialVerified ?? false,
@@ -446,6 +499,34 @@ async function installNetworkMocks(
       return
     }
 
+    if (url.pathname === '/functions/v1/manage-lectures') {
+      const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+      state.lectureCalls.push({
+        action: typeof body.action === 'string' ? body.action : '',
+        authorization,
+        body,
+      })
+      await fulfillJson(route, { lectures: [], ok: true })
+      return
+    }
+
+    if (url.pathname === '/functions/v1/manage-admin-ledger') {
+      const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+      const action = typeof body.action === 'string' ? body.action : ''
+      state.ledgerCalls.push({ action, authorization, body })
+      if (action === 'snapshot') {
+        await fulfillJson(route, ledgerSnapshot())
+        return
+      }
+      if (action === 'audit') {
+        await fulfillJson(route, { events: [], ok: true })
+        return
+      }
+      state.unexpectedRequests.push(`ledger action ${action || '<missing>'}`)
+      await fulfillJson(route, { code: 'request_invalid', ok: false }, 400)
+      return
+    }
+
     state.unexpectedRequests.push(`${request.method()} ${url.pathname}`)
     await fulfillJson(route, { error: 'unexpected Supabase request' }, 500)
   })
@@ -561,10 +642,12 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   await card.locator('input[autocomplete="one-time-code"]').fill('123456')
   await card.locator('button[type="submit"]').click()
 
-  await expect(card.locator('.eyebrow')).toHaveText('管理者認証')
-  await expect(card.locator('.admin-identity-summary')).toContainText('Owner')
-  await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
-  await expect(card).not.toContainText('PHASE730TOTPSECRET')
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'ログアウト', exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('.admin-totp-qr')).toHaveCount(0)
+  await expect(page.locator('main')).not.toContainText('PHASE730TOTPSECRET')
 
   expect(state.authorizeQueries).toHaveLength(1)
   expect(state.authorizeQueries[0]).toMatchObject({
@@ -598,6 +681,31 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     action: 'beginStepUp',
     challengedFactorId: factorId,
   })
+  await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+  for (const lectureCall of state.lectureCalls) {
+    expect(lectureCall).toEqual({
+      action: 'list',
+      authorization: `Bearer ${aal2AccessToken}`,
+      body: {
+        action: 'list',
+        appSessionToken,
+        includeHistory: false,
+      },
+    })
+  }
+  await expect
+    .poll(() =>
+      [...new Set(state.ledgerCalls.map(({ action }) => action))].sort(),
+    )
+    .toEqual(['audit', 'snapshot'])
+  for (const ledgerCall of state.ledgerCalls) {
+    expect(ledgerCall.authorization).toBe(`Bearer ${aal2AccessToken}`)
+    expect(ledgerCall.body).not.toHaveProperty('adminToken')
+    expect(ledgerCall.body).toMatchObject({
+      action: expect.stringMatching(/^(audit|snapshot)$/),
+      appSessionToken,
+    })
+  }
 
   const storageAtReady = await page.evaluate(
     ({ adminAppSessionStorageKey, studentAuthStorageKey }) => ({
@@ -611,7 +719,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     student: student.storageValue,
   })
 
-  await card.locator('button.secondary-button').click()
+  await page.getByRole('button', { name: 'ログアウト', exact: true }).click()
   await expect(card.locator('.eyebrow')).toHaveText('FOR EDUCATORS')
 
   const storageAfterLogout = await page.evaluate(
@@ -654,7 +762,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     adminAuth: null,
     adminVerifier: null,
     oauthAttempt: null,
-    participant: 'phase730-student-participant',
+    participant: studentParticipantId,
     studentAuth: student.storageValue,
     studentSessionSentinel: 'student-session',
     studentStorageSentinel: 'student-local',
@@ -704,10 +812,14 @@ test('uses the existing verified factor instead of an abandoned unverified facto
   page,
 }) => {
   const student = anonymousStudentSession()
-  const { state } = await installNetworkMocks(page, student.accessToken, {
-    includeAbandonedFactor: true,
-    initialVerified: true,
-  })
+  const { aal2AccessToken, state } = await installNetworkMocks(
+    page,
+    student.accessToken,
+    {
+      includeAbandonedFactor: true,
+      initialVerified: true,
+    },
+  )
 
   await page.goto('/admin')
   await page.locator('main .admin-identity-card button.primary-button').click()
@@ -717,7 +829,35 @@ test('uses the existing verified factor instead of an abandoned unverified facto
   await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
   await card.locator('input[autocomplete="one-time-code"]').fill('123456')
   await card.locator('button[type="submit"]').click()
-  await expect(card.locator('.eyebrow')).toHaveText('管理者認証')
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'ログアウト', exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+  for (const lectureCall of state.lectureCalls) {
+    expect(lectureCall).toEqual({
+      action: 'list',
+      authorization: `Bearer ${aal2AccessToken}`,
+      body: {
+        action: 'list',
+        appSessionToken,
+        includeHistory: false,
+      },
+    })
+  }
+  await expect
+    .poll(() =>
+      [...new Set(state.ledgerCalls.map(({ action }) => action))].sort(),
+    )
+    .toEqual(['audit', 'snapshot'])
+  for (const ledgerCall of state.ledgerCalls) {
+    expect(ledgerCall.authorization).toBe(`Bearer ${aal2AccessToken}`)
+    expect(ledgerCall.body).not.toHaveProperty('adminToken')
+    expect(ledgerCall.body).toMatchObject({
+      action: expect.stringMatching(/^(audit|snapshot)$/),
+      appSessionToken,
+    })
+  }
 
   expect(
     state.authRequests.filter(
