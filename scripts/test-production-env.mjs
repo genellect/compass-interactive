@@ -242,7 +242,7 @@ assert.deepEqual(
 const phase730FMetadata = {
   environment: {
     target: 'staging',
-    alias: 'staging-evidence',
+    alias: 'staging-identity-slot-a',
     sourceCommitSha: '0123456789abcdef0123456789abcdef01234567',
     capturedAt: '2026-08-12T00:00:00.000Z',
     environmentIdConfigured: false,
@@ -272,7 +272,7 @@ assert.deepEqual(
     ...phase730FMetadata,
     environment: {
       ...phase730FMetadata.environment,
-      alias: `staging-${'a'.repeat(32)}`,
+      alias: 'staging-identity-slot-b',
       capturedAt: '2026-08-12T00:00:00.123Z',
     },
   }),
@@ -371,6 +371,9 @@ const capturedSecretInventory = {
     rotatedAt: ['ADMIN_PIN', 'BILLING_PIN'].includes(name)
       ? null
       : '2026-08-01T00:00:00.000Z',
+    removedAt: ['ADMIN_PIN', 'BILLING_PIN'].includes(name)
+      ? '2026-08-11T00:00:00.000Z'
+      : null,
   })),
 }
 assert.deepEqual(
@@ -379,6 +382,20 @@ assert.deepEqual(
     secretInventory: capturedSecretInventory,
   }),
   [],
+)
+assert.match(
+  validatePhase730FReadinessMetadata({
+    ...phase730FMetadata,
+    secretInventory: {
+      ...capturedSecretInventory,
+      entries: capturedSecretInventory.entries.map((entry) =>
+        entry.name === 'ADMIN_PIN'
+          ? { ...entry, removedAt: '2026-08-13T00:00:00.000Z' }
+          : entry,
+      ),
+    },
+  }).join('\n'),
+  /must not postdate inventory capture/,
 )
 assert.match(
   validatePhase730FReadinessMetadata({

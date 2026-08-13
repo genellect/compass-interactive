@@ -48,7 +48,9 @@ with input as (
     raw_snapshot.value -> 'googleOnlyCutoverPreflight' as e_value,
     raw_snapshot.value -> 'identityRuntimeGate' as identity_value,
     raw_snapshot.value -> 'aiUnlockRuntimeGate' as ai_value,
-    raw_snapshot.value -> 'identityCutoverReceipt' as receipt_value
+    raw_snapshot.value -> 'identityCutoverReceipt' as receipt_value,
+    raw_snapshot.value -> 'membershipCounts' as membership_value,
+    raw_snapshot.value -> 'sessionCounts' as session_value
   from raw_snapshot
   where pg_catalog.to_regprocedure(
     'private.get_google_only_admin_cutover_preflight_v1(uuid)'
@@ -61,6 +63,46 @@ select pg_catalog.jsonb_pretty(jsonb_build_object(
     (e_preflight.e_value ->> 'activeLegacySessionCount')::integer,
   'activeOwnerCount',
     (e_preflight.e_value ->> 'activeOwnerCount')::integer,
+  'activeAiEnabledInstructorCount',
+    (e_preflight.membership_value
+      ->> 'activeAiEnabledInstructorCount')::integer,
+  'activeStandardInstructorCount',
+    (e_preflight.membership_value
+      ->> 'activeStandardInstructorCount')::integer,
+  'suspendedAdminCount',
+    (e_preflight.membership_value ->> 'suspendedAdminCount')::integer,
+  'suspendedInstructorCount',
+    (e_preflight.membership_value ->> 'suspendedInstructorCount')::integer,
+  'activePersonalAiPinFactorCount',
+    (e_preflight.membership_value
+      ->> 'activePersonalAiPinFactorCount')::integer,
+  'activeAiEnabledInstructorPersonalAiPinFactorCount',
+    (e_preflight.membership_value
+      ->> 'activeAiEnabledInstructorPersonalAiPinFactorCount')::integer,
+  'activeApprovedTotpPrincipalCount',
+    (e_preflight.membership_value
+      ->> 'activeApprovedTotpPrincipalCount')::integer,
+  'activeOwnerApprovedTotpCount',
+    (e_preflight.membership_value
+      ->> 'activeOwnerApprovedTotpCount')::integer,
+  'activeAiEnabledInstructorApprovedTotpCount',
+    (e_preflight.membership_value
+      ->> 'activeAiEnabledInstructorApprovedTotpCount')::integer,
+  'activeStandardInstructorApprovedTotpCount',
+    (e_preflight.membership_value
+      ->> 'activeStandardInstructorApprovedTotpCount')::integer,
+  'activeGoogleSessionCount',
+    (e_preflight.session_value ->> 'activeGoogleSessionCount')::integer,
+  'unbackedGoogleSessionCount',
+    (e_preflight.session_value ->> 'unbackedGoogleSessionCount')::integer,
+  'overCapGoogleSessionCount',
+    (e_preflight.session_value ->> 'overCapGoogleSessionCount')::integer,
+  'googleSessionIdleCapMismatchCount',
+    (e_preflight.session_value
+      ->> 'googleSessionIdleCapMismatchCount')::integer,
+  'invalidGoogleSessionAuthorityCount',
+    (e_preflight.session_value
+      ->> 'invalidGoogleSessionAuthorityCount')::integer,
   'authoritative',
     (e_preflight.e_value ->> 'authoritative')::boolean,
   'cutoverCommitted',
@@ -128,7 +170,10 @@ select pg_catalog.jsonb_pretty(jsonb_build_object(
         ->> 'legacySessionFenceEnabled')::boolean,
     'activeLectureOwnershipFenceEnabled',
       (e_preflight.value -> 'triggers'
-        ->> 'activeLectureOwnershipFenceEnabled')::boolean
+        ->> 'activeLectureOwnershipFenceEnabled')::boolean,
+    'googleSessionAbsoluteIdleTriggerEnabled',
+      (e_preflight.value -> 'triggers'
+        ->> 'googleSessionAbsoluteIdleTriggerEnabled')::boolean
   )
 )) as phase730f_readiness_snapshot
 from e_preflight

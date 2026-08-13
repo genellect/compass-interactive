@@ -77,9 +77,7 @@ const adminAiUnlockEdgeRecord = read(
 const googleAiMasterC1Record = read(
   'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
 )
-const hostedHumanReadiness = read(
-  'docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md',
-)
+const hostedHumanReadiness = read('docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md')
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
 const gateRouting = read('docs/GATE_ROUTING.md')
@@ -540,11 +538,20 @@ for (const requiredText of [
   'all corresponding frontend and server flags are true',
   'positive integer `version` and Boolean `verifyJwt`',
   'six read-only evidence paths',
-  'exact 29-key flat snapshot',
+  'exact 44-key flat snapshot',
+  '`staging-identity-slot-[a-z]`',
+  '`admin-identity-session`',
+  '`admin-ai-unlock`',
+  '`manage-admin-ledger`',
+  '`billingRetirement`',
+  '`ADMIN_PIN.removedAt`',
+  '`BILLING_PIN.removedAt`',
   '`cutoverReceiptDeploymentEvidenceDigestMatches`',
   '`legacyGateTombstoneEnabled`',
   '`legacySessionFenceEnabled`',
   '`activeLectureOwnershipFenceEnabled`',
+  '`googleSessionAbsoluteIdleTriggerEnabled`',
+  '`admin_sessions_google_absolute_idle`',
   '`/.phase7-30f-evidence*.json`',
   '`supabase/migrations/20260812142023_phase7_30f_source_readiness_preflight.sql`',
   '`supabase/tests/phase7_30f_source_readiness_preflight_test.sql`',

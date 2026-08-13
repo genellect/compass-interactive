@@ -71,8 +71,7 @@ export const phase730FSecretInventoryNames = [
   'BILLING_PIN',
 ]
 
-export const phase730FEnvironmentAliasPattern =
-  '^staging-[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$'
+export const phase730FEnvironmentAliasPattern = '^staging-identity-slot-[a-z]$'
 export const phase730FIsoTimestampPattern =
   '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$'
 
@@ -577,6 +576,7 @@ export function validatePhase730FReadinessMetadata(configuration) {
               'minimumBytesSatisfied',
               'rotationVersion',
               'rotatedAt',
+              'removedAt',
             ],
             path,
           )
@@ -599,7 +599,8 @@ export function validatePhase730FReadinessMetadata(configuration) {
             entry.present !== false ||
             entry.minimumBytesSatisfied !== null ||
             entry.rotationVersion !== null ||
-            entry.rotatedAt !== null
+            entry.rotatedAt !== null ||
+            !isPhase730FIsoTimestamp(entry.removedAt)
           ) {
             errors.push(
               `${path}.${entry.name} must be absent with null length and rotation metadata.`,
@@ -610,11 +611,23 @@ export function validatePhase730FReadinessMetadata(configuration) {
           entry.minimumBytesSatisfied !== true ||
           !Number.isSafeInteger(entry.rotationVersion) ||
           entry.rotationVersion < 1 ||
-          !isPhase730FIsoTimestamp(entry.rotatedAt)
+          !isPhase730FIsoTimestamp(entry.rotatedAt) ||
+          entry.removedAt !== null
         ) {
           errors.push(
             `${path}.${entry.name} must be present with valid length and rotation metadata.`,
           )
+        }
+        for (const timestamp of [entry.rotatedAt, entry.removedAt]) {
+          if (
+            timestamp &&
+            isPhase730FIsoTimestamp(secretInventory.capturedAt) &&
+            Date.parse(timestamp) > Date.parse(secretInventory.capturedAt)
+          ) {
+            errors.push(
+              `${path} rotation/removal metadata must not postdate inventory capture.`,
+            )
+          }
         }
       }
       for (const name of phase730FSecretInventoryNames) {

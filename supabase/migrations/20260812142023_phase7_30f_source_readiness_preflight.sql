@@ -76,6 +76,13 @@ as $$
         where membership.environment_id = target_environment_id
           and membership.status = 'suspended'
       ),
+      'suspendedInstructorCount', (
+        select pg_catalog.count(*)::integer
+        from private.admin_environment_memberships as membership
+        where membership.environment_id = target_environment_id
+          and membership.role = 'instructor'
+          and membership.status = 'suspended'
+      ),
       'activePersonalAiPinFactorCount', (
         select pg_catalog.count(*)::integer
         from private.admin_ai_unlock_factors as factor
@@ -88,6 +95,27 @@ as $$
         where factor.environment_id = target_environment_id
           and factor.factor_kind = 'ai_pin'
           and factor.status = 'active'
+          and membership.status = 'active'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
+      ),
+      'activeAiEnabledInstructorPersonalAiPinFactorCount', (
+        select pg_catalog.count(*)::integer
+        from private.admin_ai_unlock_factors as factor
+        join private.admin_environment_memberships as membership
+          on membership.id = factor.membership_id
+         and membership.environment_id = factor.environment_id
+         and membership.principal_id = factor.principal_id
+        join private.admin_principals as principal
+          on principal.id = factor.principal_id
+        where factor.environment_id = target_environment_id
+          and factor.factor_kind = 'ai_pin'
+          and factor.status = 'active'
+          and membership.role = 'instructor'
+          and membership.can_use_ai
           and membership.status = 'active'
           and (
             membership.expires_at is null
@@ -110,6 +138,75 @@ as $$
           and principal.approved_totp_factor_set_hash is not null
           and principal.approved_totp_factor_set_version >= 1
           and principal.approved_totp_factor_count >= 1
+          and principal.approved_totp_factor_set_hash =
+            private.current_verified_totp_factor_set_hash_v1(
+              principal.auth_user_id
+            )
+      ),
+      'activeOwnerApprovedTotpCount', (
+        select pg_catalog.count(*)::integer
+        from private.admin_environment_memberships as membership
+        join private.admin_principals as principal
+          on principal.id = membership.principal_id
+        where membership.environment_id = target_environment_id
+          and membership.role = 'owner'
+          and membership.status = 'active'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
+          and principal.approved_totp_factor_set_hash is not null
+          and principal.approved_totp_factor_set_version >= 1
+          and principal.approved_totp_factor_count >= 1
+          and principal.approved_totp_factor_set_hash =
+            private.current_verified_totp_factor_set_hash_v1(
+              principal.auth_user_id
+            )
+      ),
+      'activeAiEnabledInstructorApprovedTotpCount', (
+        select pg_catalog.count(*)::integer
+        from private.admin_environment_memberships as membership
+        join private.admin_principals as principal
+          on principal.id = membership.principal_id
+        where membership.environment_id = target_environment_id
+          and membership.role = 'instructor'
+          and membership.can_use_ai
+          and membership.status = 'active'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
+          and principal.approved_totp_factor_set_hash is not null
+          and principal.approved_totp_factor_set_version >= 1
+          and principal.approved_totp_factor_count >= 1
+          and principal.approved_totp_factor_set_hash =
+            private.current_verified_totp_factor_set_hash_v1(
+              principal.auth_user_id
+            )
+      ),
+      'activeStandardInstructorApprovedTotpCount', (
+        select pg_catalog.count(*)::integer
+        from private.admin_environment_memberships as membership
+        join private.admin_principals as principal
+          on principal.id = membership.principal_id
+        where membership.environment_id = target_environment_id
+          and membership.role = 'instructor'
+          and not membership.can_use_ai
+          and membership.status = 'active'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
+          and principal.approved_totp_factor_set_hash is not null
+          and principal.approved_totp_factor_set_version >= 1
+          and principal.approved_totp_factor_count >= 1
+          and principal.approved_totp_factor_set_hash =
+            private.current_verified_totp_factor_set_hash_v1(
+              principal.auth_user_id
+            )
       )
     ) as value
   ), session_counts as (
@@ -121,6 +218,43 @@ as $$
           from auth.sessions as auth_session
           where auth_session.id = session.supabase_auth_session_id
             and auth_session.user_id = session.auth_user_id
+        )
+      ),
+      'overCapGoogleSessionCount', pg_catalog.count(*) filter (
+        where exists (
+          select 1
+          from auth.sessions as auth_session
+          where auth_session.id = session.supabase_auth_session_id
+            and auth_session.user_id = session.auth_user_id
+            and session.expires_at >
+              auth_session.created_at + interval '8 hours'
+        )
+      ),
+      'googleSessionIdleCapMismatchCount', pg_catalog.count(*) filter (
+        where session.idle_expires_at is distinct from session.expires_at
+      ),
+      'invalidGoogleSessionAuthorityCount', pg_catalog.count(*) filter (
+        where not exists (
+          select 1
+          from private.admin_environment_memberships as membership
+          join private.admin_principals as principal
+            on principal.id = membership.principal_id
+          where membership.id = session.membership_id
+            and membership.environment_id = session.environment_id
+            and membership.principal_id = session.principal_id
+            and membership.status = 'active'
+            and (
+              membership.expires_at is null
+              or membership.expires_at > statement_timestamp()
+            )
+            and principal.status = 'active'
+            and principal.auth_user_id = session.auth_user_id
+            and session.verified_totp_factor_set_hash =
+              private.current_verified_totp_factor_set_hash_v1(
+                principal.auth_user_id
+              )
+            and principal.approved_totp_factor_set_hash =
+              session.verified_totp_factor_set_hash
         )
       )
     ) as value
@@ -219,6 +353,7 @@ as $$
       target.key,
       target.is_legacy_billing,
       jsonb_build_object(
+        'functionExists', procedure.oid is not null,
         'publicExecute', exists (
           select 1
           from pg_catalog.aclexplode(
@@ -248,6 +383,7 @@ as $$
       pg_catalog.jsonb_object_agg(acl_row.key, acl_row.value) as value,
       coalesce(pg_catalog.bool_and(
         not (acl_row.value ->> 'publicExecute')::boolean
+        and (acl_row.value ->> 'functionExists')::boolean
         and not (acl_row.value ->> 'anonExecute')::boolean
         and not (acl_row.value ->> 'authenticatedExecute')::boolean
         and not (acl_row.value ->> 'serviceRoleExecute')::boolean
@@ -263,16 +399,28 @@ as $$
           'private.admin_identity_runtime_gate'::regclass
           and trigger_row.tgname =
             'admin_identity_runtime_gate_google_only_tombstone'
+          and trigger_row.tgfoid =
+            'private.enforce_google_only_admin_gate_tombstone_v1()'::regprocedure
+          and trigger_row.tgtype = 27
+          and trigger_row.tgconstraint = 0
+          and not trigger_row.tgdeferrable
+          and not trigger_row.tginitdeferred
           and not trigger_row.tgisinternal
-          and trigger_row.tgenabled in ('O', 'A')
+          and trigger_row.tgenabled = 'O'
       ),
       'legacySessionFenceEnabled', exists (
         select 1
         from pg_catalog.pg_trigger as trigger_row
         where trigger_row.tgrelid = 'public.admin_sessions'::regclass
           and trigger_row.tgname = 'admin_sessions_google_only_admin_fence'
+          and trigger_row.tgfoid =
+            'private.enforce_google_only_admin_session_fence_v1()'::regprocedure
+          and trigger_row.tgtype = 31
+          and trigger_row.tgconstraint = 0
+          and not trigger_row.tgdeferrable
+          and not trigger_row.tginitdeferred
           and not trigger_row.tgisinternal
-          and trigger_row.tgenabled in ('O', 'A')
+          and trigger_row.tgenabled = 'O'
       ),
       'activeLectureOwnershipFenceEnabled', exists (
         select 1
@@ -280,8 +428,43 @@ as $$
         where trigger_row.tgrelid = 'public.lecture_sessions'::regclass
           and trigger_row.tgname =
             'lecture_sessions_google_only_active_ownership'
+          and trigger_row.tgfoid =
+            'private.enforce_active_admin_lecture_ownership_v1()'::regprocedure
+          and trigger_row.tgtype = 21
+          and trigger_row.tgconstraint <> 0
+          and trigger_row.tgdeferrable
+          and trigger_row.tginitdeferred
           and not trigger_row.tgisinternal
-          and trigger_row.tgenabled in ('O', 'A')
+          and trigger_row.tgenabled = 'O'
+      ),
+      'googleSessionAbsoluteIdleTriggerEnabled', exists (
+        select 1
+        from pg_catalog.pg_trigger as trigger_row
+        where trigger_row.tgrelid = 'public.admin_sessions'::regclass
+          and trigger_row.tgname = 'admin_sessions_google_absolute_idle'
+          and trigger_row.tgfoid =
+            'private.enforce_google_admin_session_absolute_idle_v1()'::regprocedure
+          and trigger_row.tgtype = 23
+          and trigger_row.tgconstraint = 0
+          and not trigger_row.tgdeferrable
+          and not trigger_row.tginitdeferred
+          and not trigger_row.tgisinternal
+          and trigger_row.tgenabled = 'O'
+          and (
+            select pg_catalog.array_agg(
+              attribute.attname order by attribute.attname
+            )
+            from pg_catalog.pg_attribute as attribute
+            where attribute.attrelid = trigger_row.tgrelid
+              and attribute.attnum = any(trigger_row.tgattr)
+          ) = array[
+            'auth_user_id',
+            'authentication_method',
+            'expires_at',
+            'idle_expires_at',
+            'issued_at',
+            'supabase_auth_session_id'
+          ]::name[]
       )
     ) as value
   )

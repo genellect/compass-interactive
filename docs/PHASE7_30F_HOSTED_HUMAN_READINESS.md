@@ -35,17 +35,21 @@ Production Gate remain independent and HOLD.
 
 The readiness tooling has only the following decision words:
 
-| Field / value                              | Meaning |
-| ------------------------------------------ | ------- |
-| `sourceReadiness = SOURCE_READY`           | The exact source revision, schema/example, static checks, local safety contract and default-OFF topology are internally consistent. This says nothing about a Hosted deployment. |
-| `sourceReadiness = HOLD`                   | Source evidence is absent, incomplete, stale, unsafe or contradictory. |
-| `decision = HOLD`                          | The default. No external action is authorized. Missing evidence, approval or reviewer separation always resolves here. |
+| Field / value                                    | Meaning                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sourceReadiness = SOURCE_READY`                 | The exact source revision, schema/example, static checks, local safety contract and default-OFF topology are internally consistent. This says nothing about a Hosted deployment.                                                                                             |
+| `sourceReadiness = HOLD`                         | Source evidence is absent, incomplete, stale, unsafe or contradictory.                                                                                                                                                                                                       |
+| `decision = HOLD`                                | The default. No external action is authorized. Missing evidence, approval or reviewer separation always resolves here.                                                                                                                                                       |
 | `decision = READY_FOR_SEPARATE_HOSTED_EXECUTION` | A complete staging dossier, including separately approved Hosted/Human observations, is internally consistent enough to request the **next** separately approved external step. It neither authorizes that step nor independently proves the supplied external observations. |
 
 `Production PASS` is prohibited as a Phase 7.30F validator output. No local,
 CI, schema, example manifest, read-only query or repository review can emit or
-imply it. A valid source-only example is expected to report
-`sourceReadiness = SOURCE_READY` while its decision remains `HOLD`.
+imply it. Schema validity alone never emits `SOURCE_READY`: the tracked
+source-only example intentionally reports both `sourceReadiness = HOLD` and
+`decision = HOLD`. `SOURCE_READY` additionally requires the declared E merge
+SHA, green E post-merge CI, verified candidate ancestry from that exact E
+merge, every named source check at the candidate SHA and a later independent
+source review with zero Critical/High findings.
 Manifest-local states such as `APPROVED`, `REJECTED`, `PASS`, `FAIL` and
 `NOT_RUN` describe individual approval or evidence records; they are not
 validator decision words and cannot be promoted into `decision` or
@@ -59,21 +63,26 @@ codes and non-sensitive counts/digests.
 
 ## 3. Source artifacts and trust boundary
 
-| Artifact | Responsibility |
-| -------- | -------------- |
-| `docs/evidence/phase7-30f-readiness.schema.json` | Closed JSON Schema for a redacted evidence manifest; unknown fields and missing required fields fail. |
-| `scripts/fixtures/phase7-30f-evidence.example.json` | Synthetic staging-shaped example. It contains no project ref, host, person, credential or real deployment value and remains `HOLD`. |
-| `scripts/phase7-30f-readiness.mjs` | Pure local validator. It reads only the supplied file, performs no network, child process, database or filesystem write, and never changes a gate. |
+| Artifact                                                                       | Responsibility                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/evidence/phase7-30f-readiness.schema.json`                               | Closed JSON Schema for a redacted evidence manifest; unknown fields and missing required fields fail.                                                                                                 |
+| `scripts/fixtures/phase7-30f-evidence.example.json`                            | Synthetic staging-shaped example. It contains no project ref, host, person, credential or real deployment value and remains `HOLD`.                                                                   |
+| `scripts/phase7-30f-readiness.mjs`                                             | Pure local validator. It reads only the supplied file, performs no network, child process, database or filesystem write, and never changes a gate.                                                    |
 | `supabase/migrations/20260812142023_phase7_30f_source_readiness_preflight.sql` | Adds only the postgres-owner read-only projection `private.get_phase7_30f_source_readiness_preflight_v1(uuid)`. It creates no runtime gate, receipt, grant to an application role or external action. |
-| `supabase/tests/phase7_30f_source_readiness_preflight_test.sql` | pgTAP contract for the projection shape, exact ACL inventory and owner-only EXECUTE boundary. |
-| `scripts/phase7-30f-hosted-readonly-preflight.sql` | Operator-reviewed, read-only SQL that returns bounded counts, booleans, names and digests. Repository CI never runs it against Hosted. |
-| `scripts/test-phase7-30f-static.mjs` | Positive, negative, redaction, default-HOLD and source-contract tests included in the 75-group non-live suite. |
+| `supabase/tests/phase7_30f_source_readiness_preflight_test.sql`                | pgTAP contract for the projection shape, exact ACL inventory and owner-only EXECUTE boundary.                                                                                                         |
+| `scripts/phase7-30f-hosted-readonly-preflight.sql`                             | Operator-reviewed, read-only SQL that returns bounded counts, booleans, names and digests. Repository CI never runs it against Hosted.                                                                |
+| `scripts/test-phase7-30f-static.mjs`                                           | Positive, negative, redaction, default-HOLD and source-contract tests included in the 75-group non-live suite.                                                                                        |
 
 Actual evidence files are operator-controlled and must use the repository-root
 name `.phase7-30f-evidence*.json`; the exact anchored ignore contract is
 `/.phase7-30f-evidence*.json`. They must not be placed under another directory,
 force-added, attached to an issue or PR, or uploaded as a CI artifact. The
-schema and example are public-boundary-safe templates only.
+CLI rejects any path whose canonical parent is not the repository root or
+whose basename does not match that private naming contract. CI separately
+enumerates the Git index with `git ls-files --cached` and fails on a tracked
+root or nested `.phase7-30f-evidence*.json`, including a force-added ignored
+file, independently of secret-content scanning. The schema and example are
+public-boundary-safe templates only.
 
 The database projection's raw operator result may contain an environment UUID,
 receipt timestamp and deployment-evidence digest needed for exact comparison.
@@ -90,14 +99,18 @@ positive integer `version` and Boolean `verifyJwt`; the deployment and
 immutable-revision digests are recorded once at the enclosing Hosted evidence
 level. Secret evidence contains only the secret **name**, presence/absence,
 rotation-state metadata and a bounded timestamp; never a value or value
-digest.
+digest. Every `rotatedAt` or `removedAt` must be no later than the enclosing
+inventory `capturedAt`.
 
-Every manifest is staging-only, names the exact 40-hex source commit, uses
+Every manifest is staging-only, uses the closed non-personal alias vocabulary
+`staging-identity-slot-[a-z]`, names the exact 40-hex source commit, uses
 64-hex SHA-256 evidence digests and RFC 3339 UTC timestamps. `production` and
 `contest` targets are rejected. The closed manifest accepts no collector or
 reviewer identity; operator-controlled source artifacts use non-personal role
-aliases, and `independentReview.separateFromExecutor` records only the
-separation result. An evidence digest proves only the referenced redacted
+aliases, and `independentReview.separateFromExecutor` records executor
+separation while `independentReview` also records bounded Critical/High
+finding counts; readiness requires both counts to be zero. An
+evidence digest proves only the referenced redacted
 artifact; it does not prove the external state without the independent Human
 review recorded below.
 
@@ -109,6 +122,10 @@ one exact candidate SHA:
 - [ ] Phase 7.30E is merged and its exact merge SHA has green post-merge CI.
 - [ ] The Phase F branch is based on that merged revision; no E candidate
       history is accidentally replayed in the F PR.
+- [ ] `sourceEvidence.phase730fBaseOnMergedE` observes the exact candidate SHA
+      while `phase730fBaseCommitSha` equals the independently verified E merge
+      SHA; together they prove ancestry rather than merely repeating a base
+      SHA.
 - [ ] `security:secrets`, type checks, lint, build, all 75 non-live groups,
       Demo Chromium/WebKit and the full local Supabase gate are green for the
       exact Phase F head.
@@ -126,6 +143,9 @@ one exact candidate SHA:
 - [ ] The 19 Google-only operational Edge entries remain present and
       `verify-admin-pin` plus `authorize-ai-start` remain absent from current
       source/config.
+- [ ] The separate three-entry identity/control inventory contains exactly
+      `admin-identity-session`, `admin-ai-unlock` and `manage-admin-ledger`;
+      both inventories have `verifyJwt = true` for every row.
 - [ ] The independent final reviewer sees only the exact diff, threat model,
       tests and redacted evidence and records zero unresolved Critical/High
       finding.
@@ -161,17 +181,20 @@ exact schema sections:
 4. `sourceEvidence`: the strict schema, rejection, offline/default-HOLD,
    pre/post separation and Production-PASS prohibition contract;
 5. `hostedEvidence`: execution time, deployment/immutable-revision digests,
-   source/retired-wire/OAuth result Booleans and the exact 19 functions;
+   source/retired-wire/OAuth result Booleans, the exact 19 operational
+   functions and the separate exact three identity/control functions;
 6. `preCutover` and `postCutover`: two distinct read-only database snapshots;
-7. `humanEvidence`: the exact bounded scenario results, with no email, user
+7. `billingRetirement`: a third, later read-only ACL/integrity observation,
+   never folded into the identity cutover snapshot;
+8. `humanEvidence`: the exact bounded scenario results, with no email, user
    ID, factor secret or screenshot containing identity data;
-8. `regressionEvidence`: DB/Edge/browser/CI/load/security/accessibility/
+9. `regressionEvidence`: DB/Edge/browser/CI/load/security/accessibility/
    rollback outcomes plus bounded Advisor Critical/High counts;
-9. `rollbackEvidence`: immutable Google-only revision, operator recovery and
-   safe stop/recovery results;
-10. `approvals`: the exact separately scoped decisions in section 9; and
-11. `independentReview`: status, timestamp, redacted evidence digest and
-   executor-separation result.
+10. `rollbackEvidence`: immutable Google-only revision, operator recovery and
+    safe stop/recovery results;
+11. `approvals`: the exact separately scoped decisions in section 9; and
+12. `independentReview`: status, timestamp, redacted evidence digest,
+    executor-separation result and bounded Critical/High counts.
 
 OAuth has no free-form object: `hostedEvidence.callbackOriginAllowlistPass`
 and `hostedEvidence.oauthConsentPass` hold the Hosted result, while
@@ -201,19 +224,27 @@ The exact operational Edge inventory is:
 18. `publish-caption-window`
 19. `update-display-state`
 
+The exact identity/control inventory is separate so the established
+19-operation term remains unambiguous:
+
+1. `admin-identity-session`
+2. `admin-ai-unlock`
+3. `manage-admin-ledger`
+
 Each inventory row records exactly `name`, positive integer `version` and
 Boolean `verifyJwt`. The immutable deployed revision and deployment-evidence
 digests belong to the enclosing Hosted evidence object, not an individual
 function row. Exact set equality is required; duplicates, unknown entries,
 missing entries, a false `verifyJwt`, or either retired endpoint cause `HOLD`.
 
-The Hosted function inventory must independently confirm that
+The two Hosted function inventories must independently confirm that
 `verify-admin-pin` and `authorize-ai-start` are not deployed. The Hosted secret
-inventory must confirm that `ADMIN_PIN` and `BILLING_PIN` are absent before any
-Production-bound decision. Source deletion, an absent config stanza or an
-empty local environment variable is not a substitute for those Hosted
-observations. The Phase E cutover and the two secret deletions remain three
-separate approvals; the validator must not infer one from another.
+inventory records a `removedAt` time for each absent secret. Source deletion,
+an absent config stanza or an empty local environment variable is not a
+substitute for those Hosted observations. `ADMIN_PIN` is removed only after
+post-cutover proof; `BILLING_PIN` is removed only after the distinct billing
+retirement and rollback proof. The validator must not infer any approval from
+another operation.
 
 ## 6. Pre-cutover and post-cutover database evidence
 
@@ -238,18 +269,41 @@ the exact 16-key result from
 - `unboundPdfPublicationCount`
 - `unownedActiveLectureCount`
 
-The read-only SQL maps these 16 keys plus 13 bounded direct observations to an
-exact 29-key flat snapshot. The additional fields are six identity/AI gate
+The read-only SQL maps these 16 keys plus 28 bounded direct observations to an
+exact 44-key flat snapshot. The additional fields are six identity/AI gate
 Booleans (`legacyPinLoginEnabled`, operator TOTP adoption/mutation, AI unlock,
 Google AI-master admission and remembered-browser state), invalid active
 ownership count, three cutover-receipt checks, legacy-verifier
 `service_role` EXECUTE state, `legacyBillingAcl` and the grouped `triggers`
-object. This includes `cutoverReceiptDeploymentEvidenceDigestMatches` and the
+object. They also include exact membership/personal-factor counts (total and
+role-correlated owner, AI-enabled instructor, standard instructor and
+suspended-instructor evidence) and exact active Google-session counts for
+backing `auth.sessions`, the eight-hour cap and idle-cap equality. This
+includes `cutoverReceiptDeploymentEvidenceDigestMatches` and the
 exact trigger keys `legacyGateTombstoneEnabled`,
-`legacySessionFenceEnabled` and `activeLectureOwnershipFenceEnabled`. The
+`legacySessionFenceEnabled`, `activeLectureOwnershipFenceEnabled` and
+`googleSessionAbsoluteIdleTriggerEnabled`. The last key proves the durable
+`admin_sessions_google_absolute_idle` enforcement trigger is enabled; clean
+session counts alone are insufficient. Each of the four trigger Booleans
+requires the exact table/name, expected trigger-function OID, row-level
+timing/event bitmask, normal enabled state `O` and normal-versus-constraint
+deferrable/initially-deferred shape. A same-name no-op or differently timed
+trigger is false evidence. The absolute/idle trigger additionally binds the
+exact update-column set `authentication_method`, `auth_user_id`,
+`supabase_auth_session_id`, `issued_at`, `expires_at` and `idle_expires_at`.
+The
 advisory result must retain `authoritative = false` and
 `externalTransportAttestationRequired = true`; neither field may be rewritten
-by the collector.
+by the collector. Readiness requires two active owners, at least one
+AI-enabled instructor, standard instructor, suspended instructor and eligible
+personal-AI-PIN factor; approved-TOTP coverage must be role-correlated (two
+owners plus one of each active instructor role). At least one Google app
+session must be active, with zero unbacked, over-eight-hour, idle-cap mismatch
+or invalid current principal/membership/factor-set authority session.
+Approved-TOTP counts are not cached-flag counts: every included principal's
+approved factor-set hash must equal the current verified `auth.mfa_factors`
+set, so removing or changing a factor immediately removes that principal from
+the readiness projection.
 
 `postCutover` is a separate observation after an independently approved E
 operator transaction. It must prove the immutable receipt and supplied
@@ -261,6 +315,11 @@ pre-cutover object into `postCutover`, marking a not-executed step as complete,
 or presenting an advisory result as authoritative is a contradiction and
 causes `HOLD` or validation failure.
 
+The post-cutover identity snapshot must still show the six legacy billing
+paths as `service_role`-only. Marking them retired in `postCutover` conflates
+two separately approved operations and is rejected. Their all-revoked state
+belongs only in the later `billingRetirement` snapshot.
+
 Repository CI never invokes the cutover, and the presence of a post-cutover
 schema field is not evidence that the cutover ran.
 
@@ -268,14 +327,14 @@ schema field is not evidence that the cutover ran.
 
 Phase F inventories the current six-function legacy admission chain exactly:
 
-| `legacyBillingAcl` key | Exact function signature |
-| ---------------------- | ------------------------ |
-| `publicAdminIssueAiBillingGrant` | `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)` |
-| `privateIssueAiBillingGrant` | `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)` |
-| `publicAdminConsumeAiBillingGrant` | `public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)` |
+| `legacyBillingAcl` key                           | Exact function signature                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `publicAdminIssueAiBillingGrant`                 | `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)`               |
+| `privateIssueAiBillingGrant`                     | `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)`                    |
+| `publicAdminConsumeAiBillingGrant`               | `public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)`                 |
 | `privateConsumeAiBillingGrantAndStartOperations` | `private.consume_ai_billing_grant_and_start_operations(uuid,text,uuid,jsonb,text)` |
-| `publicAdminAuthorizeAiMaster` | `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)` |
-| `publicAdminIssueAiBillingGrantFromMaster` | `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` |
+| `publicAdminAuthorizeAiMaster`                   | `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)`                    |
+| `publicAdminIssueAiBillingGrantFromMaster`       | `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)`      |
 
 The C1 migration already revoked `service_role` EXECUTE from the private
 `authorize_ai_master` and `issue_ai_billing_grant_from_master` functions, so
@@ -283,8 +342,11 @@ those private implementations are not counted as current effective admission
 paths. This inventory follows effective `service_role` reachability rather
 than counting every retained implementation function.
 
-Each ACL object records exactly `publicExecute`, `anonExecute`,
-`authenticatedExecute` and `serviceRoleExecute`. Presence of any
+Each ACL object records `functionExists = true` plus exactly `publicExecute`,
+`anonExecute`, `authenticatedExecute` and `serviceRoleExecute`. A missing,
+dropped or renamed signature is not equivalent to retirement and is rejected,
+because historical FK/audit compatibility requires all six retained
+functions. Presence of any
 still-runtime-reachable historical admission path remains an explicit `HOLD`
 for Production. This source/local readiness tranche does **not** revoke,
 rename, drop or execute any of them.
@@ -293,12 +355,15 @@ Billing retirement is a later, separately reviewed default-OFF migration only
 after personal-AI-PIN local and Hosted/Human evidence. Its application and the
 subsequent `BILLING_PIN` secret deletion require distinct approvals. Safe
 status, stop, revoke, accounting and historical FK/audit integrity must remain
-available; rollback never restores shared billing admission.
+available and are explicit billing-retirement snapshot fields; rollback never
+restores shared billing admission.
 
 ## 8. Staging Hosted/Human checklist
 
 The following checklist may be executed only after its own approval. No paid
 provider call is implied; paid traffic remains separately authorized.
+Every Human result must be timestamped strictly after the Hosted revision
+observation it exercises.
 
 ### Environment and identity
 
@@ -368,17 +433,31 @@ cannot infer them from the digest. An approval is never inferred from a green
 test, earlier plan approval or another action's approval. The following are
 separate stop points:
 
-| Approval | Effect if granted | Does not authorize |
-| -------- | ----------------- | ------------------ |
-| `stagingHostedMutation` | Apply the reviewed default-OFF revision/configuration to the named staging environment. | OAuth/provider changes, Human enrollment, cutover, deletion or activation. |
-| `oauthProviderConfiguration` | Configure the exact staging Google/Supabase callback, Origin and consent contract. | Invitations, Human execution, cutover, secret deletion or Production use. |
-| `stagingHumanIdentityRun` | Use the named role slots for the bounded Human matrix. | OAuth edits, paid calls, E cutover or secret deletion. |
-| `googleOnlyCutover` | Invoke the reviewed E operator transaction using the independently verified deployment digest. | Deleting `ADMIN_PIN`, billing retirement or enabling a canary. |
-| `adminPinSecretDeletion` | Delete only the obsolete Hosted `ADMIN_PIN` secret after post-cutover proof. | Billing changes or activation. |
-| `legacyBillingAuthorityRetirement` | Apply the separately reviewed default-OFF retirement migration. | Deleting `BILLING_PIN` or enabling paid AI. |
-| `billingPinSecretDeletion` | Delete only `BILLING_PIN` after retirement and rollback evidence. | Paid traffic or Production activation. |
-| `limitedIdentityCanary` | Enable only the approved bounded staging/identity cohort with named stop conditions. | Repository publication, contest access, commercial release or Phase 7.33 PASS. |
-| `productionActivation` | Reserved for the later integrated Phase 7.33 approval record and required to remain `HOLD` throughout Phase F. | Any Phase F execution or readiness elevation. |
+| Approval                           | Effect if granted                                                                                              | Does not authorize                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `stagingHostedMutation`            | Apply the reviewed default-OFF revision/configuration to the named staging environment.                        | OAuth/provider changes, Human enrollment, cutover, deletion or activation.     |
+| `oauthProviderConfiguration`       | Configure the exact staging Google/Supabase callback, Origin and consent contract.                             | Invitations, Human execution, cutover, secret deletion or Production use.      |
+| `stagingHumanIdentityRun`          | Use the named role slots for the bounded Human matrix.                                                         | OAuth edits, paid calls, E cutover or secret deletion.                         |
+| `googleOnlyCutover`                | Invoke the reviewed E operator transaction using the independently verified deployment digest.                 | Deleting `ADMIN_PIN`, billing retirement or enabling a canary.                 |
+| `adminPinSecretDeletion`           | Delete only the obsolete Hosted `ADMIN_PIN` secret after post-cutover proof.                                   | Billing changes or activation.                                                 |
+| `legacyBillingAuthorityRetirement` | Apply the separately reviewed default-OFF retirement migration.                                                | Deleting `BILLING_PIN` or enabling paid AI.                                    |
+| `billingPinSecretDeletion`         | Delete only `BILLING_PIN` after retirement and rollback evidence.                                              | Paid traffic or Production activation.                                         |
+| `limitedIdentityCanary`            | Enable only the approved bounded staging/identity cohort with named stop conditions.                           | Repository publication, contest access, commercial release or Phase 7.33 PASS. |
+| `productionActivation`             | Reserved for the later integrated Phase 7.33 approval record and required to remain `HOLD` throughout Phase F. | Any Phase F execution or readiness elevation.                                  |
+
+Chronology is part of the contract. Hosted deployment, the read-only
+`preCutover` snapshot and the required Human identity/MFA/recovery evidence
+must precede the distinct `googleOnlyCutover` approval, which must precede
+`postCutover`. That proof must precede the
+`adminPinSecretDeletion` approval and `ADMIN_PIN.removedAt`. Personal AI PIN
+end-to-end proof plus the candidate-SHA local browser/static evidence and
+independent source review must then precede the billing-retirement approval
+and its read-only snapshot. Both billing retirement and rollback rehearsal must
+precede the billing-PIN deletion approval and `BILLING_PIN.removedAt`. Every
+non-HOLD approval uses a distinct digest; reusing one artifact across approval
+slots is rejected.
+The pre-cutover, post-cutover and billing-retirement snapshot digests must also
+be pairwise distinct; copied evidence cannot represent separate observations.
 
 External publication, contest invitations, paid-provider traffic and
 legal/commercial acceptance remain outside this table and require their own

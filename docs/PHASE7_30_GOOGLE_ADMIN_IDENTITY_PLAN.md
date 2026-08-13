@@ -687,6 +687,9 @@ source-only manifest remains `HOLD`. Staging Hosted mutation, OAuth/provider
 configuration, Human identity tests, E cutover, `ADMIN_PIN` deletion,
 historical billing retirement, `BILLING_PIN` deletion and limited canary each
 require a distinct approval; Production activation remains its own later HOLD.
+Schema validity alone is insufficient for `SOURCE_READY`: the exact E
+post-merge/base ancestry, every named candidate-SHA source check and a later
+independent zero-Critical/High source review must all pass.
 The exact evidence checklist and rollback
 boundary are recorded in
 [`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).

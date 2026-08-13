@@ -13,6 +13,7 @@
     "sourceEvidence",
     "preCutover",
     "postCutover",
+    "billingRetirement",
     "hostedEvidence",
     "humanEvidence",
     "regressionEvidence",
@@ -41,6 +42,9 @@
     },
     "postCutover": {
       "$ref": "#/$defs/cutoverSnapshot"
+    },
+    "billingRetirement": {
+      "$ref": "#/$defs/billingRetirementEvidence"
     },
     "hostedEvidence": {
       "$ref": "#/$defs/hostedEvidence"
@@ -124,7 +128,7 @@
         },
         "alias": {
           "type": "string",
-          "pattern": "^staging-[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$",
+          "pattern": "^staging-identity-slot-[a-z]$",
           "minLength": 10,
           "maxLength": 40
         },
@@ -272,7 +276,8 @@
         "present",
         "minimumBytesSatisfied",
         "rotationVersion",
-        "rotatedAt"
+        "rotatedAt",
+        "removedAt"
       ],
       "properties": {
         "name": {
@@ -302,6 +307,9 @@
         },
         "rotatedAt": {
           "$ref": "#/$defs/nullableDateTime"
+        },
+        "removedAt": {
+          "$ref": "#/$defs/nullableDateTime"
         }
       }
     },
@@ -315,7 +323,13 @@
         "offlineReadOnlyValidator",
         "defaultHold",
         "prePostSeparated",
-        "productionPassForbidden"
+        "productionPassForbidden",
+        "phase730eMergeCommitSha",
+        "phase730ePostMergeCi",
+        "phase730fBaseCommitSha",
+        "phase730fBaseOnMergedE",
+        "checks",
+        "independentSourceReview"
       ],
       "properties": {
         "strictSchemaContract": {
@@ -338,6 +352,164 @@
         },
         "productionPassForbidden": {
           "const": true
+        },
+        "phase730eMergeCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "phase730ePostMergeCi": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "phase730fBaseCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "phase730fBaseOnMergedE": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "checks": {
+          "$ref": "#/$defs/sourceChecks"
+        },
+        "independentSourceReview": {
+          "$ref": "#/$defs/sourceReviewRecord"
+        }
+      }
+    },
+    "nullableCommitSha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sourceResultRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "performedAt",
+        "evidenceDigestSha256",
+        "observedCommitSha"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_RUN", "PASS", "FAIL"]
+        },
+        "performedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "observedCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        }
+      }
+    },
+    "sourceChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "securitySecrets",
+        "typeChecks",
+        "lint",
+        "build",
+        "nonLiveSuite",
+        "demoChromium",
+        "demoWebkit",
+        "fullLocalSupabase",
+        "freshAndPopulatedMigrations",
+        "generatedTypesAndDbLint",
+        "concurrencyAndUpgrade",
+        "localEdge",
+        "browserMatrix",
+        "phase730fStaticContract",
+        "operationalEdgeInventory",
+        "repositoryEvidenceBoundary",
+        "exactHeadCi"
+      ],
+      "properties": {
+        "securitySecrets": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "typeChecks": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "lint": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "build": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "nonLiveSuite": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "demoChromium": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "demoWebkit": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "fullLocalSupabase": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "freshAndPopulatedMigrations": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "generatedTypesAndDbLint": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "concurrencyAndUpgrade": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "localEdge": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "browserMatrix": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "phase730fStaticContract": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "operationalEdgeInventory": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "repositoryEvidenceBoundary": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "exactHeadCi": {
+          "$ref": "#/$defs/sourceResultRecord"
+        }
+      }
+    },
+    "sourceReviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewedAt",
+        "evidenceDigestSha256",
+        "observedCommitSha",
+        "separateFromExecutor",
+        "criticalFindings",
+        "highFindings"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_REVIEWED", "PASS", "FAIL"]
+        },
+        "reviewedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "observedCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "separateFromExecutor": {
+          "type": "boolean"
+        },
+        "criticalFindings": {
+          "$ref": "#/$defs/count"
+        },
+        "highFindings": {
+          "$ref": "#/$defs/count"
         }
       }
     },
@@ -384,6 +556,21 @@
             "runningLegacyUsageCount",
             "unboundPdfPublicationCount",
             "unownedActiveLectureCount",
+            "activeAiEnabledInstructorCount",
+            "activeStandardInstructorCount",
+            "suspendedAdminCount",
+            "suspendedInstructorCount",
+            "activePersonalAiPinFactorCount",
+            "activeAiEnabledInstructorPersonalAiPinFactorCount",
+            "activeApprovedTotpPrincipalCount",
+            "activeOwnerApprovedTotpCount",
+            "activeAiEnabledInstructorApprovedTotpCount",
+            "activeStandardInstructorApprovedTotpCount",
+            "activeGoogleSessionCount",
+            "unbackedGoogleSessionCount",
+            "overCapGoogleSessionCount",
+            "googleSessionIdleCapMismatchCount",
+            "invalidGoogleSessionAuthorityCount",
             "legacyPinLoginEnabled",
             "operatorTotpFactorSetAdoptionEnabled",
             "totpFactorMutationEnabled",
@@ -447,6 +634,51 @@
             "unownedActiveLectureCount": {
               "$ref": "#/$defs/count"
             },
+            "activeAiEnabledInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeStandardInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "suspendedAdminCount": {
+              "$ref": "#/$defs/count"
+            },
+            "suspendedInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activePersonalAiPinFactorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeAiEnabledInstructorPersonalAiPinFactorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeApprovedTotpPrincipalCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeOwnerApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeAiEnabledInstructorApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeStandardInstructorApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unbackedGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "overCapGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "googleSessionIdleCapMismatchCount": {
+              "$ref": "#/$defs/count"
+            },
+            "invalidGoogleSessionAuthorityCount": {
+              "$ref": "#/$defs/count"
+            },
             "legacyPinLoginEnabled": {
               "type": "boolean"
             },
@@ -485,6 +717,55 @@
             },
             "triggers": {
               "$ref": "#/$defs/triggerState"
+            }
+          }
+        }
+      }
+    },
+    "billingRetirementEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captured",
+        "capturedAt",
+        "readOnlyTransaction",
+        "snapshotDigestSha256",
+        "snapshot"
+      ],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "readOnlyTransaction": {
+          "type": "boolean"
+        },
+        "snapshotDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "legacyBillingAcl",
+            "personalAiPinEvidenceDigestMatches",
+            "safeStatusStopRevokeAccountingAvailable",
+            "historicalIntegrityPreserved"
+          ],
+          "properties": {
+            "legacyBillingAcl": {
+              "$ref": "#/$defs/legacyBillingAcl"
+            },
+            "personalAiPinEvidenceDigestMatches": {
+              "type": "boolean"
+            },
+            "safeStatusStopRevokeAccountingAvailable": {
+              "type": "boolean"
+            },
+            "historicalIntegrityPreserved": {
+              "type": "boolean"
             }
           }
         }
@@ -531,12 +812,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "functionExists",
         "serviceRoleExecute",
         "publicExecute",
         "anonExecute",
         "authenticatedExecute"
       ],
       "properties": {
+        "functionExists": {
+          "const": true
+        },
         "serviceRoleExecute": {
           "type": "boolean"
         },
@@ -557,7 +842,8 @@
       "required": [
         "legacyGateTombstoneEnabled",
         "legacySessionFenceEnabled",
-        "activeLectureOwnershipFenceEnabled"
+        "activeLectureOwnershipFenceEnabled",
+        "googleSessionAbsoluteIdleTriggerEnabled"
       ],
       "properties": {
         "legacyGateTombstoneEnabled": {
@@ -567,6 +853,9 @@
           "type": "boolean"
         },
         "activeLectureOwnershipFenceEnabled": {
+          "type": "boolean"
+        },
+        "googleSessionAbsoluteIdleTriggerEnabled": {
           "type": "boolean"
         }
       }
@@ -584,7 +873,8 @@
         "legacyWireFieldsAbsent",
         "callbackOriginAllowlistPass",
         "oauthConsentPass",
-        "functionInventory"
+        "operationalFunctionInventory",
+        "identityControlFunctionInventory"
       ],
       "properties": {
         "executed": {
@@ -614,12 +904,19 @@
         "oauthConsentPass": {
           "type": ["boolean", "null"]
         },
-        "functionInventory": {
+        "operationalFunctionInventory": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/functionInventoryEntry"
           },
-          "maxItems": 64
+          "maxItems": 19
+        },
+        "identityControlFunctionInventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/functionInventoryEntry"
+          },
+          "maxItems": 3
         }
       }
     },
@@ -669,6 +966,7 @@
         "suspendedAdminDenied",
         "crossUserDenied",
         "crossLectureDenied",
+        "crossEnvironmentDenied",
         "individualRevoke",
         "globalRevoke",
         "lastOwnerProtection",
@@ -678,8 +976,20 @@
         "ownerRecovery",
         "tokenRotation",
         "staleSessionDenied",
+        "sessionContinuityNoIdlePrompt",
+        "eightHourSessionCap",
+        "backingAuthSessionDeletion",
+        "totpFactorSetDrain",
         "accountDisable",
-        "personalAiPinIntentOnly"
+        "personalAiPinIntentOnly",
+        "personalAiPinEndToEnd",
+        "rememberedBrowserLifecycle",
+        "sameScopeRetry",
+        "scopeEscalation",
+        "freeDowngradeStop",
+        "masterNoProviderOrRealtime",
+        "authorityDrainMatrix",
+        "safeStatusStopRecovery"
       ],
       "properties": {
         "twoActiveOwners": {
@@ -698,6 +1008,9 @@
           "$ref": "#/$defs/resultRecord"
         },
         "crossLectureDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossEnvironmentDenied": {
           "$ref": "#/$defs/resultRecord"
         },
         "individualRevoke": {
@@ -727,10 +1040,46 @@
         "staleSessionDenied": {
           "$ref": "#/$defs/resultRecord"
         },
+        "sessionContinuityNoIdlePrompt": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "eightHourSessionCap": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "backingAuthSessionDeletion": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "totpFactorSetDrain": {
+          "$ref": "#/$defs/resultRecord"
+        },
         "accountDisable": {
           "$ref": "#/$defs/resultRecord"
         },
         "personalAiPinIntentOnly": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "personalAiPinEndToEnd": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "rememberedBrowserLifecycle": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "sameScopeRetry": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "scopeEscalation": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "freeDowngradeStop": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "masterNoProviderOrRealtime": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "authorityDrainMatrix": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "safeStatusStopRecovery": {
           "$ref": "#/$defs/resultRecord"
         }
       }
@@ -907,7 +1256,9 @@
         "status",
         "reviewedAt",
         "evidenceDigestSha256",
-        "separateFromExecutor"
+        "separateFromExecutor",
+        "criticalFindings",
+        "highFindings"
       ],
       "properties": {
         "status": {
@@ -921,6 +1272,12 @@
         },
         "separateFromExecutor": {
           "type": "boolean"
+        },
+        "criticalFindings": {
+          "$ref": "#/$defs/count"
+        },
+        "highFindings": {
+          "$ref": "#/$defs/count"
         }
       }
     }

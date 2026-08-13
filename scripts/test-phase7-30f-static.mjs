@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -36,6 +36,31 @@ const regressionRecordNames = [
   'accessibility',
   'rollback',
 ]
+const preCutoverHumanRecordNames = [
+  'twoActiveOwners',
+  'aiEnabledAdmin',
+  'standardAdmin',
+  'suspendedAdminDenied',
+  'crossUserDenied',
+  'crossLectureDenied',
+  'crossEnvironmentDenied',
+  'individualRevoke',
+  'globalRevoke',
+  'lastOwnerProtection',
+  'googleCallbackOriginAllowlist',
+  'oauthConsent',
+  'aal1ToAal2',
+  'ownerRecovery',
+  'tokenRotation',
+  'staleSessionDenied',
+  'sessionContinuityNoIdlePrompt',
+  'eightHourSessionCap',
+  'backingAuthSessionDeletion',
+  'totpFactorSetDrain',
+  'accountDisable',
+  'personalAiPinIntentOnly',
+  'rememberedBrowserLifecycle',
+]
 const operationalAdminEdges = [
   'analyze-lecture-material',
   'generate-academic-answer',
@@ -57,6 +82,11 @@ const operationalAdminEdges = [
   'publish-caption-window',
   'update-display-state',
 ]
+const identityControlEdges = [
+  'admin-ai-unlock',
+  'admin-identity-session',
+  'manage-admin-ledger',
+]
 
 const schema = JSON.parse(
   read('docs/evidence/phase7-30f-readiness.schema.json'),
@@ -71,6 +101,7 @@ assert.equal(
 const validatorSource = read('scripts/phase7-30f-readiness.mjs')
 const supabaseConfig = read('supabase/config.toml')
 const gitignore = read('.gitignore')
+const secretScanSource = read('scripts/ci/scan-secrets.mjs')
 
 function assertStrictObjects(node, path = '$') {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return
@@ -99,6 +130,21 @@ assert.doesNotMatch(
   gitignore,
   /^phase7-30f-evidence\*\.json$/m,
   'the tracked synthetic fixture must not be hidden by a global ignore',
+)
+assert.match(
+  secretScanSource,
+  /const trackedFiles = execFileSync\('git', \['ls-files', '--cached', '-z'\]/,
+  'tracked evidence rejection must inspect the Git index, including force-added ignored files',
+)
+assert.match(
+  secretScanSource,
+  /\(\?:\^\|\\\/\)\\\.phase7-30f-evidence\[\^\/\]\*\\\.json\$\/i/,
+  'tracked evidence rejection must cover repository-root and nested dot-evidence JSON paths',
+)
+assert.match(
+  secretScanSource,
+  /const findings = trackedFiles[\s\S]*Forbidden tracked Phase 7\.30F operator evidence[\s\S]*for \(const relative of scannedFiles\)/,
+  'tracked-path findings must be produced independently of content scanning',
 )
 
 assert.deepEqual(Object.keys(schema.$defs.configuration.properties).sort(), [
@@ -171,8 +217,8 @@ assert.deepEqual(
   [...phase730FSecretInventoryNames].sort(),
 )
 
-const maximumSafeAlias = `staging-${'a'.repeat(32)}`
-assert.equal(maximumSafeAlias.length, 40)
+const maximumSafeAlias = 'staging-identity-slot-z'
+assert.equal(maximumSafeAlias.length, 23)
 assert.equal(isPhase730FEnvironmentAlias(maximumSafeAlias), true)
 const maximumAliasEvidence = clone(fixture)
 maximumAliasEvidence.configuration.environment.alias = maximumSafeAlias
@@ -201,6 +247,28 @@ assert.match(
   /alias must be a non-secret staging alias/,
 )
 
+const projectRefShapedAlias = `staging-${'a'.repeat(20)}`
+assert.equal(isPhase730FEnvironmentAlias(projectRefShapedAlias), false)
+const projectRefAliasEvidence = clone(fixture)
+projectRefAliasEvidence.configuration.environment.alias = projectRefShapedAlias
+assert.ok(
+  validatePhase730FEvidence(projectRefAliasEvidence).some(
+    (error) => error.code === 'SCHEMA_PATTERN',
+  ),
+  'a Supabase project-ref-shaped staging alias must be rejected',
+)
+assert.equal(
+  isPhase730FEnvironmentAlias('staging-xaaaaaaaaaaaaaaaaaaaa'),
+  false,
+)
+assert.equal(isPhase730FEnvironmentAlias('staging-personal-name'), false)
+assert.match(
+  validatePhase730FReadinessMetadata(
+    projectRefAliasEvidence.configuration,
+  ).join('\n'),
+  /alias must be a non-secret staging alias/,
+)
+
 const invalidFractionEvidence = clone(fixture)
 invalidFractionEvidence.generatedAt = '2026-08-12T14:00:00.1Z'
 assert.ok(
@@ -221,6 +289,21 @@ const ePreflightKeys = [
   'activeLegacyMasterCount',
   'activeLegacySessionCount',
   'activeOwnerCount',
+  'activeAiEnabledInstructorCount',
+  'activeStandardInstructorCount',
+  'suspendedAdminCount',
+  'suspendedInstructorCount',
+  'activePersonalAiPinFactorCount',
+  'activeAiEnabledInstructorPersonalAiPinFactorCount',
+  'activeApprovedTotpPrincipalCount',
+  'activeOwnerApprovedTotpCount',
+  'activeAiEnabledInstructorApprovedTotpCount',
+  'activeStandardInstructorApprovedTotpCount',
+  'activeGoogleSessionCount',
+  'unbackedGoogleSessionCount',
+  'overCapGoogleSessionCount',
+  'googleSessionIdleCapMismatchCount',
+  'invalidGoogleSessionAuthorityCount',
   'authoritative',
   'cutoverCommitted',
   'environmentReady',
@@ -267,8 +350,16 @@ assert.deepEqual(Object.keys(schema.$defs.legacyBillingAcl.properties).sort(), [
   'publicAdminIssueAiBillingGrant',
   'publicAdminIssueAiBillingGrantFromMaster',
 ])
+assert.deepEqual(Object.keys(schema.$defs.functionAcl.properties).sort(), [
+  'anonExecute',
+  'authenticatedExecute',
+  'functionExists',
+  'publicExecute',
+  'serviceRoleExecute',
+])
 assert.deepEqual(Object.keys(schema.$defs.triggerState.properties).sort(), [
   'activeLectureOwnershipFenceEnabled',
+  'googleSessionAbsoluteIdleTriggerEnabled',
   'legacyGateTombstoneEnabled',
   'legacySessionFenceEnabled',
 ])
@@ -295,12 +386,73 @@ assert.match(validatorSource, /canaryAuthorized:\s*false/)
 const sourceResult = evaluatePhase730FEvidence(fixture)
 assert.equal(sourceResult.valid, true)
 assert.equal(sourceResult.decision, PHASE730F_HOLD)
-assert.equal(sourceResult.sourceReadiness, 'SOURCE_READY')
+assert.equal(sourceResult.sourceReadiness, PHASE730F_HOLD)
 assert.equal(sourceResult.maximumDecision, PHASE730F_MAXIMUM_DECISION)
 assert.equal(sourceResult.productionAuthorized, false)
 assert.equal(sourceResult.canaryAuthorized, false)
 assert.ok(sourceResult.holdReasons.includes('HOSTED_MODE_REQUIRED'))
 assert.ok(sourceResult.holdReasons.includes('HUMAN_EVIDENCE_NOT_OBSERVED'))
+assert.ok(sourceResult.holdReasons.includes('SOURCE_EVIDENCE_NOT_READY'))
+
+function markSourceReady(evidence) {
+  const mergedECommitSha = '1111111111111111111111111111111111111111'
+  const candidateCommitSha = evidence.configuration.environment.sourceCommitSha
+  evidence.sourceEvidence.phase730eMergeCommitSha = mergedECommitSha
+  evidence.sourceEvidence.phase730fBaseCommitSha = mergedECommitSha
+  evidence.sourceEvidence.phase730ePostMergeCi = {
+    status: 'PASS',
+    performedAt: '2026-08-12T13:00:00Z',
+    evidenceDigestSha256: digest('1'),
+    observedCommitSha: mergedECommitSha,
+  }
+  evidence.sourceEvidence.phase730fBaseOnMergedE = {
+    status: 'PASS',
+    performedAt: '2026-08-12T13:01:00Z',
+    evidenceDigestSha256: digest('2'),
+    observedCommitSha: candidateCommitSha,
+  }
+  for (const record of Object.values(evidence.sourceEvidence.checks)) {
+    record.status = 'PASS'
+    record.performedAt = '2026-08-12T13:02:00Z'
+    record.evidenceDigestSha256 = digest('3')
+    record.observedCommitSha = candidateCommitSha
+  }
+  evidence.sourceEvidence.independentSourceReview = {
+    status: 'PASS',
+    reviewedAt: '2026-08-12T13:03:00Z',
+    evidenceDigestSha256: digest('4'),
+    observedCommitSha: candidateCommitSha,
+    separateFromExecutor: true,
+    criticalFindings: 0,
+    highFindings: 0,
+  }
+}
+
+const sourceReady = clone(fixture)
+markSourceReady(sourceReady)
+const sourceReadyResult = evaluatePhase730FEvidence(sourceReady)
+assert.equal(sourceReadyResult.valid, true)
+assert.equal(sourceReadyResult.sourceReadiness, 'SOURCE_READY')
+assert.equal(sourceReadyResult.decision, PHASE730F_HOLD)
+assert.ok(!sourceReadyResult.holdReasons.includes('SOURCE_EVIDENCE_NOT_READY'))
+
+const sourceCheckWrongCommit = clone(sourceReady)
+sourceCheckWrongCommit.sourceEvidence.checks.build.observedCommitSha =
+  '2222222222222222222222222222222222222222'
+assert.ok(
+  validatePhase730FEvidence(sourceCheckWrongCommit).some(
+    (error) => error.code === 'SOURCE_RESULT_COMMIT_MISMATCH',
+  ),
+)
+
+const sourceWrongBase = clone(sourceReady)
+sourceWrongBase.sourceEvidence.phase730fBaseCommitSha =
+  '2222222222222222222222222222222222222222'
+assert.ok(
+  validatePhase730FEvidence(sourceWrongBase).some(
+    (error) => error.code === 'SOURCE_BASE_COMMIT_MISMATCH',
+  ),
+)
 
 const rootWithUnknownKey = clone(fixture)
 rootWithUnknownKey.unreviewedOverride = true
@@ -376,8 +528,12 @@ const configuredFunctions = [
 const configuredOperationalAdminEdges = configuredFunctions.filter(({ name }) =>
   operationalAdminEdges.includes(name),
 )
+const configuredIdentityControlEdges = configuredFunctions.filter(({ name }) =>
+  identityControlEdges.includes(name),
+)
 assert.equal(configuredFunctions.length, 31)
 assert.equal(configuredOperationalAdminEdges.length, 19)
+assert.equal(configuredIdentityControlEdges.length, 3)
 assert.equal(
   new Set(configuredOperationalAdminEdges.map(({ name }) => name)).size,
   operationalAdminEdges.length,
@@ -385,6 +541,11 @@ assert.equal(
 assert.ok(
   configuredOperationalAdminEdges.every(
     ({ name, verifyJwt }) => operationalAdminEdges.includes(name) && verifyJwt,
+  ),
+)
+assert.ok(
+  configuredIdentityControlEdges.every(
+    ({ name, verifyJwt }) => identityControlEdges.includes(name) && verifyJwt,
   ),
 )
 assert.ok(
@@ -397,6 +558,21 @@ const preSnapshot = {
   activeLegacyMasterCount: 0,
   activeLegacySessionCount: 0,
   activeOwnerCount: 2,
+  activeAiEnabledInstructorCount: 1,
+  activeStandardInstructorCount: 1,
+  suspendedAdminCount: 1,
+  suspendedInstructorCount: 1,
+  activePersonalAiPinFactorCount: 1,
+  activeAiEnabledInstructorPersonalAiPinFactorCount: 1,
+  activeApprovedTotpPrincipalCount: 4,
+  activeOwnerApprovedTotpCount: 2,
+  activeAiEnabledInstructorApprovedTotpCount: 1,
+  activeStandardInstructorApprovedTotpCount: 1,
+  activeGoogleSessionCount: 4,
+  unbackedGoogleSessionCount: 0,
+  overCapGoogleSessionCount: 0,
+  googleSessionIdleCapMismatchCount: 0,
+  invalidGoogleSessionAuthorityCount: 0,
   authoritative: false,
   cutoverCommitted: false,
   environmentReady: true,
@@ -425,6 +601,7 @@ const preSnapshot = {
     Object.keys(schema.$defs.legacyBillingAcl.properties).map((name) => [
       name,
       {
+        functionExists: true,
         serviceRoleExecute: true,
         publicExecute: false,
         anonExecute: false,
@@ -436,6 +613,7 @@ const preSnapshot = {
     legacyGateTombstoneEnabled: true,
     legacySessionFenceEnabled: true,
     activeLectureOwnershipFenceEnabled: true,
+    googleSessionAbsoluteIdleTriggerEnabled: true,
   },
 }
 const postSnapshot = clone(preSnapshot)
@@ -445,14 +623,12 @@ postSnapshot.cutoverReceiptCount = 1
 postSnapshot.cutoverReceiptEnvironmentMatches = true
 postSnapshot.cutoverReceiptDeploymentEvidenceDigestMatches = true
 postSnapshot.legacyVerifierServiceRoleExecute = false
-for (const name of Object.keys(postSnapshot.legacyBillingAcl)) {
-  postSnapshot.legacyBillingAcl[name].serviceRoleExecute = false
-}
 
 const complete = clone(fixture)
+markSourceReady(complete)
 complete.evidenceMode = 'HOSTED_HUMAN_STAGING'
-complete.generatedAt = '2026-08-12T14:08:00Z'
-complete.configuration.environment.capturedAt = '2026-08-12T14:07:00Z'
+complete.generatedAt = '2026-08-12T14:20:00Z'
+complete.configuration.environment.capturedAt = '2026-08-12T14:15:00Z'
 complete.configuration.environment.environmentIdConfigured = true
 complete.configuration.frontendFlags = Object.fromEntries(
   Object.keys(complete.configuration.frontendFlags).map((name) => [name, true]),
@@ -473,7 +649,7 @@ complete.configuration.databaseGates = {
 }
 complete.configuration.secretInventory = {
   captured: true,
-  capturedAt: '2026-08-12T14:05:00Z',
+  capturedAt: '2026-08-12T14:14:00Z',
   entries: [
     'ADMIN_AI_BROWSER_CHALLENGE_SECRET',
     'ADMIN_AI_CHILD_GRANT_SECRET',
@@ -489,6 +665,7 @@ complete.configuration.secretInventory = {
     minimumBytesSatisfied: true,
     rotationVersion: 1,
     rotatedAt: '2026-08-01T00:00:00Z',
+    removedAt: null,
   })),
 }
 complete.configuration.secretInventory.entries.push(
@@ -498,6 +675,7 @@ complete.configuration.secretInventory.entries.push(
     minimumBytesSatisfied: null,
     rotationVersion: null,
     rotatedAt: null,
+    removedAt: '2026-08-12T14:06:00Z',
   },
   {
     name: 'BILLING_PIN',
@@ -505,6 +683,7 @@ complete.configuration.secretInventory.entries.push(
     minimumBytesSatisfied: null,
     rotationVersion: null,
     rotatedAt: null,
+    removedAt: '2026-08-12T14:13:00Z',
   },
 )
 complete.preCutover = {
@@ -531,22 +710,51 @@ complete.hostedEvidence = {
   legacyWireFieldsAbsent: true,
   callbackOriginAllowlistPass: true,
   oauthConsentPass: true,
-  functionInventory: configuredOperationalAdminEdges,
+  operationalFunctionInventory: configuredOperationalAdminEdges,
+  identityControlFunctionInventory: configuredIdentityControlEdges,
 }
 for (const record of Object.values(complete.humanEvidence)) {
   record.status = 'PASS'
-  record.performedAt = '2026-08-12T14:05:00Z'
+  record.performedAt = '2026-08-12T14:07:00Z'
   record.evidenceDigestSha256 = digest('5')
+}
+for (const name of preCutoverHumanRecordNames) {
+  complete.humanEvidence[name].performedAt = '2026-08-12T14:03:10Z'
+}
+complete.humanEvidence.personalAiPinEndToEnd.performedAt =
+  '2026-08-12T14:07:00Z'
+complete.billingRetirement = {
+  captured: true,
+  capturedAt: '2026-08-12T14:09:00Z',
+  readOnlyTransaction: true,
+  snapshotDigestSha256: digest('b'),
+  snapshot: {
+    legacyBillingAcl: Object.fromEntries(
+      Object.keys(schema.$defs.legacyBillingAcl.properties).map((name) => [
+        name,
+        {
+          functionExists: true,
+          serviceRoleExecute: false,
+          publicExecute: false,
+          anonExecute: false,
+          authenticatedExecute: false,
+        },
+      ]),
+    ),
+    personalAiPinEvidenceDigestMatches: true,
+    safeStatusStopRevokeAccountingAvailable: true,
+    historicalIntegrityPreserved: true,
+  },
 }
 for (const name of regressionRecordNames) {
   const record = complete.regressionEvidence[name]
   record.status = 'PASS'
-  record.performedAt = '2026-08-12T14:06:00Z'
+  record.performedAt = '2026-08-12T14:10:00Z'
   record.evidenceDigestSha256 = digest('6')
 }
 complete.regressionEvidence.advisors = {
   captured: true,
-  capturedAt: '2026-08-12T14:06:00Z',
+  capturedAt: '2026-08-12T14:10:00Z',
   evidenceDigestSha256: digest('7'),
   criticalFindings: 0,
   highFindings: 0,
@@ -554,7 +762,7 @@ complete.regressionEvidence.advisors = {
 complete.rollbackEvidence = {
   rehearsal: {
     status: 'PASS',
-    performedAt: '2026-08-12T14:06:00Z',
+    performedAt: '2026-08-12T14:11:00Z',
     evidenceDigestSha256: digest('8'),
   },
   immutableGoogleOnlyRevision: digest('4'),
@@ -563,7 +771,7 @@ complete.rollbackEvidence = {
   freeStopAvailable: true,
   operatorOwnerRecoveryRehearsed: true,
 }
-for (const name of [
+const approvedActions = [
   'stagingHostedMutation',
   'oauthProviderConfiguration',
   'stagingHumanIdentityRun',
@@ -571,19 +779,40 @@ for (const name of [
   'adminPinSecretDeletion',
   'legacyBillingAuthorityRetirement',
   'billingPinSecretDeletion',
-]) {
+]
+const approvalTimes = {
+  stagingHostedMutation: '2026-08-12T13:59:00Z',
+  oauthProviderConfiguration: '2026-08-12T13:59:10Z',
+  stagingHumanIdentityRun: '2026-08-12T13:59:20Z',
+  googleOnlyCutover: '2026-08-12T14:03:30Z',
+  adminPinSecretDeletion: '2026-08-12T14:05:00Z',
+  legacyBillingAuthorityRetirement: '2026-08-12T14:08:00Z',
+  billingPinSecretDeletion: '2026-08-12T14:12:00Z',
+}
+const approvalDigestCharacters = ['9', 'a', 'b', 'c', 'd', 'e', 'f']
+for (const [index, name] of approvedActions.entries()) {
   complete.approvals[name] = {
     state: 'APPROVED',
-    recordedAt: '2026-08-12T14:01:00Z',
-    evidenceDigestSha256: digest('9'),
+    recordedAt: approvalTimes[name],
+    evidenceDigestSha256: digest(approvalDigestCharacters[index]),
   }
 }
 complete.independentReview = {
   status: 'PASS',
-  reviewedAt: '2026-08-12T14:07:00Z',
+  reviewedAt: '2026-08-12T14:15:00Z',
   evidenceDigestSha256: digest('a'),
   separateFromExecutor: true,
+  criticalFindings: 0,
+  highFindings: 0,
 }
+assert.deepEqual(
+  validatePhase730FReadinessMetadata({
+    ...fixture.configuration,
+    secretInventory: complete.configuration.secretInventory,
+  }),
+  [],
+  'captured secret removal metadata must match the shared production-environment contract',
+)
 
 const completeResult = evaluatePhase730FEvidence(complete)
 assert.deepEqual(completeResult.errors, [])
@@ -591,6 +820,235 @@ assert.deepEqual(completeResult.holdReasons, [])
 assert.equal(completeResult.decision, PHASE730F_MAXIMUM_DECISION)
 assert.equal(completeResult.productionAuthorized, false)
 assert.equal(completeResult.canaryAuthorized, false)
+
+const humanBeforeHosted = clone(complete)
+humanBeforeHosted.humanEvidence.aal1ToAal2.performedAt = '2026-08-12T14:02:59Z'
+assert.ok(
+  validatePhase730FEvidence(humanBeforeHosted).some(
+    (error) => error.code === 'HUMAN_EVIDENCE_NOT_AFTER_HOSTED',
+  ),
+)
+
+for (const field of ['rotatedAt', 'removedAt']) {
+  const secretMetadataAfterCapture = clone(complete)
+  const entry =
+    field === 'rotatedAt'
+      ? secretMetadataAfterCapture.configuration.secretInventory.entries.find(
+          ({ name }) => name === 'ADMIN_SESSION_SECRET',
+        )
+      : secretMetadataAfterCapture.configuration.secretInventory.entries.find(
+          ({ name }) => name === 'BILLING_PIN',
+        )
+  entry[field] = '2026-08-12T14:14:30Z'
+  assert.ok(
+    validatePhase730FEvidence(secretMetadataAfterCapture).some(
+      (error) => error.code === 'SECRET_METADATA_AFTER_INVENTORY_CAPTURE',
+    ),
+    field,
+  )
+}
+
+const independentCriticalFinding = clone(complete)
+independentCriticalFinding.independentReview.criticalFindings = 1
+const independentCriticalFindingResult = evaluatePhase730FEvidence(
+  independentCriticalFinding,
+)
+assert.equal(independentCriticalFindingResult.valid, true)
+assert.ok(
+  independentCriticalFindingResult.holdReasons.includes(
+    'INDEPENDENT_REVIEW_NOT_READY',
+  ),
+)
+
+const reusedSnapshotDigest = clone(complete)
+reusedSnapshotDigest.billingRetirement.snapshotDigestSha256 =
+  reusedSnapshotDigest.postCutover.snapshotDigestSha256
+assert.ok(
+  validatePhase730FEvidence(reusedSnapshotDigest).some(
+    (error) => error.code === 'SNAPSHOT_DIGEST_REUSED',
+  ),
+)
+
+const approvalDigestReused = clone(complete)
+approvalDigestReused.approvals.billingPinSecretDeletion.evidenceDigestSha256 =
+  approvalDigestReused.approvals.adminPinSecretDeletion.evidenceDigestSha256
+assert.ok(
+  validatePhase730FEvidence(approvalDigestReused).some(
+    (error) => error.code === 'APPROVAL_DIGEST_REUSED',
+  ),
+  'each separately scoped approval requires a distinct evidence digest',
+)
+
+const hostedAfterCutover = clone(complete)
+hostedAfterCutover.hostedEvidence.executedAt = '2026-08-12T14:04:30Z'
+assert.ok(
+  validatePhase730FEvidence(hostedAfterCutover).some(
+    (error) => error.code === 'HOSTED_EVIDENCE_NOT_PRE_CUTOVER',
+  ),
+)
+
+const humanAfterCutover = clone(complete)
+humanAfterCutover.humanEvidence.aal1ToAal2.performedAt = '2026-08-12T14:04:30Z'
+assert.ok(
+  validatePhase730FEvidence(humanAfterCutover).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const adminDeletionApprovedBeforePost = clone(complete)
+adminDeletionApprovedBeforePost.approvals.adminPinSecretDeletion.recordedAt =
+  '2026-08-12T14:03:50Z'
+assert.ok(
+  validatePhase730FEvidence(adminDeletionApprovedBeforePost).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const cutoverApprovedBeforePreSnapshot = clone(complete)
+cutoverApprovedBeforePreSnapshot.approvals.googleOnlyCutover.recordedAt =
+  '2026-08-12T14:01:30Z'
+assert.ok(
+  validatePhase730FEvidence(cutoverApprovedBeforePreSnapshot).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const billingRetirementApprovedBeforePersonalPin = clone(complete)
+billingRetirementApprovedBeforePersonalPin.approvals.legacyBillingAuthorityRetirement.recordedAt =
+  '2026-08-12T14:06:30Z'
+assert.ok(
+  validatePhase730FEvidence(billingRetirementApprovedBeforePersonalPin).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const safeControlAfterBillingApproval = clone(complete)
+safeControlAfterBillingApproval.humanEvidence.authorityDrainMatrix.performedAt =
+  '2026-08-12T14:08:30Z'
+assert.ok(
+  validatePhase730FEvidence(safeControlAfterBillingApproval).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const billingRetirementApprovedBeforeLocalEvidence = clone(complete)
+billingRetirementApprovedBeforeLocalEvidence.sourceEvidence.independentSourceReview.reviewedAt =
+  '2026-08-12T14:08:30Z'
+assert.ok(
+  validatePhase730FEvidence(billingRetirementApprovedBeforeLocalEvidence).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const billingDeletionApprovedBeforeRollback = clone(complete)
+billingDeletionApprovedBeforeRollback.approvals.billingPinSecretDeletion.recordedAt =
+  '2026-08-12T14:10:30Z'
+assert.ok(
+  validatePhase730FEvidence(billingDeletionApprovedBeforeRollback).some(
+    (error) => error.code === 'APPROVAL_PRECEDES_PREREQUISITE',
+  ),
+)
+
+const billingRemovedBeforeRollback = clone(complete)
+billingRemovedBeforeRollback.configuration.secretInventory.entries.find(
+  ({ name }) => name === 'BILLING_PIN',
+).removedAt = '2026-08-12T14:10:30Z'
+assert.ok(
+  validatePhase730FEvidence(billingRemovedBeforeRollback).some(
+    (error) => error.code === 'APPROVAL_RECORDED_TOO_LATE',
+  ),
+)
+
+const conflatedBillingRetirement = clone(complete)
+for (const acl of Object.values(
+  conflatedBillingRetirement.postCutover.snapshot.legacyBillingAcl,
+)) {
+  acl.serviceRoleExecute = false
+}
+assert.ok(
+  validatePhase730FEvidence(conflatedBillingRetirement).some(
+    (error) => error.code === 'BILLING_RETIREMENT_CONFLATED_WITH_CUTOVER',
+  ),
+)
+
+for (const phase of ['preCutover', 'postCutover', 'billingRetirement']) {
+  const missingBillingFunction = clone(complete)
+  missingBillingFunction[
+    phase
+  ].snapshot.legacyBillingAcl.publicAdminIssueAiBillingGrant.functionExists =
+    false
+  assert.ok(
+    validatePhase730FEvidence(missingBillingFunction).some(
+      (error) => error.code === 'SCHEMA_CONST',
+    ),
+    `${phase} must reject a dropped or renamed legacy billing function`,
+  )
+}
+
+for (const phase of ['preCutover', 'postCutover']) {
+  const authoritativeSnapshot = clone(complete)
+  authoritativeSnapshot[phase].snapshot.authoritative = true
+  assert.ok(
+    validatePhase730FEvidence(authoritativeSnapshot).some(
+      (error) => error.code === 'SCHEMA_CONST',
+    ),
+    `${phase} evidence must remain explicitly non-authoritative`,
+  )
+}
+
+for (const [key, failingValue] of Object.entries({
+  activeOwnerCount: 1,
+  activeAiEnabledInstructorCount: 0,
+  activeStandardInstructorCount: 0,
+  suspendedAdminCount: 0,
+  suspendedInstructorCount: 0,
+  activePersonalAiPinFactorCount: 0,
+  activeAiEnabledInstructorPersonalAiPinFactorCount: 0,
+  activeApprovedTotpPrincipalCount: 3,
+  activeOwnerApprovedTotpCount: 1,
+  activeAiEnabledInstructorApprovedTotpCount: 0,
+  activeStandardInstructorApprovedTotpCount: 0,
+  activeGoogleSessionCount: 0,
+  unbackedGoogleSessionCount: 1,
+  overCapGoogleSessionCount: 1,
+  googleSessionIdleCapMismatchCount: 1,
+  invalidGoogleSessionAuthorityCount: 1,
+})) {
+  const belowThreshold = clone(complete)
+  belowThreshold.postCutover.snapshot[key] = failingValue
+  const result = evaluatePhase730FEvidence(belowThreshold)
+  assert.equal(result.valid, true, key)
+  assert.ok(result.holdReasons.includes('POST_CUTOVER_NOT_READY'), key)
+}
+
+const disabledAbsoluteIdleTrigger = clone(complete)
+disabledAbsoluteIdleTrigger.postCutover.snapshot.triggers.googleSessionAbsoluteIdleTriggerEnabled = false
+const disabledAbsoluteIdleTriggerResult = evaluatePhase730FEvidence(
+  disabledAbsoluteIdleTrigger,
+)
+assert.equal(disabledAbsoluteIdleTriggerResult.valid, true)
+assert.ok(
+  disabledAbsoluteIdleTriggerResult.holdReasons.includes(
+    'POST_CUTOVER_NOT_READY',
+  ),
+)
+
+for (const mutateInventory of [
+  (hosted) => hosted.operationalFunctionInventory.pop(),
+  (hosted) => hosted.identityControlFunctionInventory.pop(),
+  (hosted) => {
+    hosted.identityControlFunctionInventory[0].name = 'unknown-identity-control'
+  },
+  (hosted) => {
+    hosted.identityControlFunctionInventory[0].verifyJwt = false
+  },
+]) {
+  const incompleteInventory = clone(complete)
+  mutateInventory(incompleteInventory.hostedEvidence)
+  const result = evaluatePhase730FEvidence(incompleteInventory)
+  assert.equal(result.valid, true)
+  assert.ok(result.holdReasons.includes('HOSTED_STATE_NOT_READY'))
+}
 
 const unreviewedSecretName = clone(complete)
 unreviewedSecretName.configuration.secretInventory.entries.push({
@@ -650,11 +1108,15 @@ assert.ok(
 )
 
 const failedHumanScenario = clone(complete)
-failedHumanScenario.humanEvidence.accountDisable.status = 'FAIL'
+failedHumanScenario.humanEvidence.safeStatusStopRecovery.status = 'FAIL'
 const failedHumanResult = evaluatePhase730FEvidence(failedHumanScenario)
-assert.equal(failedHumanResult.valid, true)
+assert.equal(failedHumanResult.valid, false)
 assert.equal(failedHumanResult.decision, PHASE730F_HOLD)
-assert.ok(failedHumanResult.holdReasons.includes('HUMAN_SCENARIOS_NOT_READY'))
+assert.ok(
+  failedHumanResult.errors.some(
+    (error) => error.code === 'BILLING_RETIREMENT_HUMAN_PREREQUISITE_MISSING',
+  ),
+)
 
 const criticalFinding = clone(complete)
 criticalFinding.regressionEvidence.advisors.criticalFindings = 1
@@ -671,7 +1133,7 @@ const canaryApproved = clone(complete)
 canaryApproved.approvals.limitedIdentityCanary = {
   state: 'APPROVED',
   recordedAt: '2026-08-12T14:07:00Z',
-  evidenceDigestSha256: digest('b'),
+  evidenceDigestSha256: digest('0'),
 }
 const canaryApprovedResult = evaluatePhase730FEvidence(canaryApproved)
 assert.equal(canaryApprovedResult.valid, true)
@@ -703,21 +1165,30 @@ const validatorPath = fileURLToPath(
 const fixturePath = fileURLToPath(
   new URL('./fixtures/phase7-30f-evidence.example.json', import.meta.url),
 )
+const privateFixturePath = fileURLToPath(
+  new URL('../.phase7-30f-evidence-static-test.json', import.meta.url),
+)
 const noEvidenceCli = spawnSync(process.execPath, [validatorPath, '--json'], {
   encoding: 'utf8',
 })
 assert.equal(noEvidenceCli.status, 0, noEvidenceCli.stderr)
 assert.equal(JSON.parse(noEvidenceCli.stdout).decision, PHASE730F_HOLD)
 
-const fixtureCli = spawnSync(
-  process.execPath,
-  [validatorPath, '--evidence', fixturePath, '--json'],
-  { encoding: 'utf8' },
-)
+let fixtureCli
+try {
+  writeFileSync(privateFixturePath, fixtureSource, 'utf8')
+  fixtureCli = spawnSync(
+    process.execPath,
+    [validatorPath, '--evidence', privateFixturePath, '--json'],
+    { encoding: 'utf8' },
+  )
+} finally {
+  unlinkSync(privateFixturePath)
+}
 assert.equal(fixtureCli.status, 0, fixtureCli.stderr)
 const fixtureCliResult = JSON.parse(fixtureCli.stdout)
 assert.equal(fixtureCliResult.decision, PHASE730F_HOLD)
-assert.equal(fixtureCliResult.sourceReadiness, 'SOURCE_READY')
+assert.equal(fixtureCliResult.sourceReadiness, PHASE730F_HOLD)
 assert.equal(fixtureCliResult.productionAuthorized, false)
 assert.equal(fixtureCliResult.canaryAuthorized, false)
 assert.ok(
@@ -726,6 +1197,16 @@ assert.ok(
   ),
   'redacted CLI output must not echo the supplied source SHA',
 )
+
+const nestedFixtureCli = spawnSync(
+  process.execPath,
+  [validatorPath, '--evidence', fixturePath, '--json'],
+  { encoding: 'utf8' },
+)
+assert.equal(nestedFixtureCli.status, 2)
+assert.deepEqual(JSON.parse(nestedFixtureCli.stdout).errors, [
+  { code: 'EVIDENCE_PATH_FORBIDDEN', path: '$' },
+])
 
 const invalidArgumentsCli = spawnSync(
   process.execPath,
@@ -739,7 +1220,14 @@ assert.deepEqual(JSON.parse(invalidArgumentsCli.stdout).errors, [
 
 const missingEvidenceCli = spawnSync(
   process.execPath,
-  [validatorPath, '--evidence', `${fixturePath}.missing`, '--json'],
+  [
+    validatorPath,
+    '--evidence',
+    fileURLToPath(
+      new URL('../.phase7-30f-evidence-static-missing.json', import.meta.url),
+    ),
+    '--json',
+  ],
   { encoding: 'utf8' },
 )
 assert.equal(missingEvidenceCli.status, 2)
@@ -780,9 +1268,97 @@ for (const pattern of [
 ]) {
   assert.match(preflightSql, pattern)
 }
+for (const [name, functionName, triggerType] of [
+  [
+    'admin_identity_runtime_gate_google_only_tombstone',
+    'enforce_google_only_admin_gate_tombstone_v1',
+    27,
+  ],
+  [
+    'admin_sessions_google_only_admin_fence',
+    'enforce_google_only_admin_session_fence_v1',
+    31,
+  ],
+  [
+    'lecture_sessions_google_only_active_ownership',
+    'enforce_active_admin_lecture_ownership_v1',
+    21,
+  ],
+  [
+    'admin_sessions_google_absolute_idle',
+    'enforce_google_admin_session_absolute_idle_v1',
+    23,
+  ],
+]) {
+  const triggerContract = new RegExp(
+    `${name}[\\s\\S]*tgfoid[\\s\\S]*${functionName}[\\s\\S]*tgtype\\s*=\\s*${triggerType}[\\s\\S]*tgconstraint`,
+    'i',
+  )
+  assert.match(
+    preflightMigration,
+    triggerContract,
+    `${name} must bind the expected function, timing/events and constraint shape`,
+  )
+}
+assert.match(
+  preflightMigration,
+  /lecture_sessions_google_only_active_ownership[\s\S]*tgconstraint\s*<>\s*0[\s\S]*tgdeferrable[\s\S]*tginitdeferred/i,
+)
+assert.match(
+  preflightMigration,
+  /'functionExists',\s*procedure\.oid is not null/i,
+  'legacy billing ACL evidence must distinguish missing functions from revoked grants',
+)
+assert.equal(
+  [...preflightMigration.matchAll(/tgenabled\s*=\s*'O'/g)].length,
+  4,
+  'each readiness trigger must use the normal enabled state exactly',
+)
+for (const column of [
+  'authentication_method',
+  'auth_user_id',
+  'supabase_auth_session_id',
+  'issued_at',
+  'expires_at',
+  'idle_expires_at',
+]) {
+  assert.match(
+    preflightMigration,
+    new RegExp(`attnum = any\\(trigger_row\\.tgattr\\)[\\s\\S]*${column}`),
+    `absolute/idle trigger identity must cover ${column}`,
+  )
+}
+assert.match(
+  preflightPgTap,
+  /all four readiness triggers have exact table, function, timing\/event, enabled and constraint identities/i,
+)
+assert.match(
+  preflightPgTap,
+  /absolute\/idle trigger covers the exact six authority and lifetime columns/i,
+)
+assert.match(
+  preflightPgTap,
+  /phase730f_noop_trigger[\s\S]*admin_sessions_google_absolute_idle[\s\S]*same-name enabled no-op trigger cannot satisfy/i,
+  'pgTAP must reject a same-name trigger wired to the wrong function',
+)
+assert.match(
+  preflightPgTap,
+  /rename to phase730f_missing_admin_issue_ai_billing_grant[\s\S]*dropped or renamed legacy billing signature is missing, not retired[\s\S]*missing historical billing compatibility cannot satisfy retirement evidence/i,
+  'pgTAP must distinguish missing billing functions from revoked retained functions',
+)
 assert.match(
   preflightMigration,
   /create function private\.get_phase7_30f_source_readiness_preflight_v1\([\s\S]*?language sql[\s\S]*?stable[\s\S]*?security definer[\s\S]*?set search_path = ''/i,
+)
+assert.match(
+  preflightMigration,
+  /approved_totp_factor_set_hash\s*=\s*private\.current_verified_totp_factor_set_hash_v1\(\s*principal\.auth_user_id\s*\)/i,
+  'approved-TOTP readiness must match the current verified Auth factor set',
+)
+assert.match(
+  preflightPgTap,
+  /status\s*=\s*'unverified'[\s\S]*activeAiEnabledInstructorApprovedTotpCount[\s\S]*removed current AI-instructor TOTP factor/i,
+  'pgTAP must prove cached approval cannot survive current-factor removal',
 )
 assert.match(
   preflightMigration,

@@ -146,17 +146,25 @@ select is(
     'activeAiEnabledInstructorCount', 0,
     'activeStandardInstructorCount', 0,
     'suspendedAdminCount', 0,
+    'suspendedInstructorCount', 0,
     'activePersonalAiPinFactorCount', 0,
-    'activeApprovedTotpPrincipalCount', 1
+    'activeAiEnabledInstructorPersonalAiPinFactorCount', 0,
+    'activeApprovedTotpPrincipalCount', 1,
+    'activeOwnerApprovedTotpCount', 1,
+    'activeAiEnabledInstructorApprovedTotpCount', 0,
+    'activeStandardInstructorApprovedTotpCount', 0
   ),
-  'the populated owner and approved-TOTP aggregates survive the F upgrade'
+  'the populated owner and role-correlated approved-TOTP aggregates survive the F upgrade'
 );
 
 select is(
   (select value -> 'sessionCounts' from phase730f_upgrade_snapshot),
   jsonb_build_object(
     'activeGoogleSessionCount', 1,
-    'unbackedGoogleSessionCount', 0
+    'unbackedGoogleSessionCount', 0,
+    'overCapGoogleSessionCount', 0,
+    'googleSessionIdleCapMismatchCount', 0,
+    'invalidGoogleSessionAuthorityCount', 0
   ),
   'the populated backed Google application session survives the F upgrade'
 );
@@ -195,6 +203,7 @@ select ok(
         select 1
         from jsonb_each(value -> 'legacyBillingAcl') as acl(name, privileges)
         where acl.privileges <> jsonb_build_object(
+          'functionExists', true,
           'publicExecute', false,
           'anonExecute', false,
           'authenticatedExecute', false,
@@ -212,9 +221,10 @@ select is(
   jsonb_build_object(
     'legacyGateTombstoneEnabled', true,
     'legacySessionFenceEnabled', true,
-    'activeLectureOwnershipFenceEnabled', true
+    'activeLectureOwnershipFenceEnabled', true,
+    'googleSessionAbsoluteIdleTriggerEnabled', true
   ),
-  'all three E safety triggers remain enabled after the F upgrade'
+  'all E safety and Google absolute/idle session triggers remain enabled after the F upgrade'
 );
 
 select is(

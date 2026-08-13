@@ -1,5 +1,5 @@
-import { readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
@@ -13,6 +13,9 @@ export const PHASE730F_HOLD = 'HOLD'
 export const PHASE730F_MAXIMUM_DECISION = 'READY_FOR_SEPARATE_HOSTED_EXECUTION'
 
 const MAX_EVIDENCE_BYTES = 1024 * 1024
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const privateEvidenceFilePattern =
+  /^\.phase7-30f-evidence(?:[a-z0-9._-]*)\.json$/i
 const schemaUrl = new URL(
   '../docs/evidence/phase7-30f-readiness.schema.json',
   import.meta.url,
@@ -34,7 +37,13 @@ function collectAllowedEvidenceKeys(node, keys = new Set()) {
 
 const allowedEvidenceKeys = collectAllowedEvidenceKeys(phase730fSchema)
 
-const expectedFunctions = new Map([
+const expectedIdentityControlFunctions = new Map([
+  ['admin-ai-unlock', true],
+  ['admin-identity-session', true],
+  ['manage-admin-ledger', true],
+])
+
+const expectedOperationalFunctions = new Map([
   ['analyze-lecture-material', true],
   ['generate-academic-answer', true],
   ['generate-lecture-summary', true],
@@ -74,6 +83,42 @@ const regressionRecordNames = [
   'security',
   'accessibility',
   'rollback',
+]
+
+const preCutoverHumanRecordNames = [
+  'twoActiveOwners',
+  'aiEnabledAdmin',
+  'standardAdmin',
+  'suspendedAdminDenied',
+  'crossUserDenied',
+  'crossLectureDenied',
+  'crossEnvironmentDenied',
+  'individualRevoke',
+  'globalRevoke',
+  'lastOwnerProtection',
+  'googleCallbackOriginAllowlist',
+  'oauthConsent',
+  'aal1ToAal2',
+  'ownerRecovery',
+  'tokenRotation',
+  'staleSessionDenied',
+  'sessionContinuityNoIdlePrompt',
+  'eightHourSessionCap',
+  'backingAuthSessionDeletion',
+  'totpFactorSetDrain',
+  'accountDisable',
+  'personalAiPinIntentOnly',
+  'rememberedBrowserLifecycle',
+]
+
+const billingRetirementHumanRecordNames = [
+  'personalAiPinEndToEnd',
+  'sameScopeRetry',
+  'scopeEscalation',
+  'freeDowngradeStop',
+  'masterNoProviderOrRealtime',
+  'authorityDrainMatrix',
+  'safeStatusStopRecovery',
 ]
 
 const dangerousKeyNames = new Set([
@@ -527,6 +572,62 @@ function validateTimedRecord(record, path, errors, generatedAt) {
   }
 }
 
+function validateSourceResultRecord(record, path, errors, generatedAt) {
+  validateTimedRecord(record, path, errors, generatedAt)
+  const notRun = record.status === 'NOT_RUN'
+  if (notRun !== (record.observedCommitSha === null)) {
+    errors.push(
+      issue(
+        'CONTRADICTORY_SOURCE_COMMIT',
+        path,
+        'Source result commit does not match status.',
+      ),
+    )
+  }
+}
+
+function validateSourceReviewRecord(review, path, errors, generatedAt) {
+  const notReviewed = review.status === 'NOT_REVIEWED'
+  for (const [field, code] of [
+    ['reviewedAt', 'CONTRADICTORY_SOURCE_REVIEW_TIME'],
+    ['evidenceDigestSha256', 'CONTRADICTORY_SOURCE_REVIEW_DIGEST'],
+    ['observedCommitSha', 'CONTRADICTORY_SOURCE_REVIEW_COMMIT'],
+  ]) {
+    if (notReviewed !== (review[field] === null)) {
+      errors.push(
+        issue(code, path, 'Source review metadata does not match status.'),
+      )
+    }
+  }
+  if (notReviewed && review.separateFromExecutor) {
+    errors.push(
+      issue(
+        'CONTRADICTORY_SOURCE_REVIEWER',
+        path,
+        'Missing source review cannot assert reviewer separation.',
+      ),
+    )
+  }
+  if (!notReviewed && !review.separateFromExecutor) {
+    errors.push(
+      issue(
+        'SOURCE_REVIEWER_NOT_INDEPENDENT',
+        path,
+        'Completed source review must be independent.',
+      ),
+    )
+  }
+  if (review.reviewedAt && Date.parse(review.reviewedAt) > generatedAt) {
+    errors.push(
+      issue(
+        'FUTURE_EVIDENCE',
+        path,
+        'Source review occurs after document generation.',
+      ),
+    )
+  }
+}
+
 function validateApprovalRecord(record, path, errors, generatedAt) {
   const onHold = record.state === 'HOLD'
   if (onHold !== (record.recordedAt === null)) {
@@ -635,6 +736,50 @@ function validateCutoverWrapper(wrapper, path, errors, generatedAt) {
   }
 }
 
+function validateBillingRetirementEvidence(wrapper, path, errors, generatedAt) {
+  if (!wrapper.captured) {
+    if (
+      wrapper.capturedAt !== null ||
+      wrapper.readOnlyTransaction !== false ||
+      wrapper.snapshotDigestSha256 !== null ||
+      wrapper.snapshot !== null
+    ) {
+      errors.push(
+        issue(
+          'CONTRADICTORY_BILLING_RETIREMENT',
+          path,
+          'Uncaptured billing retirement evidence must be empty.',
+        ),
+      )
+    }
+    return
+  }
+  if (
+    wrapper.capturedAt === null ||
+    wrapper.readOnlyTransaction !== true ||
+    wrapper.snapshotDigestSha256 === null ||
+    wrapper.snapshot === null
+  ) {
+    errors.push(
+      issue(
+        'CONTRADICTORY_BILLING_RETIREMENT',
+        path,
+        'Captured billing retirement requires read-only evidence.',
+      ),
+    )
+    return
+  }
+  if (Date.parse(wrapper.capturedAt) > generatedAt) {
+    errors.push(
+      issue(
+        'FUTURE_EVIDENCE',
+        path,
+        'Billing retirement evidence occurs after document generation.',
+      ),
+    )
+  }
+}
+
 function validateSecretInventory(inventory, errors, generatedAt) {
   if (!inventory.captured) {
     if (inventory.capturedAt !== null || inventory.entries.length !== 0) {
@@ -683,13 +828,14 @@ function validateSecretInventory(inventory, errors, generatedAt) {
       !entry.present &&
       (entry.minimumBytesSatisfied !== null ||
         entry.rotationVersion !== null ||
-        entry.rotatedAt !== null)
+        entry.rotatedAt !== null ||
+        entry.removedAt === null)
     ) {
       errors.push(
         issue(
           'CONTRADICTORY_SECRET_ENTRY',
           path,
-          'Absent secret cannot expose rotation metadata.',
+          'Absent secret requires removal time and cannot expose rotation metadata.',
         ),
       )
     }
@@ -697,13 +843,14 @@ function validateSecretInventory(inventory, errors, generatedAt) {
       entry.present &&
       (entry.minimumBytesSatisfied === null ||
         entry.rotationVersion === null ||
-        entry.rotatedAt === null)
+        entry.rotatedAt === null ||
+        entry.removedAt !== null)
     ) {
       errors.push(
         issue(
           'CONTRADICTORY_SECRET_ENTRY',
           path,
-          'Present secret requires length and rotation metadata.',
+          'Present secret requires rotation metadata and cannot claim removal.',
         ),
       )
     }
@@ -715,6 +862,33 @@ function validateSecretInventory(inventory, errors, generatedAt) {
           'Secret rotation occurs after document generation.',
         ),
       )
+    }
+    if (entry.removedAt && Date.parse(entry.removedAt) > generatedAt) {
+      errors.push(
+        issue(
+          'FUTURE_EVIDENCE',
+          path,
+          'Secret removal occurs after document generation.',
+        ),
+      )
+    }
+    for (const [field, timestamp] of [
+      ['rotatedAt', entry.rotatedAt],
+      ['removedAt', entry.removedAt],
+    ]) {
+      if (
+        timestamp &&
+        inventory.capturedAt &&
+        Date.parse(timestamp) > Date.parse(inventory.capturedAt)
+      ) {
+        errors.push(
+          issue(
+            'SECRET_METADATA_AFTER_INVENTORY_CAPTURE',
+            `${path}.${field}`,
+            'Secret rotation or removal metadata cannot postdate the inventory capture.',
+          ),
+        )
+      }
     }
   })
   if (
@@ -746,7 +920,8 @@ function validateHostedEvidence(hosted, errors, generatedAt) {
   if (!hosted.executed) {
     if (
       nullableFields.some((field) => hosted[field] !== null) ||
-      hosted.functionInventory.length !== 0
+      hosted.operationalFunctionInventory.length !== 0 ||
+      hosted.identityControlFunctionInventory.length !== 0
     ) {
       errors.push(
         issue(
@@ -760,7 +935,8 @@ function validateHostedEvidence(hosted, errors, generatedAt) {
   }
   if (
     nullableFields.some((field) => hosted[field] === null) ||
-    hosted.functionInventory.length === 0
+    hosted.operationalFunctionInventory.length === 0 ||
+    hosted.identityControlFunctionInventory.length === 0
   ) {
     errors.push(
       issue(
@@ -780,14 +956,20 @@ function validateHostedEvidence(hosted, errors, generatedAt) {
     )
   }
   const names = new Set()
-  hosted.functionInventory.forEach((entry, index) => {
+  const inventoryEntries = [
+    ...hosted.operationalFunctionInventory.map((entry, index) => ({
+      entry,
+      path: `$.hostedEvidence.operationalFunctionInventory[${index}]`,
+    })),
+    ...hosted.identityControlFunctionInventory.map((entry, index) => ({
+      entry,
+      path: `$.hostedEvidence.identityControlFunctionInventory[${index}]`,
+    })),
+  ]
+  inventoryEntries.forEach(({ entry, path }) => {
     if (names.has(entry.name)) {
       errors.push(
-        issue(
-          'DUPLICATE_FUNCTION_NAME',
-          `$.hostedEvidence.functionInventory[${index}]`,
-          'Function name is duplicated.',
-        ),
+        issue('DUPLICATE_FUNCTION_NAME', path, 'Function name is duplicated.'),
       )
     }
     names.add(entry.name)
@@ -850,10 +1032,147 @@ function validateSemanticConsistency(evidence) {
     errors,
     generatedAt,
   )
+  validateBillingRetirementEvidence(
+    evidence.billingRetirement,
+    '$.billingRetirement',
+    errors,
+    generatedAt,
+  )
   validateHostedEvidence(evidence.hostedEvidence, errors, generatedAt)
+
+  const source = evidence.sourceEvidence
+  validateSourceResultRecord(
+    source.phase730ePostMergeCi,
+    '$.sourceEvidence.phase730ePostMergeCi',
+    errors,
+    generatedAt,
+  )
+  validateSourceResultRecord(
+    source.phase730fBaseOnMergedE,
+    '$.sourceEvidence.phase730fBaseOnMergedE',
+    errors,
+    generatedAt,
+  )
+  for (const [name, record] of Object.entries(source.checks)) {
+    validateSourceResultRecord(
+      record,
+      `$.sourceEvidence.checks.${name}`,
+      errors,
+      generatedAt,
+    )
+  }
+  validateSourceReviewRecord(
+    source.independentSourceReview,
+    '$.sourceEvidence.independentSourceReview',
+    errors,
+    generatedAt,
+  )
+
+  if (
+    source.phase730eMergeCommitSha !== null &&
+    source.phase730fBaseCommitSha !== null &&
+    source.phase730eMergeCommitSha !== source.phase730fBaseCommitSha
+  ) {
+    errors.push(
+      issue(
+        'SOURCE_BASE_COMMIT_MISMATCH',
+        '$.sourceEvidence.phase730fBaseCommitSha',
+        'Phase 7.30F must be based on the verified merged Phase 7.30E commit.',
+      ),
+    )
+  }
+  if (
+    source.phase730ePostMergeCi.observedCommitSha !== null &&
+    source.phase730ePostMergeCi.observedCommitSha !==
+      source.phase730eMergeCommitSha
+  ) {
+    errors.push(
+      issue(
+        'SOURCE_RESULT_COMMIT_MISMATCH',
+        '$.sourceEvidence.phase730ePostMergeCi.observedCommitSha',
+        'Post-merge CI must observe the declared Phase 7.30E merge commit.',
+      ),
+    )
+  }
+  if (
+    source.phase730fBaseOnMergedE.observedCommitSha !== null &&
+    source.phase730fBaseOnMergedE.observedCommitSha !==
+      evidence.configuration.environment.sourceCommitSha
+  ) {
+    errors.push(
+      issue(
+        'SOURCE_RESULT_COMMIT_MISMATCH',
+        '$.sourceEvidence.phase730fBaseOnMergedE.observedCommitSha',
+        'Ancestry verification must observe the declared Phase 7.30F candidate commit.',
+      ),
+    )
+  }
+  const sourceCommitSha = evidence.configuration.environment.sourceCommitSha
+  for (const [name, record] of Object.entries(source.checks)) {
+    if (
+      record.observedCommitSha !== null &&
+      record.observedCommitSha !== sourceCommitSha
+    ) {
+      errors.push(
+        issue(
+          'SOURCE_RESULT_COMMIT_MISMATCH',
+          `$.sourceEvidence.checks.${name}.observedCommitSha`,
+          'Source check must observe the declared candidate commit.',
+        ),
+      )
+    }
+  }
+  if (
+    source.independentSourceReview.observedCommitSha !== null &&
+    source.independentSourceReview.observedCommitSha !== sourceCommitSha
+  ) {
+    errors.push(
+      issue(
+        'SOURCE_RESULT_COMMIT_MISMATCH',
+        '$.sourceEvidence.independentSourceReview.observedCommitSha',
+        'Independent source review must observe the declared candidate commit.',
+      ),
+    )
+  }
+  if (source.independentSourceReview.status !== 'NOT_REVIEWED') {
+    const sourceEvidenceTimes = [
+      source.phase730ePostMergeCi.performedAt,
+      source.phase730fBaseOnMergedE.performedAt,
+      ...Object.values(source.checks).map((record) => record.performedAt),
+    ]
+      .filter(Boolean)
+      .map((timestamp) => Date.parse(timestamp))
+    if (
+      sourceEvidenceTimes.length > 0 &&
+      Date.parse(source.independentSourceReview.reviewedAt) <
+        Math.max(...sourceEvidenceTimes)
+    ) {
+      errors.push(
+        issue(
+          'SOURCE_REVIEW_PRECEDES_EVIDENCE',
+          '$.sourceEvidence.independentSourceReview',
+          'Independent source review must follow every source check it covers.',
+        ),
+      )
+    }
+  }
 
   for (const [name, record] of Object.entries(evidence.humanEvidence)) {
     validateTimedRecord(record, `$.humanEvidence.${name}`, errors, generatedAt)
+    if (
+      record.status !== 'NOT_RUN' &&
+      (!evidence.hostedEvidence.executedAt ||
+        Date.parse(record.performedAt) <=
+          Date.parse(evidence.hostedEvidence.executedAt))
+    ) {
+      errors.push(
+        issue(
+          'HUMAN_EVIDENCE_NOT_AFTER_HOSTED',
+          `$.humanEvidence.${name}`,
+          'Human evidence must observe the deployed Hosted revision.',
+        ),
+      )
+    }
   }
   for (const name of regressionRecordNames) {
     validateTimedRecord(
@@ -902,8 +1221,23 @@ function validateSemanticConsistency(evidence) {
   }
 
   validateRollbackEvidence(evidence.rollbackEvidence, errors, generatedAt)
+  const approvalDigests = new Map()
   for (const [name, record] of Object.entries(evidence.approvals)) {
     validateApprovalRecord(record, `$.approvals.${name}`, errors, generatedAt)
+    if (record.state !== 'HOLD' && record.evidenceDigestSha256 !== null) {
+      const priorName = approvalDigests.get(record.evidenceDigestSha256)
+      if (priorName) {
+        errors.push(
+          issue(
+            'APPROVAL_DIGEST_REUSED',
+            `$.approvals.${name}.evidenceDigestSha256`,
+            `Approval evidence digest is already assigned to ${priorName}.`,
+          ),
+        )
+      } else {
+        approvalDigests.set(record.evidenceDigestSha256, name)
+      }
+    }
   }
 
   const requireApprovalBefore = (name, eventAt) => {
@@ -911,7 +1245,7 @@ function validateSemanticConsistency(evidence) {
     if (
       approval.state === 'APPROVED' &&
       eventAt &&
-      Date.parse(approval.recordedAt) > Date.parse(eventAt)
+      Date.parse(approval.recordedAt) >= Date.parse(eventAt)
     ) {
       errors.push(
         issue(
@@ -920,6 +1254,16 @@ function validateSemanticConsistency(evidence) {
           'Approval must precede the authorized operation.',
         ),
       )
+    }
+  }
+  const requireEvidenceBeforeApproval = (evidenceAt, name, path, message) => {
+    const approval = evidence.approvals[name]
+    if (
+      evidenceAt &&
+      approval.state === 'APPROVED' &&
+      Date.parse(evidenceAt) >= Date.parse(approval.recordedAt)
+    ) {
+      errors.push(issue('APPROVAL_PRECEDES_PREREQUISITE', path, message))
     }
   }
   requireApprovalBefore(
@@ -942,6 +1286,37 @@ function validateSemanticConsistency(evidence) {
   }
   if (evidence.postCutover.snapshot?.cutoverCommitted) {
     requireApprovalBefore('googleOnlyCutover', evidence.postCutover.capturedAt)
+    requireEvidenceBeforeApproval(
+      evidence.hostedEvidence.executedAt,
+      'googleOnlyCutover',
+      '$.approvals.googleOnlyCutover',
+      'Google-only cutover approval must follow Hosted deployment evidence.',
+    )
+    requireEvidenceBeforeApproval(
+      evidence.preCutover.capturedAt,
+      'googleOnlyCutover',
+      '$.approvals.googleOnlyCutover',
+      'Google-only cutover approval must follow the read-only pre-cutover snapshot.',
+    )
+    for (const name of preCutoverHumanRecordNames) {
+      const record = evidence.humanEvidence[name]
+      if (record.status !== 'PASS') {
+        errors.push(
+          issue(
+            'CUTOVER_HUMAN_PREREQUISITE_MISSING',
+            `$.humanEvidence.${name}`,
+            'Committed cutover requires passing Human identity, MFA and recovery evidence.',
+          ),
+        )
+      } else {
+        requireEvidenceBeforeApproval(
+          record.performedAt,
+          'googleOnlyCutover',
+          '$.approvals.googleOnlyCutover',
+          'Google-only cutover approval must follow all required Human identity, MFA and recovery evidence.',
+        )
+      }
+    }
   }
   const secretsByName = new Map(
     evidence.configuration.secretInventory.entries.map((entry) => [
@@ -952,25 +1327,78 @@ function validateSemanticConsistency(evidence) {
   if (secretsByName.get('ADMIN_PIN')?.present === false) {
     requireApprovalBefore(
       'adminPinSecretDeletion',
-      evidence.configuration.secretInventory.capturedAt,
+      secretsByName.get('ADMIN_PIN').removedAt,
+    )
+    requireEvidenceBeforeApproval(
+      evidence.postCutover.capturedAt,
+      'adminPinSecretDeletion',
+      '$.approvals.adminPinSecretDeletion',
+      'ADMIN_PIN deletion approval must follow committed cutover evidence.',
     )
   }
   if (secretsByName.get('BILLING_PIN')?.present === false) {
     requireApprovalBefore(
       'billingPinSecretDeletion',
-      evidence.configuration.secretInventory.capturedAt,
+      secretsByName.get('BILLING_PIN').removedAt,
+    )
+    requireEvidenceBeforeApproval(
+      evidence.billingRetirement.capturedAt,
+      'billingPinSecretDeletion',
+      '$.approvals.billingPinSecretDeletion',
+      'BILLING_PIN deletion approval must follow billing retirement evidence.',
+    )
+    requireEvidenceBeforeApproval(
+      evidence.rollbackEvidence.rehearsal.performedAt,
+      'billingPinSecretDeletion',
+      '$.approvals.billingPinSecretDeletion',
+      'BILLING_PIN deletion approval must follow rollback rehearsal evidence.',
     )
   }
-  if (
-    evidence.postCutover.snapshot &&
-    Object.values(evidence.postCutover.snapshot.legacyBillingAcl).every(
-      (acl) => !acl.serviceRoleExecute,
-    )
-  ) {
+  if (evidence.billingRetirement.captured) {
     requireApprovalBefore(
       'legacyBillingAuthorityRetirement',
-      evidence.postCutover.capturedAt,
+      evidence.billingRetirement.capturedAt,
     )
+    for (const name of billingRetirementHumanRecordNames) {
+      const record = evidence.humanEvidence[name]
+      if (record.status !== 'PASS') {
+        errors.push(
+          issue(
+            'BILLING_RETIREMENT_HUMAN_PREREQUISITE_MISSING',
+            `$.humanEvidence.${name}`,
+            'Billing retirement requires passing Personal AI PIN and safe-control Human evidence.',
+          ),
+        )
+      } else {
+        requireEvidenceBeforeApproval(
+          record.performedAt,
+          'legacyBillingAuthorityRetirement',
+          '$.approvals.legacyBillingAuthorityRetirement',
+          'Billing retirement approval must follow all Personal AI PIN and safe-control Human evidence.',
+        )
+      }
+    }
+    for (const [path, evidenceAt] of [
+      [
+        '$.sourceEvidence.checks.browserMatrix',
+        evidence.sourceEvidence.checks.browserMatrix.performedAt,
+      ],
+      [
+        '$.sourceEvidence.checks.phase730fStaticContract',
+        evidence.sourceEvidence.checks.phase730fStaticContract.performedAt,
+      ],
+      [
+        '$.sourceEvidence.independentSourceReview',
+        evidence.sourceEvidence.independentSourceReview.reviewedAt,
+      ],
+    ]) {
+      requireEvidenceBeforeApproval(
+        evidenceAt,
+        'legacyBillingAuthorityRetirement',
+        '$.approvals.legacyBillingAuthorityRetirement',
+        `Billing retirement approval must follow local Personal AI PIN evidence at ${path}.`,
+      )
+    }
   }
 
   const review = evidence.independentReview
@@ -1002,6 +1430,18 @@ function validateSemanticConsistency(evidence) {
       ),
     )
   }
+  if (
+    reviewMissing &&
+    (review.criticalFindings !== 0 || review.highFindings !== 0)
+  ) {
+    errors.push(
+      issue(
+        'CONTRADICTORY_REVIEW_FINDINGS',
+        '$.independentReview',
+        'Missing review cannot claim findings.',
+      ),
+    )
+  }
   if (!reviewMissing && !review.separateFromExecutor) {
     errors.push(
       issue(
@@ -1026,6 +1466,10 @@ function validateSemanticConsistency(evidence) {
       evidence.configuration.secretInventory.capturedAt,
       evidence.preCutover.capturedAt,
       evidence.postCutover.capturedAt,
+      evidence.billingRetirement.capturedAt,
+      ...evidence.configuration.secretInventory.entries.map(
+        (entry) => entry.removedAt,
+      ),
       evidence.regressionEvidence.advisors.capturedAt,
       evidence.rollbackEvidence.rehearsal.performedAt,
       ...Object.values(evidence.humanEvidence).map(
@@ -1060,6 +1504,33 @@ function validateSemanticConsistency(evidence) {
       ),
     )
   }
+  const snapshotDigests = [
+    [
+      '$.preCutover.snapshotDigestSha256',
+      evidence.preCutover.snapshotDigestSha256,
+    ],
+    [
+      '$.postCutover.snapshotDigestSha256',
+      evidence.postCutover.snapshotDigestSha256,
+    ],
+    [
+      '$.billingRetirement.snapshotDigestSha256',
+      evidence.billingRetirement.snapshotDigestSha256,
+    ],
+  ].filter(([, digest]) => digest !== null)
+  const observedSnapshotDigests = new Set()
+  for (const [path, digest] of snapshotDigests) {
+    if (observedSnapshotDigests.has(digest)) {
+      errors.push(
+        issue(
+          'SNAPSHOT_DIGEST_REUSED',
+          path,
+          'Distinct pre-cutover, post-cutover and billing-retirement snapshots require distinct digests.',
+        ),
+      )
+    }
+    observedSnapshotDigests.add(digest)
+  }
   if (
     evidence.preCutover.capturedAt &&
     evidence.postCutover.capturedAt &&
@@ -1071,6 +1542,20 @@ function validateSemanticConsistency(evidence) {
         'CUTOVER_ORDER_INVALID',
         '$.postCutover',
         'Post snapshot must follow pre snapshot.',
+      ),
+    )
+  }
+  if (
+    evidence.hostedEvidence.executedAt &&
+    evidence.postCutover.capturedAt &&
+    Date.parse(evidence.hostedEvidence.executedAt) >=
+      Date.parse(evidence.postCutover.capturedAt)
+  ) {
+    errors.push(
+      issue(
+        'HOSTED_EVIDENCE_NOT_PRE_CUTOVER',
+        '$.hostedEvidence.executedAt',
+        'Hosted deployment evidence must precede the Google-only cutover.',
       ),
     )
   }
@@ -1097,6 +1582,72 @@ function validateSemanticConsistency(evidence) {
       ),
     )
   }
+  if (evidence.postCutover.snapshot?.cutoverCommitted) {
+    const identityCutoverBillingAcl = Object.values(
+      evidence.postCutover.snapshot.legacyBillingAcl,
+    )
+    if (
+      !identityCutoverBillingAcl.every(
+        (acl) =>
+          acl.functionExists &&
+          acl.serviceRoleExecute &&
+          !acl.publicExecute &&
+          !acl.anonExecute &&
+          !acl.authenticatedExecute,
+      )
+    ) {
+      errors.push(
+        issue(
+          'BILLING_RETIREMENT_CONFLATED_WITH_CUTOVER',
+          '$.postCutover.snapshot.legacyBillingAcl',
+          'Identity cutover evidence must retain service-role-only legacy billing authority until its separately approved retirement.',
+        ),
+      )
+    }
+  }
+
+  const adminPinRemovedAt = secretsByName.get('ADMIN_PIN')?.removedAt ?? null
+  const billingPinRemovedAt =
+    secretsByName.get('BILLING_PIN')?.removedAt ?? null
+  const personalAiPinCompletedAt =
+    evidence.humanEvidence.personalAiPinEndToEnd.performedAt
+  const requireStrictOrder = (beforeAt, afterAt, path, message) => {
+    if (beforeAt && afterAt && Date.parse(beforeAt) >= Date.parse(afterAt)) {
+      errors.push(issue('EVIDENCE_ORDER_INVALID', path, message))
+    }
+  }
+  requireStrictOrder(
+    evidence.postCutover.capturedAt,
+    adminPinRemovedAt,
+    '$.configuration.secretInventory.entries',
+    'ADMIN_PIN removal must follow committed Google-only cutover evidence.',
+  )
+  requireStrictOrder(
+    adminPinRemovedAt,
+    personalAiPinCompletedAt,
+    '$.humanEvidence.personalAiPinEndToEnd',
+    'Personal AI PIN end-to-end evidence must follow ADMIN_PIN removal.',
+  )
+  requireStrictOrder(
+    personalAiPinCompletedAt,
+    evidence.billingRetirement.capturedAt,
+    '$.billingRetirement',
+    'Legacy billing authority retirement must follow Personal AI PIN end-to-end evidence.',
+  )
+  requireStrictOrder(
+    evidence.billingRetirement.capturedAt,
+    billingPinRemovedAt,
+    '$.configuration.secretInventory.entries',
+    'BILLING_PIN removal must follow legacy billing authority retirement evidence.',
+  )
+  for (const entry of evidence.configuration.secretInventory.entries) {
+    requireStrictOrder(
+      entry.removedAt,
+      evidence.configuration.secretInventory.capturedAt,
+      '$.configuration.secretInventory.capturedAt',
+      'Secret inventory capture must follow every recorded secret removal.',
+    )
+  }
 
   const humanObserved = Object.values(evidence.humanEvidence).some(
     (record) => record.status !== 'NOT_RUN',
@@ -1107,6 +1658,7 @@ function validateSemanticConsistency(evidence) {
     humanObserved ||
     evidence.preCutover.captured ||
     evidence.postCutover.captured ||
+    evidence.billingRetirement.captured ||
     evidence.configuration.secretInventory.captured
   if (anyObserved !== (environment.capturedAt !== null)) {
     errors.push(
@@ -1282,20 +1834,78 @@ function validateSemanticConsistency(evidence) {
       ),
     )
   }
-  if (evidence.postCutover.snapshot) {
-    const billingAcl = evidence.postCutover.snapshot.legacyBillingAcl
-    if (
-      Object.values(billingAcl).every((acl) => !acl.serviceRoleExecute) &&
-      evidence.approvals.legacyBillingAuthorityRetirement.state !== 'APPROVED'
-    ) {
-      errors.push(
-        issue(
-          'BILLING_RETIREMENT_WITHOUT_APPROVAL',
-          '$.approvals.legacyBillingAuthorityRetirement',
-          'Legacy billing retirement requires separate approval.',
-        ),
-      )
-    }
+  if (
+    secretsByName.get('ADMIN_PIN')?.present === false &&
+    evidence.approvals.adminPinSecretDeletion.state !== 'APPROVED'
+  ) {
+    errors.push(
+      issue(
+        'ADMIN_PIN_DELETION_WITHOUT_APPROVAL',
+        '$.approvals.adminPinSecretDeletion',
+        'ADMIN_PIN deletion requires separate prior approval.',
+      ),
+    )
+  }
+  if (
+    secretsByName.get('ADMIN_PIN')?.present === false &&
+    !evidence.postCutover.snapshot?.cutoverCommitted
+  ) {
+    errors.push(
+      issue(
+        'ADMIN_PIN_DELETED_BEFORE_CUTOVER',
+        '$.configuration.secretInventory.entries',
+        'ADMIN_PIN cannot be removed before committed Google-only cutover evidence.',
+      ),
+    )
+  }
+  if (
+    evidence.billingRetirement.captured &&
+    evidence.approvals.legacyBillingAuthorityRetirement.state !== 'APPROVED'
+  ) {
+    errors.push(
+      issue(
+        'BILLING_RETIREMENT_WITHOUT_APPROVAL',
+        '$.approvals.legacyBillingAuthorityRetirement',
+        'Legacy billing retirement requires separate prior approval.',
+      ),
+    )
+  }
+  if (
+    evidence.billingRetirement.captured &&
+    (!evidence.postCutover.snapshot?.cutoverCommitted ||
+      evidence.humanEvidence.personalAiPinEndToEnd.status !== 'PASS')
+  ) {
+    errors.push(
+      issue(
+        'BILLING_RETIREMENT_PREREQUISITE_MISSING',
+        '$.billingRetirement',
+        'Billing retirement requires committed cutover and passing Personal AI PIN end-to-end evidence.',
+      ),
+    )
+  }
+  if (
+    secretsByName.get('BILLING_PIN')?.present === false &&
+    evidence.approvals.billingPinSecretDeletion.state !== 'APPROVED'
+  ) {
+    errors.push(
+      issue(
+        'BILLING_PIN_DELETION_WITHOUT_APPROVAL',
+        '$.approvals.billingPinSecretDeletion',
+        'BILLING_PIN deletion requires separate prior approval.',
+      ),
+    )
+  }
+  if (
+    secretsByName.get('BILLING_PIN')?.present === false &&
+    !evidence.billingRetirement.captured
+  ) {
+    errors.push(
+      issue(
+        'BILLING_PIN_DELETED_BEFORE_RETIREMENT',
+        '$.configuration.secretInventory.entries',
+        'BILLING_PIN cannot be removed before billing authority retirement evidence.',
+      ),
+    )
   }
 
   if (evidence.evidenceMode === 'SOURCE_READINESS_EXAMPLE') {
@@ -1326,6 +1936,7 @@ function validateSemanticConsistency(evidence) {
       evidence.configuration.secretInventory.captured ||
       evidence.preCutover.captured ||
       evidence.postCutover.captured ||
+      evidence.billingRetirement.captured ||
       evidence.hostedEvidence.executed ||
       allResults.some((record) => record.status !== 'NOT_RUN') ||
       evidence.regressionEvidence.advisors.captured ||
@@ -1354,9 +1965,25 @@ function addHold(failures, condition, code) {
 function snapshotReady(snapshot, phase) {
   if (!snapshot) return false
   const common =
+    snapshot.authoritative === false &&
     snapshot.activeLegacyMasterCount === 0 &&
     snapshot.activeLegacySessionCount === 0 &&
     snapshot.activeOwnerCount >= 2 &&
+    snapshot.activeAiEnabledInstructorCount >= 1 &&
+    snapshot.activeStandardInstructorCount >= 1 &&
+    snapshot.suspendedAdminCount >= 1 &&
+    snapshot.suspendedInstructorCount >= 1 &&
+    snapshot.activePersonalAiPinFactorCount >= 1 &&
+    snapshot.activeAiEnabledInstructorPersonalAiPinFactorCount >= 1 &&
+    snapshot.activeApprovedTotpPrincipalCount >= 4 &&
+    snapshot.activeOwnerApprovedTotpCount >= 2 &&
+    snapshot.activeAiEnabledInstructorApprovedTotpCount >= 1 &&
+    snapshot.activeStandardInstructorApprovedTotpCount >= 1 &&
+    snapshot.activeGoogleSessionCount >= 1 &&
+    snapshot.unbackedGoogleSessionCount === 0 &&
+    snapshot.overCapGoogleSessionCount === 0 &&
+    snapshot.googleSessionIdleCapMismatchCount === 0 &&
+    snapshot.invalidGoogleSessionAuthorityCount === 0 &&
     snapshot.environmentReady &&
     snapshot.externalTransportAttestationRequired &&
     snapshot.googleAdminLedgerEnabled &&
@@ -1386,6 +2013,7 @@ function snapshotReady(snapshot, phase) {
       snapshot.legacyVerifierServiceRoleExecute &&
       Object.values(snapshot.legacyBillingAcl).every(
         (acl) =>
+          acl.functionExists &&
           acl.serviceRoleExecute &&
           !acl.publicExecute &&
           !acl.anonExecute &&
@@ -1402,6 +2030,25 @@ function snapshotReady(snapshot, phase) {
     !snapshot.legacyVerifierServiceRoleExecute &&
     Object.values(snapshot.legacyBillingAcl).every(
       (acl) =>
+        acl.functionExists &&
+        acl.serviceRoleExecute &&
+        !acl.publicExecute &&
+        !acl.anonExecute &&
+        !acl.authenticatedExecute,
+    )
+  )
+}
+
+function billingRetirementReady(wrapper) {
+  if (!wrapper.captured || !wrapper.snapshot) return false
+  return (
+    wrapper.readOnlyTransaction &&
+    wrapper.snapshot.personalAiPinEvidenceDigestMatches &&
+    wrapper.snapshot.safeStatusStopRevokeAccountingAvailable &&
+    wrapper.snapshot.historicalIntegrityPreserved &&
+    Object.values(wrapper.snapshot.legacyBillingAcl).every(
+      (acl) =>
+        acl.functionExists &&
         !acl.serviceRoleExecute &&
         !acl.publicExecute &&
         !acl.anonExecute &&
@@ -1410,7 +2057,31 @@ function snapshotReady(snapshot, phase) {
   )
 }
 
-function functionInventoryReady(entries) {
+function sourceEvidenceReady(evidence) {
+  const source = evidence.sourceEvidence
+  const candidateCommitSha = evidence.configuration.environment.sourceCommitSha
+  const mergedECommitSha = source.phase730eMergeCommitSha
+  return (
+    mergedECommitSha !== null &&
+    source.phase730fBaseCommitSha === mergedECommitSha &&
+    source.phase730ePostMergeCi.status === 'PASS' &&
+    source.phase730ePostMergeCi.observedCommitSha === mergedECommitSha &&
+    source.phase730fBaseOnMergedE.status === 'PASS' &&
+    source.phase730fBaseOnMergedE.observedCommitSha === candidateCommitSha &&
+    Object.values(source.checks).every(
+      (record) =>
+        record.status === 'PASS' &&
+        record.observedCommitSha === candidateCommitSha,
+    ) &&
+    source.independentSourceReview.status === 'PASS' &&
+    source.independentSourceReview.observedCommitSha === candidateCommitSha &&
+    source.independentSourceReview.separateFromExecutor &&
+    source.independentSourceReview.criticalFindings === 0 &&
+    source.independentSourceReview.highFindings === 0
+  )
+}
+
+function functionInventoryReady(entries, expectedFunctions) {
   if (entries.length !== expectedFunctions.size) return false
   const observed = new Map(
     entries.map((entry) => [entry.name, entry.verifyJwt]),
@@ -1444,7 +2115,8 @@ function secretInventoryReady(inventory) {
       !entry?.present ||
       entry.minimumBytesSatisfied !== true ||
       !entry.rotationVersion ||
-      !entry.rotatedAt
+      !entry.rotatedAt ||
+      entry.removedAt !== null
     ) {
       return false
     }
@@ -1456,7 +2128,8 @@ function secretInventoryReady(inventory) {
       entry.present ||
       entry.minimumBytesSatisfied !== null ||
       entry.rotationVersion !== null ||
-      entry.rotatedAt !== null
+      entry.rotatedAt !== null ||
+      !entry.removedAt
     ) {
       return false
     }
@@ -1472,6 +2145,8 @@ function readinessFailures(evidence) {
   const review = evidence.independentReview
   const rollback = evidence.rollbackEvidence
   const advisors = evidence.regressionEvidence.advisors
+
+  addHold(failures, sourceEvidenceReady(evidence), 'SOURCE_EVIDENCE_NOT_READY')
 
   addHold(
     failures,
@@ -1509,6 +2184,11 @@ function readinessFailures(evidence) {
   )
   addHold(
     failures,
+    billingRetirementReady(evidence.billingRetirement),
+    'BILLING_RETIREMENT_NOT_READY',
+  )
+  addHold(
+    failures,
     !evidence.configuration.databaseGates.legacyPinLoginEnabled &&
       evidence.configuration.databaseGates.googleSessionIssueEnabled &&
       evidence.configuration.databaseGates
@@ -1530,7 +2210,14 @@ function readinessFailures(evidence) {
       hosted.legacyWireFieldsAbsent === true &&
       hosted.callbackOriginAllowlistPass === true &&
       hosted.oauthConsentPass === true &&
-      functionInventoryReady(hosted.functionInventory),
+      functionInventoryReady(
+        hosted.operationalFunctionInventory,
+        expectedOperationalFunctions,
+      ) &&
+      functionInventoryReady(
+        hosted.identityControlFunctionInventory,
+        expectedIdentityControlFunctions,
+      ),
     'HOSTED_STATE_NOT_READY',
   )
   addHold(
@@ -1596,7 +2283,10 @@ function readinessFailures(evidence) {
   )
   addHold(
     failures,
-    review.status === 'PASS' && review.separateFromExecutor,
+    review.status === 'PASS' &&
+      review.separateFromExecutor &&
+      review.criticalFindings === 0 &&
+      review.highFindings === 0,
     'INDEPENDENT_REVIEW_NOT_READY',
   )
   return failures
@@ -1636,12 +2326,15 @@ export function evaluatePhase730FEvidence(evidence) {
     }
   }
   const holdReasons = readinessFailures(evidence)
+  const sourceReadiness = sourceEvidenceReady(evidence)
+    ? 'SOURCE_READY'
+    : PHASE730F_HOLD
   return {
     schemaVersion: PHASE730F_SCHEMA_VERSION,
     valid: true,
     decision:
       holdReasons.length === 0 ? PHASE730F_MAXIMUM_DECISION : PHASE730F_HOLD,
-    sourceReadiness: 'SOURCE_READY',
+    sourceReadiness,
     maximumDecision: PHASE730F_MAXIMUM_DECISION,
     productionAuthorized: false,
     canaryAuthorized: false,
@@ -1706,6 +2399,17 @@ function parseArguments(arguments_) {
   return { evidencePath, json, help }
 }
 
+function resolvePrivateEvidencePath(evidencePath) {
+  const resolvedPath = resolve(repositoryRoot, evidencePath)
+  if (
+    dirname(resolvedPath) !== repositoryRoot ||
+    !privateEvidenceFilePattern.test(basename(resolvedPath))
+  ) {
+    return null
+  }
+  return resolvedPath
+}
+
 function printResult(result, json) {
   const redacted = redactedResult(result)
   if (json) {
@@ -1758,23 +2462,53 @@ export function runPhase730FReadinessCli(arguments_) {
     return 0
   }
 
-  let evidence
-  try {
-    const metadata = statSync(options.evidencePath)
-    if (!metadata.isFile() || metadata.size > MAX_EVIDENCE_BYTES) {
-      throw new Error('Evidence file is unavailable or too large.')
-    }
-    evidence = parsePhase730FEvidence(
-      readFileSync(options.evidencePath, 'utf8'),
-    )
-  } catch {
+  const resolvedEvidencePath = resolvePrivateEvidencePath(options.evidencePath)
+  if (!resolvedEvidencePath) {
     const result = {
       ...noEvidenceResult(),
       valid: false,
       sourceReadiness: PHASE730F_HOLD,
       errors: [
         issue(
-          'EVIDENCE_PARSE_FAILED',
+          'EVIDENCE_PATH_FORBIDDEN',
+          '$',
+          'Evidence must be a private repository-root Phase 7.30F JSON file.',
+        ),
+      ],
+      holdReasons: [],
+    }
+    printResult(result, options.json)
+    return 2
+  }
+
+  let evidence
+  try {
+    const canonicalEvidencePath = realpathSync(resolvedEvidencePath)
+    if (
+      dirname(canonicalEvidencePath) !== realpathSync(repositoryRoot) ||
+      !privateEvidenceFilePattern.test(basename(canonicalEvidencePath))
+    ) {
+      throw Object.assign(new Error('Evidence path escapes repository root.'), {
+        code: 'EVIDENCE_PATH_FORBIDDEN',
+      })
+    }
+    const metadata = statSync(canonicalEvidencePath)
+    if (!metadata.isFile() || metadata.size > MAX_EVIDENCE_BYTES) {
+      throw new Error('Evidence file is unavailable or too large.')
+    }
+    evidence = parsePhase730FEvidence(
+      readFileSync(canonicalEvidencePath, 'utf8'),
+    )
+  } catch (error) {
+    const result = {
+      ...noEvidenceResult(),
+      valid: false,
+      sourceReadiness: PHASE730F_HOLD,
+      errors: [
+        issue(
+          error?.code === 'EVIDENCE_PATH_FORBIDDEN'
+            ? 'EVIDENCE_PATH_FORBIDDEN'
+            : 'EVIDENCE_PARSE_FAILED',
           '$',
           'Evidence JSON cannot be parsed safely.',
         ),

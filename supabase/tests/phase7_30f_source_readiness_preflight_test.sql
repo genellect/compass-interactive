@@ -385,19 +385,27 @@ SELECT is(
     'activeAiEnabledInstructorCount', 0,
     'activeStandardInstructorCount', 0,
     'suspendedAdminCount', 0,
+    'suspendedInstructorCount', 0,
     'activePersonalAiPinFactorCount', 0,
-    'activeApprovedTotpPrincipalCount', 0
+    'activeAiEnabledInstructorPersonalAiPinFactorCount', 0,
+    'activeApprovedTotpPrincipalCount', 0,
+    'activeOwnerApprovedTotpCount', 0,
+    'activeAiEnabledInstructorApprovedTotpCount', 0,
+    'activeStandardInstructorApprovedTotpCount', 0
   ),
-  'membership and personal-factor evidence has the exact six zero-state counts'
+  'membership and personal-factor evidence has the exact eleven zero-state counts'
 );
 
 SELECT is(
   (SELECT value -> 'sessionCounts' FROM phase730f_snapshot),
   jsonb_build_object(
     'activeGoogleSessionCount', 0,
-    'unbackedGoogleSessionCount', 0
+    'unbackedGoogleSessionCount', 0,
+    'overCapGoogleSessionCount', 0,
+    'googleSessionIdleCapMismatchCount', 0,
+    'invalidGoogleSessionAuthorityCount', 0
   ),
-  'Google application-session evidence has the exact two zero-state counts'
+  'Google application-session evidence has the exact five zero-state counts'
 );
 
 SELECT is(
@@ -436,9 +444,10 @@ SELECT is(
   jsonb_build_object(
     'legacyGateTombstoneEnabled', true,
     'legacySessionFenceEnabled', true,
-    'activeLectureOwnershipFenceEnabled', true
+    'activeLectureOwnershipFenceEnabled', true,
+    'googleSessionAbsoluteIdleTriggerEnabled', true
   ),
-  'all three E safety triggers are installed and enabled'
+  'all E safety and Google absolute/idle session triggers are installed and enabled'
 );
 
 SELECT is(
@@ -468,6 +477,7 @@ SELECT ok(
       snapshot.value -> 'legacyBillingAcl'
     ) AS acl(key, value)
     WHERE acl.value <> jsonb_build_object(
+      'functionExists', true,
       'publicExecute', false,
       'anonExecute', false,
       'authenticatedExecute', false,
@@ -496,10 +506,11 @@ SELECT is(
   ARRAY[
     'anonExecute',
     'authenticatedExecute',
+    'functionExists',
     'publicExecute',
     'serviceRoleExecute'
   ]::text[],
-  'each legacy billing ACL record uses the exact four-role shape'
+  'each legacy billing ACL record proves function existence plus the exact four-role shape'
 );
 
 SELECT is(
@@ -515,6 +526,7 @@ SELECT is(
     ) = ARRAY[
       'anonExecute',
       'authenticatedExecute',
+      'functionExists',
       'publicExecute',
       'serviceRoleExecute'
     ]::text[]
@@ -749,7 +761,7 @@ INSERT INTO private.admin_environment_memberships (
     '00000000-0000-4000-8000-00000000f136'::uuid,
     '00000000-0000-4000-8000-00000000f101'::uuid,
     '00000000-0000-4000-8000-00000000f135'::uuid,
-    'instructor', 'suspended', false,
+    'owner', 'suspended', false,
     null, statement_timestamp() - interval '10 minutes', 'fixture_suspension'
   );
 
@@ -883,6 +895,14 @@ INSERT INTO private.admin_ai_unlock_factors (
   extensions.crypt(repeat('9', 64), extensions.gen_salt('bf', 12)),
   1, 1, '00000000-0000-4000-8000-00000000f118'::uuid,
   statement_timestamp(), '00000000-0000-4000-8000-00000000f121'::uuid
+), (
+  '00000000-0000-4000-8000-00000000f122'::uuid,
+  '00000000-0000-4000-8000-00000000f101'::uuid,
+  '00000000-0000-4000-8000-00000000f125'::uuid,
+  '00000000-0000-4000-8000-00000000f126'::uuid,
+  extensions.crypt(repeat('8', 64), extensions.gen_salt('bf', 12)),
+  1, 1, '00000000-0000-4000-8000-00000000f108'::uuid,
+  statement_timestamp(), '00000000-0000-4000-8000-00000000f123'::uuid
 );
 
 DELETE FROM auth.sessions
@@ -924,19 +944,60 @@ SELECT is(
     'activeAiEnabledInstructorCount', 1,
     'activeStandardInstructorCount', 1,
     'suspendedAdminCount', 1,
-    'activePersonalAiPinFactorCount', 1,
-    'activeApprovedTotpPrincipalCount', 2
+    'suspendedInstructorCount', 0,
+    'activePersonalAiPinFactorCount', 2,
+    'activeAiEnabledInstructorPersonalAiPinFactorCount', 1,
+    'activeApprovedTotpPrincipalCount', 2,
+    'activeOwnerApprovedTotpCount', 1,
+    'activeAiEnabledInstructorApprovedTotpCount', 1,
+    'activeStandardInstructorApprovedTotpCount', 0
   ),
-  'populated membership, entitlement, AI-PIN and approved-TOTP counts are exact'
+  'populated counts distinguish a suspended owner and an ineligible standard-instructor AI PIN from the required role-correlated evidence'
 );
 
 SELECT is(
   (SELECT value -> 'sessionCounts' FROM phase730f_populated_snapshot),
   jsonb_build_object(
     'activeGoogleSessionCount', 2,
-    'unbackedGoogleSessionCount', 1
+    'unbackedGoogleSessionCount', 1,
+    'overCapGoogleSessionCount', 0,
+    'googleSessionIdleCapMismatchCount', 0,
+    'invalidGoogleSessionAuthorityCount', 0
   ),
   'populated session counts distinguish one unbacked Google session'
+);
+
+UPDATE auth.mfa_factors
+SET status = 'unverified', updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000f114'::uuid;
+
+CREATE TEMP TABLE phase730f_stale_totp_snapshot(value jsonb NOT NULL)
+ON COMMIT DROP;
+
+INSERT INTO phase730f_stale_totp_snapshot(value)
+SELECT private.get_phase7_30f_source_readiness_preflight_v1(
+  '00000000-0000-4000-8000-00000000f101'::uuid
+);
+
+SELECT is(
+  (SELECT value -> 'membershipCounts' FROM phase730f_stale_totp_snapshot)
+    -> 'activeApprovedTotpPrincipalCount',
+  to_jsonb(1),
+  'a stale cached approved factor set is excluded from the current TOTP total'
+);
+
+SELECT is(
+  (SELECT value -> 'membershipCounts' FROM phase730f_stale_totp_snapshot)
+    -> 'activeAiEnabledInstructorApprovedTotpCount',
+  to_jsonb(0),
+  'a removed current AI-instructor TOTP factor cannot satisfy role-correlated readiness'
+);
+
+SELECT is(
+  (SELECT value -> 'sessionCounts' FROM phase730f_stale_totp_snapshot)
+    -> 'invalidGoogleSessionAuthorityCount',
+  to_jsonb(1),
+  'a Google application session with a stale current factor set is invalid authority'
 );
 
 SELECT is(
@@ -976,6 +1037,131 @@ SELECT throws_ok(
   '22012',
   'division by zero',
   'the staging evidence guard rejects a non-staging database environment'
+);
+
+WITH expected(
+  trigger_name,
+  relation_oid,
+  function_oid,
+  trigger_type,
+  is_constraint,
+  is_deferrable,
+  is_initially_deferred
+) AS (
+  VALUES
+    (
+      'admin_identity_runtime_gate_google_only_tombstone',
+      'private.admin_identity_runtime_gate'::regclass,
+      'private.enforce_google_only_admin_gate_tombstone_v1()'::regprocedure,
+      27::smallint, false, false, false
+    ),
+    (
+      'admin_sessions_google_only_admin_fence',
+      'public.admin_sessions'::regclass,
+      'private.enforce_google_only_admin_session_fence_v1()'::regprocedure,
+      31::smallint, false, false, false
+    ),
+    (
+      'lecture_sessions_google_only_active_ownership',
+      'public.lecture_sessions'::regclass,
+      'private.enforce_active_admin_lecture_ownership_v1()'::regprocedure,
+      21::smallint, true, true, true
+    ),
+    (
+      'admin_sessions_google_absolute_idle',
+      'public.admin_sessions'::regclass,
+      'private.enforce_google_admin_session_absolute_idle_v1()'::regprocedure,
+      23::smallint, false, false, false
+    )
+)
+SELECT is(
+  (
+    SELECT count(*)
+    FROM expected
+    JOIN pg_catalog.pg_trigger AS trigger_row
+      ON trigger_row.tgname = expected.trigger_name
+     AND trigger_row.tgrelid = expected.relation_oid
+     AND trigger_row.tgfoid = expected.function_oid
+     AND trigger_row.tgtype = expected.trigger_type
+     AND (trigger_row.tgconstraint <> 0) = expected.is_constraint
+     AND trigger_row.tgdeferrable = expected.is_deferrable
+     AND trigger_row.tginitdeferred = expected.is_initially_deferred
+     AND NOT trigger_row.tgisinternal
+     AND trigger_row.tgenabled = 'O'
+  ),
+  4::bigint,
+  'all four readiness triggers have exact table, function, timing/event, enabled and constraint identities'
+);
+
+SELECT is(
+  (
+    SELECT array_agg(attribute.attname::text ORDER BY attribute.attname)
+    FROM pg_catalog.pg_trigger AS trigger_row
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = trigger_row.tgrelid
+     AND attribute.attnum = ANY(trigger_row.tgattr)
+    WHERE trigger_row.tgrelid = 'public.admin_sessions'::regclass
+      AND trigger_row.tgname = 'admin_sessions_google_absolute_idle'
+  ),
+  ARRAY[
+    'auth_user_id',
+    'authentication_method',
+    'expires_at',
+    'idle_expires_at',
+    'issued_at',
+    'supabase_auth_session_id'
+  ]::text[],
+  'the absolute/idle trigger covers the exact six authority and lifetime columns'
+);
+
+ALTER FUNCTION public.admin_issue_ai_billing_grant(
+  uuid, text[], text, boolean, text
+) RENAME TO phase730f_missing_admin_issue_ai_billing_grant;
+
+SELECT is(
+  (
+    private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) -> 'legacyBillingAcl' -> 'publicAdminIssueAiBillingGrant'
+      ->> 'functionExists'
+  )::boolean,
+  false,
+  'a dropped or renamed legacy billing signature is missing, not retired'
+);
+
+SELECT is(
+  (
+    private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) ->> 'legacyBillingCompatibilityRetired'
+  )::boolean,
+  false,
+  'missing historical billing compatibility cannot satisfy retirement evidence'
+);
+
+CREATE FUNCTION pg_temp.phase730f_noop_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER admin_sessions_google_absolute_idle ON public.admin_sessions;
+
+CREATE TRIGGER admin_sessions_google_absolute_idle
+BEFORE INSERT OR UPDATE ON public.admin_sessions
+FOR EACH ROW EXECUTE FUNCTION pg_temp.phase730f_noop_trigger();
+
+SELECT is(
+  (
+    private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) -> 'triggers' ->> 'googleSessionAbsoluteIdleTriggerEnabled'
+  )::boolean,
+  false,
+  'a same-name enabled no-op trigger cannot satisfy durable Google session enforcement evidence'
 );
 
 SELECT * FROM finish();

@@ -3,6 +3,12 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..', '..')
+const trackedFiles = execFileSync('git', ['ls-files', '--cached', '-z'], {
+  cwd: root,
+  encoding: 'utf8',
+})
+  .split('\0')
+  .filter(Boolean)
 const scannedFiles = execFileSync(
   'git',
   ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
@@ -20,7 +26,14 @@ const rules = [
   ['Supabase secret key', /\bsb_secret_[A-Za-z0-9_-]{20,}/g],
   ['Private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g],
 ]
-const findings = []
+const forbiddenTrackedEvidencePath =
+  /(?:^|\/)\.phase7-30f-evidence[^/]*\.json$/i
+const findings = trackedFiles
+  .map((relative) => relative.replaceAll('\\', '/'))
+  .filter((relative) => forbiddenTrackedEvidencePath.test(relative))
+  .map((relative) =>
+    `${relative} [Forbidden tracked Phase 7.30F operator evidence]`,
+  )
 
 for (const relative of scannedFiles) {
   const path = resolve(root, relative)
@@ -44,7 +57,9 @@ for (const relative of scannedFiles) {
 }
 
 if (findings.length > 0) {
-  console.error('High-confidence secret patterns were found:')
+  console.error(
+    'Forbidden tracked evidence paths or high-confidence secret patterns were found:',
+  )
   findings.forEach((finding) => console.error(`- ${finding}`))
   process.exit(1)
 }

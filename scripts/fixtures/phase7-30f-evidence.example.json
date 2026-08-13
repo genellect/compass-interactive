@@ -5,7 +5,7 @@
   "configuration": {
     "environment": {
       "target": "staging",
-      "alias": "staging-example",
+      "alias": "staging-identity-slot-a",
       "sourceCommitSha": "0123456789abcdef0123456789abcdef01234567",
       "capturedAt": null,
       "environmentIdConfigured": false
@@ -49,7 +49,134 @@
     "offlineReadOnlyValidator": true,
     "defaultHold": true,
     "prePostSeparated": true,
-    "productionPassForbidden": true
+    "productionPassForbidden": true,
+    "phase730eMergeCommitSha": null,
+    "phase730ePostMergeCi": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null,
+      "observedCommitSha": null
+    },
+    "phase730fBaseCommitSha": null,
+    "phase730fBaseOnMergedE": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null,
+      "observedCommitSha": null
+    },
+    "checks": {
+      "securitySecrets": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "typeChecks": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "lint": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "build": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "nonLiveSuite": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "demoChromium": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "demoWebkit": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "fullLocalSupabase": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "freshAndPopulatedMigrations": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "generatedTypesAndDbLint": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "concurrencyAndUpgrade": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "localEdge": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "browserMatrix": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "phase730fStaticContract": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "operationalEdgeInventory": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "repositoryEvidenceBoundary": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      },
+      "exactHeadCi": {
+        "status": "NOT_RUN",
+        "performedAt": null,
+        "evidenceDigestSha256": null,
+        "observedCommitSha": null
+      }
+    },
+    "independentSourceReview": {
+      "status": "NOT_REVIEWED",
+      "reviewedAt": null,
+      "evidenceDigestSha256": null,
+      "observedCommitSha": null,
+      "separateFromExecutor": false,
+      "criticalFindings": 0,
+      "highFindings": 0
+    }
   },
   "preCutover": {
     "captured": false,
@@ -59,6 +186,13 @@
     "snapshot": null
   },
   "postCutover": {
+    "captured": false,
+    "capturedAt": null,
+    "readOnlyTransaction": false,
+    "snapshotDigestSha256": null,
+    "snapshot": null
+  },
+  "billingRetirement": {
     "captured": false,
     "capturedAt": null,
     "readOnlyTransaction": false,
@@ -75,7 +209,8 @@
     "legacyWireFieldsAbsent": null,
     "callbackOriginAllowlistPass": null,
     "oauthConsentPass": null,
-    "functionInventory": []
+    "operationalFunctionInventory": [],
+    "identityControlFunctionInventory": []
   },
   "humanEvidence": {
     "twoActiveOwners": {
@@ -104,6 +239,11 @@
       "evidenceDigestSha256": null
     },
     "crossLectureDenied": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "crossEnvironmentDenied": {
       "status": "NOT_RUN",
       "performedAt": null,
       "evidenceDigestSha256": null
@@ -153,12 +293,72 @@
       "performedAt": null,
       "evidenceDigestSha256": null
     },
+    "sessionContinuityNoIdlePrompt": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "eightHourSessionCap": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "backingAuthSessionDeletion": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "totpFactorSetDrain": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
     "accountDisable": {
       "status": "NOT_RUN",
       "performedAt": null,
       "evidenceDigestSha256": null
     },
     "personalAiPinIntentOnly": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "personalAiPinEndToEnd": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "rememberedBrowserLifecycle": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "sameScopeRetry": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "scopeEscalation": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "freeDowngradeStop": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "masterNoProviderOrRealtime": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "authorityDrainMatrix": {
+      "status": "NOT_RUN",
+      "performedAt": null,
+      "evidenceDigestSha256": null
+    },
+    "safeStatusStopRecovery": {
       "status": "NOT_RUN",
       "performedAt": null,
       "evidenceDigestSha256": null
@@ -277,6 +477,8 @@
     "status": "NOT_REVIEWED",
     "reviewedAt": null,
     "evidenceDigestSha256": null,
-    "separateFromExecutor": false
+    "separateFromExecutor": false,
+    "criticalFindings": 0,
+    "highFindings": 0
   }
 }
