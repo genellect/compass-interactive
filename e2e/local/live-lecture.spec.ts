@@ -71,7 +71,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       admin.page.getByRole('heading', { name: '管理セッション' }),
     ).toBeVisible()
-    await expect(admin.page.getByText('現在のセッション')).toBeVisible()
+    await expect(
+      admin.page.getByText('現在のセッション', { exact: true }),
+    ).toBeVisible()
 
     await admin.page.getByLabel('講義タイトル').fill(lectureTitle)
     await admin.page.getByRole('button', { name: '新しい講義を作成' }).click()
