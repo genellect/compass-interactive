@@ -457,6 +457,11 @@ assert.match(
   'the isolated lifecycle Display page must claim a separately issued one-use URL instead of replaying the popup token',
 )
 assert.match(
+  browserRunner,
+  /VITE_PHASE7_28_DISPLAY_REALTIME:[\s\S]*mode === 'local' \|\|[\s\S]*mode === 'local-jc'[\s\S]*\? 'true'[\s\S]*: 'false'/,
+  'the local lifecycle harness must expose the separately issued Display URL while production remains default-off',
+)
+assert.match(
   adminIdentityBrowser,
   /\/auth\/v1\/factors\/\$\{factorId\}\/challenge[\s\S]*\/auth\/v1\/factors\/\$\{factorId\}\/verify/,
   'the identity demo must exercise the Supabase TOTP challenge and verification endpoints',

@@ -282,6 +282,7 @@ const appEnvironment = {
   VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION:
     mode === 'demo-jc' || mode === 'local-jc' ? 'true' : 'false',
   VITE_PHASE7_28_DISPLAY_REALTIME:
+    mode === 'local' ||
     mode === 'local-jc' ||
     mode === 'demo-presenter' ||
     mode === 'demo-presenter-off'
