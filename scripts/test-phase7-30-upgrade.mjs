@@ -145,6 +145,12 @@ try {
     'scripts/fixtures/phase7-30e-d-head-upgrade-probe-test.sql',
     '--local',
   ])
+  runSupabase([
+    'test',
+    'db',
+    'scripts/fixtures/phase7-30f-e-head-upgrade-probe-test.sql',
+    '--local',
+  ])
 } catch (error) {
   failure = error
 } finally {
@@ -157,5 +163,5 @@ try {
 
 if (failure) throw failure
 console.log(
-  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head, C1-head, C2-head and D-head states upgrade through Phase 7.30E with exact Display terminal binding, Google-create ownership provenance, explicit trust anchors, invitation lifecycle evidence, no ownership/browser/receipt inference, eight-hour cap and dormant cutover gates intact.',
+  'Populated legacy, B1, B2, B2.2a-head, B2.2b-head, C1-head, C2-head and D-head states upgrade through Phase 7.30F with exact Display terminal binding, Google-create ownership provenance, explicit trust anchors, invitation lifecycle evidence, no ownership/browser/receipt inference, eight-hour cap, dormant cutover gates and the operator-only observational readiness preflight intact.',
 )

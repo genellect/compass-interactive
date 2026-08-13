@@ -4,7 +4,7 @@ Status: Operationally verified
 Scope: entrypoint and status vocabulary for the 102 documents in `docs/`
 Last verified: 2026-08-10
 
-This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30A-C1 source implementation. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
+This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30F source/local readiness candidate. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
 `docs/RUNBOOK_INDEX.md` remains the entrypoint for setup, verification, deployment, rollback and incident work. This file indexes the whole directory and assigns each document a status.
 
@@ -64,6 +64,9 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md)                                   | Implemented, verification pending | B2.2a factor-set session binding, rare-control grants and activation HOLD                          |
 | [`PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Implemented, verification pending | B2.2b AI-unlock Edge, browser proof and TOTP transition source readiness                           |
 | [`PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`](PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md)                                 | Implemented, verification pending | C1 private lecture ownership and atomic dormant AI-master admission                                |
+| [`PHASE7_30D_ADMIN_LEDGER.md`](PHASE7_30D_ADMIN_LEDGER.md)                                                               | Implemented, verification pending | D owner ledger, invitation, membership and session-revocation controls                             |
+| [`PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                                 | Implemented, verification pending | E Google-only application transport and dormant operator cutover authority                         |
+| [`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md)                                           | Implemented, verification pending | F source/local evidence schema, default HOLD, approval separation and Google-only rollback         |
 | [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | Planned                           | GitHub protection/publication, real reviewer environment, commercial readiness and Phase 7.33 gate |
 | [`CHANGELOG.md`](CHANGELOG.md)                                                                                           | Historical                        | Development trajectory. Not a substitute for Git history or gate evidence                          |
 

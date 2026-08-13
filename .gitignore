@@ -18,6 +18,7 @@ supabase/.temp/
 .env
 .env.local
 .env.*.local
+/.phase7-30f-evidence*.json
 .env.openai
 .env.supabase
 .env.publisher

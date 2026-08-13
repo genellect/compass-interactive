@@ -28,6 +28,7 @@ const requiredDocuments = [
   'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
   'docs/PHASE7_30D_ADMIN_LEDGER.md',
   'docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md',
+  'docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
@@ -76,6 +77,7 @@ const adminAiUnlockEdgeRecord = read(
 const googleAiMasterC1Record = read(
   'docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md',
 )
+const hostedHumanReadiness = read('docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md')
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
 const gateRouting = read('docs/GATE_ROUTING.md')
@@ -426,6 +428,7 @@ for (const heading of [
 for (const requiredText of [
   'PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md',
   'PHASE7_30B2_AI_UNLOCK_FOUNDATION.md',
+  'PHASE7_30F_HOSTED_HUMAN_READINESS.md',
   'PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
   'Roadmap and an approved detailed domain contract disagree',
 ]) {
@@ -504,10 +507,136 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /74 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(74 groups\)/,
-    `${name} must record the 74-group non-live suite`,
+    /75 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(75 groups\)/,
+    `${name} must record the 75-group non-live suite`,
   )
 }
+for (const requiredText of [
+  'Status: Implemented, verification pending',
+  'SOURCE_READY',
+  'HOLD',
+  'READY_FOR_SEPARATE_HOSTED_EXECUTION',
+  '`preCutover` and `postCutover`',
+  '`SOURCE_READINESS_EXAMPLE`',
+  '`HOSTED_HUMAN_STAGING`',
+  '`legacyPinLoginEnabled`',
+  '`configuration.environment`',
+  '`configuration.frontendFlags`',
+  '`configuration.serverFlags`',
+  '`configuration.databaseGates`',
+  '`configuration.secretInventory`',
+  '`sourceEvidence`',
+  '`hostedEvidence`',
+  '`humanEvidence`',
+  '`regressionEvidence`',
+  '`rollbackEvidence`',
+  '`independentReview`',
+  '`independentReview.separateFromExecutor`',
+  '`evidenceDigestSha256`, `state` and `recordedAt`',
+  'cannot infer them from the digest',
+  'next separately approved external step',
+  'all corresponding frontend and server flags are true',
+  'positive integer `version` and Boolean `verifyJwt`',
+  'six read-only evidence paths',
+  'exact 44-key flat snapshot',
+  '`staging-identity-slot-[a-z]`',
+  '`admin-identity-session`',
+  '`admin-ai-unlock`',
+  '`manage-admin-ledger`',
+  '`billingRetirement`',
+  '`ADMIN_PIN.removedAt`',
+  '`BILLING_PIN.removedAt`',
+  '`cutoverReceiptDeploymentEvidenceDigestMatches`',
+  '`legacyGateTombstoneEnabled`',
+  '`legacySessionFenceEnabled`',
+  '`activeLectureOwnershipFenceEnabled`',
+  '`googleSessionAbsoluteIdleTriggerEnabled`',
+  '`admin_sessions_google_absolute_idle`',
+  '`/.phase7-30f-evidence*.json`',
+  '`supabase/migrations/20260812142023_phase7_30f_source_readiness_preflight.sql`',
+  '`supabase/tests/phase7_30f_source_readiness_preflight_test.sql`',
+  '`private.get_phase7_30f_source_readiness_preflight_v1(uuid)`',
+  '`stagingHostedMutation`',
+  '`oauthProviderConfiguration`',
+  '`stagingHumanIdentityRun`',
+  '`googleOnlyCutover`',
+  '`adminPinSecretDeletion`',
+  '`legacyBillingAuthorityRetirement`',
+  '`billingPinSecretDeletion`',
+  '`limitedIdentityCanary`',
+  '`productionActivation`',
+  'rollback never restores `ADMIN_PIN`',
+]) {
+  assert.ok(
+    hostedHumanReadiness.includes(requiredText),
+    `Phase 7.30F readiness contract missing: ${requiredText}`,
+  )
+}
+assert.match(
+  hostedHumanReadiness,
+  /`Production PASS` is prohibited/,
+  'Phase 7.30F must prohibit a Production PASS validator result',
+)
+for (const functionName of [
+  'private.issue_ai_billing_grant(uuid,text[],text,boolean,text)',
+  'public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)',
+  'private.consume_ai_billing_grant_and_start_operations(uuid,text,uuid,jsonb,text)',
+  'public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)',
+  'public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)',
+  'public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)',
+]) {
+  assert.ok(
+    hostedHumanReadiness.includes(functionName),
+    `Phase 7.30F billing inventory missing: ${functionName}`,
+  )
+}
+for (const aclField of [
+  'publicAdminIssueAiBillingGrant',
+  'privateIssueAiBillingGrant',
+  'publicAdminConsumeAiBillingGrant',
+  'privateConsumeAiBillingGrantAndStartOperations',
+  'publicAdminAuthorizeAiMaster',
+  'publicAdminIssueAiBillingGrantFromMaster',
+  'publicExecute',
+  'anonExecute',
+  'authenticatedExecute',
+  'serviceRoleExecute',
+]) {
+  assert.ok(
+    hostedHumanReadiness.includes(aclField),
+    `Phase 7.30F billing ACL contract missing: ${aclField}`,
+  )
+}
+for (const nonEffectivePrivateMaster of [
+  'private.authorize_ai_master(uuid,uuid,text,text,boolean)',
+  'private.issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)',
+]) {
+  assert.ok(
+    !hostedHumanReadiness.includes(nonEffectivePrivateMaster),
+    `Phase 7.30F must not count revoked private master ACL: ${nonEffectivePrivateMaster}`,
+  )
+}
+for (const retiredName of [
+  'verify-admin-pin',
+  'authorize-ai-start',
+  'ADMIN_PIN',
+  'BILLING_PIN',
+]) {
+  assert.ok(
+    hostedHumanReadiness.includes(retiredName),
+    `Phase 7.30F retirement boundary missing: ${retiredName}`,
+  )
+}
+assert.match(
+  gateRouting,
+  /Phase 7\.30F source\/local Hosted\/Human readiness contract/,
+  'Gate routing must include the Phase 7.30F source/local row',
+)
+assert.match(
+  gateRouting,
+  /What the 116 `test:\*` scripts actually divide into/,
+  'Gate routing must record the 116-script inventory',
+)
 assert.match(
   agentRouting,
   /Phase E removes the\s+`ADMIN_PIN` application path[\s\S]{0,240}Historical `BILLING_PIN` compatibility\s+is retired after personal-AI-PIN evidence/,

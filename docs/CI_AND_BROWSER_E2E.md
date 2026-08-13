@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: GitHub Actions, browser E2E and non-live/hosted gate separation
-Last verified: 2026-08-10
+Last verified: 2026-08-12
 
 ## Purpose and safety boundary
 
@@ -23,7 +23,7 @@ non-local Supabase URL for the live E2E suite.
 Dependency Review and CodeQL jobs:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 74 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 75 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
@@ -60,6 +60,18 @@ The B2/B2.2a/B2.2b source/static contract is implemented, but this branch still
 needs an exact-head CI run before those real database steps are evidence for the
 B2.2b candidate. Their workflow presence is not a PASS result. Every new gate
 remains default OFF and this job does not contact Hosted Supabase.
+
+The Phase 7.30F non-live group validates only the source/local readiness
+contract: strict schema/example, default `HOLD`, redaction and rejection cases,
+production-environment metadata validation, read-only SQL shape and approval
+separation. It does not execute the SQL, contact a Hosted environment, inspect
+an OAuth client, enroll a Human account, invoke the E cutover, delete a secret,
+retire billing authority or enable a canary. Its highest possible readiness
+word is `READY_FOR_SEPARATE_HOSTED_EXECUTION`; CI cannot produce
+`Production PASS`. A source-only CI/example input remains `HOLD`. The maximum
+word applies only when the offline validator receives a complete dossier of
+separately approved staging observations; it checks consistency but neither
+collects nor independently proves them.
 
 4. **Presenter Bridge Windows x64 build and tests** restores and builds the .NET
    solution for x64, then runs the Core/loopback/security tests.
@@ -104,6 +116,7 @@ npm run test:phase7-30c1-static
 npm run test:phase7-30c2-static
 npm run test:phase7-30d-static
 npm run test:phase7-30e-static
+npm run test:phase7-30f-static
 npm run test:ci:nonlive
 npm run build
 npm run test:e2e:phase7-30
@@ -178,6 +191,8 @@ The following remain manual, explicitly paid or hosted checks:
 - real microphone/Realtime transcription testing
 - Cloudflare Publisher/R2 production uploads
 - Hosted Supabase and public-web smoke testing
+- execution of `scripts/phase7-30f-hosted-readonly-preflight.sql` or collection
+  of a real Phase 7.30F evidence manifest
 - signed Presenter installer, real Office/COM, 500 transitions and venue/PNA
 - real-account Admin AI PIN, browser CryptoKey persistence/signature,
   Google/TOTP factor-set invalidation and remembered-browser Human testing

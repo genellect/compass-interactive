@@ -45,6 +45,7 @@ secret change and paid call still require an explicit task.
 | Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
 | Phase 7.30D owner ledger       | `docs/PHASE7_30D_ADMIN_LEDGER.md`                                |
 | Phase 7.30E Google-only source | `docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`                         |
+| Phase 7.30F readiness contract | `docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`                      |
 | Contest/public/commercial plan | `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` |
 | Phase 7 production decision    | `docs/PHASE7_PRODUCTION_GATE_2026-07-21.md`                      |
 | Phase 7.27 production evidence | `docs/PHASE7_27_PRODUCTION_GATE_2026-07-22.md`                   |
@@ -163,7 +164,7 @@ Local writer while browser mode is active.
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
 
-## 6. Google Admin identity and MFA (A-D exact-head PASS; E cutover/activation HOLD)
+## 6. Google Admin identity and MFA (A-D exact-head PASS; E/F external execution HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
@@ -181,6 +182,8 @@ Local writer while browser mode is active.
   `docs/PHASE7_30D_ADMIN_LEDGER.md`.
 - Implemented E Google-only application source and dormant operator cutover:
   `docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`.
+- Phase F source/local evidence, approval and rollback contract:
+  `docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`.
 - Phase order, role model, compatibility and gates: `docs/ROADMAP.md`, Phase 7.30.
 - Agent/reviewer allocation: `docs/AGENT_EXECUTION_ROUTING.md`.
 - Google session issuance is authorized only when the database runtime control
@@ -261,6 +264,31 @@ Local writer while browser mode is active.
   compatibility authority in a separate default-OFF migration before
   Production. Rollback is an immutable Google-only revision plus operator owner
   recovery, never a shared PIN.
+- Phase F's local validator is read-only and defaults to `HOLD`. A valid
+  source-only example can report `SOURCE_READY`, and the highest readiness
+  decision is `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is not a
+  valid output. It rejects Production/contest targets and any project ref,
+  domain, email, user ID, credential, PIN, token or recovery material.
+- Source-only evidence keeps frontend/server and new database activation OFF
+  while legacy login remains true. Complete staging evidence records only
+  separately approved ON-state observations (legacy login OFF), requires the
+  corresponding frontend/server/post-DB values to match and can request only
+  the next separately approved step; validation itself proves no Hosted state.
+- `scripts/phase7-30f-hosted-readonly-preflight.sql` is an operator-reviewed
+  staging evidence query, not an automated CI or cutover command. It keeps
+  `preCutover` and `postCutover` distinct and inventories all six historical
+  billing admission functions without revoking them.
+- `private.get_phase7_30f_source_readiness_preflight_v1(uuid)` is the
+  postgres-owner-only raw projection installed by
+  `20260812142023_phase7_30f_source_readiness_preflight.sql`; `PUBLIC`, `anon`,
+  `authenticated` and `service_role` cannot execute it. Raw operator output is
+  never a tracked manifest. Store the redacted private manifest only at the
+  repository-root ignored name `.phase7-30f-evidence*.json` and never force-add
+  or upload it.
+- Stop for separate approval before each staging mutation, OAuth/provider
+  configuration, Human identity run, E cutover, `ADMIN_PIN` deletion, billing
+  compatibility retirement, `BILLING_PIN` deletion and limited identity
+  canary. No approval authorizes another row.
 
 ## 7. Contest publication and commercial readiness (planned)
 

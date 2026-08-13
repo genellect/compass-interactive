@@ -1,0 +1,1285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://compass.invalid/evidence/phase7-30f-readiness.schema.json",
+  "title": "COMPASS Interactive Phase 7.30F staging readiness evidence",
+  "description": "Metadata-only evidence for a separately authorized staging rehearsal. Secret values, personal identifiers, Production activation, and canary authorization are outside this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceMode",
+    "generatedAt",
+    "configuration",
+    "sourceEvidence",
+    "preCutover",
+    "postCutover",
+    "billingRetirement",
+    "hostedEvidence",
+    "humanEvidence",
+    "regressionEvidence",
+    "rollbackEvidence",
+    "approvals",
+    "independentReview"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "phase7-30f-readiness/v1"
+    },
+    "evidenceMode": {
+      "enum": ["SOURCE_READINESS_EXAMPLE", "HOSTED_HUMAN_STAGING"]
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/dateTime"
+    },
+    "configuration": {
+      "$ref": "#/$defs/configuration"
+    },
+    "sourceEvidence": {
+      "$ref": "#/$defs/sourceEvidence"
+    },
+    "preCutover": {
+      "$ref": "#/$defs/cutoverSnapshot"
+    },
+    "postCutover": {
+      "$ref": "#/$defs/cutoverSnapshot"
+    },
+    "billingRetirement": {
+      "$ref": "#/$defs/billingRetirementEvidence"
+    },
+    "hostedEvidence": {
+      "$ref": "#/$defs/hostedEvidence"
+    },
+    "humanEvidence": {
+      "$ref": "#/$defs/humanEvidence"
+    },
+    "regressionEvidence": {
+      "$ref": "#/$defs/regressionEvidence"
+    },
+    "rollbackEvidence": {
+      "$ref": "#/$defs/rollbackEvidence"
+    },
+    "approvals": {
+      "$ref": "#/$defs/approvals"
+    },
+    "independentReview": {
+      "$ref": "#/$defs/independentReview"
+    }
+  },
+  "$defs": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "nullableDateTime": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableDigest": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "frontendFlags",
+        "serverFlags",
+        "databaseGates",
+        "secretInventory"
+      ],
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "frontendFlags": {
+          "$ref": "#/$defs/frontendFlags"
+        },
+        "serverFlags": {
+          "$ref": "#/$defs/serverFlags"
+        },
+        "databaseGates": {
+          "$ref": "#/$defs/databaseGates"
+        },
+        "secretInventory": {
+          "$ref": "#/$defs/secretInventory"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "alias",
+        "sourceCommitSha",
+        "capturedAt",
+        "environmentIdConfigured"
+      ],
+      "properties": {
+        "target": {
+          "const": "staging"
+        },
+        "alias": {
+          "type": "string",
+          "pattern": "^staging-identity-slot-[a-z]$",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "sourceCommitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "environmentIdConfigured": {
+          "type": "boolean"
+        }
+      }
+    },
+    "frontendFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "VITE_PHASE7_30_ADMIN_IDENTITY",
+        "VITE_PHASE7_30_ADMIN_AI_UNLOCK",
+        "VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION",
+        "VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS",
+        "VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER"
+      ],
+      "properties": {
+        "VITE_PHASE7_30_ADMIN_IDENTITY": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_ADMIN_AI_UNLOCK": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS": {
+          "type": "boolean"
+        },
+        "VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER": {
+          "type": "boolean"
+        }
+      }
+    },
+    "serverFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "PHASE730_ADMIN_IDENTITY_ENABLED",
+        "PHASE730_ADMIN_AI_UNLOCK_ENABLED",
+        "PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED",
+        "PHASE730_C1_GOOGLE_AI_MASTER_ENABLED",
+        "PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED",
+        "PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED"
+      ],
+      "properties": {
+        "PHASE730_ADMIN_IDENTITY_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_ADMIN_AI_UNLOCK_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_C1_GOOGLE_AI_MASTER_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED": {
+          "type": "boolean"
+        },
+        "PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED": {
+          "type": "boolean"
+        }
+      }
+    },
+    "databaseGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacyPinLoginEnabled",
+        "googleSessionIssueEnabled",
+        "operatorTotpFactorSetAdoptionEnabled",
+        "totpFactorMutationEnabled",
+        "googleOperationalAuthorizationEnabled",
+        "googleAdminLedgerEnabled",
+        "aiUnlockEnabled",
+        "googleAiMasterAdmissionEnabled",
+        "rememberedBrowserEnabled"
+      ],
+      "properties": {
+        "legacyPinLoginEnabled": {
+          "type": "boolean"
+        },
+        "googleSessionIssueEnabled": {
+          "type": "boolean"
+        },
+        "operatorTotpFactorSetAdoptionEnabled": {
+          "type": "boolean"
+        },
+        "totpFactorMutationEnabled": {
+          "type": "boolean"
+        },
+        "googleOperationalAuthorizationEnabled": {
+          "type": "boolean"
+        },
+        "googleAdminLedgerEnabled": {
+          "type": "boolean"
+        },
+        "aiUnlockEnabled": {
+          "type": "boolean"
+        },
+        "googleAiMasterAdmissionEnabled": {
+          "type": "boolean"
+        },
+        "rememberedBrowserEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "secretInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captured", "capturedAt", "entries"],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/secretInventoryEntry"
+          },
+          "maxItems": 10
+        }
+      }
+    },
+    "secretInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "present",
+        "minimumBytesSatisfied",
+        "rotationVersion",
+        "rotatedAt",
+        "removedAt"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "ADMIN_SESSION_SECRET",
+            "ADMIN_IDENTITY_PEPPER",
+            "ADMIN_AI_PIN_PEPPER",
+            "ADMIN_AI_NETWORK_PEPPER",
+            "ADMIN_AI_BROWSER_CHALLENGE_SECRET",
+            "ADMIN_AI_CHILD_GRANT_SECRET",
+            "ADMIN_INVITATION_SECRET",
+            "ADMIN_PIN",
+            "BILLING_PIN"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "minimumBytesSatisfied": {
+          "type": ["boolean", "null"]
+        },
+        "rotationVersion": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "rotatedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "removedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        }
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strictSchemaContract",
+        "unknownKeysRejected",
+        "secretValuesRejected",
+        "offlineReadOnlyValidator",
+        "defaultHold",
+        "prePostSeparated",
+        "productionPassForbidden",
+        "phase730eMergeCommitSha",
+        "phase730ePostMergeCi",
+        "phase730fBaseCommitSha",
+        "phase730fBaseOnMergedE",
+        "checks",
+        "independentSourceReview"
+      ],
+      "properties": {
+        "strictSchemaContract": {
+          "const": true
+        },
+        "unknownKeysRejected": {
+          "const": true
+        },
+        "secretValuesRejected": {
+          "const": true
+        },
+        "offlineReadOnlyValidator": {
+          "const": true
+        },
+        "defaultHold": {
+          "const": true
+        },
+        "prePostSeparated": {
+          "const": true
+        },
+        "productionPassForbidden": {
+          "const": true
+        },
+        "phase730eMergeCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "phase730ePostMergeCi": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "phase730fBaseCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "phase730fBaseOnMergedE": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "checks": {
+          "$ref": "#/$defs/sourceChecks"
+        },
+        "independentSourceReview": {
+          "$ref": "#/$defs/sourceReviewRecord"
+        }
+      }
+    },
+    "nullableCommitSha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sourceResultRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "performedAt",
+        "evidenceDigestSha256",
+        "observedCommitSha"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_RUN", "PASS", "FAIL"]
+        },
+        "performedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "observedCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        }
+      }
+    },
+    "sourceChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "securitySecrets",
+        "typeChecks",
+        "lint",
+        "build",
+        "nonLiveSuite",
+        "demoChromium",
+        "demoWebkit",
+        "fullLocalSupabase",
+        "freshAndPopulatedMigrations",
+        "generatedTypesAndDbLint",
+        "concurrencyAndUpgrade",
+        "localEdge",
+        "browserMatrix",
+        "phase730fStaticContract",
+        "operationalEdgeInventory",
+        "repositoryEvidenceBoundary",
+        "exactHeadCi"
+      ],
+      "properties": {
+        "securitySecrets": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "typeChecks": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "lint": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "build": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "nonLiveSuite": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "demoChromium": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "demoWebkit": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "fullLocalSupabase": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "freshAndPopulatedMigrations": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "generatedTypesAndDbLint": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "concurrencyAndUpgrade": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "localEdge": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "browserMatrix": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "phase730fStaticContract": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "operationalEdgeInventory": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "repositoryEvidenceBoundary": {
+          "$ref": "#/$defs/sourceResultRecord"
+        },
+        "exactHeadCi": {
+          "$ref": "#/$defs/sourceResultRecord"
+        }
+      }
+    },
+    "sourceReviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewedAt",
+        "evidenceDigestSha256",
+        "observedCommitSha",
+        "separateFromExecutor",
+        "criticalFindings",
+        "highFindings"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_REVIEWED", "PASS", "FAIL"]
+        },
+        "reviewedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "observedCommitSha": {
+          "$ref": "#/$defs/nullableCommitSha"
+        },
+        "separateFromExecutor": {
+          "type": "boolean"
+        },
+        "criticalFindings": {
+          "$ref": "#/$defs/count"
+        },
+        "highFindings": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "cutoverSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captured",
+        "capturedAt",
+        "readOnlyTransaction",
+        "snapshotDigestSha256",
+        "snapshot"
+      ],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "readOnlyTransaction": {
+          "type": "boolean"
+        },
+        "snapshotDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "activeLegacyMasterCount",
+            "activeLegacySessionCount",
+            "activeOwnerCount",
+            "authoritative",
+            "cutoverCommitted",
+            "environmentReady",
+            "externalTransportAttestationRequired",
+            "googleAdminLedgerEnabled",
+            "googleOperationalAuthorizationEnabled",
+            "googleSessionIssueEnabled",
+            "issuedLegacyGrantCount",
+            "pendingLegacyAcademicCount",
+            "runningLegacySummaryCount",
+            "runningLegacyUsageCount",
+            "unboundPdfPublicationCount",
+            "unownedActiveLectureCount",
+            "activeAiEnabledInstructorCount",
+            "activeStandardInstructorCount",
+            "suspendedAdminCount",
+            "suspendedInstructorCount",
+            "activePersonalAiPinFactorCount",
+            "activeAiEnabledInstructorPersonalAiPinFactorCount",
+            "activeApprovedTotpPrincipalCount",
+            "activeOwnerApprovedTotpCount",
+            "activeAiEnabledInstructorApprovedTotpCount",
+            "activeStandardInstructorApprovedTotpCount",
+            "activeGoogleSessionCount",
+            "unbackedGoogleSessionCount",
+            "overCapGoogleSessionCount",
+            "googleSessionIdleCapMismatchCount",
+            "invalidGoogleSessionAuthorityCount",
+            "legacyPinLoginEnabled",
+            "operatorTotpFactorSetAdoptionEnabled",
+            "totpFactorMutationEnabled",
+            "aiUnlockEnabled",
+            "googleAiMasterAdmissionEnabled",
+            "rememberedBrowserEnabled",
+            "invalidActiveOwnershipCount",
+            "cutoverReceiptCount",
+            "cutoverReceiptEnvironmentMatches",
+            "cutoverReceiptDeploymentEvidenceDigestMatches",
+            "legacyVerifierServiceRoleExecute",
+            "legacyBillingAcl",
+            "triggers"
+          ],
+          "properties": {
+            "activeLegacyMasterCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeLegacySessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeOwnerCount": {
+              "$ref": "#/$defs/count"
+            },
+            "authoritative": {
+              "const": false
+            },
+            "cutoverCommitted": {
+              "type": "boolean"
+            },
+            "environmentReady": {
+              "type": "boolean"
+            },
+            "externalTransportAttestationRequired": {
+              "const": true
+            },
+            "googleAdminLedgerEnabled": {
+              "type": "boolean"
+            },
+            "googleOperationalAuthorizationEnabled": {
+              "type": "boolean"
+            },
+            "googleSessionIssueEnabled": {
+              "type": "boolean"
+            },
+            "issuedLegacyGrantCount": {
+              "$ref": "#/$defs/count"
+            },
+            "pendingLegacyAcademicCount": {
+              "$ref": "#/$defs/count"
+            },
+            "runningLegacySummaryCount": {
+              "$ref": "#/$defs/count"
+            },
+            "runningLegacyUsageCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unboundPdfPublicationCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unownedActiveLectureCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeAiEnabledInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeStandardInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "suspendedAdminCount": {
+              "$ref": "#/$defs/count"
+            },
+            "suspendedInstructorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activePersonalAiPinFactorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeAiEnabledInstructorPersonalAiPinFactorCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeApprovedTotpPrincipalCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeOwnerApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeAiEnabledInstructorApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeStandardInstructorApprovedTotpCount": {
+              "$ref": "#/$defs/count"
+            },
+            "activeGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "unbackedGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "overCapGoogleSessionCount": {
+              "$ref": "#/$defs/count"
+            },
+            "googleSessionIdleCapMismatchCount": {
+              "$ref": "#/$defs/count"
+            },
+            "invalidGoogleSessionAuthorityCount": {
+              "$ref": "#/$defs/count"
+            },
+            "legacyPinLoginEnabled": {
+              "type": "boolean"
+            },
+            "operatorTotpFactorSetAdoptionEnabled": {
+              "type": "boolean"
+            },
+            "totpFactorMutationEnabled": {
+              "type": "boolean"
+            },
+            "aiUnlockEnabled": {
+              "type": "boolean"
+            },
+            "googleAiMasterAdmissionEnabled": {
+              "type": "boolean"
+            },
+            "rememberedBrowserEnabled": {
+              "type": "boolean"
+            },
+            "invalidActiveOwnershipCount": {
+              "$ref": "#/$defs/count"
+            },
+            "cutoverReceiptCount": {
+              "$ref": "#/$defs/count"
+            },
+            "cutoverReceiptEnvironmentMatches": {
+              "type": ["boolean", "null"]
+            },
+            "cutoverReceiptDeploymentEvidenceDigestMatches": {
+              "type": ["boolean", "null"]
+            },
+            "legacyVerifierServiceRoleExecute": {
+              "type": "boolean"
+            },
+            "legacyBillingAcl": {
+              "$ref": "#/$defs/legacyBillingAcl"
+            },
+            "triggers": {
+              "$ref": "#/$defs/triggerState"
+            }
+          }
+        }
+      }
+    },
+    "billingRetirementEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "captured",
+        "capturedAt",
+        "readOnlyTransaction",
+        "snapshotDigestSha256",
+        "snapshot"
+      ],
+      "properties": {
+        "captured": {
+          "type": "boolean"
+        },
+        "capturedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "readOnlyTransaction": {
+          "type": "boolean"
+        },
+        "snapshotDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "legacyBillingAcl",
+            "personalAiPinEvidenceDigestMatches",
+            "safeStatusStopRevokeAccountingAvailable",
+            "historicalIntegrityPreserved"
+          ],
+          "properties": {
+            "legacyBillingAcl": {
+              "$ref": "#/$defs/legacyBillingAcl"
+            },
+            "personalAiPinEvidenceDigestMatches": {
+              "type": "boolean"
+            },
+            "safeStatusStopRevokeAccountingAvailable": {
+              "type": "boolean"
+            },
+            "historicalIntegrityPreserved": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "legacyBillingAcl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicAdminIssueAiBillingGrant",
+        "privateIssueAiBillingGrant",
+        "publicAdminConsumeAiBillingGrant",
+        "privateConsumeAiBillingGrantAndStartOperations",
+        "publicAdminAuthorizeAiMaster",
+        "publicAdminIssueAiBillingGrantFromMaster"
+      ],
+      "properties": {
+        "publicAdminIssueAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "privateIssueAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminConsumeAiBillingGrant": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "privateConsumeAiBillingGrantAndStartOperations": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminAuthorizeAiMaster": {
+          "$ref": "#/$defs/functionAcl"
+        },
+        "publicAdminIssueAiBillingGrantFromMaster": {
+          "$ref": "#/$defs/functionAcl"
+        }
+      }
+    },
+    "functionAcl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "functionExists",
+        "serviceRoleExecute",
+        "publicExecute",
+        "anonExecute",
+        "authenticatedExecute"
+      ],
+      "properties": {
+        "functionExists": {
+          "const": true
+        },
+        "serviceRoleExecute": {
+          "type": "boolean"
+        },
+        "publicExecute": {
+          "const": false
+        },
+        "anonExecute": {
+          "const": false
+        },
+        "authenticatedExecute": {
+          "const": false
+        }
+      }
+    },
+    "triggerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacyGateTombstoneEnabled",
+        "legacySessionFenceEnabled",
+        "activeLectureOwnershipFenceEnabled",
+        "googleSessionAbsoluteIdleTriggerEnabled"
+      ],
+      "properties": {
+        "legacyGateTombstoneEnabled": {
+          "type": "boolean"
+        },
+        "legacySessionFenceEnabled": {
+          "type": "boolean"
+        },
+        "activeLectureOwnershipFenceEnabled": {
+          "type": "boolean"
+        },
+        "googleSessionAbsoluteIdleTriggerEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "hostedEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executed",
+        "executedAt",
+        "deploymentEvidenceDigestSha256",
+        "immutableRevisionSha256",
+        "sourceCommitMatches",
+        "retiredAdminFunctionsAbsent",
+        "legacyWireFieldsAbsent",
+        "callbackOriginAllowlistPass",
+        "oauthConsentPass",
+        "operationalFunctionInventory",
+        "identityControlFunctionInventory"
+      ],
+      "properties": {
+        "executed": {
+          "type": "boolean"
+        },
+        "executedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "deploymentEvidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "immutableRevisionSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "sourceCommitMatches": {
+          "type": ["boolean", "null"]
+        },
+        "retiredAdminFunctionsAbsent": {
+          "type": ["boolean", "null"]
+        },
+        "legacyWireFieldsAbsent": {
+          "type": ["boolean", "null"]
+        },
+        "callbackOriginAllowlistPass": {
+          "type": ["boolean", "null"]
+        },
+        "oauthConsentPass": {
+          "type": ["boolean", "null"]
+        },
+        "operationalFunctionInventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/functionInventoryEntry"
+          },
+          "maxItems": 19
+        },
+        "identityControlFunctionInventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/functionInventoryEntry"
+          },
+          "maxItems": 3
+        }
+      }
+    },
+    "functionInventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "verifyJwt"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "maxLength": 80
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "verifyJwt": {
+          "type": "boolean"
+        }
+      }
+    },
+    "resultRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "performedAt", "evidenceDigestSha256"],
+      "properties": {
+        "status": {
+          "enum": ["NOT_RUN", "PASS", "FAIL"]
+        },
+        "performedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        }
+      }
+    },
+    "humanEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "twoActiveOwners",
+        "aiEnabledAdmin",
+        "standardAdmin",
+        "suspendedAdminDenied",
+        "crossUserDenied",
+        "crossLectureDenied",
+        "crossEnvironmentDenied",
+        "individualRevoke",
+        "globalRevoke",
+        "lastOwnerProtection",
+        "googleCallbackOriginAllowlist",
+        "oauthConsent",
+        "aal1ToAal2",
+        "ownerRecovery",
+        "tokenRotation",
+        "staleSessionDenied",
+        "sessionContinuityNoIdlePrompt",
+        "eightHourSessionCap",
+        "backingAuthSessionDeletion",
+        "totpFactorSetDrain",
+        "accountDisable",
+        "personalAiPinIntentOnly",
+        "personalAiPinEndToEnd",
+        "rememberedBrowserLifecycle",
+        "sameScopeRetry",
+        "scopeEscalation",
+        "freeDowngradeStop",
+        "masterNoProviderOrRealtime",
+        "authorityDrainMatrix",
+        "safeStatusStopRecovery"
+      ],
+      "properties": {
+        "twoActiveOwners": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "aiEnabledAdmin": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "standardAdmin": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "suspendedAdminDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossUserDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossLectureDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "crossEnvironmentDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "individualRevoke": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "globalRevoke": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "lastOwnerProtection": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "googleCallbackOriginAllowlist": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "oauthConsent": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "aal1ToAal2": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "ownerRecovery": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "tokenRotation": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "staleSessionDenied": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "sessionContinuityNoIdlePrompt": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "eightHourSessionCap": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "backingAuthSessionDeletion": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "totpFactorSetDrain": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "accountDisable": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "personalAiPinIntentOnly": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "personalAiPinEndToEnd": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "rememberedBrowserLifecycle": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "sameScopeRetry": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "scopeEscalation": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "freeDowngradeStop": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "masterNoProviderOrRealtime": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "authorityDrainMatrix": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "safeStatusStopRecovery": {
+          "$ref": "#/$defs/resultRecord"
+        }
+      }
+    },
+    "regressionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "database",
+        "edge",
+        "browser",
+        "ci",
+        "load",
+        "security",
+        "accessibility",
+        "rollback",
+        "advisors"
+      ],
+      "properties": {
+        "scope": {
+          "const": "PHASE_0_THROUGH_7_30"
+        },
+        "database": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "edge": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "browser": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "ci": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "load": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "security": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "accessibility": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "rollback": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "advisors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "captured",
+            "capturedAt",
+            "evidenceDigestSha256",
+            "criticalFindings",
+            "highFindings"
+          ],
+          "properties": {
+            "captured": {
+              "type": "boolean"
+            },
+            "capturedAt": {
+              "$ref": "#/$defs/nullableDateTime"
+            },
+            "evidenceDigestSha256": {
+              "$ref": "#/$defs/nullableDigest"
+            },
+            "criticalFindings": {
+              "$ref": "#/$defs/count"
+            },
+            "highFindings": {
+              "$ref": "#/$defs/count"
+            }
+          }
+        }
+      }
+    },
+    "rollbackEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rehearsal",
+        "immutableGoogleOnlyRevision",
+        "sharedPinRestored",
+        "paidAdmissionDisabledDuringRecovery",
+        "freeStopAvailable",
+        "operatorOwnerRecoveryRehearsed"
+      ],
+      "properties": {
+        "rehearsal": {
+          "$ref": "#/$defs/resultRecord"
+        },
+        "immutableGoogleOnlyRevision": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "sharedPinRestored": {
+          "type": ["boolean", "null"]
+        },
+        "paidAdmissionDisabledDuringRecovery": {
+          "type": ["boolean", "null"]
+        },
+        "freeStopAvailable": {
+          "type": ["boolean", "null"]
+        },
+        "operatorOwnerRecoveryRehearsed": {
+          "type": ["boolean", "null"]
+        }
+      }
+    },
+    "approvalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "recordedAt", "evidenceDigestSha256"],
+      "properties": {
+        "state": {
+          "enum": ["HOLD", "APPROVED", "REJECTED"]
+        },
+        "recordedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        }
+      }
+    },
+    "approvals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stagingHostedMutation",
+        "oauthProviderConfiguration",
+        "stagingHumanIdentityRun",
+        "googleOnlyCutover",
+        "adminPinSecretDeletion",
+        "legacyBillingAuthorityRetirement",
+        "billingPinSecretDeletion",
+        "limitedIdentityCanary",
+        "productionActivation"
+      ],
+      "properties": {
+        "stagingHostedMutation": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "oauthProviderConfiguration": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "stagingHumanIdentityRun": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "googleOnlyCutover": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "adminPinSecretDeletion": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "legacyBillingAuthorityRetirement": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "billingPinSecretDeletion": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "limitedIdentityCanary": {
+          "$ref": "#/$defs/approvalRecord"
+        },
+        "productionActivation": {
+          "$ref": "#/$defs/approvalRecord"
+        }
+      }
+    },
+    "independentReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewedAt",
+        "evidenceDigestSha256",
+        "separateFromExecutor",
+        "criticalFindings",
+        "highFindings"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["NOT_REVIEWED", "PASS", "FAIL"]
+        },
+        "reviewedAt": {
+          "$ref": "#/$defs/nullableDateTime"
+        },
+        "evidenceDigestSha256": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "separateFromExecutor": {
+          "type": "boolean"
+        },
+        "criticalFindings": {
+          "$ref": "#/$defs/count"
+        },
+        "highFindings": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    }
+  }
+}

@@ -7,7 +7,10 @@ Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-D
 source and exact-head runtime evidence pass with all gates default OFF. Phase
 7.30E Google-only application transport and dormant cutover authority are a
 source/local candidate; its exact-head database and Local Edge freeze is
-pending. The irreversible cutover, Phase 7.30F and Hosted/Human gates remain
+pending. Phase 7.30F now has a source/local evidence-schema, validator,
+read-only preflight and approval-separation candidate; its exact-head gate and
+every external execution remain pending. The irreversible cutover,
+Hosted/Human run, secret deletion, billing retirement and activation remain
 HOLD.
 
 ## 1. Numbering decision
@@ -821,6 +824,15 @@ operator cutover execution and real-account activation remain HOLD.
 
 ### 7.30F - Hosted/Human identity migration gate
 
+Source status: the redacted evidence schema/example, pure-local readiness
+validator, read-only Hosted preflight, default-HOLD decision contract,
+approval-separated checklist and immutable Google-only rollback plan are a
+source/local candidate. The only readiness words are `SOURCE_READY`, `HOLD`
+and `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is prohibited.
+Repository CI never performs a Hosted query or mutation. The Phase 7.30E
+exact-head gate was still pending when this branch was cut, and the Phase F
+exact-head source/local gate remains pending until integration.
+
 - In separate staging, test two owners, one AI-enabled Admin, one standard
   Admin, suspended Admin,
   cross-user/cross-lecture denial, individual/global revoke and last-owner
@@ -831,14 +843,32 @@ operator cutover execution and real-account activation remain HOLD.
   rollback regression PASS with zero Critical/High finding.
 - Exact hosted state and human MFA/recovery evidence are recorded before the
   Google enforcement flag is enabled.
+- Collect the 19-function Google-only deployment inventory, forbidden legacy
+  endpoint absence, secret-name/presence metadata, distinct `preCutover` and
+  `postCutover` snapshots, zero Critical/High Advisor findings and immutable
+  rollback digests without storing a project ref, domain, email, user ID,
+  credential, PIN, token or recovery material.
+- Inventory the six historical billing admission functions read-only. Their
+  runtime authority remains a Production blocker, but Phase F source/local
+  readiness neither revokes nor drops them. Retirement migration application
+  and `BILLING_PIN` deletion are separately approved after personal-AI-PIN
+  Hosted/Human evidence.
+- Require distinct approvals for staging mutation, OAuth/provider
+  configuration, Human identity testing, the E operator cutover,
+  `ADMIN_PIN` deletion, billing compatibility retirement, `BILLING_PIN`
+  deletion and a limited identity canary. No earlier approval is inherited.
 - This is a separately authorized limited identity-migration canary only. It
   neither changes repository visibility nor invites contest reviewers, and the
   formal integrated Phase 7.33 Gate remains HOLD.
 
-Passing 7.30F authorizes only the bounded Google-identity migration described
-above. It does not declare the repository public, invite contest reviewers,
+Passing 7.30F permits only a request for the next separately approved bounded
+Google-identity migration step described above; it does not authorize that
+step. It does not declare the repository public, invite contest reviewers,
 complete commercial readiness or satisfy the formal Phase 7.33 Production
 Gate.
+
+The exact source/local and later evidence procedure is
+[`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 
 Current official implementation references are [Supabase Google
 login](https://supabase.com/docs/guides/auth/social-login/auth-google),

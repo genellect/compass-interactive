@@ -1243,10 +1243,10 @@ assert.equal(
   'node scripts/test-phase7-30c2-static.mjs',
 )
 assert.match(nonlive, /'test:phase7-30c2-static'/)
-assert.match(docsTest, /74 non-live/)
-assert.match(ciDocs, /74 non-live/)
-assert.match(gateDocs, /test:ci:nonlive` \(74 groups\)/)
-assert.match(readme, /74 non-live groups/)
+assert.match(docsTest, /75 non-live/)
+assert.match(ciDocs, /75 non-live/)
+assert.match(gateDocs, /test:ci:nonlive` \(75 groups\)/)
+assert.match(readme, /75 non-live groups/)
 
 const googleMasterStatus = functionBlock(
   workspaceMigration,

@@ -29,6 +29,59 @@ const optionalFeatureFlags = [
   'VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER',
 ]
 
+export const phase730FFrontendFlagNames = [
+  'VITE_PHASE7_30_ADMIN_IDENTITY',
+  'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
+  'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER',
+]
+
+export const phase730FServerFlagNames = [
+  'PHASE730_ADMIN_IDENTITY_ENABLED',
+  'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
+  'PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED',
+  'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED',
+  'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+  'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
+]
+
+export const phase730FDatabaseGateNames = [
+  'googleSessionIssueEnabled',
+  'legacyPinLoginEnabled',
+  'operatorTotpFactorSetAdoptionEnabled',
+  'totpFactorMutationEnabled',
+  'googleOperationalAuthorizationEnabled',
+  'googleAdminLedgerEnabled',
+  'aiUnlockEnabled',
+  'googleAiMasterAdmissionEnabled',
+  'rememberedBrowserEnabled',
+]
+
+export const phase730FSecretInventoryNames = [
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'ADMIN_SESSION_SECRET',
+  'ADMIN_IDENTITY_PEPPER',
+  'ADMIN_AI_PIN_PEPPER',
+  'ADMIN_AI_NETWORK_PEPPER',
+  'ADMIN_AI_BROWSER_CHALLENGE_SECRET',
+  'ADMIN_AI_CHILD_GRANT_SECRET',
+  'ADMIN_INVITATION_SECRET',
+  'ADMIN_PIN',
+  'BILLING_PIN',
+]
+
+export const phase730FEnvironmentAliasPattern = '^staging-identity-slot-[a-z]$'
+export const phase730FIsoTimestampPattern =
+  '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$'
+
+const phase730FEnvironmentAliasRegex = new RegExp(
+  phase730FEnvironmentAliasPattern,
+)
+const phase730FIsoTimestampRegex = new RegExp(phase730FIsoTimestampPattern)
+
+const phase730FForbiddenSecretNames = new Set(['ADMIN_PIN', 'BILLING_PIN'])
+
 const forbiddenPublicNames = [
   'VITE_ADMIN_PIN',
   'VITE_ADMIN_SESSION_SECRET',
@@ -203,6 +256,7 @@ export function validateProductionServerEnvironment(environment) {
     'PHASE730_ADMIN_IDENTITY_ENABLED',
     'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
     'PHASE730_ADMIN_TOTP_FACTOR_MUTATION_ENABLED',
+    'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED',
     'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
     'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
   ]
@@ -258,6 +312,10 @@ export function validateProductionServerEnvironment(environment) {
     'PHASE730_ADMIN_IDENTITY_ENABLED',
   )
   requireServerFlag(
+    'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED',
+    'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
+  )
+  requireServerFlag(
     'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
     'PHASE730_ADMIN_IDENTITY_ENABLED',
   )
@@ -299,6 +357,289 @@ export function validateProductionServerEnvironment(environment) {
       )
     }
   }
+  return errors
+}
+
+function isPlainObject(candidate) {
+  return (
+    candidate !== null &&
+    typeof candidate === 'object' &&
+    !Array.isArray(candidate)
+  )
+}
+
+function rejectUnknownKeys(errors, candidate, allowedKeys, path) {
+  if (!isPlainObject(candidate)) {
+    errors.push(`${path} must be an object.`)
+    return false
+  }
+  for (const key of Object.keys(candidate)) {
+    if (!allowedKeys.includes(key)) {
+      errors.push(`${path}.${key} is not allowed.`)
+    }
+  }
+  return true
+}
+
+export function isPhase730FEnvironmentAlias(candidate) {
+  return (
+    typeof candidate === 'string' &&
+    candidate.length >= 10 &&
+    candidate.length <= 40 &&
+    phase730FEnvironmentAliasRegex.test(candidate)
+  )
+}
+
+export function isPhase730FIsoTimestamp(candidate) {
+  if (
+    typeof candidate !== 'string' ||
+    !phase730FIsoTimestampRegex.test(candidate)
+  ) {
+    return false
+  }
+  const parsed = new Date(candidate)
+  if (Number.isNaN(parsed.getTime())) return false
+  const canonical = candidate.includes('.')
+    ? candidate
+    : candidate.replace(/Z$/, '.000Z')
+  return parsed.toISOString() === canonical
+}
+
+/**
+ * Validate only redacted Phase 7.30F configuration metadata. This function
+ * never accepts or reads an environment-variable value. Missing Hosted
+ * inventory is a HOLD evaluated by the evidence validator, not a source
+ * configuration error here.
+ */
+export function validatePhase730FReadinessMetadata(configuration) {
+  const errors = []
+  if (
+    !rejectUnknownKeys(
+      errors,
+      configuration,
+      [
+        'environment',
+        'frontendFlags',
+        'serverFlags',
+        'databaseGates',
+        'secretInventory',
+      ],
+      'configuration',
+    )
+  ) {
+    return errors
+  }
+
+  const environment = configuration.environment
+  if (
+    rejectUnknownKeys(
+      errors,
+      environment,
+      [
+        'target',
+        'alias',
+        'sourceCommitSha',
+        'capturedAt',
+        'environmentIdConfigured',
+      ],
+      'configuration.environment',
+    )
+  ) {
+    if (environment.target !== 'staging') {
+      errors.push('configuration.environment.target must be staging.')
+    }
+    if (!isPhase730FEnvironmentAlias(environment.alias)) {
+      errors.push(
+        'configuration.environment.alias must be a non-secret staging alias.',
+      )
+    }
+    if (!/^[0-9a-f]{40}$/.test(environment.sourceCommitSha ?? '')) {
+      errors.push(
+        'configuration.environment.sourceCommitSha must be an exact 40-hex commit SHA.',
+      )
+    }
+    if (
+      environment.capturedAt !== null &&
+      !isPhase730FIsoTimestamp(environment.capturedAt)
+    ) {
+      errors.push(
+        'configuration.environment.capturedAt must be null or an ISO UTC timestamp.',
+      )
+    }
+    if (
+      environment.environmentIdConfigured === true &&
+      !isPhase730FIsoTimestamp(environment.capturedAt)
+    ) {
+      errors.push(
+        'configuration.environment.capturedAt must be an ISO UTC timestamp when an environment ID was observed.',
+      )
+    }
+    if (typeof environment.environmentIdConfigured !== 'boolean') {
+      errors.push(
+        'configuration.environment.environmentIdConfigured must be boolean metadata.',
+      )
+    }
+  }
+
+  for (const [path, names] of [
+    ['configuration.frontendFlags', phase730FFrontendFlagNames],
+    ['configuration.serverFlags', phase730FServerFlagNames],
+  ]) {
+    const flags =
+      path === 'configuration.frontendFlags'
+        ? configuration.frontendFlags
+        : configuration.serverFlags
+    if (rejectUnknownKeys(errors, flags, names, path)) {
+      for (const name of names) {
+        if (typeof flags[name] !== 'boolean') {
+          errors.push(`${path}.${name} must be explicit boolean metadata.`)
+        } else if (flags[name]) {
+          errors.push(`${path}.${name} must remain false before activation.`)
+        }
+      }
+    }
+  }
+
+  const databaseGates = configuration.databaseGates
+  if (
+    rejectUnknownKeys(
+      errors,
+      databaseGates,
+      phase730FDatabaseGateNames,
+      'configuration.databaseGates',
+    )
+  ) {
+    for (const name of phase730FDatabaseGateNames) {
+      if (typeof databaseGates[name] !== 'boolean') {
+        errors.push(
+          `configuration.databaseGates.${name} must be explicit boolean metadata.`,
+        )
+      }
+    }
+    for (const name of phase730FDatabaseGateNames.filter(
+      (name) => name !== 'legacyPinLoginEnabled',
+    )) {
+      if (databaseGates[name] === true) {
+        errors.push(
+          `configuration.databaseGates.${name} must remain false before separately approved activation.`,
+        )
+      }
+    }
+    if (databaseGates.legacyPinLoginEnabled !== true) {
+      errors.push(
+        'configuration.databaseGates.legacyPinLoginEnabled must remain true in the pre-cutover source snapshot.',
+      )
+    }
+  }
+
+  const secretInventory = configuration.secretInventory
+  if (
+    rejectUnknownKeys(
+      errors,
+      secretInventory,
+      ['captured', 'capturedAt', 'entries'],
+      'configuration.secretInventory',
+    )
+  ) {
+    if (typeof secretInventory.captured !== 'boolean') {
+      errors.push('configuration.secretInventory.captured must be boolean.')
+    }
+    if (!Array.isArray(secretInventory.entries)) {
+      errors.push('configuration.secretInventory.entries must be an array.')
+    } else if (secretInventory.captured === false) {
+      if (secretInventory.capturedAt !== null) {
+        errors.push(
+          'configuration.secretInventory.capturedAt must be null until inventory is captured.',
+        )
+      }
+      if (secretInventory.entries.length !== 0) {
+        errors.push(
+          'configuration.secretInventory.entries must be empty until inventory is captured.',
+        )
+      }
+    } else if (secretInventory.captured === true) {
+      if (!isPhase730FIsoTimestamp(secretInventory.capturedAt)) {
+        errors.push(
+          'configuration.secretInventory.capturedAt must be an ISO UTC timestamp when captured.',
+        )
+      }
+      const observedNames = new Set()
+      for (const [index, entry] of secretInventory.entries.entries()) {
+        const path = `configuration.secretInventory.entries[${index}]`
+        if (
+          !rejectUnknownKeys(
+            errors,
+            entry,
+            [
+              'name',
+              'present',
+              'minimumBytesSatisfied',
+              'rotationVersion',
+              'rotatedAt',
+              'removedAt',
+            ],
+            path,
+          )
+        ) {
+          continue
+        }
+        if (!phase730FSecretInventoryNames.includes(entry.name)) {
+          errors.push(`${path}.name is not an approved metadata-only name.`)
+          continue
+        }
+        if (observedNames.has(entry.name)) {
+          errors.push(`${path}.name must not be duplicated.`)
+        }
+        observedNames.add(entry.name)
+        if (typeof entry.present !== 'boolean') {
+          errors.push(`${path}.present must be boolean metadata.`)
+        }
+        if (phase730FForbiddenSecretNames.has(entry.name)) {
+          if (
+            entry.present !== false ||
+            entry.minimumBytesSatisfied !== null ||
+            entry.rotationVersion !== null ||
+            entry.rotatedAt !== null ||
+            !isPhase730FIsoTimestamp(entry.removedAt)
+          ) {
+            errors.push(
+              `${path}.${entry.name} must be absent with null length and rotation metadata.`,
+            )
+          }
+        } else if (
+          entry.present !== true ||
+          entry.minimumBytesSatisfied !== true ||
+          !Number.isSafeInteger(entry.rotationVersion) ||
+          entry.rotationVersion < 1 ||
+          !isPhase730FIsoTimestamp(entry.rotatedAt) ||
+          entry.removedAt !== null
+        ) {
+          errors.push(
+            `${path}.${entry.name} must be present with valid length and rotation metadata.`,
+          )
+        }
+        for (const timestamp of [entry.rotatedAt, entry.removedAt]) {
+          if (
+            timestamp &&
+            isPhase730FIsoTimestamp(secretInventory.capturedAt) &&
+            Date.parse(timestamp) > Date.parse(secretInventory.capturedAt)
+          ) {
+            errors.push(
+              `${path} rotation/removal metadata must not postdate inventory capture.`,
+            )
+          }
+        }
+      }
+      for (const name of phase730FSecretInventoryNames) {
+        if (!observedNames.has(name)) {
+          errors.push(
+            `configuration.secretInventory must record ${name} presence metadata.`,
+          )
+        }
+      }
+    }
+  }
+
   return errors
 }
 

@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: which gate answers for which change surface
-Last verified: 2026-08-10
+Last verified: 2026-08-12
 
 `AGENTS.md` is authoritative for the boundary. `docs/CLOUD_DEVELOPMENT.md` is authoritative for environments and safe execution levels. This file answers only one question: **I changed X, which gate is responsible?**
 
@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (74 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (75 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |
@@ -59,6 +59,7 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | Phase 7.30C2 unified Google Admin authorization and provider authority           | `test:phase7-30c2-static`, `test:phase7-30c2-ai-provider-static`, from-zero/all pgTAP, populated C1-head no-backfill/provider upgrade, generated types/DB lint and exact-head CI; paid provider calls remain excluded from this gate                                                        | Exact-head source/DB/Edge/browser evidence passes; Hosted/Human and activation remain HOLD              |
 | Phase 7.30D owner Admin ledger, invitations and authority revocation             | `test:phase7-30d-static`, from-zero/all pgTAP, `test:phase7-30d-concurrency`, populated B1/C2-head invitation upgrade, generated types/DB lint, Local Edge and `test:e2e:phase7-30d-browser`; raw invitation token remains Edge-only and all gates default OFF                        | Exact-head source/DB/Edge/browser evidence passes; Hosted/Human and activation remain HOLD              |
 | Phase 7.30E Google-only transport, explicit ownership and identity cutover       | `test:phase7-30e-static`, from-zero/all pgTAP, `test:phase7-30e-concurrency`, populated C2-head Display and D-head ownership upgrades, generated types/DB lint, Google-only Local Edge and full demo/local browser regression; operator cutover is never invoked by CI                  | Static/mock browser pass locally; DB/Local Edge exact-head pending; Hosted attestation/cutover is Human HOLD |
+| Phase 7.30F source/local Hosted/Human readiness contract                          | `test:phase7-30f-static`, `test:production-env`, strict evidence schema/example, pure-local default-HOLD validator, reviewed read-only SQL text and `test:phase6-7-docs`; exact-head CI plus independent redacted review before any external request                                  | Source-only input stays `HOLD`; after separately collected complete staging evidence, the offline validator may emit `READY_FOR_SEPARATE_HOSTED_EXECUTION` without querying/proving Hosted state or authorizing the next step |
 | GitHub rulesets, repository visibility, license or public artifacts             | Phase 7.31A/B supply-chain, full-history secret/PII/rights audit and a separate user approval immediately before visibility change                                                                                                                                                      | Partly; current-plan inventory is read-only, enforcement and publication are Hosted/Human               |
 | Contest reviewer identity, environment or paid-AI access                        | Phase 7.30 identity/TOTP AAL2, AI PIN/browser enrollment, atomic abuse-limit, scope-escalation and revoke-matrix gates plus Phase 7.31C lecture-master, dedicated R2, cross-principal/environment, budget/expiry/cleanup and Human reviewer gates                                       | Partly; real OAuth, Supabase, R2 and AI require isolated Hosted evidence                                |
 | Tenant, commercial billing, retention/privacy, SLO or support operations        | Phase 7.32 DB/Edge/UI/load/accessibility/restore/incident gates, followed only by the unified Phase 7.33 Production Gate                                                                                                                                                                | Partly; commercial Hosted/Human/legal evidence cannot be proved by Cloud tests                          |
@@ -88,7 +89,7 @@ npm run test:phase7-27-upgrade          # Phase 7.26 data through 7.27
 npm run test:phase7-28-upgrade          # populated 7.27 data through 7.28
 npm run test:phase7-29-upgrade          # populated 7.28 data through 7.29
 npm run test:phase7-30d-concurrency      # owner last-owner and invitation terminal races; next upgrade resets its fixture
-npm run test:phase7-30-upgrade          # populated legacy through D-head state through current E schema; full reset on exit
+npm run test:phase7-30-upgrade          # populated legacy through D-head state through current F schema; full reset on exit
 npm run test:phase7-30e-concurrency     # approval/claim/session/cutover serialization, NOWAIT rollback and exact replay; full reset on exit
 npm run test:e2e:phase7-30b22b-browser  # IndexedDB/CryptoKey scope and response-loss convergence
 npm run test:production-local-edge      # local Auth, CORS, fail-closed paid features
@@ -129,11 +130,11 @@ docs/GATE_ROUTING.md
 
 Note that `package.json` and `package-lock.json` are in that list. A dependency change fires both the CI workflow and this one.
 
-## 5. What the 115 `test:*` scripts actually divide into
+## 5. What the 116 `test:*` scripts actually divide into
 
 | Count | Kind                               | Where it runs                                                                                                                                                                                         |
 | ----: | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    74 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
+|    75 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
 |    21 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 9 concurrency / lock-order suites, 5 `*-upgrade` suites, 3 local Edge suites and 4 local E2E entries                                                   |
 |    11 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29/7.30 flag-ON/OFF suites and the bounded Phase 7.30D Chromium/WebKit recovery gate                                                   |
 |     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                         |
