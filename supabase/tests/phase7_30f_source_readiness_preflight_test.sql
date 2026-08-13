@@ -967,6 +967,80 @@ SELECT is(
   'populated session counts distinguish one unbacked Google session'
 );
 
+UPDATE private.admin_environment_memberships
+SET role = 'instructor',
+    expires_at = statement_timestamp() - interval '1 minute'
+WHERE id = '00000000-0000-4000-8000-00000000f136'::uuid;
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'suspendedAdminCount',
+        value -> 'membershipCounts' -> 'suspendedAdminCount',
+      'suspendedInstructorCount',
+        value -> 'membershipCounts' -> 'suspendedInstructorCount'
+    )
+    FROM private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) AS value
+  ),
+  jsonb_build_object(
+    'suspendedAdminCount', 0,
+    'suspendedInstructorCount', 0
+  ),
+  'an expired suspended instructor is excluded from both suspended membership counts'
+);
+
+UPDATE private.admin_environment_memberships
+SET expires_at = null
+WHERE id = '00000000-0000-4000-8000-00000000f136'::uuid;
+
+UPDATE private.admin_principals
+SET status = 'suspended'
+WHERE id = '00000000-0000-4000-8000-00000000f135'::uuid;
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'suspendedAdminCount',
+        value -> 'membershipCounts' -> 'suspendedAdminCount',
+      'suspendedInstructorCount',
+        value -> 'membershipCounts' -> 'suspendedInstructorCount'
+    )
+    FROM private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) AS value
+  ),
+  jsonb_build_object(
+    'suspendedAdminCount', 0,
+    'suspendedInstructorCount', 0
+  ),
+  'an inactive-principal suspended instructor is excluded from both suspended membership counts'
+);
+
+UPDATE private.admin_principals
+SET status = 'active'
+WHERE id = '00000000-0000-4000-8000-00000000f135'::uuid;
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'suspendedAdminCount',
+        value -> 'membershipCounts' -> 'suspendedAdminCount',
+      'suspendedInstructorCount',
+        value -> 'membershipCounts' -> 'suspendedInstructorCount'
+    )
+    FROM private.get_phase7_30f_source_readiness_preflight_v1(
+      '00000000-0000-4000-8000-00000000f101'::uuid
+    ) AS value
+  ),
+  jsonb_build_object(
+    'suspendedAdminCount', 1,
+    'suspendedInstructorCount', 1
+  ),
+  'a non-expired suspended instructor with an active principal satisfies both suspended membership counts'
+);
+
 UPDATE auth.mfa_factors
 SET status = 'unverified', updated_at = statement_timestamp()
 WHERE id = '00000000-0000-4000-8000-00000000f114'::uuid;

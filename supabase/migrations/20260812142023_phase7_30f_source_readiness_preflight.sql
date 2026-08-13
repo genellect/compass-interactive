@@ -73,15 +73,29 @@ as $$
       'suspendedAdminCount', (
         select pg_catalog.count(*)::integer
         from private.admin_environment_memberships as membership
+        join private.admin_principals as principal
+          on principal.id = membership.principal_id
         where membership.environment_id = target_environment_id
           and membership.status = 'suspended'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
       ),
       'suspendedInstructorCount', (
         select pg_catalog.count(*)::integer
         from private.admin_environment_memberships as membership
+        join private.admin_principals as principal
+          on principal.id = membership.principal_id
         where membership.environment_id = target_environment_id
           and membership.role = 'instructor'
           and membership.status = 'suspended'
+          and (
+            membership.expires_at is null
+            or membership.expires_at > statement_timestamp()
+          )
+          and principal.status = 'active'
       ),
       'activePersonalAiPinFactorCount', (
         select pg_catalog.count(*)::integer

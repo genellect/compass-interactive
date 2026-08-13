@@ -15,7 +15,7 @@ export const PHASE730F_MAXIMUM_DECISION = 'READY_FOR_SEPARATE_HOSTED_EXECUTION'
 const MAX_EVIDENCE_BYTES = 1024 * 1024
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const privateEvidenceFilePattern =
-  /^\.phase7-30f-evidence(?:[a-z0-9._-]*)\.json$/i
+  /^\.phase7-30f-evidence(?:[a-z0-9._-]*)\.json$/
 const schemaUrl = new URL(
   '../docs/evidence/phase7-30f-readiness.schema.json',
   import.meta.url,
@@ -1144,14 +1144,14 @@ function validateSemanticConsistency(evidence) {
       .map((timestamp) => Date.parse(timestamp))
     if (
       sourceEvidenceTimes.length > 0 &&
-      Date.parse(source.independentSourceReview.reviewedAt) <
+      Date.parse(source.independentSourceReview.reviewedAt) <=
         Math.max(...sourceEvidenceTimes)
     ) {
       errors.push(
         issue(
           'SOURCE_REVIEW_PRECEDES_EVIDENCE',
           '$.sourceEvidence.independentSourceReview',
-          'Independent source review must follow every source check it covers.',
+          'Independent source review must be strictly later than every source check it covers.',
         ),
       )
     }
@@ -1462,6 +1462,13 @@ function validateSemanticConsistency(evidence) {
   }
   if (review.status !== 'NOT_REVIEWED') {
     const completedEvidenceTimes = [
+      evidence.configuration.environment.capturedAt,
+      evidence.sourceEvidence.phase730ePostMergeCi.performedAt,
+      evidence.sourceEvidence.phase730fBaseOnMergedE.performedAt,
+      ...Object.values(evidence.sourceEvidence.checks).map(
+        (record) => record.performedAt,
+      ),
+      evidence.sourceEvidence.independentSourceReview.reviewedAt,
       evidence.hostedEvidence.executedAt,
       evidence.configuration.secretInventory.capturedAt,
       evidence.preCutover.capturedAt,
@@ -1478,18 +1485,21 @@ function validateSemanticConsistency(evidence) {
       ...regressionRecordNames.map(
         (name) => evidence.regressionEvidence[name].performedAt,
       ),
+      ...Object.values(evidence.approvals)
+        .filter((record) => record.state !== 'HOLD')
+        .map((record) => record.recordedAt),
     ]
       .filter(Boolean)
       .map((timestamp) => Date.parse(timestamp))
     if (
       completedEvidenceTimes.length > 0 &&
-      Date.parse(review.reviewedAt) < Math.max(...completedEvidenceTimes)
+      Date.parse(review.reviewedAt) <= Math.max(...completedEvidenceTimes)
     ) {
       errors.push(
         issue(
           'REVIEW_PRECEDES_EVIDENCE',
           '$.independentReview',
-          'Independent review must follow the evidence it covers.',
+          'Independent review must be strictly later than all evidence and non-HOLD approvals it covers.',
         ),
       )
     }
@@ -1547,15 +1557,15 @@ function validateSemanticConsistency(evidence) {
   }
   if (
     evidence.hostedEvidence.executedAt &&
-    evidence.postCutover.capturedAt &&
+    evidence.preCutover.capturedAt &&
     Date.parse(evidence.hostedEvidence.executedAt) >=
-      Date.parse(evidence.postCutover.capturedAt)
+      Date.parse(evidence.preCutover.capturedAt)
   ) {
     errors.push(
       issue(
         'HOSTED_EVIDENCE_NOT_PRE_CUTOVER',
         '$.hostedEvidence.executedAt',
-        'Hosted deployment evidence must precede the Google-only cutover.',
+        'Hosted deployment evidence must precede the read-only pre-cutover snapshot.',
       ),
     )
   }

@@ -436,6 +436,32 @@ assert.equal(sourceReadyResult.sourceReadiness, 'SOURCE_READY')
 assert.equal(sourceReadyResult.decision, PHASE730F_HOLD)
 assert.ok(!sourceReadyResult.holdReasons.includes('SOURCE_EVIDENCE_NOT_READY'))
 
+const sourceReviewEqualLatestCheck = clone(sourceReady)
+sourceReviewEqualLatestCheck.sourceEvidence.independentSourceReview.reviewedAt =
+  '2026-08-12T13:02:00Z'
+assert.ok(
+  validatePhase730FEvidence(sourceReviewEqualLatestCheck).some(
+    (error) => error.code === 'SOURCE_REVIEW_PRECEDES_EVIDENCE',
+  ),
+  'independent source review must be strictly later than every covered source check',
+)
+
+const finalReviewBeforeSourceReview = clone(sourceReady)
+finalReviewBeforeSourceReview.independentReview = {
+  status: 'PASS',
+  reviewedAt: '2026-08-12T13:02:30Z',
+  evidenceDigestSha256: digest('5'),
+  separateFromExecutor: true,
+  criticalFindings: 0,
+  highFindings: 0,
+}
+assert.ok(
+  validatePhase730FEvidence(finalReviewBeforeSourceReview).some(
+    (error) => error.code === 'REVIEW_PRECEDES_EVIDENCE',
+  ),
+  'final review must follow the independent source review and all source evidence',
+)
+
 const sourceCheckWrongCommit = clone(sourceReady)
 sourceCheckWrongCommit.sourceEvidence.checks.build.observedCommitSha =
   '2222222222222222222222222222222222222222'
@@ -702,7 +728,7 @@ complete.postCutover = {
 }
 complete.hostedEvidence = {
   executed: true,
-  executedAt: '2026-08-12T14:03:00Z',
+  executedAt: '2026-08-12T14:01:00Z',
   deploymentEvidenceDigestSha256: digest('3'),
   immutableRevisionSha256: digest('4'),
   sourceCommitMatches: true,
@@ -799,7 +825,7 @@ for (const [index, name] of approvedActions.entries()) {
 }
 complete.independentReview = {
   status: 'PASS',
-  reviewedAt: '2026-08-12T14:15:00Z',
+  reviewedAt: '2026-08-12T14:16:00Z',
   evidenceDigestSha256: digest('a'),
   separateFromExecutor: true,
   criticalFindings: 0,
@@ -822,11 +848,34 @@ assert.equal(completeResult.productionAuthorized, false)
 assert.equal(completeResult.canaryAuthorized, false)
 
 const humanBeforeHosted = clone(complete)
-humanBeforeHosted.humanEvidence.aal1ToAal2.performedAt = '2026-08-12T14:02:59Z'
+humanBeforeHosted.humanEvidence.aal1ToAal2.performedAt = '2026-08-12T14:00:59Z'
 assert.ok(
   validatePhase730FEvidence(humanBeforeHosted).some(
     (error) => error.code === 'HUMAN_EVIDENCE_NOT_AFTER_HOSTED',
   ),
+)
+
+const finalReviewEqualEnvironmentCapture = clone(complete)
+finalReviewEqualEnvironmentCapture.independentReview.reviewedAt =
+  finalReviewEqualEnvironmentCapture.configuration.environment.capturedAt
+assert.ok(
+  validatePhase730FEvidence(finalReviewEqualEnvironmentCapture).some(
+    (error) => error.code === 'REVIEW_PRECEDES_EVIDENCE',
+  ),
+  'final review must be strictly later than the environment capture',
+)
+
+const finalReviewBeforeRejectedApproval = clone(complete)
+finalReviewBeforeRejectedApproval.approvals.limitedIdentityCanary = {
+  state: 'REJECTED',
+  recordedAt: '2026-08-12T14:17:00Z',
+  evidenceDigestSha256: digest('0'),
+}
+assert.ok(
+  validatePhase730FEvidence(finalReviewBeforeRejectedApproval).some(
+    (error) => error.code === 'REVIEW_PRECEDES_EVIDENCE',
+  ),
+  'final review must follow every non-HOLD approval, including a rejection',
 )
 
 for (const field of ['rotatedAt', 'removedAt']) {
@@ -879,12 +928,22 @@ assert.ok(
   'each separately scoped approval requires a distinct evidence digest',
 )
 
-const hostedAfterCutover = clone(complete)
-hostedAfterCutover.hostedEvidence.executedAt = '2026-08-12T14:04:30Z'
+const hostedAfterPreCutover = clone(complete)
+hostedAfterPreCutover.hostedEvidence.executedAt = '2026-08-12T14:04:30Z'
 assert.ok(
-  validatePhase730FEvidence(hostedAfterCutover).some(
+  validatePhase730FEvidence(hostedAfterPreCutover).some(
     (error) => error.code === 'HOSTED_EVIDENCE_NOT_PRE_CUTOVER',
   ),
+)
+
+const hostedEqualPreCutover = clone(complete)
+hostedEqualPreCutover.hostedEvidence.executedAt =
+  hostedEqualPreCutover.preCutover.capturedAt
+assert.ok(
+  validatePhase730FEvidence(hostedEqualPreCutover).some(
+    (error) => error.code === 'HOSTED_EVIDENCE_NOT_PRE_CUTOVER',
+  ),
+  'Hosted deployment evidence must be strictly earlier than the pre-cutover snapshot',
 )
 
 const humanAfterCutover = clone(complete)
@@ -1208,6 +1267,23 @@ assert.deepEqual(JSON.parse(nestedFixtureCli.stdout).errors, [
   { code: 'EVIDENCE_PATH_FORBIDDEN', path: '$' },
 ])
 
+const uppercaseFixtureCli = spawnSync(
+  process.execPath,
+  [
+    validatorPath,
+    '--evidence',
+    fileURLToPath(
+      new URL('../.PHASE7-30F-EVIDENCE-CASE-REJECTED.json', import.meta.url),
+    ),
+    '--json',
+  ],
+  { encoding: 'utf8' },
+)
+assert.equal(uppercaseFixtureCli.status, 2)
+assert.deepEqual(JSON.parse(uppercaseFixtureCli.stdout).errors, [
+  { code: 'EVIDENCE_PATH_FORBIDDEN', path: '$' },
+])
+
 const invalidArgumentsCli = spawnSync(
   process.execPath,
   [validatorPath, '--unknown', '--json'],
@@ -1354,6 +1430,21 @@ assert.match(
   preflightMigration,
   /approved_totp_factor_set_hash\s*=\s*private\.current_verified_totp_factor_set_hash_v1\(\s*principal\.auth_user_id\s*\)/i,
   'approved-TOTP readiness must match the current verified Auth factor set',
+)
+assert.match(
+  preflightMigration,
+  /'suspendedAdminCount',\s*\([\s\S]*?join private\.admin_principals as principal[\s\S]*?membership\.status = 'suspended'[\s\S]*?membership\.expires_at > statement_timestamp\(\)[\s\S]*?principal\.status = 'active'[\s\S]*?\),\s*'suspendedInstructorCount'/i,
+  'suspended Admin readiness must require an active principal and a non-expired membership',
+)
+assert.match(
+  preflightMigration,
+  /'suspendedInstructorCount',\s*\([\s\S]*?join private\.admin_principals as principal[\s\S]*?membership\.role = 'instructor'[\s\S]*?membership\.status = 'suspended'[\s\S]*?membership\.expires_at > statement_timestamp\(\)[\s\S]*?principal\.status = 'active'[\s\S]*?\),\s*'activePersonalAiPinFactorCount'/i,
+  'suspended instructor readiness must require the instructor role, an active principal and a non-expired membership',
+)
+assert.match(
+  preflightPgTap,
+  /expired suspended instructor[\s\S]*inactive-principal suspended instructor[\s\S]*non-expired suspended instructor with an active principal/i,
+  'pgTAP must reject expired and inactive-principal suspended evidence before accepting an eligible suspended instructor',
 )
 assert.match(
   preflightPgTap,

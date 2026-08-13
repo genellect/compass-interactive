@@ -74,7 +74,7 @@ codes and non-sensitive counts/digests.
 | `scripts/test-phase7-30f-static.mjs`                                           | Positive, negative, redaction, default-HOLD and source-contract tests included in the 75-group non-live suite.                                                                                        |
 
 Actual evidence files are operator-controlled and must use the repository-root
-name `.phase7-30f-evidence*.json`; the exact anchored ignore contract is
+lowercase name `.phase7-30f-evidence*.json`; the exact anchored ignore contract is
 `/.phase7-30f-evidence*.json`. They must not be placed under another directory,
 force-added, attached to an issue or PR, or uploaded as a CI artifact. The
 CLI rejects any path whose canonical parent is not the repository root or
@@ -278,8 +278,11 @@ ownership count, three cutover-receipt checks, legacy-verifier
 object. They also include exact membership/personal-factor counts (total and
 role-correlated owner, AI-enabled instructor, standard instructor and
 suspended-instructor evidence) and exact active Google-session counts for
-backing `auth.sessions`, the eight-hour cap and idle-cap equality. This
-includes `cutoverReceiptDeploymentEvidenceDigestMatches` and the
+backing `auth.sessions`, the eight-hour cap and idle-cap equality. Suspended
+evidence counts only when the suspended membership is non-expired, is bound
+to an active principal and, for the role-correlated count, has the instructor
+role. The snapshot also includes
+`cutoverReceiptDeploymentEvidenceDigestMatches` and the
 exact trigger keys `legacyGateTombstoneEnabled`,
 `legacySessionFenceEnabled`, `activeLectureOwnershipFenceEnabled` and
 `googleSessionAbsoluteIdleTriggerEnabled`. The last key proves the durable
@@ -445,9 +448,10 @@ separate stop points:
 | `limitedIdentityCanary`            | Enable only the approved bounded staging/identity cohort with named stop conditions.                           | Repository publication, contest access, commercial release or Phase 7.33 PASS. |
 | `productionActivation`             | Reserved for the later integrated Phase 7.33 approval record and required to remain `HOLD` throughout Phase F. | Any Phase F execution or readiness elevation.                                  |
 
-Chronology is part of the contract. Hosted deployment, the read-only
-`preCutover` snapshot and the required Human identity/MFA/recovery evidence
-must precede the distinct `googleOnlyCutover` approval, which must precede
+Chronology is part of the contract. Hosted deployment must strictly precede
+the read-only `preCutover` snapshot; that snapshot and the required Human
+identity/MFA/recovery evidence must precede the distinct `googleOnlyCutover`
+approval, which must precede
 `postCutover`. That proof must precede the
 `adminPinSecretDeletion` approval and `ADMIN_PIN.removedAt`. Personal AI PIN
 end-to-end proof plus the candidate-SHA local browser/static evidence and
@@ -458,6 +462,10 @@ non-HOLD approval uses a distinct digest; reusing one artifact across approval
 slots is rejected.
 The pre-cutover, post-cutover and billing-retirement snapshot digests must also
 be pairwise distinct; copied evidence cannot represent separate observations.
+The final independent review must be strictly later than the environment
+capture, every source and external evidence timestamp, and every non-HOLD
+approval timestamp it covers; equality is stale review evidence and is
+rejected.
 
 External publication, contest invitations, paid-provider traffic and
 legal/commercial acceptance remain outside this table and require their own
