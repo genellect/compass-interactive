@@ -114,23 +114,22 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   await summary.getByRole('button', { name: '要約を開始' }).click()
   await expect(summary).toContainText('実行中')
 
-  await expect
-    .poll(async () => {
-      const { count } = await service
-        .from('ai_billing_grants')
-        .select('id', { count: 'exact', head: true })
-        .eq('lecture_session_id', lectureId)
-        .not('master_authorization_id', 'is', null)
-        .eq('status', 'consumed')
-      return count
-    })
-    .toBe(1)
   const { count: runningRuns } = await service
     .from('lecture_summary_runs')
     .select('id', { count: 'exact', head: true })
     .eq('lecture_session_id', lectureId)
     .eq('status', 'running')
   expect(runningRuns).toBe(1)
+  const { count: grantCountAfterSummaryStart } = await service
+    .from('ai_billing_grants')
+    .select('id', { count: 'exact', head: true })
+    .eq('lecture_session_id', lectureId)
+  const { count: usageCountAfterSummaryStart } = await service
+    .from('ai_usage_ledger')
+    .select('id', { count: 'exact', head: true })
+    .eq('lecture_session_id', lectureId)
+  expect(grantCountAfterSummaryStart).toBe(0)
+  expect(usageCountAfterSummaryStart).toBe(0)
   expect(paidRequests).toEqual([])
 
   let postStopSummaryRequests = 0

@@ -147,7 +147,11 @@ assert.match(localBrowser, /installGoogleAdminSession/)
 assert.match(localBrowser, /個人AI PIN/)
 assert.match(localBrowser, /要約を開始/)
 assert.match(localBrowser, /lecture_summary_runs/)
-assert.match(localBrowser, /status', 'consumed'/)
+assert.match(
+  localBrowser,
+  /grantCountAfterSummaryStart[\s\S]*?\.from\('ai_billing_grants'\)[\s\S]*?usageCountAfterSummaryStart[\s\S]*?\.from\('ai_usage_ledger'\)[\s\S]*?expect\(grantCountAfterSummaryStart\)\.toBe\(0\)[\s\S]*?expect\(usageCountAfterSummaryStart\)\.toBe\(0\)/,
+)
+assert.doesNotMatch(localBrowser, /\.eq\('status', 'consumed'\)/)
 assert.match(localBrowser, /すべて停止/)
 assert.match(localBrowser, /postStopSummaryRequests/)
 assert.match(localBrowser, /expect\(paidRequests\)\.toEqual\(\[\]\)/)
