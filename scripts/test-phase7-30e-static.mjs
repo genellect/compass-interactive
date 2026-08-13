@@ -505,6 +505,20 @@ assert.match(
   /insert into private\.admin_ai_policies[\s\S]*?array\[[\s\S]*?'academic_answers',[\s\S]*?'captions',[\s\S]*?'material_analysis',[\s\S]*?'poll_suggestions',[\s\S]*?'summaries'[\s\S]*?\]::text\[\]/,
   'the local AI-PIN fixture policy must cover every action required by the current master scopes',
 )
+assert.match(
+  localGoogleFixture,
+  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true/,
+  'the local AI-PIN fixture must enable both master admission and child-grant scheduling',
+)
+assert.equal(
+  (
+    localGoogleFixture.match(
+      /set ai_unlock_enabled = false,[\s\S]*?google_ai_master_admission_enabled = false,[\s\S]*?google_ai_child_grant_enabled = false,[\s\S]*?remembered_browser_enabled = false/g,
+    ) ?? []
+  ).length,
+  2,
+  'both retained and disposable fixture cleanup paths must restore the child-grant gate to OFF',
+)
 assert.doesNotMatch(
   localGoogleFixture,
   /const pinControlAal2 = accessToken\(status,[\s\S]{0,160}?totpTimestamp: Math\.floor\(Date\.now\(\) \/ 1_000\)/,

@@ -546,6 +546,7 @@ try {
         where id = ${sqlLiteral(completed.session.membershipId)}::uuid;
         update private.admin_ai_unlock_runtime_gate
         set google_ai_master_admission_enabled = true,
+            google_ai_child_grant_enabled = true,
             updated_at = statement_timestamp()
         where singleton;
         insert into private.admin_ai_policies (
@@ -918,6 +919,7 @@ try {
         update private.admin_ai_unlock_runtime_gate
         set ai_unlock_enabled = false,
             google_ai_master_admission_enabled = false,
+            google_ai_child_grant_enabled = false,
             remembered_browser_enabled = false,
             updated_at = statement_timestamp()
         where singleton;
@@ -943,6 +945,7 @@ try {
       update private.admin_ai_unlock_runtime_gate
       set ai_unlock_enabled = false,
           google_ai_master_admission_enabled = false,
+          google_ai_child_grant_enabled = false,
           remembered_browser_enabled = false,
           updated_at = statement_timestamp()
       where singleton;
