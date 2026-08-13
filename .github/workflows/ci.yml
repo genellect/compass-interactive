@@ -241,6 +241,8 @@ jobs:
           ADMIN_AI_PIN_PEPPER=compass-ci-only-admin-ai-pin-pepper-at-least-32-bytes
           ADMIN_AI_NETWORK_PEPPER=compass-ci-only-admin-ai-network-pepper-at-least-32-bytes
           ADMIN_AI_BROWSER_CHALLENGE_SECRET=compass-ci-only-browser-challenge-secret-at-least-32-bytes
+          ADMIN_AI_CHILD_GRANT_SECRET=compass-ci-only-admin-ai-child-grant-secret-at-least-32-bytes
+          ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1
           PRESENTER_BRIDGE_TOKEN_SECRET=compass-ci-only-presenter-bridge-token-secret-at-least-32-bytes
           PRESENTER_BRIDGE_GATEWAY_SECRET=compass-ci-only-presenter-gateway-secret-at-least-32-bytes
           LITERATURE_API_CONTACT_EMAIL=ci@example.test

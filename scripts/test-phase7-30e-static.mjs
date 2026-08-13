@@ -571,6 +571,11 @@ assert.match(
   'failed demo integration evidence must retain both raw traces and the HTML report',
 )
 assert.match(
+  ci,
+  /ADMIN_AI_CHILD_GRANT_SECRET=compass-ci-only-admin-ai-child-grant-secret-at-least-32-bytes[\s\S]*ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1/,
+  'the local Edge fixture must configure deterministic Google AI child-grant signing before browser integration',
+)
+assert.match(
   localGoogleFixture,
   /disable trigger admin_google_operation_receipts_append_only[\s\S]*delete from private\.admin_google_operation_receipts[\s\S]*where environment_id =[\s\S]*enable trigger admin_google_operation_receipts_append_only[\s\S]*delete from public\.admin_sessions/,
   'the isolated local fixture must remove immutable operation receipts before deleting its Admin sessions',
