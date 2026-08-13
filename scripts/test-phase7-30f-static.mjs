@@ -1385,6 +1385,16 @@ assert.match(
   /'functionExists',\s*procedure\.oid is not null/i,
   'legacy billing ACL evidence must distinguish missing functions from revoked grants',
 )
+for (const [source, label] of [
+  [preflightPgTap, 'from-zero pgTAP'],
+  [populatedUpgradeProbe, 'populated E-to-F upgrade probe'],
+]) {
+  assert.match(
+    source,
+    /value -> 'legacyVerifierAcl'[\s\S]{0,500}'functionExists',\s*true[\s\S]{0,500}'serviceRoleExecute',\s*true/i,
+    `${label} must preserve the retained legacy verifier function and its pre-cutover service-role ACL`,
+  )
+}
 assert.equal(
   [...preflightMigration.matchAll(/tgenabled\s*=\s*'O'/g)].length,
   4,

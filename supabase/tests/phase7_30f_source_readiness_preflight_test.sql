@@ -431,6 +431,7 @@ SELECT is(
 SELECT is(
   (SELECT value -> 'legacyVerifierAcl' FROM phase730f_snapshot),
   jsonb_build_object(
+    'functionExists', true,
     'publicExecute', false,
     'anonExecute', false,
     'authenticatedExecute', false,

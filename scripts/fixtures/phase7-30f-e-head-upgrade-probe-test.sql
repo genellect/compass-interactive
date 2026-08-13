@@ -185,6 +185,7 @@ select is(
 select is(
   (select value -> 'legacyVerifierAcl' from phase730f_upgrade_snapshot),
   jsonb_build_object(
+    'functionExists', true,
     'publicExecute', false,
     'anonExecute', false,
     'authenticatedExecute', false,
