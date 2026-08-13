@@ -21,6 +21,25 @@ async function closeContext(context: BrowserContext, page: Page) {
   await context.close()
 }
 
+async function installClipboardCapture(page: Page) {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          window.sessionStorage.setItem('lifecycle-display-url', value)
+        },
+      },
+    })
+  })
+}
+
+async function copiedDisplayUrl(page: Page) {
+  return page.evaluate(
+    () => window.sessionStorage.getItem('lifecycle-display-url') ?? '',
+  )
+}
+
 async function decodeQrImage(page: Page, selector: string) {
   const raster = await page.locator(selector).evaluate((element) => {
     if (!(element instanceof HTMLImageElement)) {
@@ -152,18 +171,42 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       canonicalJoinUrl,
     )
 
-    const isolatedSession = await issuedDisplaySession
+    const popupSession = await issuedDisplaySession
+    await installClipboardCapture(admin.page)
+    const isolatedDisplaySessionResponse = admin.page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/functions/v1/issue-display-session') &&
+        response.status() === 200,
+    )
+    await admin.page
+      .getByRole('button', { name: '別ブラウザ用リンクをコピー' })
+      .click()
+    const isolatedSession = (
+      await isolatedDisplaySessionResponse
+    ).json() as Promise<{
+      displayToken: string
+      lectureSessionId: string
+    }>
+    await expect(
+      admin.page.getByRole('button', { name: 'リンクをコピーしました' }),
+    ).toBeVisible()
+    const isolatedDisplayUrl = await copiedDisplayUrl(admin.page)
+    const issuedIsolatedSession = await isolatedSession
+    expect(issuedIsolatedSession.lectureSessionId).toBe(
+      popupSession.lectureSessionId,
+    )
+    expect(issuedIsolatedSession.displayToken).not.toBe(
+      popupSession.displayToken,
+    )
+    expect(isolatedDisplayUrl).toContain('/display#')
+    expect(isolatedDisplayUrl).toContain(
+      encodeURIComponent(issuedIsolatedSession.displayToken),
+    )
     isolatedDisplayContext = await browser.newContext()
     isolatedDisplayPage = await isolatedDisplayContext.newPage()
     const isolatedDisplaySafety =
       await installBrowserSafetyMonitor(isolatedDisplayPage)
-    const isolatedDisplayUrl = new URL('/display', appBaseUrl)
-    isolatedDisplayUrl.hash = new URLSearchParams({
-      code: lectureCode ?? '',
-      lecture: isolatedSession.lectureSessionId,
-      token: isolatedSession.displayToken,
-    }).toString()
-    await isolatedDisplayPage.goto(isolatedDisplayUrl.toString())
+    await isolatedDisplayPage.goto(isolatedDisplayUrl)
     await expect(
       isolatedDisplayPage.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()

@@ -38,6 +38,7 @@ const displayRealtimeBrowser = read(
   'e2e/local/display-realtime-integration.spec.ts',
 )
 const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
+const localLifecycleBrowser = read('e2e/local/live-lecture.spec.ts')
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
@@ -444,6 +445,16 @@ assert.match(
   localGoogleFixture,
   /delete from auth\.identities[\s\S]*provider <> 'google'/,
   'the local AAL2 fixture must expose one Google identity to strict operational verification',
+)
+assert.match(
+  localLifecycleBrowser,
+  /popupSession = await issuedDisplaySession[\s\S]*installClipboardCapture\(admin\.page\)[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*issue-display-session[\s\S]*getByRole\('button', \{ name: '別ブラウザ用リンクをコピー' \}\)[\s\S]*\.click\(\)[\s\S]*await expect\([\s\S]*getByRole\('button', \{ name: 'リンクをコピーしました' \}\)[\s\S]*\)\.toBeVisible\(\)[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
+  'the isolated lifecycle Display page must wait for a separately issued one-use URL to finish copying',
+)
+assert.match(
+  localLifecycleBrowser,
+  /issuedIsolatedSession\.lectureSessionId[\s\S]*popupSession\.lectureSessionId[\s\S]*issuedIsolatedSession\.displayToken\)\.not\.toBe\([\s\S]*popupSession\.displayToken[\s\S]*isolatedDisplayUrl\)\.toContain\([\s\S]*encodeURIComponent\(issuedIsolatedSession\.displayToken\)[\s\S]*isolatedDisplayPage\.goto\(isolatedDisplayUrl\)/,
+  'the isolated lifecycle Display page must claim a separately issued one-use URL instead of replaying the popup token',
 )
 assert.match(
   adminIdentityBrowser,
