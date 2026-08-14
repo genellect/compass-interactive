@@ -27,7 +27,7 @@
 - [ ] `e2e/`
 - [ ] `scripts/`, `.github/workflows/`
 - [ ] `package.json` / `package-lock.json`
-- [ ] `.devcontainer/`, `.node-version`, `.gitattributes`
+- [ ] `.devcontainer/`, `.node-version`, `.nvmrc`, `.gitattributes`
 - [ ] `.codex/`, `AGENTS.md`, Cloud/Gate contract
 - [ ] `presenter-bridge/` Windows native boundary
 - [ ] Google OAuth / Supabase Auth / Admin RBAC / MFA
@@ -79,7 +79,7 @@ Required for any change to `supabase/migrations/`, `supabase/functions/`, or `su
 
 ## Dev Container gate
 
-Required for `.devcontainer/`, `.node-version`, `.gitattributes`, `scripts/devcontainer.*`, or a dependency change.
+Required for `.devcontainer/`, `.node-version`, `.nvmrc`, `.gitattributes`, `scripts/devcontainer.*`, or a dependency change.
 
 | Gate                                          | Result | Notes |
 | --------------------------------------------- | ------ | ----- |

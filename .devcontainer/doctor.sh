@@ -41,10 +41,11 @@ fi
 if has_command node; then
   actual_node="$(node -p 'process.versions.node' 2>/dev/null || true)"
   pinned_node="$(tr -d '\r\n' < .node-version 2>/dev/null || true)"
-  if [[ "$actual_node" == "$NODE_VERSION" && "$pinned_node" == "$NODE_VERSION" ]]; then
+  pinned_nvm="$(tr -d '\r\n' < .nvmrc 2>/dev/null || true)"
+  if [[ "$actual_node" == "$NODE_VERSION" && "$pinned_node" == "$NODE_VERSION" && "$pinned_nvm" == "$NODE_VERSION" ]]; then
     pass "Node.js $actual_node"
   else
-    fail "Node.js ${actual_node:-unavailable} with .node-version ${pinned_node:-unavailable} (expected $NODE_VERSION)"
+    fail "Node.js ${actual_node:-unavailable} with .node-version ${pinned_node:-unavailable} and .nvmrc ${pinned_nvm:-unavailable} (expected $NODE_VERSION)"
   fi
 else
   fail "Node.js version is unverifiable without the node command (expected $NODE_VERSION)"

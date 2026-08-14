@@ -65,6 +65,10 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | Contest reviewer identity, environment or paid-AI access                      | Phase 7.30 identity/TOTP AAL2, AI PIN/browser enrollment, atomic abuse-limit, scope-escalation and revoke-matrix gates plus Phase 7.31C lecture-master, dedicated R2, cross-principal/environment, budget/expiry/cleanup and Human reviewer gates                                | Partly; real OAuth, Supabase, R2 and AI require isolated Hosted evidence                                                                                                                                                      |
 | Tenant, commercial billing, retention/privacy, SLO or support operations      | Phase 7.32 DB/Edge/UI/load/accessibility/restore/incident gates, followed only by the unified Phase 7.33 Production Gate                                                                                                                                                         | Partly; commercial Hosted/Human/legal evidence cannot be proved by Cloud tests                                                                                                                                                |
 
+The `.nvmrc` compatibility pin follows the `.node-version` row and must stay
+identical to the package engine minimum; either pin changing routes through the
+same Dev Container Contract.
+
 `cloudflare/presenter-gateway/` is locally covered by `typecheck:phase3` and
 `test:phase7-29-gateway`, both included in `cloud:check`. A Custom Domain,
 secret, route or deployment is not cleared by those tests and remains a
@@ -120,6 +124,7 @@ AGENTS.md
 CLAUDE.md
 .gitattributes
 .node-version
+.nvmrc
 package.json
 package-lock.json
 scripts/devcontainer.*

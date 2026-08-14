@@ -33,7 +33,8 @@ If `main` advances, the branch is reconciled with the new canonical SHA and the
 affected gates rerun. A previous green run is evidence for its own SHA only.
 
 `npm run cloud:doctor` checks the canonical origin, lockfile identity, minimum
-Node contract, required repository policy files and locked local binaries. It
+Node contract, exact agreement between `package.json`, `.node-version` and
+`.nvmrc`, required repository policy files and locked local binaries. It
 uses no Docker, Hosted service or paid API. `npm run cloud:check` starts with
 this doctor. Docker-based Supabase remains a separate Dev Container/Codespaces
 handoff, and PowerPoint remains a Windows Device Gate.
