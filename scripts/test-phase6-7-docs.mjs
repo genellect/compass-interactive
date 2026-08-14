@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  findForbiddenTrackedEnvironment,
+  findForbiddenTrackedEvidence,
+  findForbiddenTrackedRuntimeArtifacts,
+} from './cloud-handoff-policy.mjs'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -93,6 +98,7 @@ const cloudDevelopment = read('docs/CLOUD_DEVELOPMENT.md')
 const cloudHandoffDoctor = read('scripts/cloud-handoff-doctor.mjs')
 const codexSetup = read('.codex/setup.sh')
 const devContainerWorkflow = read('.github/workflows/devcontainer-contract.yml')
+const ciWorkflow = read('.github/workflows/ci.yml')
 
 for (const requiredText of [
   `Application version: \`${packageJson.version}\``,
@@ -224,7 +230,9 @@ for (const requiredText of [
   'retrospective Copilot review of private PRs #37, #38, #39 and #42',
   'Existing Production stays on its current immutable revision',
   'Admin, Student, Display, Review, PDF and AI',
-  'READY_FOR_DISCONNECTED_CLOUD_EXECUTION',
+  'BRANCH_HANDOFF_READY',
+  'LECTURE_CYCLE_STAGING_READONLY_INVENTORY',
+  'LECTURE_CYCLE_CANARY_PASS',
   'private contest upload',
 ]) {
   assert.ok(
@@ -241,6 +249,9 @@ for (const requiredText of [
   'Independent review task',
   'one dedicated non-main branch/worktree',
   'Do not weaken or disable existing Admin, Student, Display, Review, PDF or AI UX',
+  'Keep Codex agent-phase\ninternet OFF',
+  'currently approved additional GitHub Actions budget of\n$10',
+  'LECTURE_CYCLE_STAGING_READONLY_INVENTORY',
 ]) {
   assert.ok(
     lectureCycleAgents.includes(requiredText),
@@ -249,26 +260,64 @@ for (const requiredText of [
 }
 assert.equal(
   packageJson.scripts?.['cloud:handoff'],
-  'npm run cloud:doctor && node scripts/cloud-handoff-doctor.mjs',
+  'npm run cloud:doctor && npm run security:secrets && node scripts/cloud-handoff-doctor.mjs',
   'package.json must expose the fail-closed cloud handoff gate',
 )
 for (const requiredText of [
   "process.argv.includes('--contract-only')",
   "'origin/main', 'HEAD'",
   'HEAD is pushed exactly to its upstream',
+  'origin/main matches current remote main',
+  'GitHub repository is not anonymously readable',
   'clean tracked and untracked worktree',
   'no tracked Phase 7.30F private evidence',
-  'no tracked non-example .env file',
-  'READY_FOR_DISCONNECTED_CLOUD_EXECUTION source/test work only',
+  'no tracked non-example .env or .dev.vars file',
+  'BRANCH_HANDOFF_READY repository-side source/test handoff only',
 ]) {
   assert.ok(
     cloudHandoffDoctor.includes(requiredText),
     `Cloud handoff doctor missing: ${requiredText}`,
   )
 }
+assert.deepEqual(
+  findForbiddenTrackedEvidence([
+    '.phase7-30f-evidence.json',
+    'nested/.phase7-30f-evidence-real.json',
+    'scripts/fixtures/phase7-30f-evidence.example.json',
+  ]),
+  ['.phase7-30f-evidence.json', 'nested/.phase7-30f-evidence-real.json'],
+  'Cloud handoff must reject private Phase 7.30F evidence at any depth',
+)
+assert.deepEqual(
+  findForbiddenTrackedEnvironment([
+    '.env.local.example',
+    'cloudflare/worker/.dev.vars.example',
+    '.env.production',
+    'cloudflare/worker/.dev.vars',
+    'nested/.dev.vars.local',
+  ]),
+  ['.env.production', 'cloudflare/worker/.dev.vars', 'nested/.dev.vars.local'],
+  'Cloud handoff must reject non-example .env and .dev.vars files',
+)
+assert.deepEqual(
+  findForbiddenTrackedRuntimeArtifacts([
+    'src/main.tsx',
+    'dist/index.html',
+    'evidence/database.dump',
+    'private/backups/snapshot.bin',
+    'logs/runtime.txt',
+  ]),
+  [
+    'dist/index.html',
+    'evidence/database.dump',
+    'private/backups/snapshot.bin',
+    'logs/runtime.txt',
+  ],
+  'Cloud handoff must reject generated, dump, backup and log artifacts',
+)
 assert.match(
   codexSetup,
-  /npm run cloud:doctor[\s\S]*npm run cloud:handoff[\s\S]*Hosted, paid, Human and Production actions remain separately approved/,
+  /npm run cloud:doctor[\s\S]*npm run cloud:handoff[\s\S]*exact-SHA Codex Cloud task or GitHub Actions run[\s\S]*Hosted, paid, Human and Production actions remain separately approved/,
   'Codex Cloud setup must route the final pushed branch through cloud:handoff without granting external authority',
 )
 for (const document of [
@@ -288,6 +337,7 @@ for (const document of [
   )
 }
 for (const path of [
+  'scripts/cloud-handoff-policy.mjs',
   'scripts/cloud-handoff-doctor.mjs',
   'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
   'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
@@ -297,6 +347,31 @@ for (const path of [
     `Dev Container workflow path filter missing: ${path}`,
   )
 }
+assert.match(
+  devContainerWorkflow,
+  /bash -n \.codex\/setup\.sh \.codex\/maintenance\.sh/,
+  'Dev Container CI must syntax-check the Codex Cloud scripts',
+)
+assert.match(
+  devContainerWorkflow,
+  /node scripts\/cloud-handoff-doctor\.mjs --contract-only/,
+  'Dev Container CI must execute the handoff contract',
+)
+assert.match(
+  ciWorkflow,
+  /node scripts\/cloud-handoff-doctor\.mjs --contract-only/,
+  'Quality CI must execute the handoff contract',
+)
+assert.match(
+  ciAndBrowser,
+  /Actions capacity conservation[\s\S]*focused\/local\/static checks[\s\S]*targeted[\s\S]*\$10/,
+  'CI runbook must conserve the bounded GitHub Actions budget',
+)
+assert.match(
+  agentsContract,
+  /GitHub Actions capacity is scarce[\s\S]*blind same-head reruns[\s\S]*\$10/,
+  'Every agent must follow the common Actions conservation contract',
+)
 assert.match(
   databaseSchema,
   /Phase 7\.30C1 adds four RLS-enabled private tables/,

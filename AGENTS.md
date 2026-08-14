@@ -18,7 +18,8 @@ Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the a
 - Use the local Docker-based Supabase stack for database, RLS, migration, and integration work. Do not link or push to a hosted Supabase project during ordinary development.
 - Run `npm run dev:doctor` after first container creation and environment-definition changes; never hide a missing dependency with an unrecorded global install.
 - Run `npm run cloud:doctor` after Codex Cloud setup or maintenance. It is deliberately non-Docker and does not substitute for the Dev Container, local Supabase, Windows Device, Hosted, Human or Production gates.
-- Before the local PC is disconnected, run `npm run cloud:handoff` from the pushed clean task branch. Its success permits only already-started Codex Cloud and GitHub Actions source/test work to continue; Codex Remote, local Docker/browser work, Hosted operations and Production actions still require their own live execution surface and approval.
+- Before the local PC is disconnected, run `npm run cloud:handoff` from the pushed clean task branch. `BRANCH_HANDOFF_READY` proves repository-side readiness only; separately observe and record a running exact-SHA Codex Cloud task or GitHub Actions URL. Only that already-started source/test work continues; Codex Remote, local Docker/browser work, Hosted operations and Production actions still require their own live execution surface and approval.
+- GitHub Actions capacity is scarce. Complete focused/local/static checks before pushing, batch related fixes into one commit, freeze one exact head, and request the full required workflow once. Never use blind same-head reruns or push-per-fix iteration. After one log fetch and failure classification, only a proven runner transient may receive one targeted job-only rerun; a source failure requires a new locally validated head. Respect the currently approved additional Actions budget ceiling of $10.
 
 ## Agent interoperability
 

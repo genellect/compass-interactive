@@ -324,9 +324,11 @@ Local writer while browser mode is active.
   lane task prompts. Write lanes use separate branches/worktrees; only the
   controller integrates.
 - Before disconnecting the local PC, push the clean branch and run
-  `npm run cloud:handoff`. Codex Cloud and GitHub Actions may then continue
-  source/test work, but Codex Remote, local Docker and Hosted/Human/Production
-  actions do not continue autonomously.
+  `npm run cloud:handoff`. `BRANCH_HANDOFF_READY` covers repository-side
+  readiness only; record the separately observed running exact-SHA Codex Cloud
+  task or GitHub Actions URL before disconnecting. That source/test work may
+  continue, but Codex Remote, local Docker and Hosted/Human/Production actions
+  do not continue autonomously.
 - Retrospective Copilot review of private PRs #37/#38/#39/#42 and a line-limit
   refusal are non-required. Actionable findings remain normal review input.
 - This path defers formal Phase 7.33, commercial 300-person SLA, multi-tenant,

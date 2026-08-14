@@ -18,9 +18,9 @@ The allowed outcomes are:
 - `READY_FOR_BOUNDED_PRODUCTION_CANARY`: staging, Human and rollback evidence
   are complete and a separately approved Production canary may be requested;
 - `HOLD`: one or more required evidence streams or approvals are missing;
-- `PASS`: a separately approved bounded canary completed without a stop
-  condition. This is a Lecture Cycle Candidate result, not Phase 7.33 PASS or
-  commercial GA.
+- `LECTURE_CYCLE_CANARY_PASS`: a separately approved bounded canary completed
+  without a stop condition. This is a Lecture Cycle Candidate result, not
+  Phase 7.33 PASS or commercial GA.
 
 No document, CI result or agent may convert these words into Phase 7.33,
 commercial, multi-tenant, Presenter-device or legal approval.
@@ -147,9 +147,13 @@ flowchart LR
 
 - Lane A completes non-live/static checks, private submission design and
   disconnected cloud handoff.
-- Lane B performs read-only Hosted inventory first. Any staging mutation,
-  OAuth/provider configuration, Human run or cutover requires its own approval
-  from the Phase 7.30F matrix.
+- Lane B prepares only local query, redaction and rollback procedures first.
+  It must stop before connecting to, querying or viewing any Hosted value.
+  Read-only staging inventory requires a separate
+  `LECTURE_CYCLE_STAGING_READONLY_INVENTORY` approval bound to the exact SHA,
+  staging environment, expiry and permitted metadata fields. Every later
+  mutation, OAuth/provider configuration, Human run or cutover keeps its own
+  Phase 7.30F approval.
 - Lane C runs Demo/local browser contracts and fixes only demonstrated source
   or test defects; it never disables an existing feature to make a test green.
 - Lane D validates backup, restore, failure isolation and rollback in a
@@ -246,10 +250,12 @@ The local PC is not a runtime dependency after a verified handoff:
 | Hosted OAuth, MFA, secret deletion or Production canary | No autonomous continuation                | an authenticated operator and the separate approval must be present           |
 
 Before disconnecting, run `npm run cloud:handoff`. The command must prove a
-non-main branch, clean worktree, canonical origin, current `origin/main`
-ancestry, exact pushed upstream and absence of tracked private evidence/env
-files. `READY_FOR_DISCONNECTED_CLOUD_EXECUTION` authorizes only source and test
-continuation; it never authorizes Hosted or Production action.
+non-main branch, clean worktree, canonical origin, current remote-main parity,
+exact pushed remote branch, private GitHub visibility, secret scan and absence
+of tracked private evidence/environment/runtime files. `BRANCH_HANDOFF_READY`
+proves repository-side readiness only. The controller must also observe and
+record a running exact-SHA Codex Cloud task or GitHub Actions URL before the PC
+disconnects. Neither result authorizes Hosted or Production action.
 
 ## 10. Private source submission contract
 
@@ -294,7 +300,7 @@ The task is complete only when the selected endpoint is stated truthfully:
 - `LECTURE_CYCLE_SOURCE_READY` when source/cloud/local evidence is complete;
 - `READY_FOR_BOUNDED_PRODUCTION_CANARY` when staging/Human/rollback evidence is
   also complete;
-- `PASS` only after the separately approved canary; or
+- `LECTURE_CYCLE_CANARY_PASS` only after the separately approved canary; or
 - `HOLD` with exact missing evidence and no degraded Production state.
 
 Phase 7.33, public-source, multi-tenant, Presenter-device, commercial SLA and

@@ -161,12 +161,14 @@ Repeated from `docs/CLOUD_DEVELOPMENT.md` because gate routing is meaningless wi
 
 Local, CI, hosted, device, human and Production acceptance are separate gates and never substitute for one another. A gate you could not run is **not executed**, never "passed".
 
-`npm run cloud:handoff` is a disconnected-execution gate, not a product gate.
-It requires a pushed clean non-main branch whose HEAD descends from fetched
-`origin/main`, and rejects tracked private Phase 7.30F evidence, non-example
-`.env` files and generated runtime artifacts. Success permits already-started
-Codex Cloud and GitHub Actions source/test work only; it does not authorize a
-Hosted query, paid call, secret mutation or Production action.
+`npm run cloud:handoff` is a repository-side disconnected-handoff gate, not a
+product gate. It requires a pushed clean non-main branch whose HEAD descends
+from the current remote main, proves the remote branch and private GitHub
+visibility, and rejects tracked private Phase 7.30F evidence at any depth,
+non-example `.env`/`.dev.vars` files and generated runtime artifacts.
+`BRANCH_HANDOFF_READY` still requires separately observed running exact-SHA
+Codex Cloud task or GitHub Actions evidence before disconnect; it does not
+authorize a Hosted query, paid call, secret mutation or Production action.
 
 ## Cross-cutting lecture UX gate
 

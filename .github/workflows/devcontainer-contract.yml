@@ -15,6 +15,7 @@ on:
       - package-lock.json
       - scripts/devcontainer.*
       - scripts/cloud-workspace-doctor.mjs
+      - scripts/cloud-handoff-policy.mjs
       - scripts/cloud-handoff-doctor.mjs
       - docs/CLOUD_DEVELOPMENT.md
       - docs/GATE_ROUTING.md
@@ -36,6 +37,7 @@ on:
       - package-lock.json
       - scripts/devcontainer.*
       - scripts/cloud-workspace-doctor.mjs
+      - scripts/cloud-handoff-policy.mjs
       - scripts/cloud-handoff-doctor.mjs
       - docs/CLOUD_DEVELOPMENT.md
       - docs/GATE_ROUTING.md
@@ -61,7 +63,11 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
+      - name: Verify Codex Cloud setup script syntax
+        run: bash -n .codex/setup.sh .codex/maintenance.sh
       - name: Create the locked Dev Container
         run: npx --yes @devcontainers/cli@0.88.0 up --workspace-folder .
       - name: Verify the complete toolchain contract
         run: npx --yes @devcontainers/cli@0.88.0 exec --workspace-folder . npm run dev:doctor
+      - name: Verify the disconnected handoff contract
+        run: npx --yes @devcontainers/cli@0.88.0 exec --workspace-folder . node scripts/cloud-handoff-doctor.mjs --contract-only

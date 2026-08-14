@@ -153,7 +153,7 @@ npm run test:e2e:demo
 
 `cloud:check`はcloud doctor、secret scan、3種類のTypeScript検査、lint、全non-live suite、Production-equivalent frontend buildを実行する。有料APIやHosted serviceへ接続しない。
 
-`cloud:handoff`は通常の開発中に繰り返すcommandではなく、ローカルPCを切断する直前の境界である。`cloud:doctor`に加え、専用non-main branch、clean worktree、canonical origin、`origin/main` ancestry、upstreamへのexact push、private evidence／non-example `.env`／runtime artifactの非追跡をfail-closedで検証する。成功語`READY_FOR_DISCONNECTED_CLOUD_EXECUTION`はsource/test継続だけを認め、Hosted、paid、Human、Productionの承認にはならない。
+`cloud:handoff`は通常の開発中に繰り返すcommandではなく、ローカルPCを切断する直前の境界である。`cloud:doctor`とsecret scanに加え、専用non-main branch、clean worktree、canonical origin、current remote main parity、remote branchへのexact push、GitHub private visibility、private evidence／non-example `.env`・`.dev.vars`／runtime artifactの非追跡をfail-closedで検証する。成功語`BRANCH_HANDOFF_READY`はrepository側のsource/test handoffだけを示す。切断前にcontrollerがexact-SHA Codex Cloud taskまたはGitHub Actions runの開始とURLを別途確認する。いずれもHosted、paid、Human、Productionの承認にはならない。
 
 ## Local Supabase
 

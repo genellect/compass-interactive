@@ -58,6 +58,7 @@ for (const file of [
   'docs/GATE_ROUTING.md',
   'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
   'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
+  'scripts/cloud-handoff-policy.mjs',
   'scripts/cloud-handoff-doctor.mjs',
 ]) {
   requireFile(file)

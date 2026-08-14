@@ -13,9 +13,10 @@ integrates commits and decides whether evidence is sufficient. Review tasks are
 read-only. No task receives secret values in its prompt.
 
 Cloud tasks may prepare work in parallel, but external gates remain ordered.
-Do not start Hosted mutation, OAuth configuration, Human MFA, secret deletion,
-paid calls or a Production canary from these prompts unless the user separately
-authorizes that exact action and environment.
+Do not connect to or view Hosted values, start Hosted mutation, configure
+OAuth, run Human MFA, delete a secret, call a paid provider or start a
+Production canary from these prompts unless the user separately authorizes that
+exact action, environment, evidence scope and expiry.
 
 ## 2. Common instruction block
 
@@ -42,11 +43,22 @@ to make a gate pass. Use expand-first/default-OFF changes, keep stop/close/
 revoke/downgrade available, and preserve the current Production revision until
 a separately approved canary.
 
+Use one write-capable agent by default. Add a bounded read-only reviewer only
+when independent judgment materially improves a security, UX or release gate.
+Do not spend beyond the currently approved additional GitHub Actions budget of
+$10. Classify a failure before rerunning; use at most one targeted job-only
+rerun for a proven runner transient.
+
 Never read, print, copy or commit secret values, personal identities, lecture
 codes, Production data, database dumps, protected files or actual Phase 7.30F
 evidence. Do not link or mutate Hosted Supabase, deploy Cloudflare, call paid
 OpenAI, change OAuth, delete a secret or activate Production without exact
 separate authorization.
+
+If browser authentication is required, open the exact trusted provider page
+and instruct the user to type credentials, OTP, recovery code or scan a QR
+directly. Never ask the user to paste that material into a prompt, terminal,
+GitHub comment, log or evidence file.
 
 Run the gate mapped by docs/GATE_ROUTING.md. Classify failures before changing
 source. Report exact files, commands, results, omissions, external effects and
@@ -84,10 +96,11 @@ Allowed writes: .codex/, .devcontainer/, cloud/setup scripts, CI wiring, package
 scripts and the plan/runbook documentation assigned by the controller.
 
 Make a fresh Codex Cloud task reproducible with bash .codex/setup.sh and a
-Codespace reproducible with the locked Dev Container. Keep Codex agent internet
-off unless a reviewed dependency operation requires otherwise. Add no Hosted or
-Production secret. Validate npm run cloud:doctor, cloud:check and
-cloud:handoff contract behavior.
+Codespace reproducible with the locked Dev Container. Keep Codex agent-phase
+internet OFF. Acquire dependencies only in setup or maintenance; enabling
+agent-phase internet requires its own explicit approval and a narrow reviewed
+domain allowlist. Add no Hosted or Production secret. Validate npm run
+cloud:doctor, cloud:check and cloud:handoff contract behavior.
 
 Design the private exact-SHA submission archive and manifest. It must be built
 from git-tracked files, checksum verified, private-delivery only and exclude
@@ -95,9 +108,10 @@ from git-tracked files, checksum verified, private-delivery only and exclude
 Record CI URLs without attaching unsafe CI artifacts. Do not change GitHub
 visibility or require public-source readiness.
 
-Handoff: push the branch, run npm run cloud:handoff from a clean synchronized
-head and report READY_FOR_DISCONNECTED_CLOUD_EXECUTION only for source/test
-work.
+Handoff: push the branch and run npm run cloud:handoff from a clean synchronized
+head. `BRANCH_HANDOFF_READY` covers repository-side source/test readiness only.
+Before disconnect, separately observe and record the exact-SHA Codex Cloud task
+or GitHub Actions run URL.
 ```
 
 ## 5. Lane B — Staging identity and Hosted evidence
@@ -107,12 +121,16 @@ Role: Phase 7.30F staging identity/evidence owner.
 Read docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md and
 docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md in full.
 
-Begin read-only. Verify exact source/deployment/rollback digests, staging-only
-environment kind, frontend/server/database gate topology, 19 operational plus
-3 identity/control Edge functions, secret-name presence metadata, pre-cutover
-snapshot, Advisor counts and six historical billing authority paths. Never
-record project refs, URLs, email, UUID, secret value, TOTP, token, PIN or
-recovery material.
+Begin offline. Prepare the exact query, redaction, rollback and evidence-shape
+procedure without connecting to or viewing Hosted values. Stop and request
+`LECTURE_CYCLE_STAGING_READONLY_INVENTORY`, bound to the exact source SHA,
+staging environment, expiry and permitted metadata fields. Only after that
+approval may the operator verify source/deployment/rollback digests,
+staging-only environment kind, frontend/server/database gate topology, 19
+operational plus 3 identity/control Edge functions, secret-name presence
+metadata, pre-cutover snapshot, Advisor counts and six historical billing
+authority paths. Never record project refs, URLs, email, UUID, secret value,
+TOTP, token, PIN or recovery material.
 
 Stop separately for staging mutation, OAuth/provider configuration, Human run,
 Google-only cutover, ADMIN_PIN deletion, billing retirement, BILLING_PIN
