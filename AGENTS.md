@@ -4,7 +4,7 @@
 
 This private repository contains the COMPASS Interactive product, including Student, Admin, Display, Archive, Supabase migrations and Edge Functions, Cloudflare asset delivery, AI orchestration, and browser verification.
 
-Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the affected source and tests before editing. Any work touching Admin identity, public-source preparation, contest access, tenancy, or the next formal Production Gate must also read `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md` and `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` in full.
+Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the affected source and tests before editing. Any work touching Admin identity, public-source preparation, contest access, tenancy, or the next formal Production Gate must also read `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md` and `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md` in full. Work on the bounded private-source lecture-cycle candidate must additionally read `docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md` and use the task boundaries in `docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`.
 
 ## Cloud-first development
 
@@ -12,12 +12,13 @@ Read `README.md`, `PROJECT_GUIDE.md`, the relevant file under `docs/`, and the a
 - A local-only or ahead-only checkout is recovery input, never the new source of truth. Import it as a reviewed patch onto the current canonical branch, preserve provenance in the PR, and regenerate derived files from the current schema.
 - Treat the Dev Container Specification as the single environment source of truth. Codespaces, VS Code + Docker Desktop, and the Dev Container CLI must use the same `.devcontainer/devcontainer.json`.
 - Use one isolated Codespace and one branch per repository and change. Do not combine this checkout with the public COMPASS repository.
-- Keep this repository private until the Phase 7.31 public-source audit is complete and the user gives a separate approval immediately before the visibility change. A plan to publish later is not authorization to publish now.
+- Keep this repository private. The current contest-week path submits an exact-SHA source package through a private approved channel and does not require GitHub public-source readiness. A later visibility change remains a separate Phase 7.31B decision and is not authorized by source submission.
 - Follow `.devcontainer/devcontainer.json` and `docs/CLOUD_DEVELOPMENT.md` for setup and browser port access.
 - Default to `/demo` and non-live tests. The demo must not call Supabase, OpenAI, Cloudflare R2, or other paid or Production services.
 - Use the local Docker-based Supabase stack for database, RLS, migration, and integration work. Do not link or push to a hosted Supabase project during ordinary development.
 - Run `npm run dev:doctor` after first container creation and environment-definition changes; never hide a missing dependency with an unrecorded global install.
 - Run `npm run cloud:doctor` after Codex Cloud setup or maintenance. It is deliberately non-Docker and does not substitute for the Dev Container, local Supabase, Windows Device, Hosted, Human or Production gates.
+- Before the local PC is disconnected, run `npm run cloud:handoff` from the pushed clean task branch. Its success permits only already-started Codex Cloud and GitHub Actions source/test work to continue; Codex Remote, local Docker/browser work, Hosted operations and Production actions still require their own live execution surface and approval.
 
 ## Agent interoperability
 
@@ -56,8 +57,10 @@ Do not run `test:phase5-openai-live`, `test:phase6-openai-live`, hosted migratio
 - Do not commit directly to `main`.
 - Keep changes narrow, commit intentionally, push the branch, and open a Draft Pull Request.
 - Main ruleset `20600565` is active: integration requires a Pull Request, all five configured CI contexts, and conversation resolution; force-push and branch deletion are blocked. Required approving reviews remain zero so the solo owner is not deadlocked. `strict_required_status_checks_policy` is intentionally `false`: a later `main` update does not by itself force a PR update and another full CI run, but every candidate PR head must still pass all five checks. Sync a high-risk PR with current `main` once near its final head when practical. A manual Copilot review is advisory and does not count as a required approval. No administrator bypass is currently configured; re-audit the live ruleset before a high-risk merge and never weaken it as an ordinary integration shortcut.
+- Retrospective Copilot review of private PRs #37, #38, #39 and #42 is excluded from the current gate. An exact-head Copilot line-limit refusal is non-blocking, while actionable review comments or Critical/High findings remain blocking.
 - Local, CI, hosted, device, human, and Production acceptance are separate gates.
 - Phase 7.29B dormant placement is not feature activation or a formal Production Gate. The next formal integrated Production Gate is Phase 7.33 and remains HOLD until the Phase 7.29 activation blockers, Phase 7.30 identity work, Phase 7.31 governance/contest environment, and Phase 7.32 commercial-readiness contract all pass.
+- The Lecture Cycle Production Candidate is a narrower private-source, no-regression and bounded-canary contract. It may report only the states defined in `docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md` and never substitutes for Phase 7.33, commercial SLA, multi-tenant, Presenter-device, public-source or legal/GA acceptance.
 
 ## Contest reviewer boundary
 

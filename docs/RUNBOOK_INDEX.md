@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-12
+Last reviewed: 2026-08-14
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -19,6 +19,8 @@ secret change and paid call still require an explicit task.
 | Development trajectory         | `docs/CHANGELOG.md`                                              |
 | Cloud source admission         | `docs/CLOUD_CANONICALIZATION_GATE.md`                            |
 | Agent/reasoning routing        | `docs/AGENT_EXECUTION_ROUTING.md`                                |
+| Lecture-cycle candidate plan   | `docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`                |
+| Cloud lane agent prompts       | `docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`                     |
 | Phase 6.7 acceptance           | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md`                        |
 | Phase 6.7 local evidence       | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`                         |
 | Phase 6.8 design               | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`                    |
@@ -311,6 +313,24 @@ Local writer while browser mode is active.
 - Phase 7.29B dormant placement does not satisfy this plan. The next formal
   integrated Production Gate is Phase 7.33 after Phase 7.29C, 7.30, 7.31 and
   7.32 requirements and their Hosted/Human evidence are complete.
+
+### Private-source lecture-cycle candidate
+
+- The contest-week candidate is governed by
+  `docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md` and keeps GitHub private.
+- Source is submitted as a privately delivered exact-SHA tracked-tree archive,
+  manifest and checksums. It does not require Phase 7.31B public visibility.
+- `docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md` contains the controller and four
+  lane task prompts. Write lanes use separate branches/worktrees; only the
+  controller integrates.
+- Before disconnecting the local PC, push the clean branch and run
+  `npm run cloud:handoff`. Codex Cloud and GitHub Actions may then continue
+  source/test work, but Codex Remote, local Docker and Hosted/Human/Production
+  actions do not continue autonomously.
+- Retrospective Copilot review of private PRs #37/#38/#39/#42 and a line-limit
+  refusal are non-required. Actionable findings remain normal review input.
+- This path defers formal Phase 7.33, commercial 300-person SLA, multi-tenant,
+  Presenter-device, public-source and legal/DPA/GA acceptance.
 
 ## 8. OpenAI and paid features
 

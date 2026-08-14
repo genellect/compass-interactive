@@ -135,6 +135,7 @@ flowchart LR
 - personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revoke/resetはAI authorityをdrainしてもAdmin sessionを維持します。TOTP factor-set fingerprintとrare-control identity EdgeはB2.2a、raw 4桁のEdge peppered-HMAC経路、実browser CryptoKey/ES256 dormant assertion、TOTP factor-set transitionはB2.2bでsource実装済みです。C1はprivate optional-row lecture ownershipとPIN/browser proofからdormant masterまでのatomic admissionを実装し、既存講義を推測backfillせずchild/provider authorityをC2へfenceします。C2は75 actionのclosed policy matrixとGoogle共通verifierを全Admin surfaceへ追加しました。Eでは削除した`authorize-ai-start`を除く19本の運用EdgeをGoogle-onlyへ収束します。Summary runはprovider呼出ししないscheduler controlとし、Summary window、資料分析、Academic answer、Realtime字幕は実際のdispatchごとにshort-lived single-use childを発行・consumeします。通常操作は一度のGoogle＋TOTPログインを継続し、personal AI PINは講義masterの許可時だけ使用します。AI Passkey、実Google OAuth、Hosted/Human evidence、database cutover実行とProduction activationはHOLDです。今回のsource実装に固定費は発生しません。
 - Phase 7.30E sourceは`ADMIN_PIN`の現行application経路を撤去します。database verifierとlegacy sessionを不可逆にfenceするoperator cutoverはHosted旧Edge停止の独立証拠後だけ実行し、失効済みhistorical rowはFK/audit用途に残せます。personal AI PIN E2E後は`BILLING_PIN`互換RPCも別境界でProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
 - Phase 7.30F source/local readiness candidateは、staging Hosted/Human evidenceのclosed schema、秘密値を拒否するpure-local validator、default `HOLD`、read-only database preflight、承認分離とGoogle-only rollback契約を追加します。判定語は`SOURCE_READY`、`HOLD`、`READY_FOR_SEPARATE_HOSTED_EXECUTION`だけで、repository CIはHosted実行やProduction合格を宣言しません。実OAuth/provider設定、real account/TOTP/recovery、E cutover、`ADMIN_PIN`削除、historical billing 6経路のretirement、`BILLING_PIN`削除、canary/activationはそれぞれ別承認までHOLDです。
+- コンテスト週の優先経路は、正式Phase 7.33とは別の**Lecture Cycle Production Candidate**です。GitHubはprivateのままexact-SHA source packageを非公開提出し、50 active hoursをCloud/source、staging identity、講義UX/AI、reliability/rollbackへ配分します。既存Admin・Student・Display・Review・PDF・AIを停止または縮小して合格させることは禁止し、Productionはstagingと別承認canaryが完了するまで現行immutable revisionを維持します。商用300人SLA、multi-tenant、Presenter実機、public-source、法務/DPA/GAと正式Phase 7.33は後段HOLDです。
 - 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
 - すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
 
@@ -600,29 +601,31 @@ rollbackでは、まずruntimeまたはfeature flagを停止し、直前のappli
 
 READMEは、現行システムの全体像と開発の入口を示します。詳細設計、運用手順、検証記録、変更履歴は、それぞれの正本文書で管理します。
 
-| Document                                                                                                                           | Responsibility                                              |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                                                                                     | 現行アーキテクチャとservice boundary                        |
-| [`docs/SECURITY.md`](docs/SECURITY.md)                                                                                             | 認証、認可、secret、停止条件                                |
-| [`docs/data_policy.md`](docs/data_policy.md)                                                                                       | データ分類、保存、保持、削除                                |
-| [`docs/database_schema.md`](docs/database_schema.md)                                                                               | DatabaseとRPCの責務                                         |
-| [`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md)                                                                         | CI、browser E2E、local live test                            |
-| [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)                                                                                   | 運用・障害対応の入口                                        |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                                                                               | 今後の開発計画                                              |
-| [`docs/CLOUD_CANONICALIZATION_GATE.md`](docs/CLOUD_CANONICALIZATION_GATE.md)                                                       | GitHub/Cloud正本化と復旧移植契約                            |
-| [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)                         | PPT救出・dormant rollout・rollback                          |
-| [`docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)                                 | Presenter Gateway・署名配布・activation HOLD契約            |
-| [`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Google Admin認証・AAL2・RBAC計画                            |
-| [`docs/PHASE7_30A_B1_IMPLEMENTATION.md`](docs/PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Phase 7.30A-B1 source/local実装・dormant Gate・rollback記録 |
-| [`docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md)                                             | Phase 7.30B2 default-OFF database実装・検証待ち境界         |
-| [`docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md)                                   | Phase 7.30B2.2a factor-set・rare-control hardening          |
-| [`docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Phase 7.30B2.2b Edge・browser・factor transition readiness  |
-| [`docs/PHASE7_30D_ADMIN_LEDGER.md`](docs/PHASE7_30D_ADMIN_LEDGER.md)                                                             | Phase 7.30D owner管理台帳・招待・session revoke契約         |
-| [`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                               | Phase 7.30E Google-only transport・ownership・cutover契約   |
-| [`docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`](docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md)                                         | Phase 7.30F source/local evidence・承認分離・Hosted/Human HOLD契約 |
-| [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画 |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                       |
-| [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                    |
+| Document                                                                                                                           | Responsibility                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                                                                                     | 現行アーキテクチャとservice boundary                                      |
+| [`docs/SECURITY.md`](docs/SECURITY.md)                                                                                             | 認証、認可、secret、停止条件                                              |
+| [`docs/data_policy.md`](docs/data_policy.md)                                                                                       | データ分類、保存、保持、削除                                              |
+| [`docs/database_schema.md`](docs/database_schema.md)                                                                               | DatabaseとRPCの責務                                                       |
+| [`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md)                                                                         | CI、browser E2E、local live test                                          |
+| [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)                                                                                   | 運用・障害対応の入口                                                      |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                                                                               | 今後の開発計画                                                            |
+| [`docs/CLOUD_CANONICALIZATION_GATE.md`](docs/CLOUD_CANONICALIZATION_GATE.md)                                                       | GitHub/Cloud正本化と復旧移植契約                                          |
+| [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)                         | PPT救出・dormant rollout・rollback                                        |
+| [`docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)                                 | Presenter Gateway・署名配布・activation HOLD契約                          |
+| [`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Google Admin認証・AAL2・RBAC計画                                          |
+| [`docs/PHASE7_30A_B1_IMPLEMENTATION.md`](docs/PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Phase 7.30A-B1 source/local実装・dormant Gate・rollback記録               |
+| [`docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md)                                             | Phase 7.30B2 default-OFF database実装・検証待ち境界                       |
+| [`docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md)                                   | Phase 7.30B2.2a factor-set・rare-control hardening                        |
+| [`docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Phase 7.30B2.2b Edge・browser・factor transition readiness                |
+| [`docs/PHASE7_30D_ADMIN_LEDGER.md`](docs/PHASE7_30D_ADMIN_LEDGER.md)                                                               | Phase 7.30D owner管理台帳・招待・session revoke契約                       |
+| [`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                                 | Phase 7.30E Google-only transport・ownership・cutover契約                 |
+| [`docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`](docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md)                                           | Phase 7.30F source/local evidence・承認分離・Hosted/Human HOLD契約        |
+| [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画               |
+| [`docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)                               | private source提出・講義UX/AI無回帰・50時間の限定Production Candidate計画 |
+| [`docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)                                         | 並列Cloud taskの担当境界・copy-ready指示文・handoff形式                   |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                                     |
+| [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                                  |
 
 過去のPhase文書は、該当commit時点における設計判断と検証証跡です。現在の挙動を確認する際は、現行コード、migration、上記の正本文書、最新のGate記録を優先してください。
 

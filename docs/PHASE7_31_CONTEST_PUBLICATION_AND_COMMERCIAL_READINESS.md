@@ -5,6 +5,14 @@ Approval: requirements approved; implementation not started
 Scope: GitHub ガバナンス、公開リポジトリ化、審査員向け実環境、商用 EdTech 品質、統合 Production Gate
 Last verified: 2026-08-10
 
+> [!NOTE]
+> The 2026-08-14 contest-week path keeps GitHub private and uses the exact-SHA
+> private source package defined by
+> [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md).
+> Phase 7.31B public-source readiness remains a later requirement for the
+> formal Phase 7.33 contract, but it is not a prerequisite for the bounded
+> Lecture Cycle Production Candidate or private contest submission.
+
 ## 1. この計画の位置付け
 
 本書は、Phase 7.30 の Google Admin Identity / AAL2 / RBAC 実装後に、

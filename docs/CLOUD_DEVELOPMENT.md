@@ -2,7 +2,7 @@
 
 Status: Operationally verified
 Scope: canonical GitHub, cloud workspaces, safe execution levels and handoff
-Last verified: 2026-08-08
+Last verified: 2026-08-14
 
 `https://github.com/genellect/compass-interactive`を正本とし、日常開発はクラウドを優先する。Production Supabase、Cloudflare、R2、OpenAI live API、既存PCのcheckoutやenv fileへ依存しない。
 
@@ -21,13 +21,13 @@ COMの検査を代替しない。
 
 ## 推奨する実行経路
 
-| 優先度 | 経路 | 主な用途 | 環境の正本 |
-|---|---|---|---|
-| 1 | GitHub Codespaces | ブラウザ実装、local Supabase、E2E、commit、PR | `.devcontainer/devcontainer.json` |
-| 1 | Codex Cloud | Codexによる非同期実装、non-live test、review、Draft PR | Codex環境設定 + `AGENTS.md` |
-| 2 | VS Code + Docker Desktop | ローカルDocker上でCodespacesと同一環境を再現 | `.devcontainer/devcontainer.json` |
-| 2 | Dev Container CLI | GUIなしのDocker起動、CI相当検証 | `.devcontainer/devcontainer.json` |
-| 3 | DevPod等の互換サービス | 別クラウド／SSH host上のDev Container | `.devcontainer/devcontainer.json` |
+| 優先度 | 経路                     | 主な用途                                               | 環境の正本                        |
+| ------ | ------------------------ | ------------------------------------------------------ | --------------------------------- |
+| 1      | GitHub Codespaces        | ブラウザ実装、local Supabase、E2E、commit、PR          | `.devcontainer/devcontainer.json` |
+| 1      | Codex Cloud              | Codexによる非同期実装、non-live test、review、Draft PR | Codex環境設定 + `AGENTS.md`       |
+| 2      | VS Code + Docker Desktop | ローカルDocker上でCodespacesと同一環境を再現           | `.devcontainer/devcontainer.json` |
+| 2      | Dev Container CLI        | GUIなしのDocker起動、CI相当検証                        | `.devcontainer/devcontainer.json` |
+| 3      | DevPod等の互換サービス   | 別クラウド／SSH host上のDev Container                  | `.devcontainer/devcontainer.json` |
 
 Dev Container Specificationを唯一の環境正本とする。Dev Container CLIはfeatures、VS Code設定、`postCreateCommand`まで適用するため、別のDockerfileや素の`docker build` / `docker run`を標準経路にしない。
 
@@ -35,12 +35,12 @@ Dev Container Specificationを唯一の環境正本とする。Dev Container CLI
 
 新PCや新メンバーは、選んだ経路のhost前提だけを用意する。言語runtimeやglobal packageを手作業で揃えない。
 
-| 層 | 人が用意するもの | repositoryが自動で揃えるもの |
-|---|---|---|
-| Codespaces | GitHub access、repository access、Codespaces利用権 | Linux、Node 22.22.0、独立Docker daemon、Compose、GitHub CLI、Copilot CLI、VS Code extensions、npm、Playwright Chromium/WebKit、Supabase CLI、Vite |
-| VS Code + Docker | Git、Docker Desktop/Engine、VS Code、Dev Containers extension | Codespacesと同じDev Container内容 |
-| Dev Container CLI | Git、Docker Desktop/Engine、Node.js（固定CLI起動用） | Codespacesと同じDev Container内容 |
-| Codex Cloud | GitHub接続とCodex environment | Node/npm依存、Playwright、repository instructions、非Docker cloud doctor。Docker/Supabase作業はCodespacesへhandoff |
+| 層                | 人が用意するもの                                              | repositoryが自動で揃えるもの                                                                                                                      |
+| ----------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codespaces        | GitHub access、repository access、Codespaces利用権            | Linux、Node 22.22.0、独立Docker daemon、Compose、GitHub CLI、Copilot CLI、VS Code extensions、npm、Playwright Chromium/WebKit、Supabase CLI、Vite |
+| VS Code + Docker  | Git、Docker Desktop/Engine、VS Code、Dev Containers extension | Codespacesと同じDev Container内容                                                                                                                 |
+| Dev Container CLI | Git、Docker Desktop/Engine、Node.js（固定CLI起動用）          | Codespacesと同じDev Container内容                                                                                                                 |
+| Codex Cloud       | GitHub接続とCodex environment                                 | Node/npm依存、Playwright、repository instructions、非Docker cloud doctor。Docker/Supabase作業はCodespacesへhandoff                                |
 
 環境定義は`.devcontainer/devcontainer.json`、Feature digestは`.devcontainer/devcontainer-lock.json`、JavaScript/Supabase CLI依存は`package-lock.json`、Codex setupは`.codex/setup.sh`が正本である。`.gitattributes`はWindows checkoutでもshell scriptをLFに固定する。
 
@@ -111,28 +111,28 @@ Bash:
 ./scripts/devcontainer.sh check
 ```
 
-| Action | 内容 |
-|---|---|
+| Action   | 内容                                                                        |
+| -------- | --------------------------------------------------------------------------- |
 | `config` | Docker daemonへ接続し、containerを作成せずDev Container定義を解決・検査する |
-| `up` | lock済みfeaturesでcontainerを作成し、setupを完了する |
-| `setup` | 依存導入を再実行し、doctorまで完了する。初回setup中断時の回復にも使う |
-| `doctor` | 起動済みcontainerのruntime、CLI、独立Docker、依存をfail-closedで検査する |
-| `shell` | 起動済みcontainerへ入る |
-| `check` | container内で`npm run cloud:check`を実行する |
+| `up`     | lock済みfeaturesでcontainerを作成し、setupを完了する                        |
+| `setup`  | 依存導入を再実行し、doctorまで完了する。初回setup中断時の回復にも使う       |
+| `doctor` | 起動済みcontainerのruntime、CLI、独立Docker、依存をfail-closedで検査する    |
+| `shell`  | 起動済みcontainerへ入る                                                     |
+| `check`  | container内で`npm run cloud:check`を実行する                                |
 
 `.devcontainer/devcontainer-lock.json`はfeature digestを固定する。feature更新は意図したPRでのみ行い、`devcontainer upgrade`後にcontainerを再構築して検証する。
 
 ## Safe execution levels
 
-| Level | 通常のcloud利用 | 外部影響 |
-|---|---|---|
-| Independent demo | Yes | なし |
-| Non-live regression | Yes | なし |
-| Local Supabase | Yes | repository専用Docker内のみ |
-| Windows Presenter source CI | Yes | 署名artifactを配布しないWindows runnerのみ |
-| Windows Presenter Device/Human | No | PowerPoint、COM、PNA、installer、会場運用 |
-| Live OpenAI checks | No | 有料外部API |
-| Hosted Supabase / R2 / Cloudflare | No | Hosted / Production state |
+| Level                             | 通常のcloud利用 | 外部影響                                   |
+| --------------------------------- | --------------- | ------------------------------------------ |
+| Independent demo                  | Yes             | なし                                       |
+| Non-live regression               | Yes             | なし                                       |
+| Local Supabase                    | Yes             | repository専用Docker内のみ                 |
+| Windows Presenter source CI       | Yes             | 署名artifactを配布しないWindows runnerのみ |
+| Windows Presenter Device/Human    | No              | PowerPoint、COM、PNA、installer、会場運用  |
+| Live OpenAI checks                | No              | 有料外部API                                |
+| Hosted Supabase / R2 / Cloudflare | No              | Hosted / Production state                  |
 
 通常作業はDemo、non-live regression、local Supabaseまでに限定する。
 
@@ -140,6 +140,7 @@ Bash:
 
 ```bash
 npm run cloud:doctor
+npm run cloud:handoff
 npm run dev:cloud
 npm run cloud:check
 ```
@@ -151,6 +152,8 @@ npm run test:e2e:demo
 ```
 
 `cloud:check`はcloud doctor、secret scan、3種類のTypeScript検査、lint、全non-live suite、Production-equivalent frontend buildを実行する。有料APIやHosted serviceへ接続しない。
+
+`cloud:handoff`は通常の開発中に繰り返すcommandではなく、ローカルPCを切断する直前の境界である。`cloud:doctor`に加え、専用non-main branch、clean worktree、canonical origin、`origin/main` ancestry、upstreamへのexact push、private evidence／non-example `.env`／runtime artifactの非追跡をfail-closedで検証する。成功語`READY_FOR_DISCONNECTED_CLOUD_EXECUTION`はsource/test継続だけを認め、Hosted、paid、Human、Productionの承認にはならない。
 
 ## Local Supabase
 
@@ -208,12 +211,12 @@ Codex CloudはDocker daemonを保証するDev Container経路ではないため�
 
 ## 複数エージェント運用
 
-| Agent / IDE | 読む指示 | 標準コマンド |
-|---|---|---|
-| Codex | `AGENTS.md`, `.codex/config.toml` | `npm run dev:cloud`, `npm run cloud:check` |
-| Claude Code | `CLAUDE.md` → `AGENTS.md` | 同上 |
-| GitHub Copilot | `.github/copilot-instructions.md` → `AGENTS.md` | 同上 |
-| VS Code agent | workspace recommendations + `AGENTS.md` | VS Code tasks |
+| Agent / IDE    | 読む指示                                        | 標準コマンド                               |
+| -------------- | ----------------------------------------------- | ------------------------------------------ |
+| Codex          | `AGENTS.md`, `.codex/config.toml`               | `npm run dev:cloud`, `npm run cloud:check` |
+| Claude Code    | `CLAUDE.md` → `AGENTS.md`                       | 同上                                       |
+| GitHub Copilot | `.github/copilot-instructions.md` → `AGENTS.md` | 同上                                       |
+| VS Code agent  | workspace recommendations + `AGENTS.md`         | VS Code tasks                              |
 
 複数のwrite-capable agentを同じbranchまたはworktreeで同時実行しない。並列実装はagentごとにbranch/worktreeを分離し、main agentがdiff、test、commitを統合する。並列reviewは`.codex/agents/`のread-only agentを使用できる。
 
@@ -225,11 +228,39 @@ Codex CloudはDocker daemonを保証するDev Container経路ではないため�
 
 ChatGPT mobileからCodex taskを開き、指示、follow-up、進捗、diff、test結果を確認する。GitHub Mobileまたはmobile browserでDraft PR、checks、review commentを確認する。
 
+Codex Cloud taskはpushed private branchから開始し、environment setupに
+`bash .codex/setup.sh`を指定する。通常のenvironment variables/secretsは0件のままとし、agent internet accessはOFFを既定とする。依存取得が必要なsetup phaseと、sourceを扱うagent phaseを分離する。Hosted値やProduction `.env`を登録して通常taskにlive権限を与えない。
+
 ### Codex Remote
 
 PC、Codespaceへ接続したVS Code、またはSSH host上の作業を監督する場合は、ChatGPT Desktopで **Settings → Connections → Control this Mac or PC** を設定し、ChatGPT mobileの **Remote** からQR pairingする。Remoteでは指示、承認、diff、test、terminal、screenshotを確認できる。
 
 QR、MFA、SSO、passkeyは本人だけが扱う。pairing情報、認証code、credentialをpromptやrepositoryへ貼らない。Remote hostをpublic internetへ直接公開せず、公式Remote relayまたはSSH/VPNを使用する。
+
+### ローカルPC切断時の実行境界
+
+| Surface                            | PC切断後                                        | 切断前の条件                                      |
+| ---------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
+| Codex Cloud                        | 継続可能                                        | task開始済み、private branch push済み、setup PASS |
+| GitHub Actions                     | 継続可能                                        | exact SHAのworkflowがqueue済み                    |
+| Codespaces                         | filesystemは保持、active processはsuspendし得る | branch push済み、同じCodespaceを後で再開          |
+| このPCのDocker／browser／terminal  | 停止                                            | ActionsまたはCodespaceへ必要gateを委譲            |
+| Codex Remote                       | 停止                                            | host online/awakeが必須                           |
+| OAuth/TOTP/Human/Hosted/Production | 自律継続しない                                  | operator、認証UI、exact separate approvalが必須   |
+
+切断前の順序:
+
+1. dedicated branchへcommitしprivate originへpushする。
+2. `npm run cloud:check`または変更surfaceに対応するgateを完了する。
+3. `npm run cloud:handoff`を実行し、exact HEAD/upstreamを記録する。
+4. Docker/browser gateをGitHub Actionsまたは既に起動したCodespaceへ委譲する。
+5. 未実行のHosted/Human/Production項目を`HOLD`としてhandoffへ残す。
+
+詳細な50時間計画とcopy-ready agent promptsは
+[`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)
+および
+[`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)
+を正本とする。
 
 ## Isolation rules
 
@@ -244,10 +275,7 @@ QR、MFA、SSO、passkeyは本人だけが扱う。pairing情報、認証code、
 - 通常taskからlive OpenAI test、Hosted migration、R2 upload、Cloudflare deploy、secret変更を行わない。
 - Local、CI、Hosted、Device、Human、Production acceptanceを相互に代替しない。
 
-このprivate user-owned repositoryでは、GitHub Proなしにrequired PR checksを
-branch protectionとして強制できない。private境界を維持し、Pro導入までは
-PR-only integrationとno-direct-mainを手続き上の必須controlとする。これは
-技術的な保護が有効という意味ではない。
+このprivate repositoryはmain rulesetでPR-only integration、required checks、conversation resolution、force-push/deletion denialを実施する。live rulesetはhigh-risk merge前にread-onlyで再監査し、source submissionのためにvisibilityや保護を弱めない。
 
 ## 完了基準
 

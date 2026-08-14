@@ -15,8 +15,11 @@ on:
       - package-lock.json
       - scripts/devcontainer.*
       - scripts/cloud-workspace-doctor.mjs
+      - scripts/cloud-handoff-doctor.mjs
       - docs/CLOUD_DEVELOPMENT.md
       - docs/GATE_ROUTING.md
+      - docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md
+      - docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md
       - .github/workflows/devcontainer-contract.yml
   push:
     branches: [main]
@@ -33,8 +36,11 @@ on:
       - package-lock.json
       - scripts/devcontainer.*
       - scripts/cloud-workspace-doctor.mjs
+      - scripts/cloud-handoff-doctor.mjs
       - docs/CLOUD_DEVELOPMENT.md
       - docs/GATE_ROUTING.md
+      - docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md
+      - docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md
       - .github/workflows/devcontainer-contract.yml
   workflow_dispatch:
 

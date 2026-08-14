@@ -2,9 +2,9 @@
 
 Status: Implemented, verification pending
 Scope: source/local evidence contract and separately approved staging Hosted/Human execution gate for the Google-only Admin identity migration
-Gate state: source/local readiness candidate; Phase 7.30E exact-head CI and merge were still pending when this document branch was cut; every Hosted value, mutation, Human run, cutover, secret deletion, billing retirement, canary and activation remains HOLD
+Gate state: source/local contract merged on main at `7526fb03e8b7b05501d65b1f70d1f4c32afc2b2e`; post-merge CI `31721099011` and Dev Container `31721098815` succeeded; every Hosted value, mutation, Human run, cutover, secret deletion, billing retirement, canary and activation remains HOLD
 Approval: source/local implementation only; no Hosted, OAuth, Human, cutover, deletion, billing, paid-provider or activation authority
-Last verified: 2026-08-12
+Last verified: 2026-08-14
 
 ## 1. Purpose and non-goals
 

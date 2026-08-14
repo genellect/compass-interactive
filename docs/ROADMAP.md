@@ -2,16 +2,13 @@
 
 Approved design baseline: 2026-07-18
 Scope: Phase 6.7 through Phase 9
-Last reconciled: 2026-08-12
-Future-contract approval: Phase 7.30-7.33 requirements approved; Phase 7.30A-D
-source and exact-head runtime evidence pass with all gates default OFF. Phase
-7.30E Google-only application transport and dormant cutover authority are a
-source/local candidate; its exact-head database and Local Edge freeze is
-pending. Phase 7.30F now has a source/local evidence-schema, validator,
-read-only preflight and approval-separation candidate; its exact-head gate and
-every external execution remain pending. The irreversible cutover,
-Hosted/Human run, secret deletion, billing retirement and activation remain
-HOLD.
+Last reconciled: 2026-08-14
+Future-contract approval: Phase 7.30-7.33 requirements approved. Phase 7.30A-F
+source is merged on main; the exact main `7526fb03e8b7b05501d65b1f70d1f4c32afc2b2e`
+completed CI run `31721099011` and Dev Container run `31721098815` successfully.
+This proves the source/local/CI contract only. The irreversible cutover,
+Hosted/Human run, secret deletion, billing retirement, bounded canary and every
+Production activation remain HOLD.
 
 ## 1. Numbering decision
 
@@ -826,12 +823,12 @@ operator cutover execution and real-account activation remain HOLD.
 
 Source status: the redacted evidence schema/example, pure-local readiness
 validator, read-only Hosted preflight, default-HOLD decision contract,
-approval-separated checklist and immutable Google-only rollback plan are a
-source/local candidate. The only readiness words are `SOURCE_READY`, `HOLD`
+approval-separated checklist and immutable Google-only rollback plan are
+merged on main, and their post-merge CI/Dev Container runs are green as recorded
+at the top of this roadmap. The only readiness words are `SOURCE_READY`, `HOLD`
 and `READY_FOR_SEPARATE_HOSTED_EXECUTION`; `Production PASS` is prohibited.
-Repository CI never performs a Hosted query or mutation. The Phase 7.30E
-exact-head gate was still pending when this branch was cut, and the Phase F
-exact-head source/local gate remains pending until integration.
+Repository CI never performs a Hosted query or mutation, so every external
+execution remains pending.
 
 - In separate staging, test two owners, one AI-enabled Admin, one standard
   Admin, suspended Admin,
@@ -875,6 +872,33 @@ login](https://supabase.com/docs/guides/auth/social-login/auth-google),
 [Supabase MFA/AAL](https://supabase.com/docs/guides/auth/auth-mfa), and the
 [Beta/passwordless Passkey boundary](https://supabase.com/docs/guides/auth/passkeys).
 Recheck them at implementation and Production Gate.
+
+## 15A. Lecture Cycle Production Candidate — private contest-week path
+
+The bounded candidate prioritizes existing lecture continuity over the later
+formal certification program. It keeps GitHub private and uses a privately
+delivered exact-SHA source package. It does not require Phase 7.31B public
+visibility, Phase 7.29C Presenter device activation, Phase 7.32 multi-tenant or
+commercial SLA/legal readiness, or Phase 7.33 PASS.
+
+Its 50 active person-hour budget is divided between cloud/source admission,
+Phase 7.30F staging identity, the complete teacher/student/Display/Review and AI
+lecture matrix, and rollback/reliability. Parallel preparation is permitted,
+but staging mutation, OAuth/provider setup, Human MFA, cutover, secret deletion,
+paid canary and Production activation retain their separate approvals.
+
+The candidate must not remove, hide or disable an existing feature merely to
+meet schedule. Current Production remains on its immutable revision until the
+candidate has exact-head CI, staging/Human evidence, rollback and a separately
+approved bounded canary. A missing natural zero-open-lecture cutover window is
+`HOLD`, not permission to interrupt a class.
+
+Acceptance and agent handoff are authoritative in
+[`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)
+and
+[`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md).
+Passing this candidate does not alter the dependencies or status of sections
+16–18.
 
 ## 16. Phase 7.31 - protected publication and real contest review
 

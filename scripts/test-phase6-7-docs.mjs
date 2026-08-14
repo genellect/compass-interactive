@@ -30,6 +30,8 @@ const requiredDocuments = [
   'docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md',
   'docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
+  'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
+  'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
   'docs/PHASE6_7_LOCAL_GATE_2026-07-18.md',
   'docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md',
@@ -85,6 +87,12 @@ const runbook = read('docs/RUNBOOK_INDEX.md')
 const agentsContract = read('AGENTS.md')
 const ciAndBrowser = read('docs/CI_AND_BROWSER_E2E.md')
 const databaseSchema = read('docs/database_schema.md')
+const lectureCyclePlan = read('docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md')
+const lectureCycleAgents = read('docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md')
+const cloudDevelopment = read('docs/CLOUD_DEVELOPMENT.md')
+const cloudHandoffDoctor = read('scripts/cloud-handoff-doctor.mjs')
+const codexSetup = read('.codex/setup.sh')
+const devContainerWorkflow = read('.github/workflows/devcontainer-contract.yml')
 
 for (const requiredText of [
   `Application version: \`${packageJson.version}\``,
@@ -206,7 +214,89 @@ assert.match(
 assert.match(docsIndex, /PHASE7_30B22A_ADMIN_CONTROL_HARDENING\.md/)
 assert.match(docsIndex, /PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER\.md/)
 assert.match(docsIndex, /PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION\.md/)
-assert.match(docsIndex, /102 documents/)
+assert.match(docsIndex, /104 documents/)
+for (const requiredText of [
+  'Lecture Cycle Production Candidate',
+  '50 active person-hours',
+  'READY_FOR_BOUNDED_PRODUCTION_CANARY',
+  'formal Phase 7.33 unified Production Gate PASS',
+  'GitHub remains private',
+  'retrospective Copilot review of private PRs #37, #38, #39 and #42',
+  'Existing Production stays on its current immutable revision',
+  'Admin, Student, Display, Review, PDF and AI',
+  'READY_FOR_DISCONNECTED_CLOUD_EXECUTION',
+  'private contest upload',
+]) {
+  assert.ok(
+    lectureCyclePlan.includes(requiredText),
+    `Lecture Cycle candidate plan missing: ${requiredText}`,
+  )
+}
+for (const requiredText of [
+  'Controller / integrator task',
+  'Lane A — Cloud and private source',
+  'Lane B — Staging identity and Hosted evidence',
+  'Lane C — Lecture UX and AI continuity',
+  'Lane D — Reliability, rollback and release',
+  'Independent review task',
+  'one dedicated non-main branch/worktree',
+  'Do not weaken or disable existing Admin, Student, Display, Review, PDF or AI UX',
+]) {
+  assert.ok(
+    lectureCycleAgents.includes(requiredText),
+    `Lecture Cycle agent playbook missing: ${requiredText}`,
+  )
+}
+assert.equal(
+  packageJson.scripts?.['cloud:handoff'],
+  'npm run cloud:doctor && node scripts/cloud-handoff-doctor.mjs',
+  'package.json must expose the fail-closed cloud handoff gate',
+)
+for (const requiredText of [
+  "process.argv.includes('--contract-only')",
+  "'origin/main', 'HEAD'",
+  'HEAD is pushed exactly to its upstream',
+  'clean tracked and untracked worktree',
+  'no tracked Phase 7.30F private evidence',
+  'no tracked non-example .env file',
+  'READY_FOR_DISCONNECTED_CLOUD_EXECUTION source/test work only',
+]) {
+  assert.ok(
+    cloudHandoffDoctor.includes(requiredText),
+    `Cloud handoff doctor missing: ${requiredText}`,
+  )
+}
+assert.match(
+  codexSetup,
+  /npm run cloud:doctor[\s\S]*npm run cloud:handoff[\s\S]*Hosted, paid, Human and Production actions remain separately approved/,
+  'Codex Cloud setup must route the final pushed branch through cloud:handoff without granting external authority',
+)
+for (const document of [
+  readme,
+  roadmap,
+  docsIndex,
+  runbook,
+  gateRouting,
+  agentRouting,
+  cloudDevelopment,
+  agentsContract,
+]) {
+  assert.match(
+    document,
+    /LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN\.md/,
+    'Canonical routing must include the private lecture-cycle candidate plan',
+  )
+}
+for (const path of [
+  'scripts/cloud-handoff-doctor.mjs',
+  'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
+  'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
+]) {
+  assert.ok(
+    devContainerWorkflow.includes(path),
+    `Dev Container workflow path filter missing: ${path}`,
+  )
+}
 assert.match(
   databaseSchema,
   /Phase 7\.30C1 adds four RLS-enabled private tables/,
