@@ -96,9 +96,27 @@ const lectureCyclePlan = read('docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md')
 const lectureCycleAgents = read('docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md')
 const cloudDevelopment = read('docs/CLOUD_DEVELOPMENT.md')
 const cloudHandoffDoctor = read('scripts/cloud-handoff-doctor.mjs')
+const cloudWorkspaceDoctor = read('scripts/cloud-workspace-doctor.mjs')
+const devContainerDoctor = read('.devcontainer/doctor.sh')
 const codexSetup = read('.codex/setup.sh')
 const devContainerWorkflow = read('.github/workflows/devcontainer-contract.yml')
 const ciWorkflow = read('.github/workflows/ci.yml')
+const nodeVersionPin = read('.node-version').trim()
+const nvmrcPin = read('.nvmrc').trim()
+
+assert.match(nodeVersionPin, /^\d+\.\d+\.\d+$/)
+assert.equal(nvmrcPin, nodeVersionPin)
+assert.equal(packageJson.engines?.node, `>=${nodeVersionPin}`)
+assert.match(cloudWorkspaceDoctor, /'\.node-version',[\s\S]*'\.nvmrc'/)
+assert.match(
+  cloudWorkspaceDoctor,
+  /nodeVersionPin === minimumNodeText[\s\S]*nvmrcPin === minimumNodeText/,
+)
+assert.match(
+  devContainerDoctor,
+  /pinned_node[\s\S]*pinned_nvm[\s\S]*expected \$NODE_VERSION/,
+)
+assert.match(devContainerWorkflow, /- \.node-version\s+- \.nvmrc/)
 
 for (const requiredText of [
   `Application version: \`${packageJson.version}\``,

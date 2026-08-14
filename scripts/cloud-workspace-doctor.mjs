@@ -53,6 +53,7 @@ for (const file of [
   'package.json',
   'package-lock.json',
   '.node-version',
+  '.nvmrc',
   '.devcontainer/devcontainer.json',
   'docs/CLOUD_DEVELOPMENT.md',
   'docs/GATE_ROUTING.md',
@@ -80,9 +81,27 @@ if (
   fail('package.json and package-lock.json identity drift')
 }
 
-const minimumNode = parseVersion(
-  String(packageJson.engines?.node ?? '').replace(/^>=/, ''),
-)
+const nodeEngine = String(packageJson.engines?.node ?? '')
+const minimumNodeText = nodeEngine.replace(/^>=/, '')
+const minimumNode = parseVersion(minimumNodeText)
+const nodeVersionPin = readFileSync(
+  resolve(root, '.node-version'),
+  'utf8',
+).trim()
+const nvmrcPin = readFileSync(resolve(root, '.nvmrc'), 'utf8').trim()
+if (
+  /^\d+\.\d+\.\d+$/.test(minimumNodeText) &&
+  nodeEngine === `>=${minimumNodeText}` &&
+  nodeVersionPin === minimumNodeText &&
+  nvmrcPin === minimumNodeText
+) {
+  pass(`Node.js pins agree at ${minimumNodeText}`)
+} else {
+  fail(
+    `Node.js pin drift: engine=${nodeEngine || 'missing'}, .node-version=${nodeVersionPin || 'missing'}, .nvmrc=${nvmrcPin || 'missing'}`,
+  )
+}
+
 const actualNode = parseVersion(process.versions.node)
 if (minimumNode && actualNode && versionAtLeast(actualNode, minimumNode)) {
   pass(`Node.js ${process.versions.node} satisfies ${packageJson.engines.node}`)

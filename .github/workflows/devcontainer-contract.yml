@@ -11,6 +11,7 @@ on:
       - .github/copilot-instructions.md
       - .gitattributes
       - .node-version
+      - .nvmrc
       - package.json
       - package-lock.json
       - scripts/devcontainer.*
@@ -33,6 +34,7 @@ on:
       - .github/copilot-instructions.md
       - .gitattributes
       - .node-version
+      - .nvmrc
       - package.json
       - package-lock.json
       - scripts/devcontainer.*
