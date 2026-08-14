@@ -17,6 +17,17 @@ Playwright drives the same routes and repositories used by the browser. Test
 configuration changes only build-time environment values and refuses a
 non-local Supabase URL for the live E2E suite.
 
+## Actions capacity conservation
+
+GitHub Actions capacity is a bounded release resource. Every task must run
+focused/local/static checks before push, combine related corrections, and
+freeze one exact head before requesting the full required workflow. Do not use
+push-per-fix iteration or blind same-head reruns. Fetch a failing job log once,
+classify source versus runner/infrastructure, and use at most one targeted
+job-only rerun when the evidence proves a transient. A source failure receives
+a new locally validated head. The current additional Actions budget ceiling is
+$10; exceeding it requires a new explicit approval.
+
 ## GitHub Actions jobs
 
 `.github/workflows/ci.yml` contains five mandatory gates plus conditional

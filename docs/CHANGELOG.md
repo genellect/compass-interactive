@@ -3,6 +3,21 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-14 - Lecture Cycle Production Candidate planning and cloud handoff
+
+- Added a 50 active person-hour private-source candidate plan that preserves
+  Admin, Student, Display, Review, PDF and AI lecture UX while keeping formal
+  Phase 7.33, commercial SLA, multi-tenant, Presenter-device, public-source and
+  legal/GA work deferred.
+- Added copy-ready controller and parallel cloud-lane task instructions with
+  one write branch/worktree per task and separately approved Hosted/Human/
+  Production gates.
+- Added `npm run cloud:handoff`, a fail-closed check for a pushed clean non-main
+  branch, canonical main ancestry and absence of tracked private evidence/env
+  or runtime artifacts before the local PC disconnects.
+- Kept the repository private and defined exact-SHA private source submission
+  as the current contest path.
+
 ## 2026-08-12 - Phase 7.30F source/local Hosted/Human readiness contract
 
 - Added a closed redacted evidence schema/example, pure-local readiness

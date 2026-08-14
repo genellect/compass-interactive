@@ -1,11 +1,11 @@
 # Phase 7.30E Google-only Admin Cutover
 
-Status: Phase 7.30D exact-head evidence is PASS. The Phase 7.30E Google-only
-application source and dormant database authority are implemented; local
-static, type, non-live and mocked-browser evidence passes. Fresh E
-database/runtime exact-head CI, the irreversible database cutover, Hosted
-deployment, Hosted secret deletion and real-account activation are not executed
-and remain Human/Hosted HOLD.
+Status: Phase 7.30E Google-only application source and dormant database
+authority are merged and their database/runtime/browser regressions were
+revalidated by the green Phase 7.30F main CI `31721099011` at exact main
+`7526fb03e8b7b05501d65b1f70d1f4c32afc2b2e`. The irreversible database cutover,
+Hosted deployment, Hosted secret deletion and real-account activation are not
+executed and remain Human/Hosted HOLD.
 
 ## Delivered boundary
 

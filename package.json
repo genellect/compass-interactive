@@ -143,6 +143,7 @@
     "worker:deploy:production:dry-run": "wrangler deploy --dry-run --config cloudflare/asset-worker/wrangler.production.jsonc",
     "format": "prettier --write .",
     "cloud:doctor": "node scripts/cloud-workspace-doctor.mjs",
+    "cloud:handoff": "npm run cloud:doctor && npm run security:secrets && node scripts/cloud-handoff-doctor.mjs",
     "cloud:check": "npm run cloud:doctor && npm run security:secrets && npm run typecheck && npm run typecheck:phase3 && npm run typecheck:e2e && npm run lint && npm run test:ci:nonlive && npm run build",
     "dev:doctor": "bash .devcontainer/doctor.sh"
   },

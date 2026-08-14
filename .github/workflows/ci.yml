@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
       - run: npm run cloud:doctor
       - run: npm run security:secrets
+      - run: node scripts/cloud-handoff-doctor.mjs --contract-only
       - run: npm run security:audit
       - run: npm run typecheck
       - run: npm run typecheck:phase3

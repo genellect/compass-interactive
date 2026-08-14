@@ -56,6 +56,10 @@ for (const file of [
   '.devcontainer/devcontainer.json',
   'docs/CLOUD_DEVELOPMENT.md',
   'docs/GATE_ROUTING.md',
+  'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
+  'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
+  'scripts/cloud-handoff-policy.mjs',
+  'scripts/cloud-handoff-doctor.mjs',
 ]) {
   requireFile(file)
 }
@@ -118,8 +122,7 @@ const supabaseConfig = readFileSync(
   'utf8',
 )
 const functionsMissingPolicy = supabaseFunctions.filter(
-  (functionName) =>
-    !supabaseConfig.includes(`[functions.${functionName}]`),
+  (functionName) => !supabaseConfig.includes(`[functions.${functionName}]`),
 )
 if (functionsMissingPolicy.length === 0) {
   pass(`${supabaseFunctions.length} Edge Functions have explicit JWT policy`)
@@ -159,5 +162,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  '[cloud-doctor] READY non-live cloud workspace. Docker, Hosted services, paid APIs and Windows COM were not probed.',
+  '[cloud-doctor] READY non-live cloud workspace. Run npm run cloud:handoff only after the task branch is pushed and clean. Docker, Hosted services, paid APIs and Windows COM were not probed.',
 )
