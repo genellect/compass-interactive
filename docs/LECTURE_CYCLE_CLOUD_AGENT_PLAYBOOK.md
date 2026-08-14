@@ -2,7 +2,7 @@
 
 Status: Planned
 Scope: copy-ready instructions for parallel private cloud tasks implementing the Lecture Cycle Production Candidate Plan
-Last verified: 2026-08-14
+Last verified: 2026-08-15
 
 ## 1. Use and ownership
 
@@ -45,9 +45,10 @@ a separately approved canary.
 
 Use one write-capable agent by default. Add a bounded read-only reviewer only
 when independent judgment materially improves a security, UX or release gate.
-Do not spend beyond the currently approved additional GitHub Actions budget of
-$10. Classify a failure before rerunning; use at most one targeted job-only
-rerun for a proven runner transient.
+Do not spend beyond the approved repository Actions ceiling of $15 or account
+Actions ceiling of $35; the lower remaining headroom is the operative limit.
+Classify a failure before rerunning; use at most one targeted job-only rerun for
+a proven runner transient.
 
 Never read, print, copy or commit secret values, personal identities, lecture
 codes, Production data, database dumps, protected files or actual Phase 7.30F
@@ -63,7 +64,14 @@ GitHub comment, log or evidence file.
 Run the gate mapped by docs/GATE_ROUTING.md. Classify failures before changing
 source. Report exact files, commands, results, omissions, external effects and
 remaining HOLD items. Commit intentionally, push the private branch and open a
-Draft PR; do not merge your own work.
+Draft PR. A lane agent hands off and never merges independently. Under the
+standing task authorization, the controller may Squash merge without another
+prompt only after fixing the expected head SHA and verifying intended scope,
+private boundaries, all five required contexts green, zero unresolved threads,
+mergeability and no head drift. Any missing or failing gate, scope drift, or
+Hosted/Human/secret/paid-provider/Production approval boundary remains HOLD.
+After merge, record the returned SHA and inspect automatic main workflows; do
+not manually rerun merely because the Squash merge produced a new SHA.
 ```
 
 ## 3. Controller / integrator task
@@ -86,6 +94,12 @@ Phase 7.30F approval. At final freeze, run source/static/type/lint/build/secret
 checks once, delegate the Docker/browser matrix to required Actions, reconcile
 all results on one exact SHA, and produce LECTURE_CYCLE_SOURCE_READY,
 READY_FOR_BOUNDED_PRODUCTION_CANARY or HOLD. Never report Phase 7.33 PASS.
+
+Once a candidate PR satisfies the standing merge contract in the common block,
+the controller itself executes Squash merge with the expected head SHA, records
+the returned main SHA and verifies the automatically queued post-merge runs.
+This integration authority never substitutes for a later external-action
+approval.
 ```
 
 ## 4. Lane A — Cloud and private source

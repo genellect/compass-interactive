@@ -268,7 +268,9 @@ for (const requiredText of [
   'one dedicated non-main branch/worktree',
   'Do not weaken or disable existing Admin, Student, Display, Review, PDF or AI UX',
   'Keep Codex agent-phase\ninternet OFF',
-  'currently approved additional GitHub Actions budget of\n$10',
+  'approved repository Actions ceiling of $15 or account\nActions ceiling of $35',
+  'the controller may Squash merge without another\nprompt',
+  'all five required contexts green',
   'LECTURE_CYCLE_STAGING_READONLY_INVENTORY',
 ]) {
   assert.ok(
@@ -382,13 +384,23 @@ assert.match(
 )
 assert.match(
   ciAndBrowser,
-  /Actions capacity conservation[\s\S]*focused\/local\/static checks[\s\S]*targeted[\s\S]*\$10/,
+  /Actions capacity conservation[\s\S]*focused\/local\/static checks[\s\S]*targeted[\s\S]*repository Actions ceiling is \$15[\s\S]*account Actions ceiling is \$35/,
   'CI runbook must conserve the bounded GitHub Actions budget',
 )
 assert.match(
   agentsContract,
-  /GitHub Actions capacity is scarce[\s\S]*blind same-head reruns[\s\S]*\$10/,
+  /GitHub Actions capacity is scarce[\s\S]*blind same-head reruns[\s\S]*repository Actions ceiling of \$15[\s\S]*account Actions ceiling of \$35/,
   'Every agent must follow the common Actions conservation contract',
+)
+assert.match(
+  agentsContract,
+  /controller has standing authorization to execute \*\*Squash merge\*\*[\s\S]*expected head SHA[\s\S]*all five required contexts green[\s\S]*zero unresolved review threads[\s\S]*no head drift/,
+  'Controller merge delegation must remain exact-head and fail closed',
+)
+assert.match(
+  lectureCycleAgents,
+  /lane agent hands off and never merges independently[\s\S]*controller may Squash merge[\s\S]*all five required contexts green[\s\S]*zero unresolved threads[\s\S]*no head drift/,
+  'Lecture Cycle playbook must delegate gated Squash merge only to the controller',
 )
 assert.match(
   databaseSchema,

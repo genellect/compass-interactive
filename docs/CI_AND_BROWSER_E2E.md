@@ -25,8 +25,9 @@ freeze one exact head before requesting the full required workflow. Do not use
 push-per-fix iteration or blind same-head reruns. Fetch a failing job log once,
 classify source versus runner/infrastructure, and use at most one targeted
 job-only rerun when the evidence proves a transient. A source failure receives
-a new locally validated head. The current additional Actions budget ceiling is
-$10; exceeding it requires a new explicit approval.
+a new locally validated head. The approved repository Actions ceiling is $15
+and the account Actions ceiling is $35; the lower remaining headroom is the
+operative limit, and exceeding either ceiling requires a new explicit approval.
 
 ## GitHub Actions jobs
 
