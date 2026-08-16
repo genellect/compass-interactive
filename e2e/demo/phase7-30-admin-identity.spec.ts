@@ -550,7 +550,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     await installNetworkMocks(page, student.accessToken)
 
   await installBroadcastCapture(page)
-  await page.goto('/admin')
+  await page.goto('/admin/')
   await expect(page.locator('main .eyebrow')).toHaveText('FOR EDUCATORS')
   await installExistingStudentStorage(page, student.storageValue)
   await page.locator('main .admin-identity-card button.primary-button').click()

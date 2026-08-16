@@ -237,6 +237,12 @@ assert.match(adminStorage, /createAdminAuthFetch/)
 assert.match(adminStorage, /ADMIN_AUTH_REQUEST_TIMEOUT_MS = 10_000/)
 assert.match(adminStorage, /provider_refresh_token/)
 assert.match(adminStorage, /provider_token/)
+assert.match(
+  adminRoute,
+  /function normalizeAdminPathname\(pathname: string\)[\s\S]*pathname\.replace\(\/\\\/\+\$\/, ''\)[\s\S]*const adminPathname = normalizeAdminPathname\(location\.pathname\)/,
+)
+assert.match(adminRoute, /adminPathname === '\/admin\/auth\/callback'/)
+assert.match(adminRoute, /adminPathname !== '\/admin'/)
 assert.match(adminRoute, /exchangeCodeForSession/)
 assert.match(adminRoute, /window\.history\.replaceState\(\{\}, '', '\/admin'\)/)
 assert.match(adminRoute, /challengeAndVerify/)
