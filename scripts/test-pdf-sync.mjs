@@ -68,6 +68,23 @@ assert.equal(
 assert.match(viewer, /getDocument\(\{/)
 assert.match(viewer, /url: assetUrl/)
 assert.match(viewer, /rangeChunkSize: 1024 \* 1024/)
+assert.match(viewer, /const renderRequestRef = useRef\(0\)/)
+assert.match(
+  viewer,
+  /const requestId = renderRequestRef\.current \+ 1[\s\S]*renderRequestRef\.current = requestId/,
+)
+assert.match(
+  viewer,
+  /await cancelAndSettleRenderTask\(previousRenderTask\)[\s\S]*await document\.getPage\(pageNumber\)[\s\S]*requestId !== renderRequestRef\.current[\s\S]*canvasRef\.current !== canvas[\s\S]*stageRef\.current !== stage/,
+)
+assert.match(
+  viewer,
+  /if \(renderTaskRef\.current === renderTask\) \{[\s\S]*renderTaskRef\.current = null/,
+)
+assert.match(
+  viewer,
+  /active = false[\s\S]*renderRequestRef\.current \+= 1[\s\S]*renderTaskRef\.current\?\.cancel\(\)/,
+)
 assert.match(viewer, /教員のページに戻る/)
 assert.doesNotMatch(viewer, /type="file"|arrayBuffer\(\)/)
 assert.match(adminPage, /availablePdfAssets/)
