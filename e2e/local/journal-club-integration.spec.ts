@@ -6,6 +6,10 @@ import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
+// This integration intentionally persists rehearsal and production runs, so a
+// retry against the same database cannot satisfy its clean-reset precondition.
+test.describe.configure({ retries: 0 })
+
 const adminSessionSecret = process.env.TEST_ADMIN_SESSION_SECRET?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''

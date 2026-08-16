@@ -117,9 +117,14 @@ function RouteFallback() {
   )
 }
 
+function normalizeAdminPathname(pathname: string) {
+  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+}
+
 export function AdminRoute() {
   const location = useLocation()
   const navigate = useNavigate()
+  const adminPathname = normalizeAdminPathname(location.pathname)
   const callbackStarted = useRef(false)
   const bootStarted = useRef(false)
   const enrollmentSecretRef = useRef<EnrollmentSecret | null>(null)
@@ -307,7 +312,7 @@ export function AdminRoute() {
   useEffect(() => {
     if (
       !isPhase730AdminIdentityEnabled &&
-      location.pathname === '/admin/auth/callback'
+      adminPathname === '/admin/auth/callback'
     ) {
       clearAdminOAuthAttempt()
       window.history.replaceState({}, '', '/admin')
@@ -319,7 +324,7 @@ export function AdminRoute() {
       setPhase('error')
       return
     }
-    if (location.pathname === '/admin/auth/callback') {
+    if (adminPathname === '/admin/auth/callback') {
       if (callbackStarted.current) return
       callbackStarted.current = true
       setPhase('callback')
@@ -360,7 +365,7 @@ export function AdminRoute() {
       return
     }
 
-    if (location.pathname !== '/admin') {
+    if (adminPathname !== '/admin') {
       setErrorMessage('管理者認証のURLが正しくありません。')
       setPhase('error')
       return
@@ -371,7 +376,7 @@ export function AdminRoute() {
       setErrorMessage(getSafeMessage(error))
       setPhase(error instanceof AdminIdentityError ? 'denied' : 'error')
     })
-  }, [location.pathname, location.search, navigate, prepareIdentity])
+  }, [adminPathname, location.search, navigate, prepareIdentity])
 
   useEffect(
     () => () => {

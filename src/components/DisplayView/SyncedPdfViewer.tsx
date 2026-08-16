@@ -20,6 +20,25 @@ const DEFAULT_PAGE_ASPECT_RATIO = 16 / 9
 const MAX_RENDER_SCALE = 5
 const MIN_QUALITY_SCALE = 2
 
+type PdfRenderTask = ReturnType<
+  Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']
+>
+
+function isRenderingCancelledError(error: unknown) {
+  return error instanceof Error && error.name === 'RenderingCancelledException'
+}
+
+async function cancelAndSettleRenderTask(renderTask: PdfRenderTask) {
+  renderTask.cancel()
+  try {
+    await renderTask.promise
+  } catch (error) {
+    if (!isRenderingCancelledError(error)) {
+      throw error
+    }
+  }
+}
+
 type SyncedPdfViewerProps = {
   adminToken?: AdminOperationCredentialInput
   archiveSession?: LectureArchiveSession | null
@@ -64,9 +83,8 @@ export function SyncedPdfViewer({
   const stageRef = useRef<HTMLDivElement | null>(null)
   const remotePageRef = useRef(remotePage)
   remotePageRef.current = remotePage
-  const renderTaskRef = useRef<ReturnType<
-    Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']
-  > | null>(null)
+  const renderTaskRef = useRef<PdfRenderTask | null>(null)
+  const renderRequestRef = useRef(0)
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -196,14 +214,29 @@ export function SyncedPdfViewer({
 
   const renderPage = useCallback(
     async (pageNumber: number, document: PDFDocumentProxy) => {
+      const requestId = renderRequestRef.current + 1
+      renderRequestRef.current = requestId
       const canvas = canvasRef.current
       const stage = stageRef.current
       if (!canvas || !stage) {
         return
       }
 
-      renderTaskRef.current?.cancel()
+      const previousRenderTask = renderTaskRef.current
+      if (previousRenderTask) {
+        await cancelAndSettleRenderTask(previousRenderTask)
+        if (renderTaskRef.current === previousRenderTask) {
+          renderTaskRef.current = null
+        }
+      }
       const page = await document.getPage(pageNumber)
+      if (
+        requestId !== renderRequestRef.current ||
+        canvasRef.current !== canvas ||
+        stageRef.current !== stage
+      ) {
+        return
+      }
       const baseViewport = page.getViewport({ scale: 1 })
       setPageAspectRatio(baseViewport.width / baseViewport.height)
       const stageRect = stage.getBoundingClientRect()
@@ -239,15 +272,14 @@ export function SyncedPdfViewer({
       try {
         await renderTask.promise
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.name === 'RenderingCancelledException'
-        ) {
+        if (isRenderingCancelledError(error)) {
           return
         }
         throw error
       } finally {
-        renderTaskRef.current = null
+        if (renderTaskRef.current === renderTask) {
+          renderTaskRef.current = null
+        }
       }
     },
     [],
@@ -329,6 +361,7 @@ export function SyncedPdfViewer({
 
     return () => {
       active = false
+      renderRequestRef.current += 1
       renderTaskRef.current?.cancel()
       void loadingTask.destroy()
     }
