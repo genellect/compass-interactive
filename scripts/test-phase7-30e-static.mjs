@@ -465,8 +465,13 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /goto\('\/admin\/settings'\)[\s\S]*getByRole\('heading', \{ name: '管理者台帳' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*toBeVisible\(\)/,
-  'the lifecycle must verify the current Admin session inside the separate settings page',
+  /settingsPopupPromise = admin\.page\.waitForEvent\('popup'\)[\s\S]*getByRole\('link', \{ name: '管理者設定' \}\)\.click\(\)[\s\S]*settingsPage = await settingsPopupPromise[\s\S]*getByRole\('heading', \{ name: '管理者台帳' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*locator\('\.admin-identity-card'\)[\s\S]*toHaveCount\(0\)/,
+  'the lifecycle must inherit the ready Admin session into the separate settings page without another identity challenge',
+)
+assert.match(
+  localLifecycleBrowser,
+  /pageCountBeforeWorkspaceReturn = adminContext\.pages\(\)\.length[\s\S]*getByRole\('link', \{ name: '講義画面を開く', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*admin\.page\.locator\('\.admin-workflow'\)[\s\S]*adminContext\.pages\(\)[\s\S]*toHaveLength\(pageCountBeforeWorkspaceReturn\)/,
+  'the settings surface must return to the named lecture workspace instead of creating another TOTP-bound tab',
 )
 assert.match(
   browserRunner,
@@ -492,6 +497,31 @@ assert.match(
   adminIdentityBrowser,
   /\/functions\/v1\/manage-admin-ledger[\s\S]*action === 'snapshot'[\s\S]*action === 'audit'[\s\S]*not\.toHaveProperty\('adminToken'\)/,
   'the owner workspace must load safe ledger surfaces without the retired Admin credential field',
+)
+assert.match(
+  adminIdentityBrowser,
+  /settingsPopupPromise = page\.waitForEvent\('popup'\)[\s\S]*settingsLink\.click\(\)[\s\S]*settingsPage = await settingsPopupPromise[\s\S]*settingsPage\.locator\('\.admin-identity-card'\)[\s\S]*toHaveCount\(0\)/,
+  'the identity demo must prove the separate settings surface inherits the ready app session without another TOTP challenge',
+)
+assert.match(
+  adminIdentityBrowser,
+  /'stale-admin-app-session'[\s\S]*settingsReloadPromise = settingsPage\.waitForEvent\('load'\)[\s\S]*settingsLink\.click\(\)[\s\S]*await settingsReloadPromise[\s\S]*sessionStorage\.getItem\(adminAppSessionStorageKey\)[\s\S]*toBe\(appSessionToken\)/,
+  'a reused settings surface must reload exactly when the handed-off app session changes',
+)
+assert.match(
+  adminIdentityBrowser,
+  /adminWorkspaceDocument = 'preserved'[\s\S]*getByRole\('link', \{ name: '講義画面を開く', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*adminWorkspaceDocument[\s\S]*toBe\('preserved'\)/,
+  'returning with the same app session must focus the existing lecture document without reloading it',
+)
+assert.match(
+  adminIdentityBrowser,
+  /const context = page\.context\(\)[\s\S]*context\.route\('https:\/\/example\.supabase\.co\/\*\*'/,
+  'the identity demo must mock Admin Auth and Edge requests for both the lecture page and its settings popup',
+)
+assert.match(
+  adminIdentityBrowser,
+  /settingsPage[\s\S]*getByRole\('button', \{ name: 'ログアウト', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*card\.locator\('\.eyebrow'\)[\s\S]*toHaveText\('FOR EDUCATORS'\)/,
+  'logging out from the settings surface must immediately clear the lecture workspace',
 )
 assert.doesNotMatch(
   adminIdentityBrowser,

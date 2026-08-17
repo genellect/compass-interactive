@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
 
 export default function AdminSettingsPage({
   ledger,
@@ -21,6 +22,10 @@ export default function AdminSettingsPage({
           <a
             className="secondary-button"
             href="/admin"
+            onClick={(event) => {
+              event.preventDefault()
+              openAdminSurface('/admin')
+            }}
             rel="noopener noreferrer"
             target="_blank"
           >
