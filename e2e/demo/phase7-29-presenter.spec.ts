@@ -770,7 +770,7 @@ test('moves an expired automatic ticket to the five-minute recovery path without
 test('keeps the recovery code available when local activation fails after confirmation', async ({
   page,
 }) => {
-  await installLocalActivationFailure(page)
+  const activationFailure = await installLocalActivationFailure(page)
   await installAdminState(page)
   const state = await installNetworkMocks(page, {
     localActivationFailure: true,
@@ -781,6 +781,7 @@ test('keeps the recovery code available when local activation fails after confir
   await review
     .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
     .click()
+  await activationFailure.completed
 
   const recoveryCode = page.locator('.admin-presenter-recovery-code')
   await expect(recoveryCode).toHaveText('ABCD2345')
