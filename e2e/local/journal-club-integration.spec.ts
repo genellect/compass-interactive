@@ -707,6 +707,9 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
     rehearsalPollStates.data?.every((poll) => poll.status === 'closed'),
   ).toBe(true)
 
+  await page.getByRole('tab', { name: /準備/ }).click()
+  await expect(page.locator('#teacher-workspace-material')).toBeVisible()
+
   page.once('dialog', (dialog) => dialog.accept())
   await rehearsalRow.getByRole('button', { name: '終了', exact: true }).click()
   await expect(rehearsalRow.locator('.status-pill.closed')).toHaveText('締切')
