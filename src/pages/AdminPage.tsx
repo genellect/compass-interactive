@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
+import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
@@ -994,6 +995,10 @@ export function AdminPage({
           <a
             className="secondary-button"
             href="/admin/settings"
+            onClick={(event) => {
+              event.preventDefault()
+              openAdminSurface('/admin/settings')
+            }}
             rel="noopener noreferrer"
             target="_blank"
           >

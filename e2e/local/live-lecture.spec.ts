@@ -90,25 +90,33 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       admin.page.getByRole('link', { name: '管理者設定' }),
     ).toHaveAttribute('target', '_blank')
 
-    const adminSettings = await openMonitoredPage(adminContext)
-    await installGoogleAdminSession(adminSettings.page)
-    await adminSettings.page.goto('/admin/settings')
+    const settingsPopupPromise = admin.page.waitForEvent('popup')
+    await admin.page.getByRole('link', { name: '管理者設定' }).click()
+    const settingsPage = await settingsPopupPromise
+    const settingsSafety = await installBrowserSafetyMonitor(settingsPage)
     await expect(
-      adminSettings.page.getByRole('heading', {
+      settingsPage.getByRole('heading', {
         name: '管理者設定',
         exact: true,
       }),
     ).toBeVisible()
     await expect(
-      adminSettings.page.getByRole('heading', { name: '管理者台帳' }),
+      settingsPage.getByRole('heading', { name: '管理者台帳' }),
     ).toBeVisible()
     await expect(
-      adminSettings.page
+      settingsPage
         .locator('.admin-ledger-session')
         .filter({ hasText: '現在のセッション' }),
     ).toBeVisible()
-    await adminSettings.safety.assertClean()
-    await adminSettings.page.close()
+    await expect(settingsPage.locator('.admin-identity-card')).toHaveCount(0)
+    const pageCountBeforeWorkspaceReturn = adminContext.pages().length
+    await settingsPage
+      .getByRole('link', { name: '講義画面を開く', exact: true })
+      .click()
+    await expect(admin.page.locator('.admin-workflow')).toBeVisible()
+    expect(adminContext.pages()).toHaveLength(pageCountBeforeWorkspaceReturn)
+    await settingsSafety.assertClean()
+    await settingsPage.close()
 
     await admin.page.getByLabel('講義タイトル').fill(lectureTitle)
     await admin.page.getByRole('button', { name: '新しい講義を作成' }).click()

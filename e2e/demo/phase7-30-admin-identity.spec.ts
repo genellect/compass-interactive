@@ -196,12 +196,13 @@ function anonymousStudentSession() {
 
 function trackedSession() {
   const now = Date.now()
+  const expiresAt = new Date(now + 8 * 60 * 60_000).toISOString()
   return {
     canUseAi: true,
     environmentId: '73000000-0000-4000-8000-000000000010',
-    expiresAt: new Date(now + 8 * 60 * 60_000).toISOString(),
+    expiresAt,
     id: '73000000-0000-4000-8000-000000000011',
-    idleExpiresAt: new Date(now + 30 * 60_000).toISOString(),
+    idleExpiresAt: expiresAt,
     membershipId: '73000000-0000-4000-8000-000000000012',
     principalId: '73000000-0000-4000-8000-000000000013',
     role: 'owner',
@@ -343,7 +344,8 @@ async function installNetworkMocks(
     verified: options.initialVerified ?? false,
   }
 
-  await page.route('https://example.supabase.co/**', async (route) => {
+  const context = page.context()
+  await context.route('https://example.supabase.co/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const authorization = request.headers().authorization ?? ''
@@ -706,14 +708,40 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
       },
     })
   }
-  await expect(page.getByRole('link', { name: '管理者設定' })).toHaveAttribute(
-    'target',
-    '_blank',
-  )
-  await page.goto('/admin/settings')
+  const settingsLink = page.getByRole('link', { name: '管理者設定' })
+  await expect(settingsLink).toHaveAttribute('target', '_blank')
+  const settingsPopupPromise = page.waitForEvent('popup')
+  await settingsLink.click()
+  const settingsPage = await settingsPopupPromise
   await expect(
-    page.getByRole('heading', { name: '管理者設定', exact: true }),
+    settingsPage.getByRole('heading', { name: '管理者設定', exact: true }),
   ).toBeVisible()
+  await expect(settingsPage.locator('.admin-identity-card')).toHaveCount(0)
+  const pageCountBeforeChangedSessionHandoff = page.context().pages().length
+  await settingsPage.evaluate(
+    ({ adminAppSessionStorageKey }) =>
+      window.sessionStorage.setItem(
+        adminAppSessionStorageKey,
+        'stale-admin-app-session',
+      ),
+    { adminAppSessionStorageKey },
+  )
+  const settingsReloadPromise = settingsPage.waitForEvent('load')
+  await settingsLink.click()
+  await settingsReloadPromise
+  await expect(
+    settingsPage.getByRole('heading', { name: '管理者設定', exact: true }),
+  ).toBeVisible()
+  expect(page.context().pages()).toHaveLength(
+    pageCountBeforeChangedSessionHandoff,
+  )
+  expect(
+    await settingsPage.evaluate(
+      ({ adminAppSessionStorageKey }) =>
+        window.sessionStorage.getItem(adminAppSessionStorageKey),
+      { adminAppSessionStorageKey },
+    ),
+  ).toBe(appSessionToken)
   await expect
     .poll(() =>
       [...new Set(state.ledgerCalls.map(({ action }) => action))].sort(),
@@ -727,6 +755,20 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
       appSessionToken,
     })
   }
+  const pageCountBeforeWorkspaceReturn = page.context().pages().length
+  await page.evaluate(() => {
+    document.documentElement.dataset.adminWorkspaceDocument = 'preserved'
+  })
+  await settingsPage
+    .getByRole('link', { name: '講義画面を開く', exact: true })
+    .click()
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  expect(page.context().pages()).toHaveLength(pageCountBeforeWorkspaceReturn)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.dataset.adminWorkspaceDocument,
+    ),
+  ).toBe('preserved')
 
   const storageAtReady = await page.evaluate(
     ({ adminAppSessionStorageKey, studentAuthStorageKey }) => ({
@@ -740,8 +782,11 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     student: student.storageValue,
   })
 
-  await page.getByRole('button', { name: 'ログアウト', exact: true }).click()
+  await settingsPage
+    .getByRole('button', { name: 'ログアウト', exact: true })
+    .click()
   await expect(card.locator('.eyebrow')).toHaveText('FOR EDUCATORS')
+  await settingsPage.close()
 
   const storageAfterLogout = await page.evaluate(
     ({
@@ -792,6 +837,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     'admit',
     'beginStepUp',
     'completeStepUp',
+    'status',
     'status',
     'logout',
   ])

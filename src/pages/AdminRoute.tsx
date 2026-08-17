@@ -27,6 +27,7 @@ import {
   persistAdminAppSessionToken,
   restoreAdminAppSessionToken,
 } from '../lib/adminAuth/adminAuthStorage'
+import { claimAdminSurfaceWindow } from '../lib/adminAuth/adminSurfaceNavigation'
 import { AdminAiUnlockError } from '../lib/adminAuth/adminAiUnlockApi'
 import {
   forgetGoogleAdminOperationSession,
@@ -149,6 +150,8 @@ export function AdminRoute() {
     purgeLegacyAdminSessionStorage()
   }, [])
 
+  useEffect(() => claimAdminSurfaceWindow(adminPathname), [adminPathname])
+
   const clearEnrollmentSecret = useCallback(() => {
     enrollmentSecretRef.current = null
     setEnrollmentSecret(null)
@@ -176,6 +179,18 @@ export function AdminRoute() {
     },
     [clearEnrollmentSecret],
   )
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = adminSupabase.auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_OUT') return
+      clearGoogleAdminWorkspace(
+        'Googleログインが終了しました。もう一度ログインしてください。',
+      )
+    })
+    return () => subscription.unsubscribe()
+  }, [clearGoogleAdminWorkspace])
 
   const prepareIdentity = useCallback(
     async (skipTransitionRecovery = false) => {

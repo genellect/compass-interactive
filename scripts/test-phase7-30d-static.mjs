@@ -15,6 +15,10 @@ const adminRoute = read('src/pages/AdminRoute.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminSettingsPage = read('src/pages/AdminSettingsPage.tsx')
 const adminStorage = read('src/lib/adminAuth/adminAuthStorage.ts')
+const adminSurfaceNavigation = read(
+  'src/lib/adminAuth/adminSurfaceNavigation.ts',
+)
+const publicHeaders = read('public/_headers')
 const ownerCapabilityMigration = read(
   'supabase/migrations/20260817010000_admin_owner_capability_invariant.sql',
 )
@@ -244,6 +248,10 @@ assert.match(
   adminPage,
   /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*管理者設定/,
 )
+assert.match(
+  adminPage,
+  /href="\/admin\/settings"[\s\S]*event\.preventDefault\(\)[\s\S]*openAdminSurface\('\/admin\/settings'\)/,
+)
 assert.doesNotMatch(
   adminPage,
   /AdminLedgerPanel|AdminSessionPanel|セッション管理/,
@@ -255,6 +263,32 @@ assert.match(
 assert.match(
   adminSettingsPage,
   /href="\/admin"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*講義画面を開く/,
+)
+assert.match(
+  adminSettingsPage,
+  /href="\/admin"[\s\S]*event\.preventDefault\(\)[\s\S]*openAdminSurface\('\/admin'\)/,
+)
+assert.match(
+  adminSurfaceNavigation,
+  /'\/admin': 'compass-admin-workspace'[\s\S]*'\/admin\/settings': 'compass-admin-settings'/,
+)
+assert.match(
+  adminSurfaceNavigation,
+  /targetUrl = new URL\(pathname, window\.location\.origin\)\.href[\s\S]*window\.open\('', ADMIN_SURFACE_WINDOW_NAMES\[pathname\]\)[\s\S]*window\.location\.assign\(targetUrl\)[\s\S]*sessionChanged = handoffAdminAppSessionToken\(opened\)\.changed[\s\S]*sessionChanged \|\| !isCurrentAdminSurface\(opened, pathname\)[\s\S]*opened\.location\.replace\(targetUrl\)[\s\S]*opened\.focus\(\)/,
+)
+assert.match(
+  adminSurfaceNavigation,
+  /target\.location\.origin === window\.location\.origin[\s\S]*currentPathname === pathname/,
+)
+assert.match(publicHeaders, /^\s*Cross-Origin-Opener-Policy: same-origin\s*$/m)
+assert.match(
+  adminStorage,
+  /handoffAdminAppSessionToken\(target: Window\)[\s\S]*restoreAdminAppSessionToken\(\)[\s\S]*previousToken = target\.sessionStorage\.getItem\([\s\S]*ADMIN_APP_SESSION_STORAGE_KEY[\s\S]*target\.sessionStorage\.setItem\(ADMIN_APP_SESSION_STORAGE_KEY, token\)[\s\S]*changed: previousToken !== token/,
+)
+assert.match(adminRoute, /claimAdminSurfaceWindow\(adminPathname\)/)
+assert.match(
+  adminRoute,
+  /onAuthStateChange\(\(event\) => \{[\s\S]*event !== 'SIGNED_OUT'[\s\S]*clearGoogleAdminWorkspace/,
 )
 assert.match(
   adminStorage,

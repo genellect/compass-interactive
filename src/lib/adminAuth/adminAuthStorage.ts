@@ -124,6 +124,16 @@ export function restoreAdminAppSessionToken() {
   return window.sessionStorage.getItem(ADMIN_APP_SESSION_STORAGE_KEY) ?? ''
 }
 
+export function handoffAdminAppSessionToken(target: Window) {
+  const token = restoreAdminAppSessionToken()
+  if (!token) return { changed: false, handedOff: false }
+  const previousToken = target.sessionStorage.getItem(
+    ADMIN_APP_SESSION_STORAGE_KEY,
+  )
+  target.sessionStorage.setItem(ADMIN_APP_SESSION_STORAGE_KEY, token)
+  return { changed: previousToken !== token, handedOff: true }
+}
+
 export function clearAdminAuthStorage() {
   clearAdminOperationRequestIds()
   window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY)
