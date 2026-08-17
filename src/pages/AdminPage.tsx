@@ -1,7 +1,5 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import {
-  type AdminOperationCredential,
-} from '../lib/adminAuth/adminOperationCredential'
+import { useEffect, useState, type FormEvent } from 'react'
+import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
@@ -10,14 +8,12 @@ import {
   AdminModerationPanel,
   AdminPdfControl,
   AdminPollControl,
-  AdminSessionPanel,
 } from '../components/AdminWorkspace'
 import {
   type AdminLecture,
   type AdminPdfDocument,
   type AdminPoll,
   type AdminPollList,
-  type AdminSessionSummary,
   supabaseAdminRepository,
 } from '../repositories/supabaseAdminRepository'
 import { type DisplayState } from '../repositories/supabaseDisplayStateRepository'
@@ -27,7 +23,6 @@ import {
   isPhase4RealtimeCaptionsEnabled,
   isPhase5MaterialAnalysisEnabled,
   isPhase6SummariesEnabled,
-  isPhase68SecurityEnabled,
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
   isPhase728DisplayRealtimeEnabled,
@@ -54,11 +49,9 @@ import './AdminPage.css'
 
 export function AdminPage({
   adminCredential,
-  identitySettings,
   onAdminLogout,
 }: {
   adminCredential: AdminOperationCredential
-  identitySettings?: ReactNode
   onAdminLogout: () => Promise<void>
 }) {
   const {
@@ -81,11 +74,6 @@ export function AdminPage({
   } = useCompassState()
   const adminToken = adminCredential
   const isAuthenticated = true
-  const [adminSessions, setAdminSessions] = useState<AdminSessionSummary[]>([])
-  const [adminCurrentSessionId, setAdminCurrentSessionId] = useState('')
-  const [adminSessionsError, setAdminSessionsError] = useState('')
-  const [adminSessionsLoading, setAdminSessionsLoading] = useState(false)
-  const [showAdminSessions, setShowAdminSessions] = useState(false)
   const { expireAdminSession, handleInvalidAdminSession, handleLogout } =
     useGoogleAdminWorkspaceSession({
       activeLectureSessionId,
@@ -585,51 +573,9 @@ export function AdminPage({
     setAdminPollsHasMore(false)
     setAdminPollsError(null)
     setAdminPdfDocuments([])
-    setAdminSessions([])
-    setAdminCurrentSessionId('')
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
     resetBrowserPdfPublication()
-  }
-
-  async function refreshAdminSessions() {
-    if (!adminToken || !isPhase68SecurityEnabled) return
-    setAdminSessionsLoading(true)
-    setAdminSessionsError('')
-    try {
-      const result = await supabaseAdminRepository.manageAdminSessions({
-        action: 'list',
-        adminToken,
-      })
-      setAdminSessions(result.sessions)
-      setAdminCurrentSessionId(result.currentSessionId ?? '')
-    } catch {
-      setAdminSessionsError('管理セッションを確認できませんでした。')
-    } finally {
-      setAdminSessionsLoading(false)
-    }
-  }
-
-  async function revokeAdminSession(sessionId: string) {
-    if (!adminToken) return
-    setAdminSessionsLoading(true)
-    setAdminSessionsError('')
-    try {
-      await supabaseAdminRepository.manageAdminSessions({
-        action: 'revoke',
-        adminToken,
-        sessionId,
-      })
-      if (sessionId === adminCurrentSessionId) {
-        clearLocalAdminSession()
-        if (adminCredential && onAdminLogout) await onAdminLogout()
-      } else if (adminSessions.some((session) => session.id === sessionId)) {
-        await refreshAdminSessions()
-      }
-    } catch {
-      setAdminSessionsError('管理セッションを失効できませんでした。')
-      setAdminSessionsLoading(false)
-    }
   }
 
   useEffect(() => {
@@ -1045,35 +991,19 @@ export function AdminPage({
           >
             ログアウト
           </button>
-          {isPhase68SecurityEnabled ? (
-            <button
-              className="secondary-button"
-              onClick={() => {
-                const next = !showAdminSessions
-                setShowAdminSessions(next)
-                if (next) void refreshAdminSessions()
-              }}
-              type="button"
-            >
-              セッション管理
-            </button>
-          ) : null}
+          <a
+            className="secondary-button"
+            href="/admin/settings"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            管理者設定
+          </a>
         </div>
       </section>
       {displayLaunchError ? (
         <p className="error-note">{displayLaunchError}</p>
       ) : null}
-      {identitySettings}
-      {showAdminSessions && isPhase68SecurityEnabled ? (
-        <AdminSessionPanel
-          currentSessionId={adminCurrentSessionId}
-          error={adminSessionsError}
-          isLoading={adminSessionsLoading}
-          onRevoke={(sessionId) => void revokeAdminSession(sessionId)}
-          sessions={adminSessions}
-        />
-      ) : null}
-
       <nav className="admin-workflow" aria-label="講義運営の流れ">
         <a href="#admin-prepare">
           <span>1</span>

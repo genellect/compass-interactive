@@ -364,8 +364,13 @@ the irreversible operator cutover remain separate Human/Hosted gates.
 - The Admin application session has no idle timeout or periodic TOTP prompt. Its
   cap is `auth.sessions.created_at + 8 hours`; logout, backing-session removal,
   principal/environment/membership invalidation, verified TOTP factor-set
-  change or that cap requires login again. Role changes are applied live;
-  `can_use_ai=false` drains AI authority without deleting the Admin session.
+  change or that cap requires login again. Role changes are applied live. For
+  instructors, `can_use_ai=false` drains AI authority without deleting the
+  Admin session; non-revoked Owners retain the complete capability set.
+- Membership, invitation and Admin-session data is rendered only on
+  `/admin/settings`, separately from the lecture workspace. The route reuses
+  the same Google+AAL2 verification contract and never accepts a credential in
+  the URL.
 - B2.2a authorizes a dormant Google Admin session only when the principal's
   approved factor-set hash/version/count, the live verified set, the immutable
   session binding and completed post-challenge JWT/AMR nonce evidence agree.

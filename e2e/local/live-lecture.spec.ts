@@ -86,13 +86,27 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()
-    await admin.page.getByRole('button', { name: 'セッション管理' }).click()
     await expect(
-      admin.page.getByRole('heading', { name: '管理セッション' }),
+      admin.page.getByRole('link', { name: '管理者設定' }),
+    ).toHaveAttribute('target', '_blank')
+
+    const adminSettings = await openMonitoredPage(adminContext)
+    await installGoogleAdminSession(adminSettings.page)
+    await adminSettings.page.goto('/admin/settings')
+    await expect(
+      adminSettings.page.getByRole('heading', {
+        name: '管理者設定',
+        exact: true,
+      }),
     ).toBeVisible()
     await expect(
-      admin.page.getByText('現在のセッション', { exact: true }),
+      adminSettings.page.getByRole('heading', { name: '管理者台帳' }),
     ).toBeVisible()
+    await expect(
+      adminSettings.page.getByText('現在のセッション', { exact: true }),
+    ).toBeVisible()
+    await adminSettings.safety.assertClean()
+    await adminSettings.page.close()
 
     await admin.page.getByLabel('講義タイトル').fill(lectureTitle)
     await admin.page.getByRole('button', { name: '新しい講義を作成' }).click()

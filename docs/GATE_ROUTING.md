@@ -94,7 +94,7 @@ npm run test:phase7-27-upgrade          # Phase 7.26 data through 7.27
 npm run test:phase7-28-upgrade          # populated 7.27 data through 7.28
 npm run test:phase7-29-upgrade          # populated 7.28 data through 7.29
 npm run test:phase7-30d-concurrency      # owner last-owner and invitation terminal races; next upgrade resets its fixture
-npm run test:phase7-30-upgrade          # populated legacy through D-head state through current F schema; full reset on exit
+npm run test:phase7-30-upgrade          # populated legacy through D-head state through current G schema; full reset on exit
 npm run test:phase7-30e-concurrency     # approval/claim/session/cutover serialization, NOWAIT rollback and exact replay; full reset on exit
 npm run test:e2e:phase7-30b22b-browser  # IndexedDB/CryptoKey scope and response-loss convergence
 npm run test:production-local-edge      # local Auth, CORS, fail-closed paid features

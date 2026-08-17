@@ -3,6 +3,20 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-17 - Owner capability and separate Admin settings
+
+- Made every non-revoked environment Owner retain the complete administrative
+  capability set. Existing Owner memberships are repaired forward, promotion
+  grants the capability atomically and later disable attempts fail closed.
+  Paid/provider AI admission remains controlled by its separate runtime gates.
+- Moved membership, invitation, personal security and Admin-session controls
+  out of the lecture workspace into `/admin/settings`. The lecture workspace
+  opens that authenticated surface in a separate tab without placing an Admin
+  credential in the URL or shared persistent storage.
+- Replaced implementation-oriented Admin copy with concise member, permission
+  and login-state labels while preserving owner-only controls, fresh TOTP
+  step-up, last-owner protection and session revocation.
+
 ## 2026-08-14 - Lecture Cycle Production Candidate planning and cloud handoff
 
 - Added a 50 active person-hour private-source candidate plan that preserves

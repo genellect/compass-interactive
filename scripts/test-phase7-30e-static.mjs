@@ -625,7 +625,7 @@ assert.match(
   /error instanceof GoogleAdminAppSessionInvalidError[\s\S]*app_session_invalid[\s\S]*401/,
   'a revoked Google application session must fail with a structured 401 response',
 )
-assert.match(upgradeRunner, /upgrade through Phase 7\.30[EF]/)
+assert.match(upgradeRunner, /upgrade through Phase 7\.30[EFG]/)
 assert.match(
   c1HeadUpgradeProbe,
   /admin_identity_cutover_receipts[\s\S]*admin_lecture_ownership_claim_approvals[\s\S]*externalTransportAttestationRequired[\s\S]*issuedLegacyGrantCount/,

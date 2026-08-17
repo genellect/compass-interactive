@@ -15,7 +15,6 @@ const workflow = read('.github/workflows/ci.yml')
 const packageJson = JSON.parse(read('package.json'))
 
 for (const component of [
-  'AdminSessionPanel',
   'AdminLectureControl',
   'AdminPdfControl',
   'AdminPollControl',
@@ -24,6 +23,11 @@ for (const component of [
 ]) {
   assert.match(adminPage, new RegExp(`\\b${component}\\b`))
 }
+assert.doesNotMatch(adminPage, /AdminSessionPanel|セッション管理/)
+assert.match(
+  adminPage,
+  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*管理者設定/,
+)
 for (const responsibility of [
   'commentsAndPolls',
   'sessionLifecycle',
@@ -33,16 +37,13 @@ for (const responsibility of [
   assert.match(context, new RegExp(responsibility))
 }
 assert.ok(normalizedUtf8Bytes('src/pages/AdminPage.tsx') < 45_000)
-assert.ok(
-  normalizedUtf8Bytes('src/context/CompassStateContext.tsx') < 50_000,
-)
+assert.ok(normalizedUtf8Bytes('src/context/CompassStateContext.tsx') < 50_000)
 assert.ok(
   normalizedUtf8Bytes('src/repositories/supabaseLiveStateRepository.ts') <
     20_000,
 )
 assert.ok(
-  normalizedUtf8Bytes('src/repositories/supabaseAdminRepository.ts') <
-    30_000,
+  normalizedUtf8Bytes('src/repositories/supabaseAdminRepository.ts') < 30_000,
 )
 
 for (const repository of [liveRepository, adminRepository]) {

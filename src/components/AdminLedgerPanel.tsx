@@ -430,9 +430,7 @@ export function AdminLedgerPanel({
         <div>
           <p className="eyebrow">OWNER CONTROL</p>
           <h2>管理者台帳</h2>
-          <p>
-            招待、役割、AI利用、管理者セッションをこの環境だけで管理します。
-          </p>
+          <p>メンバーとログイン状態を管理します。</p>
         </div>
         <button
           className="secondary-button"
@@ -544,7 +542,7 @@ export function AdminLedgerPanel({
             startMutation({
               action: 'issueInvitation',
               payload: {
-                canUseAi: inviteCanUseAi,
+                canUseAi: inviteRole === 'owner' || inviteCanUseAi,
                 expiresAt: asIso(inviteExpiresAt),
                 membershipExpiresAt:
                   inviteRole === 'owner' ? null : asIso(membershipExpiresAt),
@@ -604,14 +602,18 @@ export function AdminLedgerPanel({
               />
             </label>
           ) : null}
-          <label className="field admin-ledger-checkbox">
-            <input
-              checked={inviteCanUseAi}
-              onChange={(event) => setInviteCanUseAi(event.target.checked)}
-              type="checkbox"
-            />
-            <span>AI機能を利用できる</span>
-          </label>
+          {inviteRole === 'instructor' ? (
+            <label className="field admin-ledger-checkbox">
+              <input
+                checked={inviteCanUseAi}
+                onChange={(event) => setInviteCanUseAi(event.target.checked)}
+                type="checkbox"
+              />
+              <span>AI機能を許可</span>
+            </label>
+          ) : (
+            <p className="helper-note">環境管理者は全機能を利用できます。</p>
+          )}
           <button
             className="primary-button"
             disabled={busy || Boolean(pending) || !admissionEnabled}
@@ -664,8 +666,10 @@ export function AdminLedgerPanel({
               <p>{membership.normalizedEmail}</p>
               <p>
                 {membership.role === 'owner' ? '環境管理者' : '講義担当者'} /{' '}
-                {MEMBERSHIP_STATUS_LABELS[membership.status] ?? '状態確認中'} / AI{' '}
-                {membership.canUseAi ? '利用可' : '停止'}
+                {MEMBERSHIP_STATUS_LABELS[membership.status] ?? '状態確認中'} /{' '}
+                {membership.role === 'owner'
+                  ? '全機能利用可'
+                  : `AI ${membership.canUseAi ? '利用可' : '停止'}`}
               </p>
               <div className="admin-ledger-actions">
                 {membership.status === 'active' &&
@@ -711,7 +715,9 @@ export function AdminLedgerPanel({
                     講義担当者に変更
                   </button>
                 ) : null}
-                {membership.status === 'active' && membership.canUseAi ? (
+                {membership.status === 'active' &&
+                membership.role === 'instructor' &&
+                membership.canUseAi ? (
                   <button
                     disabled={busy || Boolean(pending)}
                     onClick={() =>
@@ -910,7 +916,9 @@ export function AdminLedgerPanel({
               <strong>
                 {event.action.startsWith('admin_ledger.')
                   ? (MUTATION_LABELS[
-                      event.action.slice('admin_ledger.'.length) as AdminLedgerMutationAction
+                      event.action.slice(
+                        'admin_ledger.'.length,
+                      ) as AdminLedgerMutationAction
                     ] ?? '管理操作')
                   : '管理者認証・権限操作'}
               </strong>{' '}

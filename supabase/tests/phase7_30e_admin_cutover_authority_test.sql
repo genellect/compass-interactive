@@ -439,13 +439,13 @@ INSERT INTO private.admin_environment_memberships (
     '00000000-0000-4000-8000-00000000e106'::uuid,
     '00000000-0000-4000-8000-00000000e101'::uuid,
     '00000000-0000-4000-8000-00000000e105'::uuid,
-    'owner', 'active', false, statement_timestamp() - interval '1 hour'
+    'owner', 'active', true, statement_timestamp() - interval '1 hour'
   ),
   (
     '00000000-0000-4000-8000-00000000e116'::uuid,
     '00000000-0000-4000-8000-00000000e101'::uuid,
     '00000000-0000-4000-8000-00000000e115'::uuid,
-    'owner', 'active', false, statement_timestamp() - interval '1 hour'
+    'owner', 'active', true, statement_timestamp() - interval '1 hour'
   );
 
 INSERT INTO private.admin_step_up_nonces (

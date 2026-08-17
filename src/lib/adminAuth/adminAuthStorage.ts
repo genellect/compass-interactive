@@ -133,11 +133,17 @@ export function clearAdminAuthStorage() {
   window.sessionStorage.removeItem(ADMIN_LEDGER_PENDING_STORAGE_KEY)
 }
 
-export function beginAdminOAuthAttempt() {
+const ADMIN_RETURN_PATHS = new Set(['/admin', '/admin/settings'])
+
+export function beginAdminOAuthAttempt(returnPath = '/admin') {
+  const safeReturnPath = ADMIN_RETURN_PATHS.has(returnPath)
+    ? returnPath
+    : '/admin'
   const attempt = {
     callbackPath: '/admin/auth/callback',
     createdAt: Date.now(),
     id: crypto.randomUUID(),
+    returnPath: safeReturnPath,
   }
   window.sessionStorage.setItem(
     ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
@@ -159,18 +165,24 @@ export function consumeAdminOAuthAttempt(now = Date.now()) {
       callbackPath?: unknown
       createdAt?: unknown
       id?: unknown
+      returnPath?: unknown
     }
-    return Boolean(
+    const returnPath =
+      attempt.returnPath === undefined ? '/admin' : attempt.returnPath
+    const valid = Boolean(
       attempt.callbackPath === '/admin/auth/callback' &&
       typeof attempt.id === 'string' &&
       /^[0-9a-f-]{36}$/i.test(attempt.id) &&
       typeof attempt.createdAt === 'number' &&
       Number.isSafeInteger(attempt.createdAt) &&
       attempt.createdAt <= now &&
-      now - attempt.createdAt <= 10 * 60 * 1000,
+      now - attempt.createdAt <= 10 * 60 * 1000 &&
+      typeof returnPath === 'string' &&
+      ADMIN_RETURN_PATHS.has(returnPath),
     )
+    return valid ? (returnPath as string) : ''
   } catch {
-    return false
+    return ''
   }
 }
 

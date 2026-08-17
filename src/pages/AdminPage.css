@@ -341,6 +341,26 @@
   margin: 0;
 }
 
+.admin-settings-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-settings-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-settings-section > h2 {
+  margin: 0;
+}
+
+.admin-settings-section .admin-ai-unlock-panel,
+.admin-settings-section .admin-totp-factor-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
 .admin-ledger-panel {
   display: grid;
   gap: 1rem;
