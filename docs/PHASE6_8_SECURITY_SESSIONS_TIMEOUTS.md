@@ -57,11 +57,12 @@ logged or stored in plaintext by PostgreSQL.
 
 ## 4. Lecture resume flow
 
-After a successful owned join, the frontend makes one best-effort call to
-`issue-lecture-resume-token`. The Edge Function revalidates the Auth user and
-calls a service-only ownership helper; it cannot use browser-supplied ownership
-claims. The seven-day HMAC token contains only audience, issued/expiry time,
-random JTI, opaque lecture public ID and integer revocation version.
+After a successful owned join, the frontend starts one best-effort call to
+`issue-lecture-resume-token` without delaying navigation into the lecture. The
+Edge Function revalidates the Auth user and calls a service-only ownership
+helper; it cannot use browser-supplied ownership claims. The seven-day HMAC
+token contains only audience, issued/expiry time, random JTI, opaque lecture
+public ID and integer revocation version.
 
 The browser stores at most ten valid entries in local storage. Archive entry
 prefers a resume-token POST body. Failure is indistinguishable from an unknown
@@ -77,15 +78,19 @@ capability are deployed.
 
 ## 5. Communication and provider failure states
 
-| Boundary                               |                                 Deadline | Failure behavior                               |
-| -------------------------------------- | ---------------------------------------: | ---------------------------------------------- |
-| Live snapshot, terminal and join RPC   |                               12 seconds | client error/backoff; DB remains authoritative |
-| Ordinary Admin/Operator Edge call      |                               15 seconds | bounded UI error; no endless spinner           |
-| AI Edge call                           |                               65 seconds | Edge/provider ledger decides final accounting  |
-| Realtime start Edge call               |                               30 seconds | no browser-side automatic paid retry           |
-| WebRTC offer/local/remote/data channel |                          12 seconds each | close peer/media resources and surface failure |
-| OpenAI Realtime create/hangup          |                            20/10 seconds | correlate create; hangup stays idempotent      |
-| Batch provider work                    | existing 45/55 second provider deadlines | conservative failure accounting                |
+| Boundary                               |                                 Deadline | Failure behavior                                                                                         |
+| -------------------------------------- | ---------------------------------------: | -------------------------------------------------------------------------------------------------------- |
+| Archive lookup before a live join      |                                5 seconds | abort challenge/fetch and continue to live join                                                          |
+| Anonymous Auth session check           |                                6 seconds | bounded retryable error; no endless spinner                                                              |
+| Anonymous Auth creation                |                               12 seconds | physically abort signup, reuse one in-flight request, allow a clean retry and reject late session writes |
+| Live snapshot, terminal and join RPC   |                               12 seconds | client error/backoff; DB remains authoritative                                                           |
+| Resume-token Edge call after join      |                   15 seconds, background | lecture navigation is never delayed                                                                      |
+| Ordinary Admin/Operator Edge call      |                               15 seconds | bounded UI error; no endless spinner                                                                     |
+| AI Edge call                           |                               65 seconds | Edge/provider ledger decides final accounting                                                            |
+| Realtime start Edge call               |                               30 seconds | no browser-side automatic paid retry                                                                     |
+| WebRTC offer/local/remote/data channel |                          12 seconds each | close peer/media resources and surface failure                                                           |
+| OpenAI Realtime create/hangup          |                            20/10 seconds | correlate create; hangup stays idempotent                                                                |
+| Batch provider work                    | existing 45/55 second provider deadlines | conservative failure accounting                                                                          |
 
 Before a paid create, a UUID client request ID is persisted and sent in the
 provider header. A timeout after transmission is an ambiguous result, not proof

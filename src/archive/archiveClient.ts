@@ -297,6 +297,7 @@ export const archiveClient = {
   async resolveLectureCode(
     lectureCode: string,
     turnstileToken: string | undefined,
+    signal?: AbortSignal,
   ): Promise<LectureArchiveSession | null> {
     const workerBaseUrl = getWorkerBaseUrl()
     if (!workerBaseUrl) return null
@@ -313,6 +314,7 @@ export const archiveClient = {
         'X-Compass-Client-Id': getArchiveClientId(),
       },
       method: 'POST',
+      signal,
     })
     if (response.status === 404) return null
     const body = (await response
@@ -330,6 +332,7 @@ export const archiveClient = {
   async resumeLecture(
     resumeToken: string,
     lectureCode: string,
+    signal?: AbortSignal,
   ): Promise<LectureArchiveSession | null> {
     const workerBaseUrl = getWorkerBaseUrl()
     if (!workerBaseUrl) return null
@@ -345,6 +348,7 @@ export const archiveClient = {
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
+      signal,
     })
     if ([401, 403, 404, 410].includes(response.status)) return null
     const body = (await response

@@ -50,6 +50,7 @@ const preset = read(
   'AdminJournalClubPreset.tsx',
 )
 const browserSpec = read('e2e', 'demo', 'journal-club-preset-admin.spec.ts')
+const browserRunner = read('scripts', 'ci', 'run-browser-e2e.mjs')
 
 assert.match(envExample, /^VITE_PHASE7_27_JOURNAL_CLUB=false$/m)
 assert.match(envExample, /^PHASE7_27_JOURNAL_CLUB_ENABLED=false$/m)
@@ -218,6 +219,26 @@ assert.match(
   browserSpec,
   /const originalConfirm = window\.confirm[\s\S]*window\.confirm = originalConfirm[\s\S]*return false[\s\S]*await productionButton\.click\(\)[\s\S]*toHaveLength\(0\)/,
   'the cancellation browser contract must use a trusted click without leaving a dismissed native dialog',
+)
+assert.match(
+  browserRunner,
+  /VITE_TURNSTILE_SITE_KEY:[\s\S]*mode === 'demo-jc' \? '1x00000000000000000000AA' : ''/,
+  'the Phase 7.27 production-like browser path must exercise Turnstile',
+)
+assert.match(
+  browserSpec,
+  /physically aborts stalled anonymous signup[\s\S]*anonymousSignupDelayMs: \[16_000, 0\][\s\S]*Promise\.allSettled[\s\S]*anonymousSignupRequests\)\.toBe\(1\)[\s\S]*toBe\(retryUserId\)/,
+  'the browser contract must pin physical signup abort, caller deduplication, retry, and no late session overwrite',
+)
+assert.match(
+  browserSpec,
+  /mode = 'stall'[\s\S]*controller\.abort\(\)[\s\S]*turnstileAbort[\s\S]*layerCount: 0[\s\S]*removeCount: 1/,
+  'the browser contract must remove an aborted Turnstile widget and layer',
+)
+assert.match(
+  browserSpec,
+  /bounds a stalled archive lookup[\s\S]*archives\/resolve[\s\S]*15_000[\s\S]*toBeVisible\([\s\S]*timeout: 12_000[\s\S]*resumeIssueResolvedAt\)\.toBeNull\(\)[\s\S]*lecture-resume-tokens-v1/,
+  'the production-like join contract must bound archive lookup and persist the late resume token without delaying navigation',
 )
 assert.match(
   browserSpec,

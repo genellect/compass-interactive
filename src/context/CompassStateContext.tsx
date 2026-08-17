@@ -100,6 +100,37 @@ import {
 import { createEmptyLiveStateVersions } from './compass/snapshotState'
 import { useArchiveResume } from './compass/useArchiveResume'
 
+const ARCHIVE_JOIN_PREFLIGHT_TIMEOUT_MS = 5_000
+
+async function resolveArchiveBeforeLiveJoin(lectureCode: string) {
+  const signal = AbortSignal.timeout(ARCHIVE_JOIN_PREFLIGHT_TIMEOUT_MS)
+  try {
+    const storedResume = isPhase68SecurityEnabled
+      ? restoreLectureResumeTokenByCode(lectureCode)
+      : null
+    const resumedArchive = storedResume
+      ? await archiveClient.resumeLecture(
+          storedResume.token,
+          lectureCode,
+          signal,
+        )
+      : null
+    if (resumedArchive) return resumedArchive
+
+    const archiveCaptchaToken = await getLectureJoinCaptchaToken(signal)
+    return await archiveClient.resolveLectureCode(
+      lectureCode,
+      archiveCaptchaToken,
+      signal,
+    )
+  } catch (error) {
+    if (error instanceof ArchiveLookupError && error.status < 500) {
+      throw error
+    }
+    return null
+  }
+}
+
 export function CompassStateProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
   const normalizedPathname = normalizeLiveSyncPathname(location.pathname)
@@ -1076,29 +1107,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
 
           if (isPhase66UxIntegrationEnabled && archiveClient.isConfigured()) {
-            const storedResume = isPhase68SecurityEnabled
-              ? restoreLectureResumeTokenByCode(lectureCode)
-              : null
-            const resumedArchive = storedResume
-              ? await archiveClient
-                  .resumeLecture(storedResume.token, lectureCode)
-                  .catch(() => null)
-              : null
-            const archive =
-              resumedArchive ??
-              (await getLectureJoinCaptchaToken().then((archiveCaptchaToken) =>
-                archiveClient
-                  .resolveLectureCode(lectureCode, archiveCaptchaToken)
-                  .catch((error) => {
-                    if (
-                      error instanceof ArchiveLookupError &&
-                      error.status < 500
-                    ) {
-                      throw error
-                    }
-                    return null
-                  }),
-              ))
+            const archive = await resolveArchiveBeforeLiveJoin(lectureCode)
             if (archive) {
               lifecycleRequestEpochRef.current += 1
               clearJoinedLectureSession()
@@ -1132,8 +1141,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           const {
             lecture: joinedLecture,
             participantId,
-            resumeToken,
-            resumeTokenExpiresAt,
+            resumeTokenRequest,
           } = await supabaseLectureRepository.joinLectureByCode(
             lectureCode,
             undefined,
@@ -1142,12 +1150,15 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           clearArchiveResume()
           persistJoinedLectureSession(joinedLecture)
           persistLocalParticipantIdentity(participantId, joinedLecture.id)
-          if (resumeToken && resumeTokenExpiresAt) {
-            persistLectureResumeToken({
-              expiresAt: resumeTokenExpiresAt,
-              lectureCode: lectureCode.trim().toUpperCase(),
-              lectureSessionId: joinedLecture.id,
-              token: resumeToken,
+          if (resumeTokenRequest) {
+            void resumeTokenRequest.then((resumeToken) => {
+              if (!resumeToken) return
+              persistLectureResumeToken({
+                expiresAt: resumeToken.expiresAt,
+                lectureCode: lectureCode.trim().toUpperCase(),
+                lectureSessionId: resumeToken.lectureSessionId,
+                token: resumeToken.token,
+              })
             })
           }
           setSessionSyncPauseReason(null)

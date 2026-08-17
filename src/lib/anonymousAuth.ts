@@ -1,30 +1,78 @@
-import { assertSupabaseConfigured, supabase } from './supabaseClient'
+import {
+  assertSupabaseConfigured,
+  runWithAnonymousSignupAbortSignal,
+  supabase,
+} from './supabaseClient'
 import { getAnonymousSignInCaptchaToken } from './turnstile'
+import {
+  RequestDeadlineError,
+  waitForPromiseWithDeadline,
+} from './asyncDeadline'
 
 let anonymousSignInRequest: Promise<string> | null = null
+const ANONYMOUS_SESSION_CHECK_TIMEOUT_MS = 6_000
+const ANONYMOUS_SESSION_CREATE_TIMEOUT_MS = 12_000
 
 async function createAnonymousSession(providedCaptchaToken?: string) {
-  const captchaToken =
-    providedCaptchaToken ?? (await getAnonymousSignInCaptchaToken())
-  const { data, error } = await supabase.auth.signInAnonymously(
-    captchaToken ? { options: { captchaToken } } : undefined,
+  const challengeSignal = AbortSignal.timeout(
+    ANONYMOUS_SESSION_CREATE_TIMEOUT_MS,
   )
+  try {
+    const captchaToken =
+      providedCaptchaToken ??
+      (await getAnonymousSignInCaptchaToken(challengeSignal))
+    const { data, error } = await runWithAnonymousSignupAbortSignal(
+      challengeSignal,
+      () =>
+        supabase.auth.signInAnonymously(
+          captchaToken ? { options: { captchaToken } } : undefined,
+        ),
+    )
 
-  if (error) {
-    throw new Error(`匿名セッションの開始に失敗しました: ${error.message}`)
+    if (error) {
+      throw new Error(`匿名セッションの開始に失敗しました: ${error.message}`)
+    }
+
+    if (!data.user?.id || !data.session || data.user.is_anonymous !== true) {
+      throw new Error('匿名セッションを開始できませんでした。')
+    }
+
+    return data.user.id
+  } catch (error) {
+    if (challengeSignal.aborted) {
+      throw new RequestDeadlineError(
+        '匿名セッションの開始',
+        ANONYMOUS_SESSION_CREATE_TIMEOUT_MS,
+      )
+    }
+    throw error
   }
+}
 
-  if (!data.user?.id || !data.session || data.user.is_anonymous !== true) {
-    throw new Error('匿名セッションを開始できませんでした。')
-  }
+function getOrCreateAnonymousSignInRequest(captchaToken?: string) {
+  if (anonymousSignInRequest) return anonymousSignInRequest
 
-  return data.user.id
+  const request = createAnonymousSession(captchaToken)
+  anonymousSignInRequest = request
+  void request.then(
+    () => {
+      if (anonymousSignInRequest === request) anonymousSignInRequest = null
+    },
+    () => {
+      if (anonymousSignInRequest === request) anonymousSignInRequest = null
+    },
+  )
+  return request
 }
 
 export async function ensureAnonymousAuthSession(captchaToken?: string) {
   assertSupabaseConfigured()
 
-  const { data, error } = await supabase.auth.getSession()
+  const { data, error } = await waitForPromiseWithDeadline(
+    supabase.auth.getSession(),
+    ANONYMOUS_SESSION_CHECK_TIMEOUT_MS,
+    '匿名セッションの確認',
+  )
 
   if (error) {
     throw new Error(`匿名セッションの確認に失敗しました: ${error.message}`)
@@ -40,13 +88,5 @@ export async function ensureAnonymousAuthSession(captchaToken?: string) {
     )
   }
 
-  if (!anonymousSignInRequest) {
-    anonymousSignInRequest = createAnonymousSession(captchaToken)
-  }
-
-  try {
-    return await anonymousSignInRequest
-  } finally {
-    anonymousSignInRequest = null
-  }
+  return await getOrCreateAnonymousSignInRequest(captchaToken)
 }
