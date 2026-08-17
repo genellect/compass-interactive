@@ -122,8 +122,12 @@ Supabase Auth change, then advances the principal anchor and drains old
 authority atomically. Its recovery credential is hash-only, Auth-user/session
 bound and valid for at most 30 minutes within the eight-hour cap.
 Phase 7.30C applies that verifier to every operational Admin Edge/RPC path. Role
-changes are enforced live without session termination; `can_use_ai=false`
-drains AI authority while preserving the Admin session.
+changes are enforced live without session termination. For instructors,
+`can_use_ai=false` drains AI authority while preserving the Admin session.
+Every non-revoked Owner retains the complete capability set; paid/provider
+admission remains a separate default-OFF runtime gate. Membership, invitation
+and Admin-session controls live on the authenticated `/admin/settings` surface,
+separate from lecture operation, and no Admin credential is placed in its URL.
 
 Production v1 uses only Supabase Authenticator App TOTP (compatible with Google
 Authenticator) for MFA. No email MFA or custom MFA path is added. A five-minute

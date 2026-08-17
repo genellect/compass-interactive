@@ -242,7 +242,10 @@ assert.match(
   /function normalizeAdminPathname\(pathname: string\)[\s\S]*pathname\.replace\(\/\\\/\+\$\/, ''\)[\s\S]*const adminPathname = normalizeAdminPathname\(location\.pathname\)/,
 )
 assert.match(adminRoute, /adminPathname === '\/admin\/auth\/callback'/)
-assert.match(adminRoute, /adminPathname !== '\/admin'/)
+assert.match(
+  adminRoute,
+  /!\['\/admin', '\/admin\/settings'\]\.includes\(adminPathname\)/,
+)
 assert.match(adminRoute, /exchangeCodeForSession/)
 assert.match(adminRoute, /window\.history\.replaceState\(\{\}, '', '\/admin'\)/)
 assert.match(adminRoute, /challengeAndVerify/)

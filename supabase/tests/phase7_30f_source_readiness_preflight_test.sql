@@ -741,7 +741,7 @@ INSERT INTO private.admin_environment_memberships (
     '00000000-0000-4000-8000-00000000f106'::uuid,
     '00000000-0000-4000-8000-00000000f101'::uuid,
     '00000000-0000-4000-8000-00000000f105'::uuid,
-    'owner', 'active', false,
+    'owner', 'active', true,
     statement_timestamp() - interval '1 hour', null, null
   ),
   (
@@ -762,7 +762,7 @@ INSERT INTO private.admin_environment_memberships (
     '00000000-0000-4000-8000-00000000f136'::uuid,
     '00000000-0000-4000-8000-00000000f101'::uuid,
     '00000000-0000-4000-8000-00000000f135'::uuid,
-    'owner', 'suspended', false,
+    'owner', 'suspended', true,
     null, statement_timestamp() - interval '10 minutes', 'fixture_suspension'
   );
 

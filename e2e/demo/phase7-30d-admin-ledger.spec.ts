@@ -24,6 +24,8 @@ const instructorMembershipId = '730d0000-0000-4000-8000-00000000000a'
 const instructorSessionId = '730d0000-0000-4000-8000-00000000000b'
 const priorInvitationId = '730d0000-0000-4000-8000-00000000000c'
 const resultInvitationId = '730d0000-0000-4000-8000-00000000000d'
+const aiInstructorPrincipalId = '730d0000-0000-4000-8000-00000000000e'
+const aiInstructorMembershipId = '730d0000-0000-4000-8000-00000000000f'
 const intentDigest = 'd'.repeat(64)
 
 type FunctionCall = {
@@ -166,7 +168,7 @@ function studentSession() {
 function trackedAdminSession() {
   const now = Date.now()
   return {
-    canUseAi: false,
+    canUseAi: true,
     environmentId,
     expiresAt: new Date(now + 8 * 60 * 60_000).toISOString(),
     id: ownerSessionId,
@@ -237,6 +239,20 @@ function ledgerSnapshot(ledgerAdmissionEnabled: boolean) {
         statusReason: null,
         updatedAt,
       },
+      {
+        canUseAi: true,
+        createdAt,
+        displayName: 'AI Lecture Instructor',
+        expiresAt: new Date(now + 30 * 24 * 60 * 60_000).toISOString(),
+        membershipId: aiInstructorMembershipId,
+        normalizedEmail: 'ai-instructor@example.test',
+        principalId: aiInstructorPrincipalId,
+        principalStatus: 'active',
+        role: 'instructor',
+        status: 'active',
+        statusReason: null,
+        updatedAt,
+      },
     ],
     ok: true,
     ownerships: [],
@@ -293,10 +309,7 @@ async function installStoredSessions(
         'compass-interactive-admin-google-app-session-v1',
         `g1.${'a'.repeat(43)}`,
       )
-      window.localStorage.setItem(
-        'sb-example-auth-token',
-        studentStorageValue,
-      )
+      window.localStorage.setItem('sb-example-auth-token', studentStorageValue)
       window.localStorage.setItem(
         'compass-interactive-participant-id',
         'phase730d-student-participant',
@@ -334,7 +347,11 @@ async function installMocks(
       if (url.pathname === '/auth/v1/signup') {
         state.anonymousRequests += 1
         state.unexpectedRequests.push(`${request.method()} ${url.pathname}`)
-        await fulfillJson(route, { error: 'anonymous auth is not expected' }, 500)
+        await fulfillJson(
+          route,
+          { error: 'anonymous auth is not expected' },
+          500,
+        )
         return
       }
       if (url.pathname === '/auth/v1/authorize') {
@@ -407,7 +424,9 @@ async function installMocks(
           })
           return
         }
-        state.unexpectedRequests.push(`identity action ${action || '<missing>'}`)
+        state.unexpectedRequests.push(
+          `identity action ${action || '<missing>'}`,
+        )
         await fulfillJson(route, { code: 'request_invalid', ok: false }, 400)
         return
       }
@@ -478,12 +497,10 @@ async function installMocks(
 }
 
 async function openLedger(page: Page) {
-  await page.goto('/admin')
-  const identitySettings = page.getByText('個人設定とセキュリティ', {
-    exact: true,
-  })
-  await expect(identitySettings).toBeVisible()
-  await identitySettings.click()
+  await page.goto('/admin/settings')
+  await expect(
+    page.getByRole('heading', { name: '管理者設定', exact: true }),
+  ).toBeVisible()
   const panel = page.locator('.admin-ledger-panel')
   await expect(panel.getByRole('heading', { name: '管理者台帳' })).toBeVisible()
   await expect(panel).not.toHaveAttribute('aria-busy', 'true')
@@ -511,7 +528,7 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     panel.getByRole('button', { name: '招待リンクを作成' }),
   ).toBeDisabled()
   await expect(
-    panel.getByRole('button', { name: '環境管理者に変更' }),
+    panel.getByRole('button', { name: '環境管理者に変更' }).first(),
   ).toBeDisabled()
   await expect(
     panel.getByRole('button', { name: 'AI利用を許可' }),
@@ -524,7 +541,9 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     '全セッションを失効',
     'このセッションを失効',
   ]) {
-    await expect(panel.getByRole('button', { name: label }).first()).toBeEnabled()
+    await expect(
+      panel.getByRole('button', { name: label }).first(),
+    ).toBeEnabled()
   }
   await panel.getByText('招待履歴 (1)', { exact: true }).click()
   await expect(
@@ -574,7 +593,9 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     panel.locator('.admin-ledger-invitation-link input'),
   ).toHaveValue(new RegExp(`#invite=${invitationToken}$`))
   await expect
-    .poll(() => page.evaluate((key) => sessionStorage.getItem(key), pendingStorageKey))
+    .poll(() =>
+      page.evaluate((key) => sessionStorage.getItem(key), pendingStorageKey),
+    )
     .toBeNull()
 
   const intentCalls = state.functionCalls.filter(
@@ -613,7 +634,9 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     controlRequestId: intentCalls[0]?.body.requestId,
   })
   expect(
-    state.authRequests.filter(({ pathname }) => pathname.includes('/challenge')),
+    state.authRequests.filter(({ pathname }) =>
+      pathname.includes('/challenge'),
+    ),
   ).toHaveLength(1)
   expect(
     state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
@@ -655,12 +678,14 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const panel = document.querySelector<HTMLElement>('.admin-ledger-panel')
+          const panel = document.querySelector<HTMLElement>(
+            '.admin-ledger-panel',
+          )
           return Boolean(
             panel &&
-              document.documentElement.scrollWidth <=
-                document.documentElement.clientWidth + 1 &&
-              panel.scrollWidth <= panel.clientWidth + 1,
+            document.documentElement.scrollWidth <=
+              document.documentElement.clientWidth + 1 &&
+            panel.scrollWidth <= panel.clientWidth + 1,
           )
         }),
       )

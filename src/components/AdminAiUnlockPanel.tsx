@@ -69,8 +69,9 @@ export function AdminAiUnlockPanel({
   const [pinConfirmation, setPinConfirmation] = useState('')
   const [browserPin, setBrowserPin] = useState('')
   const [totpCode, setTotpCode] = useState('')
-  const [pendingControl, setPendingControl] =
-    useState<PendingControl | null>(null)
+  const [pendingControl, setPendingControl] = useState<PendingControl | null>(
+    null,
+  )
   const [verifiedFactors, setVerifiedFactors] = useState<
     VerifiedFactorOption[]
   >([])
@@ -118,8 +119,9 @@ export function AdminAiUnlockPanel({
         .map((candidate) => ({
           id: candidate.id,
           label:
-            (candidate as typeof candidate & { friendly_name?: string })
-              .friendly_name?.trim() ||
+            (
+              candidate as typeof candidate & { friendly_name?: string }
+            ).friendly_name?.trim() ||
             `Authenticator …${candidate.id.slice(-6)}`,
         }))
       setVerifiedFactors(factors)
@@ -143,9 +145,9 @@ export function AdminAiUnlockPanel({
       .map((candidate) => ({
         id: candidate.id,
         label:
-          (candidate as typeof candidate & { friendly_name?: string })
-            .friendly_name?.trim() ||
-          `Authenticator …${candidate.id.slice(-6)}`,
+          (
+            candidate as typeof candidate & { friendly_name?: string }
+          ).friendly_name?.trim() || `Authenticator …${candidate.id.slice(-6)}`,
       }))
     setVerifiedFactors(factors)
     if (factors.length === 0) {
@@ -196,7 +198,8 @@ export function AdminAiUnlockPanel({
       (!needsPinConfirmation && pin !== pinConfirmation) ||
       (pendingControl !== null && !completingPendingPin) ||
       busy
-    ) return
+    )
+      return
     setBusy(true)
     setMessage('')
     const submittedPin = pin
@@ -207,7 +210,9 @@ export function AdminAiUnlockPanel({
         const requestId = crypto.randomUUID()
         try {
           await setAdminAiPin(appSessionToken, submittedPin, requestId)
-          setMessage('AI PINを登録しました。ログイン時の認証を再利用したため、追加の認証アプリ確認はありません。')
+          setMessage(
+            'AI PINを登録しました。ログイン時の認証を再利用したため、追加の認証アプリ確認はありません。',
+          )
           await refresh()
           return
         } catch (error) {
@@ -230,7 +235,9 @@ export function AdminAiUnlockPanel({
           requestId,
           prepared.controlIntentDigest,
         )
-        setMessage('ログイン確認の再利用期限を過ぎたため、認証アプリで今回だけ再確認してください。確認後、同じ新PINをもう一度入力します。')
+        setMessage(
+          'ログイン確認の再利用期限を過ぎたため、認証アプリで今回だけ再確認してください。確認後、同じ新PINをもう一度入力します。',
+        )
         return
       }
       if (needsPinConfirmation && pendingControl?.kind === 'pin') {
@@ -253,7 +260,9 @@ export function AdminAiUnlockPanel({
             pendingControl.action === 'ai_pin_rotate' ? 'rotate' : 'enroll',
             pendingControl.requestId,
           )
-          if (prepared.controlIntentDigest !== pendingControl.controlIntentDigest) {
+          if (
+            prepared.controlIntentDigest !== pendingControl.controlIntentDigest
+          ) {
             throw new Error('AI PIN control intent changed unexpectedly.')
           }
           setNeedsPinConfirmation(false)
@@ -263,7 +272,9 @@ export function AdminAiUnlockPanel({
             pendingControl.requestId,
             pendingControl.controlIntentDigest,
           )
-          setMessage('Fresh Authenticator approval is required to finish this PIN change.')
+          setMessage(
+            'Fresh Authenticator approval is required to finish this PIN change.',
+          )
           return
         }
         setNeedsPinConfirmation(false)
@@ -286,7 +297,9 @@ export function AdminAiUnlockPanel({
         requestId,
         prepared.controlIntentDigest,
       )
-      setMessage('認証アプリで今回だけ再確認してください。確認後、同じ新PINをもう一度入力します。')
+      setMessage(
+        '認証アプリで今回だけ再確認してください。確認後、同じ新PINをもう一度入力します。',
+      )
     } catch (error) {
       setMessage(safeMessage(error))
     } finally {
@@ -301,7 +314,8 @@ export function AdminAiUnlockPanel({
       pendingControl.phase !== 'control' ||
       !/^\d{6}$/.test(totpCode) ||
       busy
-    ) return
+    )
+      return
     setBusy(true)
     setMessage('')
     try {
@@ -325,7 +339,9 @@ export function AdminAiUnlockPanel({
       )
       if (authorizing.kind === 'pin') {
         setNeedsPinConfirmation(true)
-        setMessage('承認しました。同じ新PINをもう一度入力して更新を確定してください。')
+        setMessage(
+          '承認しました。同じ新PINをもう一度入力して更新を確定してください。',
+        )
       } else {
         if (authorizing.kind === 'revoke') {
           await revokeAdminAiPin(appSessionToken, authorizing.requestId)
@@ -349,19 +365,20 @@ export function AdminAiUnlockPanel({
   }
 
   async function retryPendingControlAuthorization() {
-    if (!pendingControl || pendingControl.phase !== 'authorization' || busy) return
+    if (!pendingControl || pendingControl.phase !== 'authorization' || busy)
+      return
     setBusy(true)
     setMessage('')
     try {
       if (pendingControl.kind === 'pin') {
         setNeedsPinConfirmation(true)
-        setMessage('Enter the same new 4-digit PIN once to recover the approval result.')
+        setMessage(
+          'Enter the same new 4-digit PIN once to recover the approval result.',
+        )
         return
       }
       const operation =
-        pendingControl.kind === 'revoke'
-          ? revokeAdminAiPin
-          : resetAdminAiPin
+        pendingControl.kind === 'revoke' ? revokeAdminAiPin : resetAdminAiPin
       try {
         await operation(appSessionToken, pendingControl.requestId)
       } catch (error) {
@@ -377,7 +394,9 @@ export function AdminAiUnlockPanel({
           pendingControl.requestId,
           pendingControl.controlIntentDigest,
         )
-        setMessage('Fresh Authenticator approval is required to finish this operation.')
+        setMessage(
+          'Fresh Authenticator approval is required to finish this operation.',
+        )
         return
       }
       setPendingControl(null)
@@ -447,7 +466,8 @@ export function AdminAiUnlockPanel({
         return
       }
       if (Date.parse(credential.enrollmentExpiresAt) <= Date.now()) {
-        credential = await createPendingRememberedBrowserEnrollment(identityScope)
+        credential =
+          await createPendingRememberedBrowserEnrollment(identityScope)
         setPendingBrowserEnrollment(credential)
       }
       const begun = await beginRememberedBrowserEnrollment(appSessionToken, {
@@ -471,12 +491,15 @@ export function AdminAiUnlockPanel({
       }
       credential = confirmed
       setPendingBrowserEnrollment(credential)
-      const completed = await completeRememberedBrowserEnrollment(appSessionToken, {
-        enrollmentNonce: credential.enrollmentNonce,
-        pin: submittedPin,
-        publicKeyJwk: credential.publicKeyJwk,
-        requestId: credential.completionRequestId,
-      })
+      const completed = await completeRememberedBrowserEnrollment(
+        appSessionToken,
+        {
+          enrollmentNonce: credential.enrollmentNonce,
+          pin: submittedPin,
+          publicKeyJwk: credential.publicKeyJwk,
+          requestId: credential.completionRequestId,
+        },
+      )
       const activated = await activatePendingRememberedBrowserEnrollment(
         credential,
         typeof completed.expiresAt === 'string'
@@ -509,10 +532,7 @@ export function AdminAiUnlockPanel({
     setBusy(true)
     setMessage('')
     try {
-      await revokeRememberedBrowserCredential(
-        appSessionToken,
-        credentialId,
-      )
+      await revokeRememberedBrowserCredential(appSessionToken, credentialId)
       await clearRememberedBrowserCredential(credentialId, identityScope)
       setMessage('このブラウザの登録を解除しました。')
       await refresh()
@@ -533,18 +553,24 @@ export function AdminAiUnlockPanel({
 
   if (!profile.canUseAi) {
     return (
-      <section className="admin-ai-unlock-panel" aria-labelledby="admin-ai-unlock-title">
+      <section
+        className="admin-ai-unlock-panel"
+        aria-labelledby="admin-ai-unlock-title"
+      >
         <p className="eyebrow">PERSONAL AI CONTROL</p>
         <h2 id="admin-ai-unlock-title">個人AI設定</h2>
         <p className="helper-note">
-          この管理者ロールにはAI利用権限がないため、AI PINと記憶ブラウザの設定は表示しません。
+          AI機能はこのアカウントで停止されています。
         </p>
       </section>
     )
   }
 
   return (
-    <section className="admin-ai-unlock-panel" aria-labelledby="admin-ai-unlock-title">
+    <section
+      className="admin-ai-unlock-panel"
+      aria-labelledby="admin-ai-unlock-title"
+    >
       <p className="eyebrow">PERSONAL AI CONTROL</p>
       <h2 id="admin-ai-unlock-title">個人AI PIN</h2>
       <p>
@@ -569,13 +595,19 @@ export function AdminAiUnlockPanel({
       ) : null}
       <form onSubmit={submitPin}>
         <label className="field">
-          <span>{needsPinConfirmation ? '同じ新PINを再入力' : '4桁の新AI PIN'}</span>
+          <span>
+            {needsPinConfirmation ? '同じ新PINを再入力' : '4桁の新AI PIN'}
+          </span>
           <input
             autoComplete="new-password"
-            disabled={busy || (pendingControl !== null && !needsPinConfirmation)}
+            disabled={
+              busy || (pendingControl !== null && !needsPinConfirmation)
+            }
             inputMode="numeric"
             maxLength={4}
-            onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+            onChange={(event) =>
+              setPin(event.target.value.replace(/\D/g, '').slice(0, 4))
+            }
             pattern="[0-9]{4}"
             type="password"
             value={pin}
@@ -590,7 +622,9 @@ export function AdminAiUnlockPanel({
               inputMode="numeric"
               maxLength={4}
               onChange={(event) =>
-                setPinConfirmation(event.target.value.replace(/\D/g, '').slice(0, 4))
+                setPinConfirmation(
+                  event.target.value.replace(/\D/g, '').slice(0, 4),
+                )
               }
               pattern="[0-9]{4}"
               type="password"
@@ -694,7 +728,9 @@ export function AdminAiUnlockPanel({
           </label>
           <button
             className="secondary-button"
-            disabled={busy || pendingControl !== null || browserPin.length !== 4}
+            disabled={
+              busy || pendingControl !== null || browserPin.length !== 4
+            }
             onClick={() => void setupRememberedBrowser()}
             type="button"
           >
@@ -702,7 +738,10 @@ export function AdminAiUnlockPanel({
           </button>
           {localCredentials.map((credential) => (
             <div key={credential.id}>
-              <span>登録済み: {new Date(credential.createdAt).toLocaleString('ja-JP')}</span>
+              <span>
+                登録済み:{' '}
+                {new Date(credential.createdAt).toLocaleString('ja-JP')}
+              </span>
               <button
                 className="secondary-button"
                 disabled={busy}

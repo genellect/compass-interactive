@@ -455,9 +455,7 @@ try {
           browserFixtureMode ? 'true' : 'false'
         },
         google_admin_ledger_enabled = false,
-        totp_factor_mutation_enabled = ${
-          browserFixtureMode ? 'false' : 'true'
-        },
+        totp_factor_mutation_enabled = ${browserFixtureMode ? 'false' : 'true'},
         updated_at = statement_timestamp()
     where singleton;
     update private.admin_ai_unlock_runtime_gate
@@ -534,7 +532,7 @@ try {
   )
   assert.match(completed.appSessionToken, /^g1\.[A-Za-z0-9_-]{43}$/)
   assert.equal(completed.session?.role, 'owner')
-  assert.equal(completed.session?.canUseAi, false)
+  assert.equal(completed.session?.canUseAi, true)
   let browserAal2 = aal2
 
   if (browserFixtureMode) {
@@ -692,185 +690,185 @@ try {
     )
     await waitForBrowserFixtureRelease()
   } else {
-  const replayed = await invoke(
-    status,
-    aal2,
-    'admin-identity-session',
-    { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
-    200,
-  )
-  assert.equal(replayed.appSessionToken, completed.appSessionToken)
-  assert.deepEqual(replayed.session, completed.session)
+    const replayed = await invoke(
+      status,
+      aal2,
+      'admin-identity-session',
+      { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+      200,
+    )
+    assert.equal(replayed.appSessionToken, completed.appSessionToken)
+    assert.deepEqual(replayed.session, completed.session)
 
-  const restored = await invoke(
-    status,
-    aal2,
-    'admin-identity-session',
-    { action: 'status', appSessionToken: completed.appSessionToken },
-    200,
-  )
-  assert.equal(restored.session?.id, completed.session.id)
+    const restored = await invoke(
+      status,
+      aal2,
+      'admin-identity-session',
+      { action: 'status', appSessionToken: completed.appSessionToken },
+      200,
+    )
+    assert.equal(restored.session?.id, completed.session.id)
 
-  const sourceOffFactorBegin = await invoke(
-    status,
-    aal2,
-    'admin-identity-session',
-    {
-      action: 'beginControlStepUp',
-      appSessionToken: completed.appSessionToken,
-      controlAction: 'totp_factor_add',
-      controlIntentDigest: randomBytes(32).toString('hex'),
-      controlRequestId: randomUUID(),
-    },
-    503,
-  )
-  assert.equal(sourceOffFactorBegin.code, 'feature_disabled')
-
-  const sourceOffFactorComplete = await invoke(
-    status,
-    aal2,
-    'admin-identity-session',
-    {
-      action: 'completeControlStepUp',
-      appSessionToken: completed.appSessionToken,
-      controlAction: 'totp_factor_add',
-      controlIntentDigest: randomBytes(32).toString('hex'),
-      controlRequestId: randomUUID(),
-      controlStepUpNonce: randomBytes(32).toString('base64url'),
-    },
-    503,
-  )
-  assert.equal(sourceOffFactorComplete.code, 'feature_disabled')
-
-  const sourceOffFactorPrepare = await invoke(
-    status,
-    aal2,
-    'admin-ai-unlock',
-    {
-      action: 'prepareTotpTransition',
-      appSessionToken: completed.appSessionToken,
-      factorAction: 'totp_factor_add',
-      targetFactorId: randomUUID(),
-    },
-    503,
-  )
-  assert.equal(sourceOffFactorPrepare.code, 'feature_disabled')
-
-  const sourceOffC1Admission = await invoke(
-    status,
-    aal2,
-    'admin-ai-unlock',
-    {
-      action: 'authorizeMasterWithPin',
-      appSessionToken: completed.appSessionToken,
-      lectureSessionId: randomUUID(),
-      pin: '1234',
-      policyId: randomUUID(),
-      policyVersion: 1,
-      requestId: randomUUID(),
-      requestedScope: 'all_except_captions',
-    },
-    503,
-  )
-  assert.equal(sourceOffC1Admission.code, 'feature_disabled')
-
-  const controlRequestId = randomUUID()
-  const controlIntentDigest = randomBytes(32).toString('hex')
-  const controlBegunAt = Math.floor(Date.now() / 1_000)
-  const controlBegun = await invoke(
-    status,
-    aal2,
-    'admin-identity-session',
-    {
-      action: 'beginControlStepUp',
-      appSessionToken: completed.appSessionToken,
-      controlAction: 'environment_ai_policy_change',
-      controlIntentDigest,
-      controlRequestId,
-    },
-    200,
-  )
-  assert.match(controlBegun.controlStepUpNonce, /^[A-Za-z0-9_-]{43}$/)
-  assert.equal(controlBegun.controlIntentDigest, controlIntentDigest)
-
-  // GoTrue's AAL2 -> AAL2 freshness semantics are not documented. Keep this
-  // real same-factor exchange in Local CI as the B2.2a activation proof.
-  await waitForNextTotpWindow()
-  const { data: reverified, error: reverifyError } =
-    await authClient.auth.mfa.challengeAndVerify({
-      code: currentTotp(enrolled.totp.secret),
-      factorId: enrolled.id,
-    })
-  if (reverifyError) throw reverifyError
-  assert.ok(reverified.access_token)
-  assert.notEqual(reverified.access_token, verified.access_token)
-  const reverifiedClaims = decodeJwtPayload(reverified.access_token)
-  assert.equal(reverifiedClaims.aal, 'aal2')
-  assert.equal(reverifiedClaims.session_id, sessionId)
-  assert.ok(reverifiedClaims.iat > aal2AuthClaims.iat)
-  const refreshedTotpAmrTimestamp = latestTotpAmrTimestamp(reverifiedClaims)
-  assert.ok(Number.isSafeInteger(refreshedTotpAmrTimestamp))
-  assert.ok(refreshedTotpAmrTimestamp > verifiedTotpAmrTimestamp)
-  assert.ok(refreshedTotpAmrTimestamp >= controlBegunAt - 1)
-  const refreshedAal2 = accessToken(status, {
-    aal: 'aal2',
-    totpTimestamp: refreshedTotpAmrTimestamp,
-  })
-
-  const controlCompleted = await invoke(
-    status,
-    refreshedAal2,
-    'admin-identity-session',
-    {
-      action: 'completeControlStepUp',
-      appSessionToken: completed.appSessionToken,
-      controlAction: 'environment_ai_policy_change',
-      controlIntentDigest,
-      controlRequestId,
-      controlStepUpNonce: controlBegun.controlStepUpNonce,
-    },
-    200,
-  )
-  assert.equal(controlCompleted.controlIntentDigest, controlIntentDigest)
-  assert.equal(controlCompleted.controlRequestId, controlRequestId)
-  assert.ok(
-    Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
-  )
-
-  const legacyEndpoint = await fetch(
-    `${status.API_URL}/functions/v1/verify-admin-pin`,
-    {
-      headers: {
-        apikey: status.PUBLISHABLE_KEY || status.ANON_KEY,
-        Authorization: `Bearer ${refreshedAal2}`,
-        Origin: expectedOrigin,
+    const sourceOffFactorBegin = await invoke(
+      status,
+      aal2,
+      'admin-identity-session',
+      {
+        action: 'beginControlStepUp',
+        appSessionToken: completed.appSessionToken,
+        controlAction: 'totp_factor_add',
+        controlIntentDigest: randomBytes(32).toString('hex'),
+        controlRequestId: randomUUID(),
       },
-      method: 'OPTIONS',
-      redirect: 'manual',
-    },
-  )
-  assert.equal(legacyEndpoint.status, 404)
+      503,
+    )
+    assert.equal(sourceOffFactorBegin.code, 'feature_disabled')
 
-  const loggedOut = await invoke(
-    status,
-    refreshedAal2,
-    'admin-identity-session',
-    { action: 'logout', appSessionToken: completed.appSessionToken },
-    200,
-  )
-  assert.equal(loggedOut.ok, true)
+    const sourceOffFactorComplete = await invoke(
+      status,
+      aal2,
+      'admin-identity-session',
+      {
+        action: 'completeControlStepUp',
+        appSessionToken: completed.appSessionToken,
+        controlAction: 'totp_factor_add',
+        controlIntentDigest: randomBytes(32).toString('hex'),
+        controlRequestId: randomUUID(),
+        controlStepUpNonce: randomBytes(32).toString('base64url'),
+      },
+      503,
+    )
+    assert.equal(sourceOffFactorComplete.code, 'feature_disabled')
 
-  const revokedStatus = await invoke(
-    status,
-    refreshedAal2,
-    'admin-identity-session',
-    { action: 'status', appSessionToken: completed.appSessionToken },
-    401,
-  )
-  assert.equal(revokedStatus.code, 'app_session_invalid')
+    const sourceOffFactorPrepare = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'prepareTotpTransition',
+        appSessionToken: completed.appSessionToken,
+        factorAction: 'totp_factor_add',
+        targetFactorId: randomUUID(),
+      },
+      503,
+    )
+    assert.equal(sourceOffFactorPrepare.code, 'feature_disabled')
 
-  const state = JSON.parse(
-    await runSql(`
+    const sourceOffC1Admission = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'authorizeMasterWithPin',
+        appSessionToken: completed.appSessionToken,
+        lectureSessionId: randomUUID(),
+        pin: '1234',
+        policyId: randomUUID(),
+        policyVersion: 1,
+        requestId: randomUUID(),
+        requestedScope: 'all_except_captions',
+      },
+      503,
+    )
+    assert.equal(sourceOffC1Admission.code, 'feature_disabled')
+
+    const controlRequestId = randomUUID()
+    const controlIntentDigest = randomBytes(32).toString('hex')
+    const controlBegunAt = Math.floor(Date.now() / 1_000)
+    const controlBegun = await invoke(
+      status,
+      aal2,
+      'admin-identity-session',
+      {
+        action: 'beginControlStepUp',
+        appSessionToken: completed.appSessionToken,
+        controlAction: 'environment_ai_policy_change',
+        controlIntentDigest,
+        controlRequestId,
+      },
+      200,
+    )
+    assert.match(controlBegun.controlStepUpNonce, /^[A-Za-z0-9_-]{43}$/)
+    assert.equal(controlBegun.controlIntentDigest, controlIntentDigest)
+
+    // GoTrue's AAL2 -> AAL2 freshness semantics are not documented. Keep this
+    // real same-factor exchange in Local CI as the B2.2a activation proof.
+    await waitForNextTotpWindow()
+    const { data: reverified, error: reverifyError } =
+      await authClient.auth.mfa.challengeAndVerify({
+        code: currentTotp(enrolled.totp.secret),
+        factorId: enrolled.id,
+      })
+    if (reverifyError) throw reverifyError
+    assert.ok(reverified.access_token)
+    assert.notEqual(reverified.access_token, verified.access_token)
+    const reverifiedClaims = decodeJwtPayload(reverified.access_token)
+    assert.equal(reverifiedClaims.aal, 'aal2')
+    assert.equal(reverifiedClaims.session_id, sessionId)
+    assert.ok(reverifiedClaims.iat > aal2AuthClaims.iat)
+    const refreshedTotpAmrTimestamp = latestTotpAmrTimestamp(reverifiedClaims)
+    assert.ok(Number.isSafeInteger(refreshedTotpAmrTimestamp))
+    assert.ok(refreshedTotpAmrTimestamp > verifiedTotpAmrTimestamp)
+    assert.ok(refreshedTotpAmrTimestamp >= controlBegunAt - 1)
+    const refreshedAal2 = accessToken(status, {
+      aal: 'aal2',
+      totpTimestamp: refreshedTotpAmrTimestamp,
+    })
+
+    const controlCompleted = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      {
+        action: 'completeControlStepUp',
+        appSessionToken: completed.appSessionToken,
+        controlAction: 'environment_ai_policy_change',
+        controlIntentDigest,
+        controlRequestId,
+        controlStepUpNonce: controlBegun.controlStepUpNonce,
+      },
+      200,
+    )
+    assert.equal(controlCompleted.controlIntentDigest, controlIntentDigest)
+    assert.equal(controlCompleted.controlRequestId, controlRequestId)
+    assert.ok(
+      Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
+    )
+
+    const legacyEndpoint = await fetch(
+      `${status.API_URL}/functions/v1/verify-admin-pin`,
+      {
+        headers: {
+          apikey: status.PUBLISHABLE_KEY || status.ANON_KEY,
+          Authorization: `Bearer ${refreshedAal2}`,
+          Origin: expectedOrigin,
+        },
+        method: 'OPTIONS',
+        redirect: 'manual',
+      },
+    )
+    assert.equal(legacyEndpoint.status, 404)
+
+    const loggedOut = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'logout', appSessionToken: completed.appSessionToken },
+      200,
+    )
+    assert.equal(loggedOut.ok, true)
+
+    const revokedStatus = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'status', appSessionToken: completed.appSessionToken },
+      401,
+    )
+    assert.equal(revokedStatus.code, 'app_session_invalid')
+
+    const state = JSON.parse(
+      await runSql(`
       select jsonb_build_object(
         'active_memberships', (
           select count(*)
@@ -893,14 +891,14 @@ try {
         )
       );
     `),
-  )
-  assert.equal(Number(state.active_memberships), 1)
-  assert.equal(Number(state.google_sessions), 1)
-  assert.ok(Number(state.audit_events) >= 4)
+    )
+    assert.equal(Number(state.active_memberships), 1)
+    assert.equal(Number(state.google_sessions), 1)
+    assert.ok(Number(state.audit_events) >= 4)
 
-  console.log(
-    'Phase 7.30 B1 local Google identity, AAL2 and tracked-session integration passed.',
-  )
+    console.log(
+      'Phase 7.30 B1 local Google identity, AAL2 and tracked-session integration passed.',
+    )
   }
 } catch (error) {
   failure = error

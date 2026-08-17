@@ -40,6 +40,7 @@ const displayRealtimeBrowser = read(
 const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
 const localLifecycleBrowser = read('e2e/local/live-lecture.spec.ts')
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
+const concurrency = read('scripts/test-phase7-30e-concurrency.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
@@ -439,6 +440,12 @@ assert.equal(
   packageJson.scripts['test:phase7-30e-concurrency'],
   'node scripts/test-phase7-30e-concurrency.mjs',
 )
+assert.equal(
+  (concurrency.match(/'owner', 'active', true/g) ?? []).length,
+  2,
+  'Phase E concurrency fixture Owners must retain complete AI capability',
+)
+assert.doesNotMatch(concurrency, /'owner', 'active', false/)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(nonlive, /'test:phase7-30e-static'/)
 assert.match(
@@ -455,6 +462,11 @@ assert.match(
   localLifecycleBrowser,
   /issuedIsolatedSession\.lectureSessionId[\s\S]*popupSession\.lectureSessionId[\s\S]*issuedIsolatedSession\.displayToken\)\.not\.toBe\([\s\S]*popupSession\.displayToken[\s\S]*isolatedDisplayUrl\)\.toContain\([\s\S]*encodeURIComponent\(issuedIsolatedSession\.displayToken\)[\s\S]*isolatedDisplayPage\.goto\(isolatedDisplayUrl\)/,
   'the isolated lifecycle Display page must claim a separately issued one-use URL instead of replaying the popup token',
+)
+assert.match(
+  localLifecycleBrowser,
+  /goto\('\/admin\/settings'\)[\s\S]*getByRole\('heading', \{ name: '管理者台帳' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*toBeVisible\(\)/,
+  'the lifecycle must verify the current Admin session inside the separate settings page',
 )
 assert.match(
   browserRunner,
@@ -625,7 +637,7 @@ assert.match(
   /error instanceof GoogleAdminAppSessionInvalidError[\s\S]*app_session_invalid[\s\S]*401/,
   'a revoked Google application session must fail with a structured 401 response',
 )
-assert.match(upgradeRunner, /upgrade through Phase 7\.30[EF]/)
+assert.match(upgradeRunner, /upgrade through Phase 7\.30[EFG]/)
 assert.match(
   c1HeadUpgradeProbe,
   /admin_identity_cutover_receipts[\s\S]*admin_lecture_ownership_claim_approvals[\s\S]*externalTransportAttestationRequired[\s\S]*issuedLegacyGrantCount/,

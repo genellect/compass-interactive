@@ -61,6 +61,7 @@ import { purgeLegacyAdminSessionStorage } from './admin/adminSessionStorage'
 import './AdminPage.css'
 
 const AdminWorkspaceApp = lazy(() => import('./AdminWorkspaceApp'))
+const AdminSettingsPage = lazy(() => import('./AdminSettingsPage'))
 const AdminLedgerPanel = lazy(() =>
   import('../components/AdminLedgerPanel').then((module) => ({
     default: module.AdminLedgerPanel,
@@ -331,7 +332,8 @@ export function AdminRoute() {
 
       const parameters = new URLSearchParams(location.search)
       const codes = parameters.getAll('code')
-      window.history.replaceState({}, '', '/admin')
+      const returnPath = consumeAdminOAuthAttempt()
+      window.history.replaceState({}, '', '/admin/auth/callback')
       const allowedKeys = new Set(['code'])
       const hasUnexpectedParameter = Array.from(parameters.keys()).some(
         (key) => !allowedKeys.has(key),
@@ -340,7 +342,7 @@ export function AdminRoute() {
         codes.length !== 1 ||
         !codes[0] ||
         hasUnexpectedParameter ||
-        !consumeAdminOAuthAttempt()
+        !returnPath
       ) {
         setErrorMessage(
           'Googleログインの応答を確認できませんでした。最初からやり直してください。',
@@ -354,8 +356,8 @@ export function AdminRoute() {
         .then(({ error }) => {
           if (error) throw error
           bootStarted.current = true
-          window.history.replaceState({}, '', '/admin')
-          navigate('/admin', { replace: true })
+          window.history.replaceState({}, '', returnPath)
+          navigate(returnPath, { replace: true })
           return prepareIdentity()
         })
         .catch((error) => {
@@ -365,7 +367,7 @@ export function AdminRoute() {
       return
     }
 
-    if (adminPathname !== '/admin') {
+    if (!['/admin', '/admin/settings'].includes(adminPathname)) {
       setErrorMessage('管理者認証のURLが正しくありません。')
       setPhase('error')
       return
@@ -405,7 +407,7 @@ export function AdminRoute() {
     }
     forcedSessionInvalidRef.current = false
     setErrorMessage('')
-    beginAdminOAuthAttempt()
+    beginAdminOAuthAttempt(adminPathname)
     const { error } = await adminSupabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -647,6 +649,37 @@ export function AdminRoute() {
         : undefined,
     [appSessionToken],
   )
+  const personalSettings =
+    phase === 'ready' && session ? (
+      <>
+        {isPhase730AdminTotpFactorMutationEnabled && transitionRecoveryScope ? (
+          <AdminTotpFactorControlPanel
+            appSessionToken={appSessionToken}
+            onReloginRequired={logout}
+            recoveryScope={transitionRecoveryScope}
+          />
+        ) : null}
+        {isPhase730AdminAiUnlockEnabled ? (
+          <AdminAiUnlockPanel
+            appSessionToken={appSessionToken}
+            identityScope={{
+              environmentId: session.environmentId,
+              membershipId: session.membershipId,
+              principalId: session.principalId,
+            }}
+          />
+        ) : null}
+      </>
+    ) : null
+  const ownerLedger =
+    phase === 'ready' && session?.role === 'owner' && googleAdminCredential ? (
+      <AdminLedgerPanel
+        adminCredential={googleAdminCredential}
+        appSessionToken={appSessionToken}
+        clientAdmissionEnabled={isPhase730GoogleAdminLedgerAdmissionEnabled}
+        onReloginRequired={logout}
+      />
+    ) : null
 
   let content
   if (phase === 'booting' || phase === 'callback') {
@@ -796,43 +829,18 @@ export function AdminRoute() {
   } else if (phase === 'ready' && session && googleAdminCredential) {
     content = (
       <Suspense fallback={<RouteFallback />}>
-        <AdminWorkspaceApp
-          adminCredential={googleAdminCredential}
-          identitySettings={
-            <details className="panel admin-identity-card">
-              <summary>個人設定とセキュリティ</summary>
-              {isPhase730AdminTotpFactorMutationEnabled &&
-              transitionRecoveryScope ? (
-                <AdminTotpFactorControlPanel
-                  appSessionToken={appSessionToken}
-                  onReloginRequired={logout}
-                  recoveryScope={transitionRecoveryScope}
-                />
-              ) : null}
-              {isPhase730AdminAiUnlockEnabled ? (
-                <AdminAiUnlockPanel
-                  appSessionToken={appSessionToken}
-                  identityScope={{
-                    environmentId: session.environmentId,
-                    membershipId: session.membershipId,
-                    principalId: session.principalId,
-                  }}
-                />
-              ) : null}
-              {session.role === 'owner' ? (
-                <AdminLedgerPanel
-                  adminCredential={googleAdminCredential}
-                  appSessionToken={appSessionToken}
-                  clientAdmissionEnabled={
-                    isPhase730GoogleAdminLedgerAdmissionEnabled
-                  }
-                  onReloginRequired={logout}
-                />
-              ) : null}
-            </details>
-          }
-          onAdminLogout={logout}
-        />
+        {adminPathname === '/admin/settings' ? (
+          <AdminSettingsPage
+            ledger={ownerLedger}
+            onAdminLogout={logout}
+            personalSettings={personalSettings}
+          />
+        ) : (
+          <AdminWorkspaceApp
+            adminCredential={googleAdminCredential}
+            onAdminLogout={logout}
+          />
+        )}
       </Suspense>
     )
   } else if (phase === 'ready' && session) {
@@ -854,24 +862,7 @@ export function AdminRoute() {
               <dd>{new Date(session.expiresAt).toLocaleString('ja-JP')}</dd>
             </div>
           </dl>
-          {isPhase730AdminTotpFactorMutationEnabled &&
-          transitionRecoveryScope ? (
-            <AdminTotpFactorControlPanel
-              appSessionToken={restoreAdminAppSessionToken()}
-              onReloginRequired={logout}
-              recoveryScope={transitionRecoveryScope}
-            />
-          ) : null}
-          {isPhase730AdminAiUnlockEnabled ? (
-            <AdminAiUnlockPanel
-              appSessionToken={restoreAdminAppSessionToken()}
-              identityScope={{
-                environmentId: session.environmentId,
-                membershipId: session.membershipId,
-                principalId: session.principalId,
-              }}
-            />
-          ) : null}
+          {personalSettings}
           <button
             className="secondary-button"
             disabled={isSubmitting}

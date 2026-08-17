@@ -4,6 +4,19 @@ set search_path = public, extensions;
 select no_plan();
 
 select ok(
+  (
+    select count(*) = 2
+    from private.admin_environment_memberships
+    where environment_id =
+        '73035000-0000-4000-8000-000000000001'::uuid
+      and role = 'owner'
+      and status = 'active'
+      and can_use_ai
+  ),
+  'the populated D-head Owners upgrade to the complete capability invariant'
+);
+
+select ok(
   exists (
     select 1
     from private.admin_lecture_ownerships as ownership

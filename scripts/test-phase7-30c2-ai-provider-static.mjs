@@ -67,6 +67,24 @@ const c1HeadUpgradeProbe = read(
 )
 
 assert.match(
+  pgTap,
+  /phase730c2-anchor@example\.test[\s\S]*'owner', 'active', true/,
+  'provider authority fixtures retain a second active Owner during suspension checks',
+)
+assert.equal(
+  (pgTap.match(/status = 'suspended'/g) ?? []).length,
+  2,
+  'summary and Academic completion each recheck a genuinely suspended membership',
+)
+assert.match(pgTap, /phase730c2_summary_authority_test/)
+assert.match(pgTap, /phase730c2_academic_authority_test/)
+assert.doesNotMatch(
+  pgTap,
+  /SET can_use_ai = false/,
+  'provider tests cannot model Owner access loss by disabling Owner capability',
+)
+
+assert.match(
   summaryMigration,
   /set operation_class = 'write'[\s\S]*where operation_key in \([\s\S]*manage-lecture-summaries\.start[\s\S]*manage-lecture-summaries\.resume/,
   'summary start and resume are scheduler writes rather than paid provider calls',

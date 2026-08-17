@@ -296,7 +296,7 @@ INSERT INTO private.admin_environment_memberships (
     '00000000-0000-4000-8000-00000000d106'::uuid,
     '00000000-0000-4000-8000-00000000d101'::uuid,
     '00000000-0000-4000-8000-00000000d105'::uuid,
-    'owner', 'active', false, statement_timestamp() - interval '1 hour'
+    'owner', 'active', true, statement_timestamp() - interval '1 hour'
   ),
   (
     '00000000-0000-4000-8000-00000000d116'::uuid,
@@ -456,9 +456,9 @@ SELECT ok(
     ) AS membership(value)
     WHERE membership.value ->> 'membershipId' =
       '00000000-0000-4000-8000-00000000d106'
-      AND membership.value ->> 'canUseAi' = 'false'
+      AND membership.value ->> 'canUseAi' = 'true'
   ),
-  'an owner without AI entitlement can read the default-OFF ledger'
+  'an owner with the complete capability set can read the default-OFF ledger'
 );
 
 SELECT is(

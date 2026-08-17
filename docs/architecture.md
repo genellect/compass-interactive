@@ -1,7 +1,7 @@
 # COMPASS Interactive Architecture
 
 Last reviewed: 2026-08-12
-Applies to: repository implementation candidate through Phase 7.30F source/local readiness. Phase
+Applies to: repository implementation candidate through Phase 7.30G Owner-capability readiness. Phase
 7.30D exact-head evidence is PASS; Phase 7.30E fresh database/runtime CI,
 irreversible operator cutover, native, Human, Hosted and Production gates remain
 separately authoritative.
@@ -58,15 +58,15 @@ replace or consume the Student anonymous session. The current Admin workspace
 mounts only for a verified Google Admin application session; there is no
 legacy-PIN provider path.
 
-| Route               | Responsibility                          | Important boundary                                                            |
-| ------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
-| `/join`             | Validate live or archived lecture entry | Six-digit code is an entry identifier, not an Admin credential                |
-| `/demo`             | Redirect to isolated Demo data          | No Supabase, OpenAI, Worker or Publisher network call                         |
-| `/lecture`          | Mobile-first student session            | Five-second snapshot while active; stop on exit/terminal state                |
-| `/lecture/comments` | Older comment history                   | Explicit cursor fetch; no periodic history polling                            |
-| `/lecture/archive`  | Closed lecture preview                  | Cloudflare read-only access; no live Supabase loop                            |
-| `/admin`            | Teacher identity and operations         | Separate Admin Auth client; Google plus TOTP AAL2 application session only    |
-| `/display`          | Fullscreen classroom view               | Scoped display token, never an Admin token                                    |
+| Route               | Responsibility                          | Important boundary                                                         |
+| ------------------- | --------------------------------------- | -------------------------------------------------------------------------- |
+| `/join`             | Validate live or archived lecture entry | Six-digit code is an entry identifier, not an Admin credential             |
+| `/demo`             | Redirect to isolated Demo data          | No Supabase, OpenAI, Worker or Publisher network call                      |
+| `/lecture`          | Mobile-first student session            | Five-second snapshot while active; stop on exit/terminal state             |
+| `/lecture/comments` | Older comment history                   | Explicit cursor fetch; no periodic history polling                         |
+| `/lecture/archive`  | Closed lecture preview                  | Cloudflare read-only access; no live Supabase loop                         |
+| `/admin`            | Teacher identity and operations         | Separate Admin Auth client; Google plus TOTP AAL2 application session only |
+| `/display`          | Fullscreen classroom view               | Scoped display token, never an Admin token                                 |
 
 `scripts/create-route-entrypoints.mjs` copies the production `index.html` into
 each route directory. Cloudflare Pages therefore does not need an unsafe or
@@ -181,8 +181,11 @@ the target and expected post-set, and finalize advances the principal anchor
 and drains old authority. Supabase Auth mutation remains outside the database
 transaction, so a hash-only Auth-session-bound recovery credential provides a
 maximum 30-minute retry window within the eight-hour cap.
-Role changes apply live; `can_use_ai=false`
-drains AI authority without logging the teacher out.
+Role changes apply live. An instructor with `can_use_ai=false` loses AI
+authority without being logged out. A non-revoked Owner always retains the
+complete capability set, while provider admission remains separately gated.
+The lecture workspace and `/admin/settings` are separate authenticated browser
+surfaces; the settings route owns membership, invitation and session controls.
 
 Paid intent becomes a personal AI PIN (or valid remembered-browser/future AI
 Passkey proof) checked once per new lecture master or explicit scope/cost
@@ -278,13 +281,13 @@ available to the browser or database client.
 
 ## 10. Trust zones and secret placement
 
-| Zone                        | May contain                                                                                             | Must not contain                                                      |
-| --------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL; transient user-entered AI PIN form | service role, OpenAI key, persisted PINs, R2 secret, Turnstile secret |
+| Zone                        | May contain                                                                                                                                      | Must not contain                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Browser                     | Supabase URL/publishable key, Turnstile site key, public Worker URL; transient user-entered AI PIN form                                          | service role, OpenAI key, persisted PINs, R2 secret, Turnstile secret                                  |
 | Supabase Edge secrets       | OpenAI key, service role, Google identity/AI peppers and trigger secrets; Hosted inventory may retain legacy secrets pending authorized deletion | values returned to browser or committed to Git; current source must not read shared Admin/Billing PINs |
-| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material                                          | values in frontend variables or simultaneous browser mode             |
-| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings                               | plaintext lecture codes or Supabase service role                      |
-| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                                                           | PDF/audio bytes, raw local transcript, plaintext secrets              |
+| Local Publisher environment | recovery-only bucket-scoped R2 credential and signing material                                                                                   | values in frontend variables or simultaneous browser mode                                              |
+| Cloudflare Worker secrets   | archive/publication verification keys, JWK/coordinator material, bindings                                                                        | plaintext lecture codes or Supabase service role                                                       |
+| PostgreSQL                  | ownership, lifecycle, audit, bounded metadata                                                                                                    | PDF/audio bytes, raw local transcript, plaintext secrets                                               |
 
 See `docs/SECURITY.md` for the enforceable security contract and remaining
 hosted/human Phase 6.8 evidence.

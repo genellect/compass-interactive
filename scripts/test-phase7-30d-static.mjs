@@ -12,6 +12,15 @@ const identityApi = read('src/lib/adminAuth/adminIdentityApi.ts')
 const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
 const ledgerPanel = read('src/components/AdminLedgerPanel.tsx')
 const adminRoute = read('src/pages/AdminRoute.tsx')
+const adminPage = read('src/pages/AdminPage.tsx')
+const adminSettingsPage = read('src/pages/AdminSettingsPage.tsx')
+const adminStorage = read('src/lib/adminAuth/adminAuthStorage.ts')
+const ownerCapabilityMigration = read(
+  'supabase/migrations/20260817010000_admin_owner_capability_invariant.sql',
+)
+const ownerCapabilityPgTap = read(
+  'supabase/tests/phase7_30g_owner_capability_invariant_test.sql',
+)
 const transport = read('src/repositories/supabase/transport.ts')
 const featureFlags = read('src/lib/featureFlags.ts')
 const databaseTypes = read('src/types/database.ts')
@@ -28,9 +37,7 @@ const browserSpec = read('e2e/demo/phase7-30d-admin-ledger.spec.ts')
 const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
 const packageJson = JSON.parse(read('package.json'))
 const workflow = read('.github/workflows/ci.yml')
-const b2UpgradeFixture = read(
-  'scripts/fixtures/phase7-30b2-upgrade-probe.sql',
-)
+const b2UpgradeFixture = read('scripts/fixtures/phase7-30b2-upgrade-probe.sql')
 const b2UpgradeProbe = read(
   'scripts/fixtures/phase7-30b2-upgrade-probe-test.sql',
 )
@@ -209,7 +216,10 @@ assert.match(
 )
 assert.match(ledgerApi, /prepareAdminLedgerMutation/)
 assert.match(ledgerApi, /commitAdminLedgerMutation/)
-assert.match(ledgerPanel, /phase: 'authorized' \| 'completing' \| 'control' \| 'preparing'/)
+assert.match(
+  ledgerPanel,
+  /phase: 'authorized' \| 'completing' \| 'control' \| 'preparing'/,
+)
 assert.match(ledgerPanel, /新しい招待・権限追加は停止中です/)
 assert.match(ledgerPanel, /persistPendingMutation/)
 assert.match(ledgerPanel, /restorePendingMutation/)
@@ -220,9 +230,89 @@ assert.match(
 )
 assert.match(
   adminRoute,
-  /session\.role === 'owner'[\s\S]*AdminLedgerPanel[\s\S]*isPhase730GoogleAdminLedgerAdmissionEnabled/,
+  /session\?\.role === 'owner'[\s\S]*AdminLedgerPanel[\s\S]*isPhase730GoogleAdminLedgerAdmissionEnabled/,
 )
-assert.match(transport, /'manage-admin-ledger', new Set\(\['audit', 'snapshot'\]\)/)
+assert.match(
+  adminRoute,
+  /\['\/admin', '\/admin\/settings'\]\.includes\(adminPathname\)/,
+)
+assert.match(
+  adminRoute,
+  /adminPathname === '\/admin\/settings'[\s\S]*AdminSettingsPage[\s\S]*ledger=\{ownerLedger\}/,
+)
+assert.match(
+  adminPage,
+  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*管理者設定/,
+)
+assert.doesNotMatch(
+  adminPage,
+  /AdminLedgerPanel|AdminSessionPanel|セッション管理/,
+)
+assert.match(
+  adminSettingsPage,
+  /<h1>管理者設定<\/h1>[\s\S]*メンバー、権限、ログイン状態を管理します。/,
+)
+assert.match(
+  adminSettingsPage,
+  /href="\/admin"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*講義画面を開く/,
+)
+assert.match(
+  adminStorage,
+  /ADMIN_RETURN_PATHS = new Set\(\['\/admin', '\/admin\/settings'\]\)[\s\S]*returnPath: safeReturnPath/,
+)
+assert.match(
+  ownerCapabilityMigration,
+  /update private\.admin_environment_memberships[\s\S]*role = 'owner'[\s\S]*status <> 'revoked'[\s\S]*not can_use_ai/,
+)
+assert.match(
+  ownerCapabilityMigration,
+  /create trigger admin_memberships_owner_capability_normalizer[\s\S]*before update of role, status, can_use_ai/,
+)
+assert.match(
+  ownerCapabilityMigration,
+  /create constraint trigger admin_memberships_owner_capability_guard[\s\S]*deferrable initially deferred/,
+)
+assert.match(
+  ownerCapabilityMigration,
+  /create function private\.enforce_admin_owner_capability_v1\(\)[\s\S]*language plpgsql[\s\S]*volatile[\s\S]*where membership\.environment_id = new\.environment_id[\s\S]*membership\.principal_id = new\.principal_id/,
+)
+assert.match(
+  ownerCapabilityMigration,
+  /create trigger admin_invitations_apply_owner_capability[\s\S]*when \(old\.status = 'pending' and new\.status = 'accepted'\)/,
+)
+assert.doesNotMatch(
+  ownerCapabilityMigration,
+  /update private\.(?:admin_identity_runtime_gate|admin_ai_unlock_runtime_gate)/,
+)
+assert.match(
+  ownerCapabilityPgTap,
+  /a direct Owner insert cannot commit without the complete capability set[\s\S]*changing only the membership ID cannot bypass the deferred Owner guard[\s\S]*promotion to Owner atomically grants the complete capability set[\s\S]*an existing Owner capability cannot be disabled[\s\S]*accepting an Owner invitation normalizes legacy false capability intent[\s\S]*does not weaken the last-active-Owner guard[\s\S]*does not activate identity or paid AI gates/,
+)
+assert.match(
+  ownerCapabilityPgTap,
+  /SET CONSTRAINTS private\.admin_memberships_owner_capability_guard IMMEDIATE[\s\S]*SET CONSTRAINTS private\.admin_memberships_owner_capability_guard DEFERRED/,
+)
+assert.match(
+  ownerCapabilityPgTap,
+  /current_deployment, bootstrap_sealed_at[\s\S]*statement_timestamp\(\) - interval '1 hour'[\s\S]*SET owner_invariant_enforced_at = statement_timestamp\(\)/,
+)
+assert.match(
+  ownerCapabilityPgTap,
+  /normalize_admin_owner_capability_v1\(\)[\s\S]*apply_accepted_owner_capability_v1\(\)[\s\S]*enforce_admin_owner_capability_v1\(\)[\s\S]*not callable by application roles/,
+)
+assert.match(
+  ledgerPanel,
+  /canUseAi: inviteRole === 'owner' \|\| inviteCanUseAi/,
+)
+assert.match(ledgerPanel, /membership\.role === 'owner'[\s\S]*全機能利用可/)
+assert.match(
+  ledgerPanel,
+  /membership\.role === 'instructor'[\s\S]*membership\.canUseAi[\s\S]*AI利用を停止/,
+)
+assert.match(
+  transport,
+  /'manage-admin-ledger', new Set\(\['audit', 'snapshot'\]\)/,
+)
 assert.match(
   featureFlags,
   /VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER[\s\S]*=== 'true'/,
@@ -231,8 +321,8 @@ assert.match(envExample, /^VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER=false$/m)
 assert.match(envExample, /^PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED=false$/m)
 assert.match(envExample, /^ADMIN_INVITATION_SECRET=$/m)
 assert.ok(
-  (unifiedPgTap.match(/edge_function <> 'manage-admin-ledger'/g) ?? []).length >=
-    3,
+  (unifiedPgTap.match(/edge_function <> 'manage-admin-ledger'/g) ?? [])
+    .length >= 3,
   'pre-D exact C2 inventory assertions must deliberately exclude the D slice',
 )
 assert.match(

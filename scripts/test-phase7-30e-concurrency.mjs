@@ -341,12 +341,12 @@ try {
     ) values
       (
         ${literal(id.membershipA)}::uuid, ${literal(id.environment)}::uuid,
-        ${literal(id.principalA)}::uuid, 'owner', 'active', false,
+        ${literal(id.principalA)}::uuid, 'owner', 'active', true,
         statement_timestamp() - interval '1 hour'
       ),
       (
         ${literal(id.membershipB)}::uuid, ${literal(id.environment)}::uuid,
-        ${literal(id.principalB)}::uuid, 'owner', 'active', false,
+        ${literal(id.principalB)}::uuid, 'owner', 'active', true,
         statement_timestamp() - interval '1 hour'
       );
     update private.admin_environments

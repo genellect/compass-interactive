@@ -147,7 +147,7 @@ insert into private.admin_environment_memberships (
     '73035000-0000-4000-8000-000000000006'::uuid,
     'owner',
     'active',
-    true,
+    false,
     statement_timestamp() - interval '1 hour'
   ),
   (
@@ -156,7 +156,7 @@ insert into private.admin_environment_memberships (
     '73035000-0000-4000-8000-000000000007'::uuid,
     'owner',
     'active',
-    false,
+    true,
     statement_timestamp() - interval '1 hour'
   );
 

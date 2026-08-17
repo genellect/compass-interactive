@@ -55,6 +55,11 @@ const repository = read(
 )
 const browserClient = read('src', 'presenter', 'presenterBridgeClient.ts')
 const browserProtocol = read('src', 'presenter', 'presenterBridgeProtocol.ts')
+const flagOffBrowserSpec = read(
+  'e2e',
+  'demo',
+  'phase7-29-presenter-flag-off.spec.ts',
+)
 const adminPresenterHook = read(
   'src',
   'components',
@@ -222,20 +227,20 @@ assert.match(manageConnection, /!isPresenterAction\(body\.action\)/)
 assert.match(manageConnection, /hasLegacyAdminFields\(body\)/)
 assert.match(manageConnection, /verifyGoogleAdminOperationRequest/)
 assert.match(manageConnection, /body\.appSessionToken\.trim\(\)\.length === 0/)
-assert.match(manageConnection, /requestRequired && !UUID_PATTERN\.test\(body\.requestId/)
-assert.match(manageConnection, /target_transport_enabled: googleContext\.transportEnabled/)
+assert.match(
+  manageConnection,
+  /requestRequired && !UUID_PATTERN\.test\(body\.requestId/,
+)
+assert.match(
+  manageConnection,
+  /target_transport_enabled: googleContext\.transportEnabled/,
+)
 assert.doesNotMatch(manageConnection, /getAdminTokenClaims|verifyAdminToken/)
 assert.match(manageConnection, /handleCors\(request\)/)
 assert.match(manageConnection, /getAllowedCorsOrigin\(request\)/)
 assert.match(manageConnection, /createPresenterPairingToken/)
-assert.match(
-  manageConnection,
-  /issued\.pairingTicketExpiresAt/,
-)
-assert.match(
-  manageConnection,
-  /issued\.manualExpiresAt/,
-)
+assert.match(manageConnection, /issued\.pairingTicketExpiresAt/)
+assert.match(manageConnection, /issued\.manualExpiresAt/)
 assert.match(manageConnection, /manage_google_admin_presenter_connection_v1/)
 assert.match(
   manageConnection,
@@ -341,6 +346,11 @@ for (const studentOrDisplaySource of [displayPage, lecturePage, adaptiveSync]) {
   )
 }
 assert.doesNotMatch(lecturePage, /supabase\.channel\(/)
+assert.match(
+  flagOffBrowserSpec,
+  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '管理者設定',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
+  'the flag-OFF Presenter workspace must link to separate Admin settings instead of restoring the identity card',
+)
 
 assert.equal((concurrency.match(/startSqlUntilReady\(/g) ?? []).length, 4)
 for (const readyMarker of [

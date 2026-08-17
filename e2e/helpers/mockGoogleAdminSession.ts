@@ -120,7 +120,7 @@ export function createMockGoogleAdminSession(): MockGoogleAdminSession {
       user,
     },
     trackedSession: {
-      canUseAi: false,
+      canUseAi: true,
       environmentId,
       expiresAt: new Date(now.getTime() + 8 * 60 * 60_000).toISOString(),
       id: appSessionId,
@@ -209,10 +209,7 @@ export async function fulfillMockGoogleAdminRequest(
 
   if (url.pathname === '/functions/v1/admin-identity-session') {
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
-    if (
-      identityInvalid ||
-      body.appSessionToken !== fixture.appSessionToken
-    ) {
+    if (identityInvalid || body.appSessionToken !== fixture.appSessionToken) {
       await fulfillJson(
         route,
         {

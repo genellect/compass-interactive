@@ -197,7 +197,7 @@ function anonymousStudentSession() {
 function trackedSession() {
   const now = Date.now()
   return {
-    canUseAi: false,
+    canUseAi: true,
     environmentId: '73000000-0000-4000-8000-000000000010',
     expiresAt: new Date(now + 8 * 60 * 60_000).toISOString(),
     id: '73000000-0000-4000-8000-000000000011',
@@ -222,7 +222,7 @@ function ledgerSnapshot() {
     ledgerAdmissionEnabled: false,
     memberships: [
       {
-        canUseAi: false,
+        canUseAi: true,
         createdAt: now,
         displayName: 'Current Owner',
         expiresAt: null,
@@ -490,6 +490,19 @@ async function installNetworkMocks(
         })
         return
       }
+      if (action === 'status') {
+        if (body.appSessionToken !== appSessionToken) {
+          state.unexpectedRequests.push('status app session binding mismatch')
+          await fulfillJson(
+            route,
+            { code: 'app_session_invalid', ok: false },
+            401,
+          )
+          return
+        }
+        await fulfillJson(route, { ok: true, session: trackedSession() })
+        return
+      }
       if (action === 'logout') {
         await fulfillJson(route, { ok: true })
         return
@@ -693,6 +706,14 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
       },
     })
   }
+  await expect(page.getByRole('link', { name: '管理者設定' })).toHaveAttribute(
+    'target',
+    '_blank',
+  )
+  await page.goto('/admin/settings')
+  await expect(
+    page.getByRole('heading', { name: '管理者設定', exact: true }),
+  ).toBeVisible()
   await expect
     .poll(() =>
       [...new Set(state.ledgerCalls.map(({ action }) => action))].sort(),
@@ -771,6 +792,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     'admit',
     'beginStepUp',
     'completeStepUp',
+    'status',
     'logout',
   ])
   expect(state.edgeCalls.at(-1)?.body).toEqual({
@@ -845,6 +867,10 @@ test('uses the existing verified factor instead of an abandoned unverified facto
       },
     })
   }
+  await page.goto('/admin/settings')
+  await expect(
+    page.getByRole('heading', { name: '管理者設定', exact: true }),
+  ).toBeVisible()
   await expect
     .poll(() =>
       [...new Set(state.ledgerCalls.map(({ action }) => action))].sort(),

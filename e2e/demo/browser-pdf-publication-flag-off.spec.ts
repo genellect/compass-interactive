@@ -182,7 +182,14 @@ test('flag OFF keeps Google Admin and manual Publisher controls without browser 
   await page.goto('/admin')
 
   await expect(page.locator('#admin-live')).toBeVisible()
-  await expect(page.locator('.admin-identity-card')).toBeVisible()
+  const settingsLink = page.getByRole('link', {
+    name: '管理者設定',
+    exact: true,
+  })
+  await expect(settingsLink).toBeVisible()
+  await expect(settingsLink).toHaveAttribute('href', '/admin/settings')
+  await expect(settingsLink).toHaveAttribute('target', '_blank')
+  await expect(page.locator('.admin-identity-card')).toHaveCount(0)
   await expect
     .poll(() =>
       page.evaluate(() => ({

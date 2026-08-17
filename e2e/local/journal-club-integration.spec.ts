@@ -245,7 +245,10 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
   ).toBeVisible()
-  await page.getByRole('button', { name: 'セッション管理' }).click()
+  await expect(page.getByRole('link', { name: '管理者設定' })).toHaveAttribute(
+    'target',
+    '_blank',
+  )
 
   const preset = page.locator('.journal-club-preset')
   await expect(preset).toBeVisible()
@@ -465,9 +468,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       response.url().endsWith('/functions/v1/issue-display-session') &&
       response.status() === 200,
   )
-  await page
-    .getByRole('button', { name: '別ブラウザ用リンクをコピー' })
-    .click()
+  await page.getByRole('button', { name: '別ブラウザ用リンクをコピー' }).click()
   const displaySession = (await (
     await displaySessionResponsePromise
   ).json()) as {

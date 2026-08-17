@@ -726,9 +726,10 @@ existing lecture/master and fences child/provider authority. The remaining
 all-operational-path migration, shared-PIN removal and provider/child verifier
 are C2 scope and remain HOLD.
 
-- Minimum roles are `owner` and `instructor`; `can_use_ai` remains a separate
-  environment-scoped entitlement. Lecture ownership binds to either role's
-  active membership, not specifically to the `owner` role.
+- Minimum roles are `owner` and `instructor`. Owners retain the complete
+  capability set; `can_use_ai` remains a separate environment-scoped
+  entitlement for instructors. Lecture ownership binds to either role's active
+  membership, not specifically to the `owner` role.
 - Migrate every Admin Edge/RPC path to verified bearer, immutable Google
   binding, active membership/capability, tracked session, AAL2 and the narrowly
   scoped control-plane step-up where applicable,
@@ -771,9 +772,10 @@ default-OFF. Fresh migration, pgTAP, two-connection concurrency, populated
 upgrade, Local Edge, desktop/mobile Chromium/WebKit and exact-head CI pass. The
 feature remains default OFF and Hosted/Human activation remains HOLD.
 
-- Provide one Google sign-in CTA, concise TOTP enrollment/challenge,
-  account/role display, own session list and owner-only membership/lecture/audit
-  management without displacing the lecture workspace.
+- Provide one Google sign-in CTA and concise TOTP enrollment/challenge. Keep
+  the lecture workspace focused on lecture operation; open the owner-only
+  membership, invitation, session and audit surface at `/admin/settings` in a
+  separate authenticated browser tab.
 - Provide a short AI-unlock enrollment: personal four-digit AI PIN in v1 and a
   dedicated AI Passkey after the stable custom-domain/WebAuthn gate. The lecture
   surface keeps exactly two master choices, and optional trusted-browser memory
