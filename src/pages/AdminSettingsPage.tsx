@@ -10,13 +10,13 @@ export default function AdminSettingsPage({
   onAdminLogout: () => Promise<void>
   personalSettings?: ReactNode
 }) {
+  const pageTitle = ledger ? '教員管理' : 'AI PINの設定'
+
   return (
     <main className="page-shell admin-settings-page">
       <section className="page-header">
         <div>
-          <p className="eyebrow">ADMIN SETTINGS</p>
-          <h1>管理者設定</h1>
-          <p>メンバー、権限、ログイン状態を管理します。</p>
+          <h1>{pageTitle}</h1>
         </div>
         <div className="admin-actions">
           <a
@@ -29,7 +29,7 @@ export default function AdminSettingsPage({
             rel="noopener noreferrer"
             target="_blank"
           >
-            講義画面を開く
+            講義コントロール
           </a>
           <button
             className="secondary-button"
@@ -40,13 +40,10 @@ export default function AdminSettingsPage({
           </button>
         </div>
       </section>
-      {personalSettings ? (
-        <section className="panel admin-settings-section">
-          <h2>個人設定</h2>
-          {personalSettings}
-        </section>
-      ) : null}
       {ledger}
+      {personalSettings ? (
+        <section className="admin-settings-section">{personalSettings}</section>
+      ) : null}
     </main>
   )
 }

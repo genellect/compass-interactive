@@ -87,21 +87,21 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()
     await expect(
-      admin.page.getByRole('link', { name: '管理者設定' }),
+      admin.page.getByRole('link', { name: '教員管理' }),
     ).toHaveAttribute('target', '_blank')
 
     const settingsPopupPromise = admin.page.waitForEvent('popup')
-    await admin.page.getByRole('link', { name: '管理者設定' }).click()
+    await admin.page.getByRole('link', { name: '教員管理' }).click()
     const settingsPage = await settingsPopupPromise
     const settingsSafety = await installBrowserSafetyMonitor(settingsPage)
     await expect(
       settingsPage.getByRole('heading', {
-        name: '管理者設定',
+        name: '教員管理',
         exact: true,
       }),
     ).toBeVisible()
     await expect(
-      settingsPage.getByRole('heading', { name: '管理者台帳' }),
+      settingsPage.getByRole('heading', { name: '教員一覧' }),
     ).toBeVisible()
     await expect(
       settingsPage
@@ -111,7 +111,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(settingsPage.locator('.admin-identity-card')).toHaveCount(0)
     const pageCountBeforeWorkspaceReturn = adminContext.pages().length
     await settingsPage
-      .getByRole('link', { name: '講義画面を開く', exact: true })
+      .getByRole('link', { name: '講義コントロール', exact: true })
       .click()
     await expect(admin.page.locator('.admin-workflow')).toBeVisible()
     expect(adminContext.pages()).toHaveLength(pageCountBeforeWorkspaceReturn)
@@ -131,6 +131,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
     await expect(lectureRow).toContainText('受付中')
 
+    await admin.page.locator('#teacher-workspace-setup-tab').click()
+
     const adminQr = admin.page
       .locator('.lecture-join-qr')
       .filter({ hasText: lectureTitle })
@@ -146,6 +148,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     expect(await decodeQrImage(admin.page, '.lecture-join-qr img')).toBe(
       canonicalJoinUrl,
     )
+
+    await admin.page.locator('#teacher-workspace-ai-tab').click()
 
     const summaryLanguage = admin.page.getByLabel('要約言語')
     await expect(summaryLanguage).toHaveValue('auto')
@@ -315,7 +319,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     ).toBeVisible()
 
     admin.page.once('dialog', (dialog) => dialog.accept())
-    await lectureRow.getByRole('button', { name: '終了', exact: true }).click()
+    await admin.page
+      .getByRole('button', { name: '講義を終了', exact: true })
+      .click()
     await expect(lectureRow).toContainText('締切')
     await expect(admin.page.locator('.lecture-join-qr')).toHaveCount(0)
     if (displayPage) {
@@ -345,7 +351,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
     await admin.page.getByRole('button', { name: 'ログアウト' }).click()
     await expect(
-      admin.page.getByRole('heading', { name: '教員としてログイン' }),
+      admin.page.getByRole('heading', { name: '教員ポータル' }),
     ).toBeVisible()
 
     await admin.safety.assertClean()

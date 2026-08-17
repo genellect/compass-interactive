@@ -37,6 +37,7 @@ type Props = {
   getServerNow: () => string | null
   lectureStatus: AdminLecture['status']
   materialEnabled: boolean
+  onMasterAuthorizationChange?: (active: boolean) => void
   onPollDraftCreated: () => Promise<void>
   publisherSessionToken: string
   realtimeEnabled: boolean
@@ -55,6 +56,7 @@ export function AdminAiControlPanel({
   getServerNow,
   lectureStatus,
   materialEnabled,
+  onMasterAuthorizationChange,
   onPollDraftCreated,
   publisherSessionToken,
   realtimeEnabled,
@@ -66,6 +68,13 @@ export function AdminAiControlPanel({
   const handleAcademicAnswerChanged = useCallback(() => {
     setAcademicRefreshVersion((version) => version + 1)
   }, [])
+  const handleMasterAuthorizationChange = useCallback(
+    (authorization: AiMasterAuthorization | null) => {
+      setMasterAuthorization(authorization)
+      onMasterAuthorizationChange?.(Boolean(authorization))
+    },
+    [onMasterAuthorizationChange],
+  )
   const anyEnabled =
     realtimeEnabled || materialEnabled || summariesEnabled || academicEnabled
   const status = activeLecture?.status ?? lectureStatus
@@ -77,7 +86,8 @@ export function AdminAiControlPanel({
   })
   useEffect(() => {
     setMasterAuthorization(null)
-  }, [activeLectureSessionId])
+    onMasterAuthorizationChange?.(false)
+  }, [activeLectureSessionId, onMasterAuthorizationChange])
   return (
     <section className="panel ai-readiness-panel">
       <div className="panel-heading">
@@ -102,7 +112,7 @@ export function AdminAiControlPanel({
             adminToken={adminToken}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}
-            onAuthorizationChange={setMasterAuthorization}
+            onAuthorizationChange={handleMasterAuthorizationChange}
           />
         </Suspense>
       ) : null}

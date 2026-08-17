@@ -288,7 +288,7 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
 
   await expect(page.locator('#admin-live')).toBeVisible()
   const settingsLink = page.getByRole('link', {
-    name: '管理者設定',
+    name: '教員管理',
     exact: true,
   })
   await expect(settingsLink).toBeVisible()

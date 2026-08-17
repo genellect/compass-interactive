@@ -53,6 +53,7 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
     .filter({ hasText: title })
   await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
   await expect(lectureRow).toContainText('受付中')
+  await page.locator('#teacher-workspace-ai-tab').click()
 
   const { data: lecture, error: lectureError } = await service
     .from('lecture_sessions')

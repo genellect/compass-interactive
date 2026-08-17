@@ -5,6 +5,16 @@ gate evidence. Commit IDs identify the main implementation landmarks.
 
 ## 2026-08-17 - Owner capability and separate Admin settings
 
+- Reorganized the teacher lecture workspace into four server-state-derived
+  views: preparation, slides, participation and optional AI. The initial view
+  selects the PDF locally before title/create/start, omits demo or non-owned
+  lecture titles, and reveals later views only when their prerequisites exist.
+  Active Presenter and AI subtrees stay mounted while another view is shown.
+- Reframed `/admin/settings` as `教員管理`: an instructor-only 48-hour invite,
+  a table of teacher permission/login state, visible active-lecture stop
+  controls, denied/failed-operation review, and a collapsed `AI PINの設定`.
+  New invitations default to no AI access, and full administrator authority
+  cannot be granted from this UI.
 - Made every non-revoked environment Owner retain the complete administrative
   capability set. Existing Owner memberships are repaired forward, promotion
   grants the capability atomically and later disable attempts fail closed.
@@ -16,6 +26,9 @@ gate evidence. Commit IDs identify the main implementation landmarks.
 - Replaced implementation-oriented Admin copy with concise member, permission
   and login-state labels while preserving owner-only controls, fresh TOTP
   step-up, last-owner protection and session revocation.
+- Renamed the signed-out surface to `EDUCATOR PORTAL` / `教員ポータル` and
+  simplified the authenticator challenge to the approved two-step verification
+  copy without changing Google, TOTP or application-session semantics.
 
 ## 2026-08-14 - Lecture Cycle Production Candidate planning and cloud handoff
 

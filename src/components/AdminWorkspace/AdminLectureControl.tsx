@@ -86,8 +86,7 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
       <section className="panel" id="admin-prepare">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">PREPARE</p>
-            <h2>講義を準備する</h2>
+            <h2>講義タイトルと開始</h2>
           </div>
           <button
             className="secondary-button"
@@ -248,24 +247,26 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
           />
         ) : null}
       </section>
-      <section className="dashboard-grid">
-        <article className="stat-card">
-          <span>講義状態</span>
-          <strong>{getStatusLabel(selectedLectureStatus)}</strong>
-        </article>
-        <article className="stat-card">
-          <span>参加者数</span>
-          <strong>約{participantCount}</strong>
-        </article>
-        <article className="stat-card">
-          <span>表示コメント</span>
-          <strong>{visibleCommentCount}</strong>
-        </article>
-        <article className="stat-card">
-          <span>非表示コメント</span>
-          <strong>{hiddenCommentCount}</strong>
-        </article>
-      </section>
+      {activeLectureSessionId ? (
+        <section className="dashboard-grid">
+          <article className="stat-card">
+            <span>講義状態</span>
+            <strong>{getStatusLabel(selectedLectureStatus)}</strong>
+          </article>
+          <article className="stat-card">
+            <span>参加者数</span>
+            <strong>約{participantCount}</strong>
+          </article>
+          <article className="stat-card">
+            <span>表示コメント</span>
+            <strong>{visibleCommentCount}</strong>
+          </article>
+          <article className="stat-card">
+            <span>非表示コメント</span>
+            <strong>{hiddenCommentCount}</strong>
+          </article>
+        </section>
+      ) : null}
     </>
   )
 }

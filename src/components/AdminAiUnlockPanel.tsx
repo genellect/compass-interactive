@@ -545,221 +545,223 @@ export function AdminAiUnlockPanel({
 
   if (!profile) {
     return (
-      <section aria-live="polite" className="admin-ai-unlock-panel">
-        <p>{message || 'AI PIN設定を確認しています…'}</p>
-      </section>
+      <details className="admin-ai-unlock-disclosure">
+        <summary>AI PINの設定</summary>
+        <section aria-live="polite" className="admin-ai-unlock-panel">
+          <p>{message || '設定を確認しています…'}</p>
+        </section>
+      </details>
     )
   }
 
   if (!profile.canUseAi) {
     return (
-      <section
-        className="admin-ai-unlock-panel"
-        aria-labelledby="admin-ai-unlock-title"
-      >
-        <p className="eyebrow">PERSONAL AI CONTROL</p>
-        <h2 id="admin-ai-unlock-title">個人AI設定</h2>
-        <p className="helper-note">
-          AI機能はこのアカウントで停止されています。
-        </p>
-      </section>
+      <details className="admin-ai-unlock-disclosure">
+        <summary id="admin-ai-unlock-title">AI PINの設定</summary>
+        <section
+          aria-labelledby="admin-ai-unlock-title"
+          className="admin-ai-unlock-panel"
+        >
+          <p className="helper-note">この教員はAI利用不可です。</p>
+        </section>
+      </details>
     )
   }
 
   return (
-    <section
-      className="admin-ai-unlock-panel"
-      aria-labelledby="admin-ai-unlock-title"
-    >
-      <p className="eyebrow">PERSONAL AI CONTROL</p>
-      <h2 id="admin-ai-unlock-title">個人AI PIN</h2>
-      <p>
-        通常の講義中に認証アプリを繰り返し要求しません。認証アプリの再確認は、PIN変更・失効などの重要操作だけです。
-      </p>
-      {verifiedFactors.length > 1 ? (
-        <label className="field">
-          <span>重要操作で確認する認証アプリ</span>
-          <select
-            disabled={busy}
-            onChange={(event) => setSelectedFactorId(event.target.value)}
-            value={selectedFactorId}
-          >
-            <option value="">選択してください</option>
-            {verifiedFactors.map((factor) => (
-              <option key={factor.id} value={factor.id}>
-                {factor.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      <form onSubmit={submitPin}>
-        <label className="field">
-          <span>
-            {needsPinConfirmation ? '同じ新PINを再入力' : '4桁の新AI PIN'}
-          </span>
-          <input
-            autoComplete="new-password"
-            disabled={
-              busy || (pendingControl !== null && !needsPinConfirmation)
-            }
-            inputMode="numeric"
-            maxLength={4}
-            onChange={(event) =>
-              setPin(event.target.value.replace(/\D/g, '').slice(0, 4))
-            }
-            pattern="[0-9]{4}"
-            type="password"
-            value={pin}
-          />
-        </label>
-        {!needsPinConfirmation ? (
+    <details className="admin-ai-unlock-disclosure">
+      <summary id="admin-ai-unlock-title">AI PINの設定</summary>
+      <section
+        className="admin-ai-unlock-panel"
+        aria-labelledby="admin-ai-unlock-title"
+      >
+        {verifiedFactors.length > 1 ? (
           <label className="field">
-            <span>確認</span>
-            <input
-              autoComplete="new-password"
-              disabled={busy || pendingControl !== null}
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(event) =>
-                setPinConfirmation(
-                  event.target.value.replace(/\D/g, '').slice(0, 4),
-                )
-              }
-              pattern="[0-9]{4}"
-              type="password"
-              value={pinConfirmation}
-            />
+            <span>重要操作で確認する認証アプリ</span>
+            <select
+              disabled={busy}
+              onChange={(event) => setSelectedFactorId(event.target.value)}
+              value={selectedFactorId}
+            >
+              <option value="">選択してください</option>
+              {verifiedFactors.map((factor) => (
+                <option key={factor.id} value={factor.id}>
+                  {factor.label}
+                </option>
+              ))}
+            </select>
           </label>
         ) : null}
-        <button
-          className="primary-button"
-          disabled={
-            busy ||
-            (pendingControl !== null && !needsPinConfirmation) ||
-            pin.length !== 4 ||
-            (!needsPinConfirmation && pin !== pinConfirmation)
-          }
-          type="submit"
-        >
-          {profile.activePin ? 'PINを変更' : 'PINを登録'}
-        </button>
-      </form>
-
-      {pendingControl?.phase === 'control' ? (
-        <form onSubmit={submitTotp}>
+        <form onSubmit={submitPin}>
           <label className="field">
-            <span>認証アプリの6桁コード（今回のみ）</span>
+            <span>
+              {needsPinConfirmation ? '同じ新PINを再入力' : '4桁の新AI PIN'}
+            </span>
             <input
-              autoComplete="one-time-code"
-              disabled={busy}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(event) =>
-                setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+              autoComplete="new-password"
+              disabled={
+                busy || (pendingControl !== null && !needsPinConfirmation)
               }
-              pattern="[0-9]{6}"
-              type="text"
-              value={totpCode}
-            />
-          </label>
-          <button
-            className="secondary-button"
-            disabled={busy || totpCode.length !== 6}
-            type="submit"
-          >
-            重要操作を承認
-          </button>
-        </form>
-      ) : null}
-
-      {pendingControl?.phase === 'authorization' && !needsPinConfirmation ? (
-        <button
-          className="secondary-button"
-          disabled={busy}
-          onClick={() => void retryPendingControlAuthorization()}
-          type="button"
-        >
-          承認結果を再確認
-        </button>
-      ) : null}
-
-      {profile.activePin && !pendingControl ? (
-        <div className="admin-ai-unlock-actions">
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={() => void startTerminal('revoke')}
-            type="button"
-          >
-            PINを無効化
-          </button>
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={() => void startTerminal('reset')}
-            type="button"
-          >
-            PINをリセット
-          </button>
-        </div>
-      ) : null}
-
-      {profile.rememberedBrowserEnabled && profile.activePin ? (
-        <div className="admin-ai-unlock-browser">
-          <h3>このブラウザを記憶</h3>
-          <p>
-            秘密鍵はこのブラウザのIndexedDBに非抽出形式で保存されます。PINは保存しません。講義AI権限はまだ発行しません。
-          </p>
-          <label className="field">
-            <span>現在の4桁AI PIN</span>
-            <input
-              autoComplete="current-password"
-              disabled={busy || pendingControl !== null}
               inputMode="numeric"
               maxLength={4}
               onChange={(event) =>
-                setBrowserPin(event.target.value.replace(/\D/g, '').slice(0, 4))
+                setPin(event.target.value.replace(/\D/g, '').slice(0, 4))
               }
               pattern="[0-9]{4}"
               type="password"
-              value={browserPin}
+              value={pin}
             />
           </label>
+          {!needsPinConfirmation ? (
+            <label className="field">
+              <span>確認</span>
+              <input
+                autoComplete="new-password"
+                disabled={busy || pendingControl !== null}
+                inputMode="numeric"
+                maxLength={4}
+                onChange={(event) =>
+                  setPinConfirmation(
+                    event.target.value.replace(/\D/g, '').slice(0, 4),
+                  )
+                }
+                pattern="[0-9]{4}"
+                type="password"
+                value={pinConfirmation}
+              />
+            </label>
+          ) : null}
+          <button
+            className="primary-button"
+            disabled={
+              busy ||
+              (pendingControl !== null && !needsPinConfirmation) ||
+              pin.length !== 4 ||
+              (!needsPinConfirmation && pin !== pinConfirmation)
+            }
+            type="submit"
+          >
+            {profile.activePin ? 'PINを変更' : 'PINを登録'}
+          </button>
+        </form>
+
+        {pendingControl?.phase === 'control' ? (
+          <form onSubmit={submitTotp}>
+            <label className="field">
+              <span>認証アプリの6桁コード（今回のみ）</span>
+              <input
+                autoComplete="one-time-code"
+                disabled={busy}
+                inputMode="numeric"
+                maxLength={6}
+                onChange={(event) =>
+                  setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                pattern="[0-9]{6}"
+                type="text"
+                value={totpCode}
+              />
+            </label>
+            <button
+              className="secondary-button"
+              disabled={busy || totpCode.length !== 6}
+              type="submit"
+            >
+              重要操作を承認
+            </button>
+          </form>
+        ) : null}
+
+        {pendingControl?.phase === 'authorization' && !needsPinConfirmation ? (
           <button
             className="secondary-button"
-            disabled={
-              busy || pendingControl !== null || browserPin.length !== 4
-            }
-            onClick={() => void setupRememberedBrowser()}
+            disabled={busy}
+            onClick={() => void retryPendingControlAuthorization()}
             type="button"
           >
-            現在のPINで登録
+            承認結果を再確認
           </button>
-          {localCredentials.map((credential) => (
-            <div key={credential.id}>
-              <span>
-                登録済み:{' '}
-                {new Date(credential.createdAt).toLocaleString('ja-JP')}
-              </span>
-              <button
-                className="secondary-button"
-                disabled={busy}
-                onClick={() => void revokeCredential(credential.id)}
-                type="button"
-              >
-                この登録を解除
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
+        ) : null}
 
-      {message ? (
-        <p aria-live="polite" className="helper-note">
-          {message}
-        </p>
-      ) : null}
-    </section>
+        {profile.activePin && !pendingControl ? (
+          <div className="admin-ai-unlock-actions">
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => void startTerminal('revoke')}
+              type="button"
+            >
+              PINを無効化
+            </button>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => void startTerminal('reset')}
+              type="button"
+            >
+              PINをリセット
+            </button>
+          </div>
+        ) : null}
+
+        {profile.rememberedBrowserEnabled && profile.activePin ? (
+          <div className="admin-ai-unlock-browser">
+            <h3>このブラウザを記憶</h3>
+            <p>
+              秘密鍵はこのブラウザのIndexedDBに非抽出形式で保存されます。PINは保存しません。講義AI権限はまだ発行しません。
+            </p>
+            <label className="field">
+              <span>現在の4桁AI PIN</span>
+              <input
+                autoComplete="current-password"
+                disabled={busy || pendingControl !== null}
+                inputMode="numeric"
+                maxLength={4}
+                onChange={(event) =>
+                  setBrowserPin(
+                    event.target.value.replace(/\D/g, '').slice(0, 4),
+                  )
+                }
+                pattern="[0-9]{4}"
+                type="password"
+                value={browserPin}
+              />
+            </label>
+            <button
+              className="secondary-button"
+              disabled={
+                busy || pendingControl !== null || browserPin.length !== 4
+              }
+              onClick={() => void setupRememberedBrowser()}
+              type="button"
+            >
+              現在のPINで登録
+            </button>
+            {localCredentials.map((credential) => (
+              <div key={credential.id}>
+                <span>
+                  登録済み:{' '}
+                  {new Date(credential.createdAt).toLocaleString('ja-JP')}
+                </span>
+                <button
+                  className="secondary-button"
+                  disabled={busy}
+                  onClick={() => void revokeCredential(credential.id)}
+                  type="button"
+                >
+                  この登録を解除
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {message ? (
+          <p aria-live="polite" className="helper-note">
+            {message}
+          </p>
+        ) : null}
+      </section>
+    </details>
   )
 }

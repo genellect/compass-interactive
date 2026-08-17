@@ -3,6 +3,38 @@ import type {
   AdminPoll,
 } from '../../repositories/supabaseAdminRepository'
 
+export type TeacherWorkspaceView = 'setup' | 'slides' | 'participation' | 'ai'
+
+export function deriveTeacherWorkspacePresentation(input: {
+  activeLecture: AdminLecture | undefined
+  hasPublishedMaterial: boolean
+}) {
+  const status = input.activeLecture?.status ?? null
+  const lectureIsOpen = status === 'open'
+  const canShowSlides =
+    Boolean(input.activeLecture) && input.hasPublishedMaterial
+  const canShowLiveTools = lectureIsOpen
+
+  return {
+    canShowAi: canShowLiveTools,
+    canShowParticipation: canShowLiveTools,
+    canShowSlides,
+    defaultView: (lectureIsOpen
+      ? canShowSlides
+        ? 'slides'
+        : 'participation'
+      : 'setup') as TeacherWorkspaceView,
+    headerDescription: !input.activeLecture
+      ? '資料を選び、講義タイトルを設定して開始します。'
+      : status === 'open'
+        ? '講義中の操作を、必要な画面だけに分けて表示します。'
+        : status === 'closed'
+          ? '終了した講義です。履歴を確認するか、次の講義を準備できます。'
+          : '資料と講義情報を確認してから開始します。',
+    headerTitle: input.activeLecture?.title ?? '講義を準備する',
+  }
+}
+
 export function makeJoinedLecture(lecture: AdminLecture) {
   return {
     id: lecture.id,

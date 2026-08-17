@@ -25,6 +25,10 @@ import {
   createAdminControlStepUpNonce,
 } from '../lib/adminAuth/adminIdentityApi'
 import { adminSupabase } from '../lib/adminAuth/adminSupabaseClient'
+import {
+  supabaseAdminRepository,
+  type AdminLecture,
+} from '../repositories/supabaseAdminRepository'
 
 type PendingMutation = AdminLedgerMutationRequest & {
   controlStepUpNonce: string
@@ -37,18 +41,20 @@ type PendingMutation = AdminLedgerMutationRequest & {
 type FactorOption = { id: string; label: string }
 
 const MUTATION_LABELS = {
-  demoteOwner: '環境管理者を講義担当者へ変更',
+  demoteOwner: '管理者権限を解除',
   disableAi: 'AI利用を停止',
   enableAi: 'AI利用を許可',
-  globalRevoke: 'すべての管理者セッションを失効',
+  globalRevoke: '教員の全セッションを失効',
   issueInvitation: '招待リンクを作成',
-  promoteOwner: '講義担当者を環境管理者へ変更',
-  reactivateMembership: '管理者登録を再開',
+  promoteOwner: '管理者権限を付与',
+  reactivateMembership: '教員権限を再開',
   revokeInvitation: '招待を取り消し',
-  revokeMembership: '管理者登録を失効',
-  revokeSession: '管理者セッションを失効',
-  suspendMembership: '管理者登録を一時停止',
+  revokeMembership: '教員権限を抹消',
+  revokeSession: 'ログインを失効',
+  suspendMembership: '教員権限を一時停止',
 } satisfies Record<AdminLedgerMutationAction, string>
+
+const INVITATION_LIFETIME_MS = 48 * 60 * 60 * 1_000
 
 const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
   active: '利用中',
@@ -140,23 +146,11 @@ function restorePendingMutation(): PendingMutation | null {
   }
 }
 
-function datetimeLocalValue(daysFromNow: number) {
-  const date = new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1_000)
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
-  return date.toISOString().slice(0, 16)
-}
-
-function asIso(value: string) {
-  const timestamp = Date.parse(value)
-  if (!Number.isFinite(timestamp)) throw new Error('日時を確認してください。')
-  return new Date(timestamp).toISOString()
-}
-
 function safeMessage(error: unknown) {
   if (error instanceof AdminLedgerError) return error.message
   return error instanceof Error
     ? error.message
-    : '管理台帳の操作を完了できませんでした。'
+    : '教員管理の操作を完了できませんでした。'
 }
 
 export function AdminLedgerPanel({
@@ -172,6 +166,7 @@ export function AdminLedgerPanel({
 }) {
   const [snapshot, setSnapshot] = useState<AdminLedgerSnapshot | null>(null)
   const [auditEvents, setAuditEvents] = useState<AdminLedgerAuditEvent[]>([])
+  const [lectures, setLectures] = useState<AdminLecture[]>([])
   const [factors, setFactors] = useState<FactorOption[]>([])
   const [selectedFactorId, setSelectedFactorId] = useState('')
   const [pending, setPending] = useState<PendingMutation | null>(
@@ -182,19 +177,7 @@ export function AdminLedgerPanel({
   const [message, setMessage] = useState('')
   const [invitationLink, setInvitationLink] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<'instructor' | 'owner'>(
-    'instructor',
-  )
-  const [inviteCanUseAi, setInviteCanUseAi] = useState(true)
-  const [inviteExpiresAt, setInviteExpiresAt] = useState(() =>
-    datetimeLocalValue(7),
-  )
-  const [membershipExpiresAt, setMembershipExpiresAt] = useState(() =>
-    datetimeLocalValue(90),
-  )
-  const [demotionExpiresAt, setDemotionExpiresAt] = useState(() =>
-    datetimeLocalValue(90),
-  )
+  const [inviteCanUseAi, setInviteCanUseAi] = useState(false)
 
   const admissionEnabled = Boolean(
     clientAdmissionEnabled && snapshot?.ledgerAdmissionEnabled,
@@ -211,11 +194,15 @@ export function AdminLedgerPanel({
   }
 
   const refresh = useCallback(async () => {
-    const [nextSnapshot, nextAudit, factorResult] = await Promise.all([
-      getAdminLedgerSnapshot(adminCredential),
-      getAdminLedgerAudit(adminCredential),
-      adminSupabase.auth.mfa.listFactors(),
-    ])
+    const [nextSnapshot, nextAudit, nextLectures, factorResult] =
+      await Promise.all([
+        getAdminLedgerSnapshot(adminCredential),
+        getAdminLedgerAudit(adminCredential),
+        supabaseAdminRepository
+          .manageLectures({ action: 'list', adminToken: adminCredential })
+          .catch(() => []),
+        adminSupabase.auth.mfa.listFactors(),
+      ])
     if (factorResult.error) throw factorResult.error
     const nextFactors = factorResult.data.totp
       .filter((factor) => factor.status === 'verified')
@@ -228,6 +215,7 @@ export function AdminLedgerPanel({
       }))
     setSnapshot(nextSnapshot)
     setAuditEvents(nextAudit)
+    setLectures(nextLectures)
     setFactors(nextFactors)
     setSelectedFactorId((current) =>
       nextFactors.some((factor) => factor.id === current)
@@ -405,6 +393,38 @@ export function AdminLedgerPanel({
     }
   }
 
+  async function stopLecture(lectureSessionId: string) {
+    if (busy || pending) return
+    if (
+      !window.confirm(
+        'この講義を終了します。学生の同期と書き込みが停止します。よろしいですか？',
+      )
+    ) {
+      return
+    }
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const nextLectures = await supabaseAdminRepository.manageLectures({
+        action: 'emergencyStop',
+        adminToken: adminCredential,
+        lectureSessionId,
+      })
+      setLectures(nextLectures)
+      setMessage('講義を終了しました。')
+      await refresh()
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `講義を終了できませんでした: ${error.message}`
+          : '講義を終了できませんでした。',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const sessionsByMembership = useMemo(() => {
     const result = new Map<string, AdminLedgerSnapshot['sessions']>()
     for (const session of snapshot?.sessions ?? []) {
@@ -415,11 +435,30 @@ export function AdminLedgerPanel({
     return result
   }, [snapshot])
 
+  const activeLectureOwnerships = useMemo(
+    () =>
+      snapshot?.ownerships.filter(
+        (ownership) => ownership.lectureStatus === 'open',
+      ) ?? [],
+    [snapshot],
+  )
+  const lectureTitlesById = useMemo(
+    () => new Map(lectures.map((lecture) => [lecture.id, lecture.title])),
+    [lectures],
+  )
+  const reviewEvents = useMemo(
+    () =>
+      auditEvents.filter((event) =>
+        ['denied', 'failed'].includes(event.result),
+      ),
+    [auditEvents],
+  )
+
   if (!snapshot) {
     return (
       <section className="admin-ledger-panel" aria-busy={busy}>
-        <h2>管理者台帳</h2>
-        <p>{message || '管理者情報を読み込んでいます…'}</p>
+        <h2>教員一覧</h2>
+        <p>{message || '教員情報を読み込んでいます…'}</p>
       </section>
     )
   }
@@ -427,11 +466,7 @@ export function AdminLedgerPanel({
   return (
     <section className="admin-ledger-panel" aria-busy={busy}>
       <div className="admin-ledger-heading">
-        <div>
-          <p className="eyebrow">OWNER CONTROL</p>
-          <h2>管理者台帳</h2>
-          <p>メンバーとログイン状態を管理します。</p>
-        </div>
+        <h2>教員一覧</h2>
         <button
           className="secondary-button"
           disabled={busy}
@@ -446,10 +481,40 @@ export function AdminLedgerPanel({
 
       {!admissionEnabled ? (
         <p className="helper-note">
-          新しい招待・権限追加は停止中です。状態確認、権限の縮小、セッション失効は利用できます。
+          新しい教員の招待は停止中です。権限停止とログイン失効は利用できます。
         </p>
       ) : null}
       {message ? <p role="status">{message}</p> : null}
+
+      <dl className="admin-ledger-overview" aria-label="運用状況">
+        <div>
+          <dt>有効な教員</dt>
+          <dd>
+            {
+              snapshot.memberships.filter(
+                (membership) => membership.status === 'active',
+              ).length
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>ログイン中</dt>
+          <dd>
+            {
+              snapshot.sessions.filter((session) => session.status === 'active')
+                .length
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>進行中の講義</dt>
+          <dd>{activeLectureOwnerships.length}</dd>
+        </div>
+        <div className={reviewEvents.length > 0 ? 'needs-review' : undefined}>
+          <dt>要確認</dt>
+          <dd>{reviewEvents.length}</dd>
+        </div>
+      </dl>
 
       {pending ? (
         <form className="admin-ledger-confirmation" onSubmit={finishPending}>
@@ -532,8 +597,239 @@ export function AdminLedgerPanel({
         </form>
       ) : null}
 
-      <details open>
-        <summary>管理者を招待</summary>
+      <section className="admin-ledger-members" aria-label="教員一覧">
+        <div className="admin-ledger-table-wrap">
+          <table className="admin-ledger-table">
+            <thead>
+              <tr>
+                <th scope="col">教員</th>
+                <th scope="col">権限</th>
+                <th scope="col">状態</th>
+                <th scope="col">ログイン</th>
+                <th scope="col">権限・停止</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.memberships.map((membership) => {
+                const activeSessions = (
+                  sessionsByMembership.get(membership.membershipId) ?? []
+                ).filter((session) => session.status === 'active')
+                const permissionLabel =
+                  membership.role === 'owner'
+                    ? '管理者（全権限付与）'
+                    : membership.canUseAi
+                      ? '教員（AI利用可）'
+                      : '教員（AI利用不可）'
+
+                return (
+                  <tr key={membership.membershipId}>
+                    <td data-label="教員">
+                      <strong>
+                        {membership.displayName || membership.normalizedEmail}
+                      </strong>
+                      <small>{membership.normalizedEmail}</small>
+                    </td>
+                    <td data-label="権限">{permissionLabel}</td>
+                    <td data-label="状態">
+                      {MEMBERSHIP_STATUS_LABELS[membership.status] ??
+                        '状態確認中'}
+                    </td>
+                    <td data-label="ログイン">
+                      <span>{activeSessions.length}件</span>
+                      {activeSessions.map((session) => (
+                        <div
+                          className="admin-ledger-session"
+                          key={session.sessionId}
+                        >
+                          <span>
+                            {session.isCurrent
+                              ? '現在のセッション'
+                              : '別のセッション'}{' '}
+                            /{' '}
+                            {new Date(session.lastSeenAt).toLocaleString(
+                              'ja-JP',
+                            )}
+                          </span>
+                          <button
+                            disabled={busy || Boolean(pending)}
+                            onClick={() =>
+                              startMutation({
+                                action: 'revokeSession',
+                                payload: {
+                                  membershipId: membership.membershipId,
+                                  sessionId: session.sessionId,
+                                },
+                              })
+                            }
+                            type="button"
+                          >
+                            このログインを失効
+                          </button>
+                        </div>
+                      ))}
+                    </td>
+                    <td data-label="権限・停止">
+                      <details className="admin-ledger-row-actions">
+                        <summary>操作</summary>
+                        <div className="admin-ledger-actions">
+                          {membership.status === 'active' &&
+                          membership.role === 'owner' ? (
+                            <button
+                              disabled={busy || Boolean(pending)}
+                              onClick={() =>
+                                startMutation({
+                                  action: 'demoteOwner',
+                                  payload: {
+                                    expectedRole: 'owner',
+                                    expectedStatus: 'active',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipExpiresAt: null,
+                                    membershipId: membership.membershipId,
+                                    reasonCode: 'owner_demotion',
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              管理者権限を解除
+                            </button>
+                          ) : null}
+                          {membership.status === 'active' &&
+                          membership.role === 'instructor' &&
+                          membership.canUseAi ? (
+                            <button
+                              disabled={busy || Boolean(pending)}
+                              onClick={() =>
+                                startMutation({
+                                  action: 'disableAi',
+                                  payload: {
+                                    expectedCanUseAi: true,
+                                    expectedStatus: 'active',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipId: membership.membershipId,
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              AI利用を停止
+                            </button>
+                          ) : null}
+                          {membership.status === 'active' &&
+                          membership.role === 'instructor' &&
+                          !membership.canUseAi ? (
+                            <button
+                              disabled={
+                                busy || Boolean(pending) || !admissionEnabled
+                              }
+                              onClick={() =>
+                                startMutation({
+                                  action: 'enableAi',
+                                  payload: {
+                                    expectedCanUseAi: false,
+                                    expectedStatus: 'active',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipId: membership.membershipId,
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              AI利用を許可
+                            </button>
+                          ) : null}
+                          {membership.status === 'active' ? (
+                            <button
+                              disabled={busy || Boolean(pending)}
+                              onClick={() =>
+                                startMutation({
+                                  action: 'suspendMembership',
+                                  payload: {
+                                    expectedStatus: 'active',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipId: membership.membershipId,
+                                    reasonCode: 'owner_suspension',
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              教員権限を一時停止
+                            </button>
+                          ) : null}
+                          {membership.status === 'suspended' ? (
+                            <button
+                              disabled={
+                                busy || Boolean(pending) || !admissionEnabled
+                              }
+                              onClick={() =>
+                                startMutation({
+                                  action: 'reactivateMembership',
+                                  payload: {
+                                    expectedStatus: 'suspended',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipId: membership.membershipId,
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              教員権限を再開
+                            </button>
+                          ) : null}
+                          {membership.status !== 'revoked' ? (
+                            <button
+                              disabled={busy || Boolean(pending)}
+                              onClick={() =>
+                                startMutation({
+                                  action: 'revokeMembership',
+                                  payload: {
+                                    expectedStatus: membership.status as
+                                      'active' | 'pending_mfa' | 'suspended',
+                                    expectedUpdatedAt: membership.updatedAt,
+                                    membershipId: membership.membershipId,
+                                    reasonCode: 'owner_revocation',
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              教員権限を抹消
+                            </button>
+                          ) : null}
+                          {membership.membershipId !==
+                          snapshot.currentMembershipId ? (
+                            <button
+                              disabled={busy || Boolean(pending)}
+                              onClick={() =>
+                                startMutation({
+                                  action: 'globalRevoke',
+                                  payload: {
+                                    membershipId: membership.membershipId,
+                                  },
+                                })
+                              }
+                              type="button"
+                            >
+                              全ログインを失効
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <details
+        className="admin-ledger-add-teacher"
+        open={invitationLink ? true : undefined}
+      >
+        <summary>教員を追加</summary>
         <form
           className="admin-ledger-form"
           onSubmit={(event) => {
@@ -542,15 +838,13 @@ export function AdminLedgerPanel({
             startMutation({
               action: 'issueInvitation',
               payload: {
-                canUseAi: inviteRole === 'owner' || inviteCanUseAi,
-                expiresAt: asIso(inviteExpiresAt),
-                membershipExpiresAt:
-                  inviteRole === 'owner' ? null : asIso(membershipExpiresAt),
+                canUseAi: inviteCanUseAi,
+                expiresAt: new Date(
+                  Date.now() + INVITATION_LIFETIME_MS,
+                ).toISOString(),
+                membershipExpiresAt: null,
                 normalizedEmail: inviteEmail.trim().toLowerCase(),
-                role:
-                  snapshot.environmentKind === 'contest'
-                    ? 'instructor'
-                    : inviteRole,
+                role: 'instructor',
               },
             })
           }}
@@ -565,55 +859,15 @@ export function AdminLedgerPanel({
               value={inviteEmail}
             />
           </label>
-          <label className="field">
-            <span>役割</span>
-            <select
-              onChange={(event) =>
-                setInviteRole(event.target.value as 'instructor' | 'owner')
-              }
-              value={inviteRole}
-            >
-              <option value="instructor">講義担当者</option>
-              <option
-                disabled={snapshot.environmentKind === 'contest'}
-                value="owner"
-              >
-                環境管理者
-              </option>
-            </select>
-          </label>
-          <label className="field">
-            <span>招待リンクの期限</span>
+          <label className="field admin-ledger-checkbox">
             <input
-              onChange={(event) => setInviteExpiresAt(event.target.value)}
-              required
-              type="datetime-local"
-              value={inviteExpiresAt}
+              checked={inviteCanUseAi}
+              onChange={(event) => setInviteCanUseAi(event.target.checked)}
+              type="checkbox"
             />
+            <span>AI利用を許可</span>
           </label>
-          {inviteRole === 'instructor' ? (
-            <label className="field">
-              <span>利用期限</span>
-              <input
-                onChange={(event) => setMembershipExpiresAt(event.target.value)}
-                required
-                type="datetime-local"
-                value={membershipExpiresAt}
-              />
-            </label>
-          ) : null}
-          {inviteRole === 'instructor' ? (
-            <label className="field admin-ledger-checkbox">
-              <input
-                checked={inviteCanUseAi}
-                onChange={(event) => setInviteCanUseAi(event.target.checked)}
-                type="checkbox"
-              />
-              <span>AI機能を許可</span>
-            </label>
-          ) : (
-            <p className="helper-note">環境管理者は全機能を利用できます。</p>
-          )}
+          <p className="helper-note">招待リンクは作成から48時間有効です。</p>
           <button
             className="primary-button"
             disabled={busy || Boolean(pending) || !admissionEnabled}
@@ -646,218 +900,75 @@ export function AdminLedgerPanel({
         ) : null}
       </details>
 
-      <details open>
-        <summary>メンバー ({snapshot.memberships.length})</summary>
-        <label className="field admin-ledger-demotion-expiry">
-          <span>Owner解除後の利用期限</span>
-          <input
-            onChange={(event) => setDemotionExpiresAt(event.target.value)}
-            type="datetime-local"
-            value={demotionExpiresAt}
-          />
-        </label>
+      <section
+        aria-labelledby="admin-ledger-active-lectures-title"
+        className="admin-ledger-monitor-section"
+      >
+        <div className="admin-ledger-section-heading">
+          <h3 id="admin-ledger-active-lectures-title">進行中の講義</h3>
+          <span>{activeLectureOwnerships.length}</span>
+        </div>
         <div className="admin-ledger-list">
-          {snapshot.memberships.map((membership) => (
+          {activeLectureOwnerships.map((ownership) => (
             <article
-              className="admin-ledger-card"
-              key={membership.membershipId}
+              className="admin-ledger-card admin-ledger-lecture"
+              key={ownership.lectureSessionId}
             >
-              <h3>{membership.displayName || membership.normalizedEmail}</h3>
-              <p>{membership.normalizedEmail}</p>
-              <p>
-                {membership.role === 'owner' ? '環境管理者' : '講義担当者'} /{' '}
-                {MEMBERSHIP_STATUS_LABELS[membership.status] ?? '状態確認中'} /{' '}
-                {membership.role === 'owner'
-                  ? '全機能利用可'
-                  : `AI ${membership.canUseAi ? '利用可' : '停止'}`}
-              </p>
-              <div className="admin-ledger-actions">
-                {membership.status === 'active' &&
-                membership.role === 'instructor' &&
-                snapshot.environmentKind !== 'contest' ? (
-                  <button
-                    disabled={busy || Boolean(pending) || !admissionEnabled}
-                    onClick={() =>
-                      startMutation({
-                        action: 'promoteOwner',
-                        payload: {
-                          expectedRole: 'instructor',
-                          expectedStatus: 'active',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    環境管理者に変更
-                  </button>
-                ) : null}
-                {membership.status === 'active' &&
-                membership.role === 'owner' ? (
-                  <button
-                    disabled={busy || Boolean(pending)}
-                    onClick={() =>
-                      startMutation({
-                        action: 'demoteOwner',
-                        payload: {
-                          expectedRole: 'owner',
-                          expectedStatus: 'active',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipExpiresAt: asIso(demotionExpiresAt),
-                          membershipId: membership.membershipId,
-                          reasonCode: 'owner_demotion',
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    講義担当者に変更
-                  </button>
-                ) : null}
-                {membership.status === 'active' &&
-                membership.role === 'instructor' &&
-                membership.canUseAi ? (
-                  <button
-                    disabled={busy || Boolean(pending)}
-                    onClick={() =>
-                      startMutation({
-                        action: 'disableAi',
-                        payload: {
-                          expectedCanUseAi: true,
-                          expectedStatus: 'active',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    AI利用を停止
-                  </button>
-                ) : null}
-                {membership.status === 'active' && !membership.canUseAi ? (
-                  <button
-                    disabled={busy || Boolean(pending) || !admissionEnabled}
-                    onClick={() =>
-                      startMutation({
-                        action: 'enableAi',
-                        payload: {
-                          expectedCanUseAi: false,
-                          expectedStatus: 'active',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    AI利用を許可
-                  </button>
-                ) : null}
-                {membership.status === 'active' ? (
-                  <button
-                    disabled={busy || Boolean(pending)}
-                    onClick={() =>
-                      startMutation({
-                        action: 'suspendMembership',
-                        payload: {
-                          expectedStatus: 'active',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                          reasonCode: 'owner_suspension',
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    一時停止
-                  </button>
-                ) : null}
-                {membership.status === 'suspended' ? (
-                  <button
-                    disabled={busy || Boolean(pending) || !admissionEnabled}
-                    onClick={() =>
-                      startMutation({
-                        action: 'reactivateMembership',
-                        payload: {
-                          expectedStatus: 'suspended',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    利用を再開
-                  </button>
-                ) : null}
-                {membership.status !== 'revoked' ? (
-                  <button
-                    disabled={busy || Boolean(pending)}
-                    onClick={() =>
-                      startMutation({
-                        action: 'revokeMembership',
-                        payload: {
-                          expectedStatus: membership.status as
-                            'active' | 'pending_mfa' | 'suspended',
-                          expectedUpdatedAt: membership.updatedAt,
-                          membershipId: membership.membershipId,
-                          reasonCode: 'owner_revocation',
-                        },
-                      })
-                    }
-                    type="button"
-                  >
-                    登録を失効
-                  </button>
-                ) : null}
-                {membership.membershipId !== snapshot.currentMembershipId ? (
-                  <button
-                    disabled={busy || Boolean(pending)}
-                    onClick={() =>
-                      startMutation({
-                        action: 'globalRevoke',
-                        payload: { membershipId: membership.membershipId },
-                      })
-                    }
-                    type="button"
-                  >
-                    全セッションを失効
-                  </button>
-                ) : null}
-              </div>
-              {(sessionsByMembership.get(membership.membershipId) ?? [])
-                .filter((session) => session.status === 'active')
-                .map((session) => (
-                  <div className="admin-ledger-session" key={session.sessionId}>
-                    <span>
-                      {session.isCurrent
-                        ? '現在のセッション'
-                        : '別のセッション'}{' '}
-                      / {new Date(session.lastSeenAt).toLocaleString('ja-JP')}
-                    </span>
-                    <button
-                      disabled={busy || Boolean(pending)}
-                      onClick={() =>
-                        startMutation({
-                          action: 'revokeSession',
-                          payload: {
-                            membershipId: membership.membershipId,
-                            sessionId: session.sessionId,
-                          },
-                        })
-                      }
-                      type="button"
-                    >
-                      このセッションを失効
-                    </button>
-                  </div>
-                ))}
+              <strong>
+                {lectureTitlesById.get(ownership.lectureSessionId) ??
+                  `講義 ${ownership.lectureSessionId.slice(0, 8)}`}
+              </strong>
+              <span>
+                {LECTURE_STATUS_LABELS[ownership.lectureStatus] ?? '状態確認中'}
+              </span>
+              <button
+                className="danger-button"
+                disabled={busy || Boolean(pending)}
+                onClick={() => void stopLecture(ownership.lectureSessionId)}
+                type="button"
+              >
+                講義を停止
+              </button>
             </article>
           ))}
+          {activeLectureOwnerships.length === 0 ? (
+            <p className="note">進行中の講義はありません。</p>
+          ) : null}
         </div>
-      </details>
+      </section>
+
+      <section
+        aria-labelledby="admin-ledger-review-title"
+        className={`admin-ledger-monitor-section admin-ledger-review${
+          reviewEvents.length > 0 ? ' needs-review' : ''
+        }`}
+      >
+        <div className="admin-ledger-section-heading">
+          <h3 id="admin-ledger-review-title">要確認</h3>
+          <span>{reviewEvents.length}</span>
+        </div>
+        {reviewEvents.length === 0 ? (
+          <p className="note">拒否・失敗した操作はありません。</p>
+        ) : (
+          <ol className="admin-ledger-audit">
+            {reviewEvents.slice(0, 5).map((event) => (
+              <li key={event.eventId}>
+                <strong>
+                  {event.action.startsWith('admin_ledger.')
+                    ? (MUTATION_LABELS[
+                        event.action.slice(
+                          'admin_ledger.'.length,
+                        ) as AdminLedgerMutationAction
+                      ] ?? '管理操作')
+                    : '認証・権限操作'}
+                </strong>{' '}
+                / {AUDIT_RESULT_LABELS[event.result] ?? '記録済み'} /{' '}
+                {new Date(event.occurredAt).toLocaleString('ja-JP')}
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       <details>
         <summary>招待履歴 ({snapshot.invitations.length})</summary>
@@ -869,9 +980,12 @@ export function AdminLedgerPanel({
             >
               <h3>{invitation.normalizedEmail}</h3>
               <p>
-                {invitation.role === 'owner' ? '環境管理者' : '講義担当者'} /{' '}
-                {INVITATION_STATUS_LABELS[invitation.status] ?? '状態確認中'} /{' '}
-                {new Date(invitation.expiresAt).toLocaleString('ja-JP')}
+                {invitation.role === 'owner'
+                  ? '管理者（既存招待）'
+                  : invitation.canUseAi
+                    ? '教員（AI利用可）'
+                    : '教員（AI利用不可）'}{' '}
+                / {INVITATION_STATUS_LABELS[invitation.status] ?? '状態確認中'}
               </p>
               {invitation.status === 'pending' ? (
                 <button
@@ -897,19 +1011,7 @@ export function AdminLedgerPanel({
       </details>
 
       <details>
-        <summary>講義の担当 ({snapshot.ownerships.length})</summary>
-        <ul>
-          {snapshot.ownerships.map((ownership) => (
-            <li key={ownership.lectureSessionId}>
-              講義 {ownership.lectureSessionId.slice(0, 8)} /{' '}
-              {LECTURE_STATUS_LABELS[ownership.lectureStatus] ?? '状態確認中'}
-            </li>
-          ))}
-        </ul>
-      </details>
-
-      <details>
-        <summary>監査履歴 ({auditEvents.length})</summary>
+        <summary>すべての操作履歴 ({auditEvents.length})</summary>
         <ol className="admin-ledger-audit">
           {auditEvents.map((event) => (
             <li key={event.eventId}>
@@ -920,7 +1022,7 @@ export function AdminLedgerPanel({
                         'admin_ledger.'.length,
                       ) as AdminLedgerMutationAction
                     ] ?? '管理操作')
-                  : '管理者認証・権限操作'}
+                  : '認証・権限操作'}
               </strong>{' '}
               / {AUDIT_RESULT_LABELS[event.result] ?? '記録済み'} /{' '}
               {new Date(event.occurredAt).toLocaleString('ja-JP')}

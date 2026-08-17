@@ -130,8 +130,7 @@ async function installAdminState(page: Page, recoverPublication: boolean) {
       'compass-interactive-lecture-runtime-mode': 'live',
       'compass-interactive-lecture-session-id': lectureSessionId,
       'compass-interactive-lecture-status': 'open',
-      'compass-interactive-lecture-title':
-        'Phase 7.26 browser publication E2E',
+      'compass-interactive-lecture-title': 'Phase 7.26 browser publication E2E',
     },
     sessionStorage: recoverPublication
       ? {
@@ -349,8 +348,13 @@ async function installNetworkMocks(
 }
 
 async function stopAdminOperatorPolling(page: Page) {
-  await page.locator('.admin-actions button').nth(1).click()
+  await page.getByRole('button', { name: 'ログアウト', exact: true }).click()
   await expect(page.locator('#admin-live')).toHaveCount(0)
+}
+
+async function openTeacherSetup(page: Page) {
+  await page.locator('#teacher-workspace-setup-tab').click()
+  await expect(page.locator('#teacher-workspace-material')).toBeVisible()
 }
 
 test('Admin publishes a PDF in-browser without exposing Local Publisher controls', async ({
@@ -361,6 +365,7 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
   const state = await installNetworkMocks(page)
 
   await page.goto('/admin')
+  await openTeacherSetup(page)
   const pdfPanel = page.locator('#admin-live .publisher-control-panel')
   await expect(pdfPanel).toBeVisible()
 
@@ -426,6 +431,7 @@ test('Admin adopts an inflight publication after an initiate conflict', async ({
   })
 
   await page.goto('/admin')
+  await openTeacherSetup(page)
   const pdfPanel = page.locator('#admin-live .publisher-control-panel')
   await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
   await pdfPanel.locator('button.primary-button').click()
@@ -455,6 +461,7 @@ test('Admin resumes an uploaded publication with status then finalize and no sec
   const state = await installNetworkMocks(page, { recoverPublication: true })
 
   await page.goto('/admin')
+  await openTeacherSetup(page)
   await expect(
     page.locator('#admin-live .publisher-control-panel'),
   ).toBeVisible()
@@ -489,6 +496,7 @@ test('Admin resumes an uploaded publication with status then finalize and no sec
     },
   )
   await page.reload()
+  await openTeacherSetup(page)
 
   await expect
     .poll(() => state.publicationActions.includes('finalize'))
@@ -528,6 +536,7 @@ test('Admin rediscovers an uploaded publication without tab storage and finalize
   })
 
   await page.goto('/admin')
+  await openTeacherSetup(page)
   await expect
     .poll(() => state.publicationActions.includes('finalize'))
     .toBe(true)
@@ -564,6 +573,7 @@ test('Admin explicitly aborts a discovered pending publication before replacing 
   })
 
   await page.goto('/admin')
+  await openTeacherSetup(page)
   const pdfPanel = page.locator('#admin-live .publisher-control-panel')
   const abortButton = pdfPanel.getByRole('button', {
     name: '中断した公開を破棄してやり直す',

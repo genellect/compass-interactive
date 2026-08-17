@@ -455,6 +455,11 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
+  /#teacher-workspace-setup-tab'\)\.click\(\)[\s\S]*const adminQr = admin\.page[\s\S]*await expect\(adminQr\.locator\('img'\)\)\.toBeVisible\(\)[\s\S]*decodeQrImage\(admin\.page, '\.lecture-join-qr img'\)[\s\S]*#teacher-workspace-ai-tab'\)\.click\(\)/,
+  'the lifecycle must return to setup for the join QR before entering the optional AI stage',
+)
+assert.match(
+  localLifecycleBrowser,
   /popupSession = await issuedDisplaySession[\s\S]*installClipboardCapture\(admin\.page\)[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*issue-display-session[\s\S]*getByRole\('button', \{ name: '別ブラウザ用リンクをコピー' \}\)[\s\S]*\.click\(\)[\s\S]*await expect\([\s\S]*getByRole\('button', \{ name: 'リンクをコピーしました' \}\)[\s\S]*\)\.toBeVisible\(\)[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
   'the isolated lifecycle Display page must wait for a separately issued one-use URL to finish copying',
 )
@@ -465,12 +470,12 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /settingsPopupPromise = admin\.page\.waitForEvent\('popup'\)[\s\S]*getByRole\('link', \{ name: '管理者設定' \}\)\.click\(\)[\s\S]*settingsPage = await settingsPopupPromise[\s\S]*getByRole\('heading', \{ name: '管理者台帳' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*locator\('\.admin-identity-card'\)[\s\S]*toHaveCount\(0\)/,
+  /settingsPopupPromise = admin\.page\.waitForEvent\('popup'\)[\s\S]*getByRole\('link', \{ name: '教員管理' \}\)\.click\(\)[\s\S]*settingsPage = await settingsPopupPromise[\s\S]*getByRole\('heading', \{ name: '教員一覧' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*locator\('\.admin-identity-card'\)[\s\S]*toHaveCount\(0\)/,
   'the lifecycle must inherit the ready Admin session into the separate settings page without another identity challenge',
 )
 assert.match(
   localLifecycleBrowser,
-  /pageCountBeforeWorkspaceReturn = adminContext\.pages\(\)\.length[\s\S]*getByRole\('link', \{ name: '講義画面を開く', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*admin\.page\.locator\('\.admin-workflow'\)[\s\S]*adminContext\.pages\(\)[\s\S]*toHaveLength\(pageCountBeforeWorkspaceReturn\)/,
+  /pageCountBeforeWorkspaceReturn = adminContext\.pages\(\)\.length[\s\S]*getByRole\('link', \{ name: '講義コントロール', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*admin\.page\.locator\('\.admin-workflow'\)[\s\S]*adminContext\.pages\(\)[\s\S]*toHaveLength\(pageCountBeforeWorkspaceReturn\)/,
   'the settings surface must return to the named lecture workspace instead of creating another TOTP-bound tab',
 )
 assert.match(
@@ -510,7 +515,7 @@ assert.match(
 )
 assert.match(
   adminIdentityBrowser,
-  /adminWorkspaceDocument = 'preserved'[\s\S]*getByRole\('link', \{ name: '講義画面を開く', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*adminWorkspaceDocument[\s\S]*toBe\('preserved'\)/,
+  /adminWorkspaceDocument = 'preserved'[\s\S]*getByRole\('link', \{ name: '講義コントロール', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*adminWorkspaceDocument[\s\S]*toBe\('preserved'\)/,
   'returning with the same app session must focus the existing lecture document without reloading it',
 )
 assert.match(
@@ -520,8 +525,18 @@ assert.match(
 )
 assert.match(
   adminIdentityBrowser,
-  /settingsPage[\s\S]*getByRole\('button', \{ name: 'ログアウト', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*card\.locator\('\.eyebrow'\)[\s\S]*toHaveText\('FOR EDUCATORS'\)/,
+  /settingsPage[\s\S]*getByRole\('button', \{ name: 'ログアウト', exact: true \}\)[\s\S]*\.click\(\)[\s\S]*card\.locator\('\.eyebrow'\)[\s\S]*toHaveText\('EDUCATOR PORTAL'\)/,
   'logging out from the settings surface must immediately clear the lecture workspace',
+)
+assert.match(
+  adminRoute,
+  /EDUCATOR PORTAL[\s\S]*教員ポータル[\s\S]*登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。[\s\S]*セキュリティ保護のため、2段階認証が必要です。[\s\S]*Googleで続ける/,
+  'the signed-out educator portal must keep the concise approved login copy',
+)
+assert.match(
+  adminRoute,
+  /TWO-STEP VERIFICATION[\s\S]*<h1>2段階認証<\/h1>[\s\S]*認証アプリに表示されている6桁のコードを入力してください。[\s\S]*<span>認証コード<\/span>[\s\S]*placeholder="6桁のコード"[\s\S]*'続ける'/,
+  'the TOTP surface must keep the approved two-step verification copy and input contract',
 )
 assert.doesNotMatch(
   adminIdentityBrowser,

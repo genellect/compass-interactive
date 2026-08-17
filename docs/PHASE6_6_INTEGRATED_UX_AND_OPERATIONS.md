@@ -23,6 +23,19 @@ The design optimizes three goals together:
 
 ### 2.1 Teacher experience
 
+- The lecture workspace is split into preparation, slides, participation and
+  optional AI views. Only preparation is shown before a lecture exists;
+  slides require a published visible PDF; participation and AI require an open
+  lecture. These conditions come from the server-backed lecture/display state,
+  not from an additional persisted UI flag.
+- Preparation starts with a browser-local PDF choice, then title/create/start.
+  The PDF is not uploaded until a teacher-owned lecture ID exists. A restored
+  demo or non-owned lecture selection is ignored by Admin operations and never
+  supplies the Admin heading, while the shared student/demo state itself is
+  left intact.
+- Switching views hides rather than unmounts active Presenter and AI controls,
+  so an in-flight caption, summary, provider grant or Presenter session is not
+  restarted by navigation.
 - Show the two most recent lectures by default and reveal older lectures only
   on request.
 - A closed lecture is never reopened in place. `もう一度開催する` confirms the
@@ -159,10 +172,10 @@ This definition balances live presence and low load:
 
 The existing 90-minute request envelope remains:
 
-| Scenario | Five-second snapshots | Max presence writes | Shared count refreshes |
-| --- | ---: | ---: | ---: |
-| 20 participants | 21,600 | 2,400 | 360 |
-| 300 participants | 324,000 | 36,000 | 360 |
+| Scenario         | Five-second snapshots | Max presence writes | Shared count refreshes |
+| ---------------- | --------------------: | ------------------: | ---------------------: |
+| 20 participants  |                21,600 |               2,400 |                    360 |
+| 300 participants |               324,000 |              36,000 |                    360 |
 
 The initial comment row cap falls from 100 to 5 under the v5 protocol. Comment
 history requests 50 rows only when a student explicitly opens history.
@@ -239,11 +252,11 @@ Batch lane, strict token ceilings, evidence gates and information-poor skips.
 Realtime transcription is the dominant controllable cost. The current official
 `gpt-realtime-whisper` price snapshot is USD 0.017 per audio minute:
 
-| Teacher selection | Maximum provider reservation |
-| --- | ---: |
-| 10 minutes | USD 0.17 |
-| 30 minutes | USD 0.51 |
-| 90-minute lecture remainder | at most USD 1.53 |
+| Teacher selection           | Maximum provider reservation |
+| --------------------------- | ---------------------------: |
+| 10 minutes                  |                     USD 0.17 |
+| 30 minutes                  |                     USD 0.51 |
+| 90-minute lecture remainder |             at most USD 1.53 |
 
 The actual reservation is the minimum of the teacher selection, remaining
 lecture time, remaining audio allowance and remaining budget. Stop never
@@ -256,21 +269,21 @@ that times out is charged only bounded server-observed elapsed time.
 
 ## 9. Failure behavior
 
-| Failure | Required behavior |
-| --- | --- |
-| Browser closes | DB deadline and server RPC guards remain authoritative |
-| Snapshot pauses | no writes are enabled by stale client state |
-| Exit pressed | request epoch invalidates late responses and polling stops |
-| Stale caption remains in DB | student/display hides it after the freshness window |
-| Worker archive lookup unavailable | live join may continue; closed archive remains fail-closed |
-| Exporter response lost | lease/source-version/hash make retry idempotent |
-| Turnstile invalid or replayed | Worker denies archive resolution |
-| Repeated unknown archive codes | per-IP failed-code guard blocks the attacker without counting successful shared-NAT lookups |
-| Email provider timeout | job is failed and retried; idempotency prevents duplicate email |
-| Realtime client timer fails | Edge and DB reserved-duration checks stop work and enqueue provider hangup |
-| Provider hangup fails | leased outbox retries with exponential backoff; the browser remains stopped |
-| Display credential expires | only terminal lifecycle state may be returned; live payloads fail closed |
-| Cron unavailable | deadline-aware read/write RPCs still reject expired live activity |
+| Failure                           | Required behavior                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------- |
+| Browser closes                    | DB deadline and server RPC guards remain authoritative                                      |
+| Snapshot pauses                   | no writes are enabled by stale client state                                                 |
+| Exit pressed                      | request epoch invalidates late responses and polling stops                                  |
+| Stale caption remains in DB       | student/display hides it after the freshness window                                         |
+| Worker archive lookup unavailable | live join may continue; closed archive remains fail-closed                                  |
+| Exporter response lost            | lease/source-version/hash make retry idempotent                                             |
+| Turnstile invalid or replayed     | Worker denies archive resolution                                                            |
+| Repeated unknown archive codes    | per-IP failed-code guard blocks the attacker without counting successful shared-NAT lookups |
+| Email provider timeout            | job is failed and retried; idempotency prevents duplicate email                             |
+| Realtime client timer fails       | Edge and DB reserved-duration checks stop work and enqueue provider hangup                  |
+| Provider hangup fails             | leased outbox retries with exponential backoff; the browser remains stopped                 |
+| Display credential expires        | only terminal lifecycle state may be returned; live payloads fail closed                    |
+| Cron unavailable                  | deadline-aware read/write RPCs still reject expired live activity                           |
 
 ## 10. Migration and rollout
 

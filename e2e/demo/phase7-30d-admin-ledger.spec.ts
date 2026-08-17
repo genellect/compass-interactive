@@ -26,6 +26,7 @@ const priorInvitationId = '730d0000-0000-4000-8000-00000000000c'
 const resultInvitationId = '730d0000-0000-4000-8000-00000000000d'
 const aiInstructorPrincipalId = '730d0000-0000-4000-8000-00000000000e'
 const aiInstructorMembershipId = '730d0000-0000-4000-8000-00000000000f'
+const lectureSessionId = '730d0000-0000-4000-8000-000000000010'
 const intentDigest = 'd'.repeat(64)
 
 type FunctionCall = {
@@ -44,6 +45,7 @@ type MockState = {
   }>
   commitBodies: Record<string, unknown>[]
   functionCalls: FunctionCall[]
+  openLecture: boolean
   unexpectedRequests: string[]
 }
 
@@ -180,7 +182,7 @@ function trackedAdminSession() {
   }
 }
 
-function ledgerSnapshot(ledgerAdmissionEnabled: boolean) {
+function ledgerSnapshot(ledgerAdmissionEnabled: boolean, openLecture: boolean) {
   const now = Date.now()
   const createdAt = new Date(now - 24 * 60 * 60_000).toISOString()
   const updatedAt = new Date(now - 60_000).toISOString()
@@ -255,7 +257,17 @@ function ledgerSnapshot(ledgerAdmissionEnabled: boolean) {
       },
     ],
     ok: true,
-    ownerships: [],
+    ownerships: openLecture
+      ? [
+          {
+            assignedAt: createdAt,
+            lectureSessionId,
+            lectureStatus: 'open',
+            membershipId: instructorMembershipId,
+            principalId: instructorPrincipalId,
+          },
+        ]
+      : [],
     sessions: [
       {
         expiresAt,
@@ -285,11 +297,40 @@ function ledgerSnapshot(ledgerAdmissionEnabled: boolean) {
   }
 }
 
+function managedLectures(openLecture: boolean) {
+  if (!openLecture) return []
+  const createdAt = new Date(Date.now() - 60 * 60_000).toISOString()
+  return [
+    {
+      archiveExpiresAt: null,
+      closedAt: null,
+      closeActorType: null,
+      closeReason: null,
+      createdAt,
+      endsAt: null,
+      hardStopAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
+      id: lectureSessionId,
+      journalClub: null,
+      lectureCode: '730D01',
+      startsAt: createdAt,
+      status: 'open',
+      title: '統計学入門',
+      updatedAt: createdAt,
+    },
+  ]
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
+  const origin = route.request().headers().origin
   await route.fulfill({
     body: JSON.stringify(body),
     contentType: 'application/json',
-    headers: { 'cache-control': 'no-store' },
+    headers: {
+      ...(origin
+        ? { 'access-control-allow-origin': origin, vary: 'Origin' }
+        : {}),
+      'cache-control': 'no-store',
+    },
     status,
   })
 }
@@ -329,6 +370,7 @@ async function installMocks(
     authRequests: [],
     commitBodies: [],
     functionCalls: [],
+    openLecture: true,
     unexpectedRequests: [],
   }
   let commitAttempts = 0
@@ -433,11 +475,27 @@ async function installMocks(
 
       if (functionName === 'manage-admin-ledger') {
         if (body.action === 'snapshot') {
-          await fulfillJson(route, ledgerSnapshot(state.admissionEnabled))
+          await fulfillJson(
+            route,
+            ledgerSnapshot(state.admissionEnabled, state.openLecture),
+          )
           return
         }
         if (body.action === 'audit') {
-          await fulfillJson(route, { events: [], ok: true })
+          await fulfillJson(route, {
+            events: [
+              {
+                action: 'admin_ledger.enableAi',
+                eventId: '730d0000-0000-4000-8000-000000000011',
+                occurredAt: new Date(Date.now() - 30_000).toISOString(),
+                reasonCode: 'state_changed',
+                result: 'denied',
+                targetId: instructorMembershipId,
+                targetType: 'admin_membership',
+              },
+            ],
+            ok: true,
+          })
           return
         }
         if (body.stage === 'intent' && body.action === 'issueInvitation') {
@@ -479,9 +537,22 @@ async function installMocks(
         return
       }
 
-      if (functionName === 'manage-lectures' && body.action === 'list') {
-        await fulfillJson(route, { lectures: [], ok: true })
-        return
+      if (functionName === 'manage-lectures') {
+        if (body.action === 'list') {
+          await fulfillJson(route, {
+            lectures: managedLectures(state.openLecture),
+            ok: true,
+          })
+          return
+        }
+        if (
+          body.action === 'emergencyStop' &&
+          body.lectureSessionId === lectureSessionId
+        ) {
+          state.openLecture = false
+          await fulfillJson(route, { lectures: [], ok: true })
+          return
+        }
       }
 
       state.unexpectedRequests.push(`function ${functionName}`)
@@ -499,10 +570,10 @@ async function installMocks(
 async function openLedger(page: Page) {
   await page.goto('/admin/settings')
   await expect(
-    page.getByRole('heading', { name: '管理者設定', exact: true }),
+    page.getByRole('heading', { name: '教員管理', exact: true }),
   ).toBeVisible()
   const panel = page.locator('.admin-ledger-panel')
-  await expect(panel.getByRole('heading', { name: '管理者台帳' })).toBeVisible()
+  await expect(panel.getByRole('heading', { name: '教員一覧' })).toBeVisible()
   await expect(panel).not.toHaveAttribute('aria-busy', 'true')
   return panel
 }
@@ -520,26 +591,66 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
   let panel = await openLedger(page)
   await expect(
     panel.getByText(
-      '新しい招待・権限追加は停止中です。状態確認、権限の縮小、セッション失効は利用できます。',
+      '新しい教員の招待は停止中です。権限停止とログイン失効は利用できます。',
       { exact: true },
     ),
   ).toBeVisible()
+  await expect(panel.getByLabel('運用状況')).toContainText('有効な教員3')
+  await expect(panel.getByLabel('運用状況')).toContainText('ログイン中2')
+  await expect(panel.getByLabel('運用状況')).toContainText('進行中の講義1')
+  await expect(panel.getByLabel('運用状況')).toContainText('要確認1')
+  await expect(panel.getByRole('heading', { name: '要確認' })).toBeVisible()
+  await expect(
+    panel.locator('.admin-ledger-review').getByText(/AI利用を許可.*拒否/),
+  ).toBeVisible()
+  await expect(panel.getByText('統計学入門', { exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await panel.getByRole('button', { name: '講義を停止' }).click()
+  await expect(panel.getByText('講義を終了しました。')).toBeVisible()
+  expect(
+    state.functionCalls.filter(
+      ({ body, functionName }) =>
+        functionName === 'manage-lectures' &&
+        body.action === 'emergencyStop' &&
+        body.lectureSessionId === lectureSessionId,
+    ),
+  ).toHaveLength(1)
+  await expect(panel.getByLabel('運用状況')).toContainText('進行中の講義0')
+  await expect(panel.getByText('進行中の講義はありません。')).toBeVisible()
+  for (const permission of [
+    '管理者（全権限付与）',
+    '教員（AI利用可）',
+    '教員（AI利用不可）',
+  ]) {
+    await expect(
+      panel.getByText(permission, { exact: true }).first(),
+    ).toBeVisible()
+  }
+  await panel.getByText('教員を追加', { exact: true }).click()
+  await expect(panel.getByLabel('AI利用を許可')).not.toBeChecked()
+  await expect(panel.getByLabel('役割')).toHaveCount(0)
+  await expect(panel.getByLabel('招待リンクの期限')).toHaveCount(0)
+  await expect(panel.getByLabel('利用期限')).toHaveCount(0)
   await expect(
     panel.getByRole('button', { name: '招待リンクを作成' }),
   ).toBeDisabled()
   await expect(
-    panel.getByRole('button', { name: '環境管理者に変更' }).first(),
-  ).toBeDisabled()
+    panel.getByRole('button', { name: '管理者権限を付与' }),
+  ).toHaveCount(0)
+  const rowActions = panel.locator('.admin-ledger-row-actions')
+  for (let index = 0; index < (await rowActions.count()); index += 1) {
+    await rowActions.nth(index).locator('summary').click()
+  }
   await expect(
     panel.getByRole('button', { name: 'AI利用を許可' }),
   ).toBeDisabled()
   for (const label of [
     '最新状態を確認',
     'AI利用を停止',
-    '一時停止',
-    '登録を失効',
-    '全セッションを失効',
-    'このセッションを失効',
+    '教員権限を一時停止',
+    '教員権限を抹消',
+    '全ログインを失効',
+    'このログインを失効',
   ]) {
     await expect(
       panel.getByRole('button', { name: label }).first(),
@@ -573,6 +684,15 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
   await expect(
     panel.getByRole('button', { name: '更新結果を再確認' }),
   ).toBeVisible()
+
+  await expect
+    .poll(() =>
+      page.evaluate((key) => {
+        const raw = window.sessionStorage.getItem(key)
+        return raw ? JSON.parse(raw).pending?.phase : null
+      }, pendingStorageKey),
+    )
+    .toBe('authorized')
 
   const storedPending = await page.evaluate((key) => {
     const raw = window.sessionStorage.getItem(key)
@@ -613,6 +733,17 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
       body.action === 'completeControlStepUp',
   )
   expect(intentCalls).toHaveLength(1)
+  const invitationPayload = intentCalls[0]?.body.payload as
+    Record<string, unknown> | undefined
+  expect(invitationPayload).toMatchObject({
+    canUseAi: false,
+    membershipExpiresAt: null,
+    normalizedEmail: 'new-admin@example.test',
+    role: 'instructor',
+  })
+  const invitationExpiry = Date.parse(String(invitationPayload?.expiresAt))
+  expect(invitationExpiry).toBeGreaterThan(Date.now() + 47 * 60 * 60_000)
+  expect(invitationExpiry).toBeLessThan(Date.now() + 49 * 60 * 60_000)
   expect(beginCalls).toHaveLength(1)
   expect(completeCalls).toHaveLength(1)
   expect(state.commitBodies).toHaveLength(2)

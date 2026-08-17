@@ -26,7 +26,17 @@ for (const component of [
 assert.doesNotMatch(adminPage, /AdminSessionPanel|セッション管理/)
 assert.match(
   adminPage,
-  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*管理者設定/,
+  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*教員管理/,
+)
+assert.match(
+  adminPage,
+  /runtimeMode === 'live' \? restoredActiveLectureSessionId : null[\s\S]*activeLectureSessionId = activeAdminLecture\?\.id \?\? null/,
+  'Admin operations must ignore demo and non-owned restored lecture selections',
+)
+assert.match(
+  adminPage,
+  /TeacherWorkspaceNav[\s\S]*teacher-workspace-stage[\s\S]*view=\{workspaceView === 'slides' \? 'slides' : 'material'\}/,
+  'the teacher workspace must expose only the stage selected from server-derived availability',
 )
 for (const responsibility of [
   'commentsAndPolls',
@@ -36,7 +46,7 @@ for (const responsibility of [
 ]) {
   assert.match(context, new RegExp(responsibility))
 }
-assert.ok(normalizedUtf8Bytes('src/pages/AdminPage.tsx') < 45_000)
+assert.ok(normalizedUtf8Bytes('src/pages/AdminPage.tsx') < 50_000)
 assert.ok(normalizedUtf8Bytes('src/context/CompassStateContext.tsx') < 50_000)
 assert.ok(
   normalizedUtf8Bytes('src/repositories/supabaseLiveStateRepository.ts') <

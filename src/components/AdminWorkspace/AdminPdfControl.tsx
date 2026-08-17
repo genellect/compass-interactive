@@ -49,6 +49,7 @@ type AdminPdfControlProps = {
     expectedPageCount: number
   } | null
   selectedAsset: PdfAsset | null | undefined
+  view: 'material' | 'slides'
 }
 
 export function AdminPdfControl(props: AdminPdfControlProps) {
@@ -89,6 +90,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     publisherStatus,
     requiredDocument,
     selectedAsset,
+    view,
   } = props
   const [manualNavigationLocked, setManualNavigationLocked] = useState(false)
   const closed = lectureStatus === 'closed'
@@ -112,85 +114,91 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
   }
 
   return (
-    <section className="panel" id="admin-live">
+    <section
+      className={`panel admin-material-workspace is-${view}`}
+      id="admin-live"
+    >
       <div className="panel-heading">
-        <div>
-          <p className="eyebrow">LIVE MATERIAL</p>
-          <h2>講義資料を操作する</h2>
-        </div>
-        <span className="metric">
-          現在のページ: {displayState?.currentPdfPage ?? 1}
-        </span>
+        <h2>{view === 'material' ? '講義資料を選ぶ' : 'スライドを操作する'}</h2>
+        {view === 'slides' ? (
+          <span className="metric">
+            現在のページ: {displayState?.currentPdfPage ?? 1}
+          </span>
+        ) : null}
       </div>
-      {activeLectureSessionId && displayState?.pdfDocumentId ? (
-        <div
-          aria-label="講義資料のページ操作"
-          className="admin-pdf-page-controller"
-        >
-          <button
-            className="secondary-button"
-            disabled={!canNavigate || displayState.currentPdfPage <= 1}
-            onClick={onPrevious}
-            type="button"
+      <div hidden={view !== 'slides'}>
+        {activeLectureSessionId && displayState?.pdfDocumentId ? (
+          <div
+            aria-label="講義資料のページ操作"
+            className="admin-pdf-page-controller"
           >
-            ← 前へ
-          </button>
-          <strong aria-live="polite">
-            {displayState.currentPdfPage} / {activePageCount ?? '—'}
-          </strong>
-          <button
-            className="primary-button compact"
-            disabled={
-              !canNavigate ||
-              displayState.currentPdfPage >= (activePageCount ?? 1)
-            }
-            onClick={onNext}
-            type="button"
-          >
-            次へ →
-          </button>
-          <form className="admin-pdf-page-jump" onSubmit={onGoToPage}>
-            <label>
-              <span>ページ</span>
-              <input
-                aria-label="表示するページ番号"
-                disabled={!canNavigate}
-                max={activePageCount ?? 1}
-                min={1}
-                onChange={(event) => onPageInputChange(event.target.value)}
-                type="number"
-                value={displayPageInput}
-              />
-            </label>
             <button
-              className="secondary-button compact"
-              disabled={!canNavigate}
-              type="submit"
+              className="secondary-button"
+              disabled={!canNavigate || displayState.currentPdfPage <= 1}
+              onClick={onPrevious}
+              type="button"
             >
-              移動
+              ← 前へ
             </button>
-          </form>
-        </div>
-      ) : null}
-      {isPhase729PowerPointSyncEnabled &&
-      activeLectureSessionId &&
-      displayState?.pdfDocumentId ? (
-        <AdminPowerPointIntegration
-          activeLectureSessionId={activeLectureSessionId}
-          adminToken={adminToken}
-          displayState={displayState}
-          lectureStatus={lectureStatus}
-          onCommittedPage={onDisplayStateRefresh}
-          onManualNavigationLockedChange={setManualNavigationLocked}
-          pdfPageCount={activePageCount}
-          pdfTitle={selectedAsset?.title ?? '講義資料'}
-        />
-      ) : null}
+            <strong aria-live="polite">
+              {displayState.currentPdfPage} / {activePageCount ?? '—'}
+            </strong>
+            <button
+              className="primary-button compact"
+              disabled={
+                !canNavigate ||
+                displayState.currentPdfPage >= (activePageCount ?? 1)
+              }
+              onClick={onNext}
+              type="button"
+            >
+              次へ →
+            </button>
+            <form className="admin-pdf-page-jump" onSubmit={onGoToPage}>
+              <label>
+                <span>ページ</span>
+                <input
+                  aria-label="表示するページ番号"
+                  disabled={!canNavigate}
+                  max={activePageCount ?? 1}
+                  min={1}
+                  onChange={(event) => onPageInputChange(event.target.value)}
+                  type="number"
+                  value={displayPageInput}
+                />
+              </label>
+              <button
+                className="secondary-button compact"
+                disabled={!canNavigate}
+                type="submit"
+              >
+                移動
+              </button>
+            </form>
+          </div>
+        ) : null}
+        {isPhase729PowerPointSyncEnabled &&
+        activeLectureSessionId &&
+        displayState?.pdfDocumentId ? (
+          <AdminPowerPointIntegration
+            activeLectureSessionId={activeLectureSessionId}
+            adminToken={adminToken}
+            displayState={displayState}
+            lectureStatus={lectureStatus}
+            onCommittedPage={onDisplayStateRefresh}
+            onManualNavigationLockedChange={setManualNavigationLocked}
+            pdfPageCount={activePageCount}
+            pdfTitle={selectedAsset?.title ?? '講義資料'}
+          />
+        ) : null}
+      </div>
       {privatePdfEnabled ? (
-        <div className="display-control-grid publisher-control-panel">
+        <div
+          className="display-control-grid publisher-control-panel"
+          hidden={view !== 'material'}
+        >
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">LECTURE MATERIAL</p>
               <h3>講義資料を公開する</h3>
             </div>
             <span className="metric">
@@ -280,6 +288,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <button
               className="primary-button"
               disabled={
+                !activeLectureSessionId ||
                 !pdfFile ||
                 pdfPublishing ||
                 closed ||
@@ -298,7 +307,10 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               publisherMessage.includes('失敗') ? 'error-note' : 'note'
             }
           >
-            {publisherMessage || 'PDFを選択して公開してください。'}
+            {publisherMessage ||
+              (activeLectureSessionId
+                ? 'PDFを選択して公開してください。'
+                : 'PDFを選択し、続けて講義タイトルを設定してください。')}
           </p>
           {requiredDocument ? (
             <p className="note">講義資料: {requiredDocument.displayName}</p>
@@ -319,7 +331,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
         </div>
       ) : null}
       {!activeLectureSessionId ? (
-        <p className="note">講義へ参加後、共有画面を操作できます。</p>
+        <p className="note">
+          資料はこのブラウザで選択した状態を保ちます。講義を作成すると公開できます。
+        </p>
       ) : (
         <div className="display-control-grid">
           <div className="display-control-form pdf-document-control">
@@ -356,7 +370,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
         </div>
       )}
       {activeLectureSessionId && displayState?.pdfDocumentId ? (
-        <div className="admin-current-pdf-preview">
+        <div className="admin-current-pdf-preview" hidden={view !== 'slides'}>
           <h3>現在、学生に表示しているページ</h3>
           <SyncedPdfViewer
             adminToken={adminToken}
@@ -376,9 +390,11 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
         <p className="error-note">{displayStateError}</p>
       ) : null}
       <p className="note">
-        {closed
-          ? '講義終了時点で表示していた資料とページです。'
-          : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
+        {view === 'material'
+          ? '公開した資料は、学生画面と教室表示へ同じページ状態で配信されます。'
+          : closed
+            ? '講義終了時点で表示していた資料とページです。'
+            : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
       </p>
     </section>
   )
