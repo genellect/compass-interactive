@@ -736,6 +736,9 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       Date.parse(productionLifecycle.data!.started_at!),
   ).toBe(90 * 60 * 1_000)
 
+  await page.getByRole('tab', { name: /準備/ }).click()
+  await expect(page.locator('#teacher-workspace-material')).toBeVisible()
+
   page.once('dialog', (dialog) => dialog.accept())
   await productionRow.getByRole('button', { name: '終了', exact: true }).click()
   await expect(productionRow.locator('.status-pill.closed')).toHaveText('締切')
