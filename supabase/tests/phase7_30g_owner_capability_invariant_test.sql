@@ -85,11 +85,12 @@ SELECT ok(
 
 INSERT INTO private.admin_environments (
   id, environment_kind, canonical_admin_origin, supabase_issuer,
-  current_deployment
+  current_deployment, bootstrap_sealed_at
 ) VALUES (
   '00000000-0000-4000-8000-00000000f701'::uuid,
   'local', 'http://127.0.0.1:5173',
-  'http://127.0.0.1:54321/auth/v1', true
+  'http://127.0.0.1:54321/auth/v1', true,
+  statement_timestamp() - interval '1 hour'
 );
 
 INSERT INTO private.admin_principals (

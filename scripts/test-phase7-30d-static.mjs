@@ -294,6 +294,10 @@ assert.match(
 )
 assert.match(
   ownerCapabilityPgTap,
+  /current_deployment, bootstrap_sealed_at[\s\S]*statement_timestamp\(\) - interval '1 hour'[\s\S]*SET owner_invariant_enforced_at = statement_timestamp\(\)/,
+)
+assert.match(
+  ownerCapabilityPgTap,
   /normalize_admin_owner_capability_v1\(\)[\s\S]*apply_accepted_owner_capability_v1\(\)[\s\S]*enforce_admin_owner_capability_v1\(\)[\s\S]*not callable by application roles/,
 )
 assert.match(
