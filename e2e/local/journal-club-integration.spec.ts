@@ -629,6 +629,9 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       }),
     ).toBeVisible()
 
+    await page.getByRole('tab', { name: /参加/ }).click()
+    await expect(page.locator('#teacher-workspace-participation')).toBeVisible()
+
     let previousOpenPollRow: Locator | null = null
     for (const [index, question] of journalClubPollQuestions.entries()) {
       const adminPollRow = page
