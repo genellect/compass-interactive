@@ -38,6 +38,8 @@ const envExample = read('.env.local.example')
 const liveRepository = read('src/repositories/supabaseLiveStateRepository.ts')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
 const lectureRepository = read('src/repositories/supabaseLectureRepository.ts')
+const anonymousAuth = read('src/lib/anonymousAuth.ts')
+const supabaseClient = read('src/lib/supabaseClient.ts')
 const realtimeProvider = read('supabase/functions/_shared/openaiRealtime.ts')
 const materialFunction = read(
   'supabase/functions/analyze-lecture-material/index.ts',
@@ -65,10 +67,7 @@ assert.doesNotMatch(
   /createAdminToken|getAdminTokenClaims|verifyAdminToken|ADMIN_PIN/,
 )
 assert.match(googleAdminOperations, /auth\.getUser\(bearerToken\)/)
-assert.match(
-  googleAdminOperations,
-  /authUserId: userData\.user\.id/,
-)
+assert.match(googleAdminOperations, /authUserId: userData\.user\.id/)
 assert.match(googleAdminOperations, /appSessionTokenHash/)
 assert.equal(
   existsSync(resolve(root, 'supabase/functions/verify-admin-pin/index.ts')),
@@ -128,6 +127,34 @@ for (const [source, pattern, label] of [
 ]) {
   assert.match(source, pattern, `${label} deadline/correlation is missing`)
 }
+
+const resumeRequestIndex = lectureRepository.indexOf(
+  'const resumeTokenRequest = isPhase68SecurityEnabled',
+)
+const joinedLectureReturnIndex = lectureRepository.indexOf(
+  'return {',
+  resumeRequestIndex,
+)
+assert.ok(resumeRequestIndex >= 0, 'resume token request must be started')
+assert.ok(
+  joinedLectureReturnIndex > resumeRequestIndex,
+  'lecture join must return after starting the resume token request',
+)
+assert.doesNotMatch(
+  lectureRepository.slice(resumeRequestIndex, joinedLectureReturnIndex),
+  /await\s+resumeTokenRequest/,
+  'resume token issuance must not delay successful lecture navigation',
+)
+assert.match(
+  anonymousAuth,
+  /AbortSignal\.timeout\([\s\S]*runWithAnonymousSignupAbortSignal\([\s\S]*challengeSignal/,
+  'anonymous signup must share one physical abort deadline with its challenge',
+)
+assert.match(
+  supabaseClient,
+  /target\.pathname === '\/auth\/v1\/signup'[\s\S]*globalThis[\s\S]*\.fetch\(input, \{ \.\.\.init, signal \}\)/,
+  'the anonymous signup fetch must receive the required AbortSignal',
+)
 
 const exposedFunctions = sourceFiles(
   resolve(root, 'supabase/functions'),

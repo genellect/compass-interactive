@@ -53,26 +53,52 @@ type Lecture = {
 
 type MockState = {
   aiFunctionCalls: string[]
+  anonymousSignupHandlerSettled: number
+  anonymousSignupRequestFailures: number
+  anonymousSignupRequests: number
   lectures: Lecture[]
   lectureRequests: Array<Record<string, unknown>>
+  liveJoinRequests: number
   pdfPublicationActions: string[]
   pdfPublicationRequests: Array<Record<string, unknown>>
   pollRequests: Array<Record<string, unknown>>
+  resumeIssueResolvedAt: number | null
   uploadRequests: number
+}
+
+type LiveJoinLecture = {
+  ends_at: string | null
+  lecture_session_id: string
+  participant_id: string
+  starts_at: string | null
+  status: 'open'
+  title: string
+}
+
+type NetworkMockOptions = {
+  anonymousSignupDelayMs?: number[]
+  anonymousSignupUserIds?: string[]
+  invalidAdminSession?: boolean
+  liveJoinLecture?: LiveJoinLecture | null
+  missingOperatorSnapshot?: boolean
+  rejectStartWithoutPdf?: boolean
+  resumeIssueDelayMs?: number
 }
 
 function encodeJwtPart(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString('base64url')
 }
 
-function anonymousSessionResponse() {
+function anonymousSessionResponse(
+  userId = '72700000-0000-4000-8000-000000000099',
+) {
   const nowSeconds = Math.floor(Date.now() / 1_000)
   const user = {
     app_metadata: { provider: 'anonymous', providers: ['anonymous'] },
     aud: 'authenticated',
     confirmed_at: new Date().toISOString(),
     created_at: new Date().toISOString(),
-    id: '72700000-0000-4000-8000-000000000099',
+    id: userId,
     is_anonymous: true,
     role: 'authenticated',
     updated_at: new Date().toISOString(),
@@ -91,10 +117,53 @@ function anonymousSessionResponse() {
       'playwright-signature',
     ].join('.'),
     expires_in: 3_600,
-    refresh_token: 'playwright-refresh-token',
+    refresh_token: `playwright-refresh-token-${userId}`,
     token_type: 'bearer',
     user,
   }
+}
+
+async function installTurnstileMock(page: Page) {
+  await page.addInitScript(() => {
+    type TurnstileTestState = {
+      mode: 'resolve' | 'stall'
+      removeCount: number
+      renderCount: number
+    }
+    type TurnstileTestWindow = Window & {
+      __compassTurnstileTest: TurnstileTestState
+      turnstile: {
+        remove: (widgetId: string) => void
+        render: (
+          container: HTMLElement,
+          options: { callback: (token: string) => void },
+        ) => string
+      }
+    }
+
+    const testWindow = window as unknown as TurnstileTestWindow
+    const state: TurnstileTestState = {
+      mode: 'resolve',
+      removeCount: 0,
+      renderCount: 0,
+    }
+    testWindow.__compassTurnstileTest = state
+    testWindow.turnstile = {
+      remove: () => {
+        state.removeCount += 1
+      },
+      render: (_container, options) => {
+        state.renderCount += 1
+        const widgetId = `turnstile-widget-${state.renderCount}`
+        if (state.mode === 'resolve') {
+          queueMicrotask(() =>
+            options.callback(`turnstile-token-${state.renderCount}`),
+          )
+        }
+        return widgetId
+      },
+    }
+  })
 }
 
 function makeLecture(runKind: JournalClubRunKind): Lecture {
@@ -221,24 +290,39 @@ async function installAdminState(page: Page) {
 async function installNetworkMocks(
   page: Page,
   {
+    anonymousSignupDelayMs = [],
+    anonymousSignupUserIds = [],
     invalidAdminSession = false,
+    liveJoinLecture = null,
     missingOperatorSnapshot = false,
     rejectStartWithoutPdf = false,
-  } = {},
+    resumeIssueDelayMs = 0,
+  }: NetworkMockOptions = {},
 ) {
   const state: MockState = {
     aiFunctionCalls: [],
+    anonymousSignupHandlerSettled: 0,
+    anonymousSignupRequestFailures: 0,
+    anonymousSignupRequests: 0,
     lectures: [],
     lectureRequests: [],
+    liveJoinRequests: 0,
     pdfPublicationActions: [],
     pdfPublicationRequests: [],
     pollRequests: [],
+    resumeIssueResolvedAt: null,
     uploadRequests: 0,
   }
 
   page.on('request', (request) => {
     if (new URL(request.url()).hostname === 'pdf.example') {
       state.uploadRequests += 1
+    }
+  })
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/auth/v1/signup') {
+      state.anonymousSignupRequestFailures += 1
     }
   })
 
@@ -254,8 +338,35 @@ async function installNetworkMocks(
       return
     }
 
+    if (url.pathname === '/auth/v1/signup' && request.method() === 'POST') {
+      const requestIndex = state.anonymousSignupRequests
+      state.anonymousSignupRequests += 1
+      const delayMs = anonymousSignupDelayMs[requestIndex] ?? 0
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+      state.anonymousSignupHandlerSettled += 1
+      try {
+        await fulfillJson(
+          route,
+          anonymousSessionResponse(anonymousSignupUserIds[requestIndex]),
+        )
+      } catch {
+        // An AbortSignal-backed client may close the request before the
+        // deliberately delayed fixture tries to respond.
+      }
+      return
+    }
     if (url.pathname.startsWith('/auth/v1/')) {
       await fulfillJson(route, anonymousSessionResponse())
+      return
+    }
+    if (
+      liveJoinLecture &&
+      url.pathname === '/rest/v1/rpc/join_lecture_by_code_v2'
+    ) {
+      state.liveJoinRequests += 1
+      await fulfillJson(route, [liveJoinLecture])
       return
     }
     if (!url.pathname.startsWith('/functions/v1/')) {
@@ -265,6 +376,19 @@ async function installNetworkMocks(
 
     const functionName = url.pathname.split('/').at(-1) ?? ''
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+    if (functionName === 'issue-lecture-resume-token' && liveJoinLecture) {
+      if (resumeIssueDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, resumeIssueDelayMs))
+      }
+      state.resumeIssueResolvedAt = Date.now()
+      await fulfillJson(route, {
+        expiresAt: '2099-08-18T12:00:00.000Z',
+        lectureSessionId: liveJoinLecture.lecture_session_id,
+        ok: true,
+        resumeToken: `${'a'.repeat(80)}.${'b'.repeat(80)}`,
+      })
+      return
+    }
     if (
       [
         'generate-academic-answer',
@@ -396,6 +520,211 @@ test.describe('Phase 7.27 flag ON', () => {
     process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'true',
     'Phase 7.27 preset creation requires its dedicated recovery runner.',
   )
+
+  test('bounds a stalled archive lookup and opens the live lecture before resume-token delivery', async ({
+    page,
+  }) => {
+    const lectureCode = '731042'
+    const lectureTitle = 'Bounded live lecture'
+    const liveJoinLecture: LiveJoinLecture = {
+      ends_at: null,
+      lecture_session_id: '72700000-0000-4000-8000-000000000777',
+      participant_id: '72700000-0000-4000-8000-000000000778',
+      starts_at: null,
+      status: 'open',
+      title: lectureTitle,
+    }
+    await installTurnstileMock(page)
+    const state = await installNetworkMocks(page, {
+      liveJoinLecture,
+      resumeIssueDelayMs: 8_000,
+    })
+    let archiveResolveRequests = 0
+    await page.route(
+      'https://pdf.example/v1/archives/resolve',
+      async (route) => {
+        archiveResolveRequests += 1
+        await new Promise((resolve) => setTimeout(resolve, 15_000))
+        await route
+          .fulfill({
+            body: JSON.stringify({ message: 'late archive miss', ok: false }),
+            contentType: 'application/json',
+            status: 404,
+          })
+          .catch(() => undefined)
+      },
+    )
+
+    await page.goto('/join')
+    await page.getByLabel('講義コード').fill(lectureCode)
+    const startedAt = Date.now()
+    await page.getByRole('button', { name: '参加する' }).click()
+    await expect(page.getByRole('heading', { name: lectureTitle })).toBeVisible(
+      { timeout: 12_000 },
+    )
+
+    expect(Date.now() - startedAt).toBeLessThan(12_000)
+    expect(archiveResolveRequests).toBe(1)
+    expect(state.liveJoinRequests).toBe(1)
+    expect(state.resumeIssueResolvedAt).toBeNull()
+
+    await expect
+      .poll(() => state.resumeIssueResolvedAt, { timeout: 12_000 })
+      .not.toBeNull()
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const raw = window.localStorage.getItem(
+              'compass-interactive-lecture-resume-tokens-v1',
+            )
+            return raw ? JSON.parse(raw).length : 0
+          }),
+        { timeout: 12_000 },
+      )
+      .toBe(1)
+  })
+
+  test('physically aborts stalled anonymous signup, deduplicates callers, and retries without a late session', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name.startsWith('mobile-'),
+      'The deadline contract is exercised once per browser engine.',
+    )
+
+    const delayedUserId = '72700000-0000-4000-8000-000000000101'
+    const retryUserId = '72700000-0000-4000-8000-000000000102'
+    await installTurnstileMock(page)
+    const state = await installNetworkMocks(page, {
+      anonymousSignupDelayMs: [16_000, 0],
+      anonymousSignupUserIds: [delayedUserId, retryUserId],
+    })
+    await page.goto('/join')
+
+    const turnstileAbort = await page.evaluate(async () => {
+      const testWindow = window as unknown as Window & {
+        __compassTurnstileTest: {
+          mode: 'resolve' | 'stall'
+          removeCount: number
+          renderCount: number
+        }
+      }
+      testWindow.__compassTurnstileTest.mode = 'stall'
+      const modulePath = '/src/lib/turnstile.ts'
+      const turnstileModule = (await import(/* @vite-ignore */ modulePath)) as {
+        getAnonymousSignInCaptchaToken: (
+          signal?: AbortSignal,
+        ) => Promise<string | undefined>
+      }
+      const controller = new AbortController()
+      window.setTimeout(() => controller.abort(), 50)
+      let rejected = false
+      try {
+        await turnstileModule.getAnonymousSignInCaptchaToken(controller.signal)
+      } catch {
+        rejected = true
+      }
+      return {
+        layerCount: document.querySelectorAll('.turnstile-challenge-layer')
+          .length,
+        rejected,
+        removeCount: testWindow.__compassTurnstileTest.removeCount,
+      }
+    })
+    expect(turnstileAbort).toEqual({
+      layerCount: 0,
+      rejected: true,
+      removeCount: 1,
+    })
+
+    await page.evaluate(() => {
+      const testWindow = window as unknown as Window & {
+        __compassTurnstileTest: { mode: 'resolve' | 'stall' }
+      }
+      testWindow.__compassTurnstileTest.mode = 'resolve'
+    })
+
+    const startedAt = Date.now()
+    const firstAttempts = await page.evaluate(async () => {
+      const modulePath = '/src/lib/anonymousAuth.ts'
+      const anonymousAuth = (await import(/* @vite-ignore */ modulePath)) as {
+        ensureAnonymousAuthSession: () => Promise<string>
+      }
+      const results = await Promise.allSettled([
+        anonymousAuth.ensureAnonymousAuthSession(),
+        anonymousAuth.ensureAnonymousAuthSession(),
+      ])
+      return results.map((result) =>
+        result.status === 'fulfilled'
+          ? { status: result.status, value: result.value }
+          : {
+              message:
+                result.reason instanceof Error
+                  ? result.reason.message
+                  : String(result.reason),
+              status: result.status,
+            },
+      )
+    })
+
+    expect(Date.now() - startedAt).toBeLessThan(15_000)
+    expect(state.anonymousSignupRequests).toBe(1)
+    expect(state.liveJoinRequests).toBe(0)
+    expect(firstAttempts).toHaveLength(2)
+    for (const result of firstAttempts) {
+      expect(result.status).toBe('rejected')
+      expect('message' in result ? result.message : '').toContain(
+        '匿名セッションの開始に時間がかかっています',
+      )
+    }
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() =>
+            window.localStorage.getItem('sb-example-auth-token'),
+          ),
+        { timeout: 1_000 },
+      )
+      .toBeNull()
+
+    const retriedUserId = await page.evaluate(async () => {
+      const modulePath = '/src/lib/anonymousAuth.ts'
+      const anonymousAuth = (await import(/* @vite-ignore */ modulePath)) as {
+        ensureAnonymousAuthSession: () => Promise<string>
+      }
+      return await anonymousAuth.ensureAnonymousAuthSession()
+    })
+    expect(retriedUserId).toBe(retryUserId)
+    expect(state.anonymousSignupRequests).toBe(2)
+
+    await expect
+      .poll(() => state.anonymousSignupHandlerSettled, { timeout: 6_000 })
+      .toBe(2)
+    await expect
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            const modulePath = '/src/lib/supabaseClient.ts'
+            const clientModule = (await import(
+              /* @vite-ignore */ modulePath
+            )) as {
+              supabase: {
+                auth: {
+                  getSession: () => Promise<{
+                    data: { session: { user: { id: string } } | null }
+                  }>
+                }
+              }
+            }
+            const { data } = await clientModule.supabase.auth.getSession()
+            return data.session?.user.id ?? null
+          }),
+        { timeout: 2_000 },
+      )
+      .toBe(retryUserId)
+    expect(state.anonymousSignupRequestFailures).toBeGreaterThanOrEqual(1)
+  })
 
   test('prepares isolated rehearsal and production drafts without starting paid or live work', async ({
     page,

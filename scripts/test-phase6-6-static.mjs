@@ -34,6 +34,11 @@ const [
   managePolls,
   adminPage,
   adminRepository,
+  turnstile,
+  anonymousAuth,
+  supabaseClient,
+  asyncDeadline,
+  lectureRepository,
 ] = await Promise.all([
   read('.env.local.example'),
   read('src/lib/featureFlags.ts'),
@@ -67,6 +72,11 @@ const [
   read('supabase/functions/manage-polls/index.ts'),
   read('src/pages/AdminPage.tsx'),
   read('src/repositories/supabaseAdminRepository.ts'),
+  read('src/lib/turnstile.ts'),
+  read('src/lib/anonymousAuth.ts'),
+  read('src/lib/supabaseClient.ts'),
+  read('src/lib/asyncDeadline.ts'),
+  read('src/repositories/supabaseLectureRepository.ts'),
 ])
 
 assert.match(env, /^VITE_PHASE6_6_UX_INTEGRATION=false$/m)
@@ -195,6 +205,48 @@ assert.doesNotMatch(archiveClient, /supabase|ensureAnonymousAuthSession/i)
 assert.match(archiveClient, /shouldRefreshArchiveAccess/)
 assert.match(archiveClient, /getLectureJoinCaptchaToken/)
 assert.match(archiveClient, /result\.response\.status === 401/)
+assert.match(archiveClient, /signal\?: AbortSignal/)
+assert.match(
+  context,
+  /ARCHIVE_JOIN_PREFLIGHT_TIMEOUT_MS = 5_000[\s\S]*AbortSignal\.timeout\(ARCHIVE_JOIN_PREFLIGHT_TIMEOUT_MS\)/,
+)
+assert.match(
+  context,
+  /getLectureJoinCaptchaToken\(signal\)[\s\S]*resolveLectureCode\([\s\S]*signal/,
+)
+assert.match(
+  turnstile,
+  /getTurnstileToken\(action: string, signal\?: AbortSignal\)/,
+)
+assert.match(turnstile, /signal\.removeEventListener\('abort', handleAbort\)/)
+assert.match(
+  anonymousAuth,
+  /ANONYMOUS_SESSION_CHECK_TIMEOUT_MS = 6_000[\s\S]*ANONYMOUS_SESSION_CREATE_TIMEOUT_MS = 12_000/,
+)
+assert.match(
+  anonymousAuth,
+  /runWithAnonymousSignupAbortSignal\([\s\S]*challengeSignal/,
+)
+assert.match(anonymousAuth, /getOrCreateAnonymousSignInRequest/)
+assert.doesNotMatch(
+  anonymousAuth,
+  /return await waitForPromiseWithDeadline\([\s\S]*?getOrCreateAnonymousSignInRequest/,
+)
+assert.match(
+  supabaseClient,
+  /target\.pathname === '\/auth\/v1\/signup'[\s\S]*mergeAbortSignals\(init\?\.signal, signupSignal\)[\s\S]*fetch\(input, \{ \.\.\.init, signal \}\)/,
+)
+assert.match(supabaseClient, /runWithAnonymousSignupAbortSignal/)
+assert.match(asyncDeadline, /class RequestDeadlineError extends Error/)
+assert.match(asyncDeadline, /waitForPromiseWithDeadline/)
+assert.match(
+  lectureRepository,
+  /resumeTokenRequest\?: Promise<LectureResumeTokenResult \| null>/,
+)
+assert.match(
+  context,
+  /void resumeTokenRequest\.then\([\s\S]*persistLectureResumeToken/,
+)
 assert.doesNotMatch(archivePage, /supabase|ensureAnonymousAuthSession/i)
 assert.match(archivePage, /archiveSession\.materialSummary/)
 assert.match(archivePage, /archiveResumeError/)
@@ -215,7 +267,10 @@ assert.match(learningSupport, /viewMode === 'archive'/)
 assert.match(managePolls, /hasLegacyAdminFields\(body\)/)
 assert.match(managePolls, /verifyGoogleAdminOperationRequest/)
 assert.match(managePolls, /manage_google_admin_polls_v1/)
-assert.match(managePolls, /target_include_history: body\.includeHistory \?\? false/)
+assert.match(
+  managePolls,
+  /target_include_history: body\.includeHistory \?\? false/,
+)
 assert.match(managePolls, /typeof result\.hasMore !== 'boolean'/)
 assert.match(adminRepository, /Promise<AdminPollList>/)
 assert.match(adminPage, /adminPollsHasMore/)
@@ -235,7 +290,10 @@ assert.match(worker, /ARCHIVE_CODE_LOOKUP_SECRET/)
 assert.match(workerConfig, /ARCHIVE_RATE_LIMITER/)
 assert.match(materialManager, /get_google_admin_material_analysis_v1/)
 assert.match(materialManager, /manage_google_admin_material_analysis_v1/)
-assert.match(materialManager, /target_transport_enabled: googleContext\.transportEnabled/)
+assert.match(
+  materialManager,
+  /target_transport_enabled: googleContext\.transportEnabled/,
+)
 assert.match(publisherClient, /verifySession/)
 assert.match(publisherServer, /url\.pathname === '\/v1\/session'/)
 

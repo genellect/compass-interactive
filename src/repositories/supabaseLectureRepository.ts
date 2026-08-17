@@ -22,8 +22,7 @@ type JoinLectureByCodeRow = {
 export type JoinedLectureWithParticipant = {
   lecture: JoinedLectureSession
   participantId: string
-  resumeToken?: string
-  resumeTokenExpiresAt?: string
+  resumeTokenRequest?: Promise<LectureResumeTokenResult | null>
 }
 
 type IssueResumeTokenResponse = {
@@ -31,6 +30,40 @@ type IssueResumeTokenResponse = {
   lectureSessionId?: string
   ok?: boolean
   resumeToken?: string
+}
+
+export type LectureResumeTokenResult = {
+  expiresAt: string
+  lectureSessionId: string
+  token: string
+}
+
+async function issueLectureResumeToken(
+  lectureSessionId: string,
+): Promise<LectureResumeTokenResult | null> {
+  const { data, error } =
+    await supabase.functions.invoke<IssueResumeTokenResponse>(
+      'issue-lecture-resume-token',
+      {
+        body: { lectureSessionId },
+        timeout: LECTURE_FUNCTION_TIMEOUT_MS,
+      },
+    )
+  if (
+    error ||
+    !data?.ok ||
+    data.lectureSessionId !== lectureSessionId ||
+    !data.resumeToken ||
+    !data.expiresAt
+  ) {
+    return null
+  }
+
+  return {
+    expiresAt: data.expiresAt,
+    lectureSessionId,
+    token: data.resumeToken,
+  }
 }
 
 function getJoinErrorMessage(message: string) {
@@ -132,35 +165,14 @@ export const supabaseLectureRepository = {
       throw new Error('参加者IDを発行できませんでした。')
     }
 
-    let resumeToken: string | undefined
-    let resumeTokenExpiresAt: string | undefined
-    if (isPhase68SecurityEnabled) {
-      const { data: resumeData, error: resumeError } =
-        await supabase.functions.invoke<IssueResumeTokenResponse>(
-          'issue-lecture-resume-token',
-          {
-            body: { lectureSessionId: row.lecture_session_id },
-            timeout: LECTURE_FUNCTION_TIMEOUT_MS,
-          },
-        )
-      if (
-        !resumeError &&
-        resumeData?.ok &&
-        resumeData.lectureSessionId === row.lecture_session_id &&
-        resumeData.resumeToken &&
-        resumeData.expiresAt
-      ) {
-        resumeToken = resumeData.resumeToken
-        resumeTokenExpiresAt = resumeData.expiresAt
-      }
-    }
+    const resumeTokenRequest = isPhase68SecurityEnabled
+      ? issueLectureResumeToken(row.lecture_session_id).catch(() => null)
+      : undefined
 
     return {
       lecture: mapJoinedLecture(row),
       participantId: row.participant_id,
-      ...(resumeToken && resumeTokenExpiresAt
-        ? { resumeToken, resumeTokenExpiresAt }
-        : {}),
+      ...(resumeTokenRequest ? { resumeTokenRequest } : {}),
     }
   },
 }

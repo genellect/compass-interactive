@@ -133,7 +133,41 @@ function createChallengeElements() {
   return { layer, widget }
 }
 
-async function createTurnstileToken(action: string) {
+function getAbortReason(signal: AbortSignal) {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('The operation was aborted.', 'AbortError')
+}
+
+function waitForPromiseWithSignal<T>(
+  request: Promise<T>,
+  signal?: AbortSignal,
+) {
+  if (!signal) return request
+  if (signal.aborted) return Promise.reject(getAbortReason(signal))
+
+  return new Promise<T>((resolve, reject) => {
+    const handleAbort = () => {
+      cleanup()
+      reject(getAbortReason(signal))
+    }
+    const cleanup = () => signal.removeEventListener('abort', handleAbort)
+
+    signal.addEventListener('abort', handleAbort, { once: true })
+    void request.then(
+      (value) => {
+        cleanup()
+        resolve(value)
+      },
+      (error: unknown) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
+async function createTurnstileToken(action: string, signal?: AbortSignal) {
   if (!turnstileSiteKey) {
     return undefined
   }
@@ -141,16 +175,26 @@ async function createTurnstileToken(action: string) {
     throw new Error('この環境では安全確認を開始できません。')
   }
 
-  const turnstile = await loadTurnstileScript()
+  const turnstile = await waitForPromiseWithSignal(
+    loadTurnstileScript(),
+    signal,
+  )
+  if (signal?.aborted) {
+    throw getAbortReason(signal)
+  }
   const { layer, widget } = createChallengeElements()
 
   return await new Promise<string>((resolve, reject) => {
     let widgetId: TurnstileWidgetId | null = null
     let cleanupRequested = false
     let settled = false
+    let timeoutId: number | null = null
 
     const cleanup = () => {
-      window.clearTimeout(timeoutId)
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+      signal?.removeEventListener('abort', handleAbort)
       layer.remove()
       if (widgetId) {
         turnstile.remove(widgetId)
@@ -174,9 +218,20 @@ async function createTurnstileToken(action: string) {
       cleanup()
       reject(new Error(message))
     }
-    const timeoutId = window.setTimeout(() => {
+    const handleAbort = () => {
+      if (settled || !signal) return
+      settled = true
+      cleanup()
+      reject(getAbortReason(signal))
+    }
+    timeoutId = window.setTimeout(() => {
       fail('安全確認が時間切れになりました。もう一度お試しください。')
     }, challengeTimeoutMs)
+    if (signal?.aborted) {
+      handleAbort()
+      return
+    }
+    signal?.addEventListener('abort', handleAbort, { once: true })
 
     try {
       widgetId = turnstile.render(widget, {
@@ -205,11 +260,15 @@ async function createTurnstileToken(action: string) {
   })
 }
 
-export function getTurnstileToken(action: string) {
+export function getTurnstileToken(action: string, signal?: AbortSignal) {
   const normalizedAction = action.trim()
   if (!/^[a-z0-9_-]{3,32}$/.test(normalizedAction)) {
     throw new Error('安全確認の用途が不正です。')
   }
+  if (signal) {
+    return createTurnstileToken(normalizedAction, signal)
+  }
+
   const existing = turnstileChallengeRequests.get(normalizedAction)
   if (existing) {
     return existing
@@ -222,10 +281,10 @@ export function getTurnstileToken(action: string) {
   return request
 }
 
-export function getAnonymousSignInCaptchaToken() {
-  return getTurnstileToken('anonymous-sign-in')
+export function getAnonymousSignInCaptchaToken(signal?: AbortSignal) {
+  return getTurnstileToken('anonymous-sign-in', signal)
 }
 
-export function getLectureJoinCaptchaToken() {
-  return getTurnstileToken('archive-lookup')
+export function getLectureJoinCaptchaToken(signal?: AbortSignal) {
+  return getTurnstileToken('archive-lookup', signal)
 }

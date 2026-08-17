@@ -269,21 +269,22 @@ that times out is charged only bounded server-observed elapsed time.
 
 ## 9. Failure behavior
 
-| Failure                           | Required behavior                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| Browser closes                    | DB deadline and server RPC guards remain authoritative                                      |
-| Snapshot pauses                   | no writes are enabled by stale client state                                                 |
-| Exit pressed                      | request epoch invalidates late responses and polling stops                                  |
-| Stale caption remains in DB       | student/display hides it after the freshness window                                         |
-| Worker archive lookup unavailable | live join may continue; closed archive remains fail-closed                                  |
-| Exporter response lost            | lease/source-version/hash make retry idempotent                                             |
-| Turnstile invalid or replayed     | Worker denies archive resolution                                                            |
-| Repeated unknown archive codes    | per-IP failed-code guard blocks the attacker without counting successful shared-NAT lookups |
-| Email provider timeout            | job is failed and retried; idempotency prevents duplicate email                             |
-| Realtime client timer fails       | Edge and DB reserved-duration checks stop work and enqueue provider hangup                  |
-| Provider hangup fails             | leased outbox retries with exponential backoff; the browser remains stopped                 |
-| Display credential expires        | only terminal lifecycle state may be returned; live payloads fail closed                    |
-| Cron unavailable                  | deadline-aware read/write RPCs still reject expired live activity                           |
+| Failure                           | Required behavior                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Browser closes                    | DB deadline and server RPC guards remain authoritative                                                                         |
+| Snapshot pauses                   | no writes are enabled by stale client state                                                                                    |
+| Exit pressed                      | request epoch invalidates late responses and polling stops                                                                     |
+| Stale caption remains in DB       | student/display hides it after the freshness window                                                                            |
+| Worker archive lookup unavailable | the join preflight is capped at five seconds; live join continues and closed archive remains fail-closed                       |
+| Anonymous Auth signup stalls      | the shared twelve-second deadline aborts the actual signup fetch; concurrent callers reuse it and a later retry starts cleanly |
+| Exporter response lost            | lease/source-version/hash make retry idempotent                                                                                |
+| Turnstile invalid or replayed     | Worker denies archive resolution                                                                                               |
+| Repeated unknown archive codes    | per-IP failed-code guard blocks the attacker without counting successful shared-NAT lookups                                    |
+| Email provider timeout            | job is failed and retried; idempotency prevents duplicate email                                                                |
+| Realtime client timer fails       | Edge and DB reserved-duration checks stop work and enqueue provider hangup                                                     |
+| Provider hangup fails             | leased outbox retries with exponential backoff; the browser remains stopped                                                    |
+| Display credential expires        | only terminal lifecycle state may be returned; live payloads fail closed                                                       |
+| Cron unavailable                  | deadline-aware read/write RPCs still reject expired live activity                                                              |
 
 ## 10. Migration and rollout
 

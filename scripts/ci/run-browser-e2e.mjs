@@ -305,7 +305,7 @@ const appEnvironment = {
         : mode === 'demo-presenter' || mode === 'demo-presenter-off'
           ? 'https://pdf.example'
           : '',
-  VITE_TURNSTILE_SITE_KEY: '',
+  VITE_TURNSTILE_SITE_KEY: mode === 'demo-jc' ? '1x00000000000000000000AA' : '',
   VITE_CACHE_DIR: fileURLToPath(
     new URL(`../../test-results/vite-cache-${mode}`, import.meta.url),
   ),
