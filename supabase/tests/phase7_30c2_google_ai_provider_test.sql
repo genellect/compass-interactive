@@ -529,6 +529,38 @@ INSERT INTO private.admin_environment_memberships (
   '00000000-0000-4000-8000-00000000e205'::uuid,
   'owner', 'active', true, statement_timestamp() - interval '1 hour'
 );
+
+-- Keep a second active Owner while live-authority tests suspend the operation
+-- Owner. Owner capability itself is no longer independently disableable.
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-4000-8000-00000000e2f8'::uuid,
+  'authenticated', 'authenticated', 'phase730c2-anchor@example.test', '',
+  statement_timestamp() - interval '1 hour',
+  '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+);
+INSERT INTO private.admin_principals (
+  id, auth_user_id, google_issuer, provider_subject_hmac,
+  subject_pepper_version, normalized_email, email_verified_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e2f9'::uuid,
+  '00000000-0000-4000-8000-00000000e2f8'::uuid,
+  'https://accounts.google.com', repeat('f', 64), 1,
+  'phase730c2-anchor@example.test', statement_timestamp() - interval '1 hour'
+);
+INSERT INTO private.admin_environment_memberships (
+  id, environment_id, principal_id, role, status, can_use_ai, activated_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000e2fa'::uuid,
+  '00000000-0000-4000-8000-00000000e201'::uuid,
+  '00000000-0000-4000-8000-00000000e2f9'::uuid,
+  'owner', 'active', true, statement_timestamp() - interval '1 hour'
+);
 INSERT INTO private.admin_step_up_nonces (
   id, nonce_hash, reserved_admin_session_id, environment_id, principal_id,
   membership_id, supabase_auth_session_id, intended_action, request_id,
@@ -2374,7 +2406,10 @@ SELECT ok(
 );
 RESET ROLE;
 UPDATE private.admin_environment_memberships
-SET can_use_ai = false, updated_at = statement_timestamp()
+SET
+  status = 'suspended',
+  suspended_at = statement_timestamp(),
+  status_reason = 'phase730c2_summary_authority_test'
 WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
 SET ROLE service_role;
 SELECT ok(
@@ -2427,7 +2462,7 @@ SELECT ok(
   'revoked completion never persists provider content and clears the window lane'
 );
 UPDATE private.admin_environment_memberships
-SET can_use_ai = true, updated_at = statement_timestamp()
+SET status = 'active', suspended_at = null, status_reason = null
 WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
 SET ROLE service_role;
 SELECT is(
@@ -3129,7 +3164,10 @@ SELECT ok(
 );
 
 UPDATE private.admin_environment_memberships
-SET can_use_ai = false, updated_at = statement_timestamp()
+SET
+  status = 'suspended',
+  suspended_at = statement_timestamp(),
+  status_reason = 'phase730c2_academic_authority_test'
 WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
 SET ROLE service_role;
 SELECT is(
@@ -3164,7 +3202,7 @@ SELECT ok(
   'revoked Academic output is accounted without persisting an answer'
 );
 UPDATE private.admin_environment_memberships
-SET can_use_ai = true, updated_at = statement_timestamp()
+SET status = 'active', suspended_at = null, status_reason = null
 WHERE id = '00000000-0000-4000-8000-00000000e206'::uuid;
 SET ROLE service_role;
 SELECT is(

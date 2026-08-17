@@ -458,7 +458,7 @@ assert.match(
 )
 assert.match(
   runtimePgTap,
-  /membership AI-access loss drains a C1 browser master/,
+  /phase730c1-anchor@example\.test[\s\S]*'owner', 'active', true[\s\S]*status = 'suspended'[\s\S]*phase730c1_membership_access_test[\s\S]*membership suspension drains a C1 browser master[\s\S]*SET status = 'active', suspended_at = null, status_reason = null/,
 )
 assert.match(runtimePgTap, /B2 policy authority drain revokes a C1 master/)
 assert.match(runtimePgTap, /B2 factor authority drain revokes a C1 master/)

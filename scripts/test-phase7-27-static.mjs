@@ -228,6 +228,11 @@ assert.match(
   adminPage,
   /journalClubPreset={[\s\S]*?isPhase728JournalClubPresetCreationEnabled\s*\?\s*\(/,
 )
+assert.match(
+  browserSpec,
+  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '管理者設定',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
+  'the retired preset workspace must keep identity controls on the separate Admin settings route',
+)
 assert.match(app, /<Route element={<DisplayPage \/>} path="\/display" \/>/)
 assert.doesNotMatch(
   app,

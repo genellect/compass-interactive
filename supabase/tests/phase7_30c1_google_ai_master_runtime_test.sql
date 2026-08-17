@@ -74,6 +74,38 @@ INSERT INTO private.admin_environment_memberships (
   'owner', 'active', true, statement_timestamp() - interval '1 hour'
 );
 
+-- Keep a second active Owner while this test suspends the operation Owner.
+-- Owner capability itself is no longer a mutable per-Owner permission.
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES (
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '00000000-0000-4000-8000-00000000c1f8'::uuid,
+  'authenticated', 'authenticated', 'phase730c1-anchor@example.test', '',
+  statement_timestamp() - interval '1 hour',
+  '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb,
+  statement_timestamp() - interval '1 hour',
+  statement_timestamp() - interval '1 hour'
+);
+INSERT INTO private.admin_principals (
+  id, auth_user_id, google_issuer, provider_subject_hmac,
+  subject_pepper_version, normalized_email, email_verified_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000c1f9'::uuid,
+  '00000000-0000-4000-8000-00000000c1f8'::uuid,
+  'https://accounts.google.com', repeat('f', 64), 1,
+  'phase730c1-anchor@example.test', statement_timestamp() - interval '1 hour'
+);
+INSERT INTO private.admin_environment_memberships (
+  id, environment_id, principal_id, role, status, can_use_ai, activated_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000c1fa'::uuid,
+  '00000000-0000-4000-8000-00000000c101'::uuid,
+  '00000000-0000-4000-8000-00000000c1f9'::uuid,
+  'owner', 'active', true, statement_timestamp() - interval '1 hour'
+);
+
 INSERT INTO private.admin_step_up_nonces (
   id, nonce_hash, reserved_admin_session_id, environment_id, principal_id,
   membership_id, supabase_auth_session_id, intended_action, request_id,
@@ -919,7 +951,10 @@ SELECT ok(
 
 -- C1 provenance uses the established B2 drains plus C1 access triggers.
 UPDATE private.admin_environment_memberships
-SET can_use_ai = false
+SET
+  status = 'suspended',
+  suspended_at = statement_timestamp(),
+  status_reason = 'phase730c1_membership_access_test'
 WHERE id = '00000000-0000-4000-8000-00000000c106'::uuid;
 SELECT is(
   (
@@ -930,10 +965,10 @@ SELECT is(
     WHERE receipt.request_id = '00000000-0000-4000-8000-00000000c159'::uuid
   ),
   'membership_access_changed',
-  'membership AI-access loss drains a C1 browser master'
+  'membership suspension drains a C1 browser master'
 );
 UPDATE private.admin_environment_memberships
-SET can_use_ai = true
+SET status = 'active', suspended_at = null, status_reason = null
 WHERE id = '00000000-0000-4000-8000-00000000c106'::uuid;
 
 SET ROLE service_role;

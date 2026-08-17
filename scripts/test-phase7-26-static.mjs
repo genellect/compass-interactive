@@ -51,6 +51,11 @@ const productionWrangler = read(
   'asset-worker',
   'wrangler.production.jsonc',
 )
+const flagOffBrowserSpec = read(
+  'e2e',
+  'demo',
+  'browser-pdf-publication-flag-off.spec.ts',
+)
 
 assert.match(worker, /const buffer = await request\.arrayBuffer\(\)/)
 assert.match(worker, /bytes\[0\] !== 0x25/)
@@ -179,5 +184,11 @@ for (const config of [localWrangler, productionWrangler]) {
   assert.match(config, /PDF_PUBLICATION_PUBLIC_JWK/)
   assert.match(config, /PDF_PUBLICATION_COORDINATOR_SECRET/)
 }
+
+assert.match(
+  flagOffBrowserSpec,
+  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '管理者設定',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
+  'the ready flag-OFF lecture workspace must link to separate Admin settings instead of rendering the retired identity card',
+)
 
 console.log('Phase 7.26 cross-boundary static checks passed.')

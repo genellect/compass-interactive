@@ -121,7 +121,7 @@ INSERT INTO private.admin_environment_memberships (
 );
 
 SELECT throws_ok(
-  'SET CONSTRAINTS admin_memberships_owner_capability_guard IMMEDIATE',
+  'SET CONSTRAINTS private.admin_memberships_owner_capability_guard IMMEDIATE',
   'P7335',
   'Owner must retain the complete capability set',
   'a direct Owner insert cannot commit without the complete capability set'
@@ -130,9 +130,9 @@ SELECT throws_ok(
 DELETE FROM private.admin_environment_memberships
 WHERE id = '00000000-0000-4000-8000-00000000f704'::uuid;
 
-SET CONSTRAINTS admin_memberships_owner_capability_guard IMMEDIATE;
+SET CONSTRAINTS private.admin_memberships_owner_capability_guard IMMEDIATE;
 
-SET CONSTRAINTS admin_memberships_owner_capability_guard DEFERRED;
+SET CONSTRAINTS private.admin_memberships_owner_capability_guard DEFERRED;
 
 INSERT INTO private.admin_environment_memberships (
   id, environment_id, principal_id, role, status, can_use_ai, activated_at
@@ -148,7 +148,7 @@ SET id = '00000000-0000-4000-8000-00000000f706'::uuid
 WHERE id = '00000000-0000-4000-8000-00000000f705'::uuid;
 
 SELECT throws_ok(
-  'SET CONSTRAINTS admin_memberships_owner_capability_guard IMMEDIATE',
+  'SET CONSTRAINTS private.admin_memberships_owner_capability_guard IMMEDIATE',
   'P7335',
   'Owner must retain the complete capability set',
   'changing only the membership ID cannot bypass the deferred Owner guard'
@@ -157,7 +157,7 @@ SELECT throws_ok(
 DELETE FROM private.admin_environment_memberships
 WHERE id = '00000000-0000-4000-8000-00000000f706'::uuid;
 
-SET CONSTRAINTS admin_memberships_owner_capability_guard IMMEDIATE;
+SET CONSTRAINTS private.admin_memberships_owner_capability_guard IMMEDIATE;
 
 INSERT INTO private.admin_environment_memberships (
   id, environment_id, principal_id, role, status, can_use_ai, activated_at,
@@ -206,7 +206,7 @@ INSERT INTO private.admin_principals (
   'Phase 7.30G Owner Invitee'
 );
 
-SET CONSTRAINTS admin_memberships_owner_capability_guard DEFERRED;
+SET CONSTRAINTS private.admin_memberships_owner_capability_guard DEFERRED;
 
 INSERT INTO private.admin_environment_memberships (
   id, environment_id, principal_id, role, status, can_use_ai
@@ -241,7 +241,7 @@ SET
   updated_at = statement_timestamp()
 WHERE id = '00000000-0000-4000-8000-00000000f725'::uuid;
 
-SET CONSTRAINTS admin_memberships_owner_capability_guard IMMEDIATE;
+SET CONSTRAINTS private.admin_memberships_owner_capability_guard IMMEDIATE;
 
 SELECT is(
   (

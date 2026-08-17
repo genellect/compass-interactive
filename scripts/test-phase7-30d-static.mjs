@@ -290,6 +290,10 @@ assert.match(
 )
 assert.match(
   ownerCapabilityPgTap,
+  /SET CONSTRAINTS private\.admin_memberships_owner_capability_guard IMMEDIATE[\s\S]*SET CONSTRAINTS private\.admin_memberships_owner_capability_guard DEFERRED/,
+)
+assert.match(
+  ownerCapabilityPgTap,
   /normalize_admin_owner_capability_v1\(\)[\s\S]*apply_accepted_owner_capability_v1\(\)[\s\S]*enforce_admin_owner_capability_v1\(\)[\s\S]*not callable by application roles/,
 )
 assert.match(
