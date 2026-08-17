@@ -131,8 +131,6 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
     await expect(lectureRow).toContainText('受付中')
 
-    await admin.page.locator('#teacher-workspace-ai-tab').click()
-
     const adminQr = admin.page
       .locator('.lecture-join-qr')
       .filter({ hasText: lectureTitle })
@@ -148,6 +146,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     expect(await decodeQrImage(admin.page, '.lecture-join-qr img')).toBe(
       canonicalJoinUrl,
     )
+
+    await admin.page.locator('#teacher-workspace-ai-tab').click()
 
     const summaryLanguage = admin.page.getByLabel('要約言語')
     await expect(summaryLanguage).toHaveValue('auto')
