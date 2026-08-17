@@ -187,7 +187,7 @@ for (const config of [localWrangler, productionWrangler]) {
 
 assert.match(
   flagOffBrowserSpec,
-  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '管理者設定',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
+  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '教員管理',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
   'the ready flag-OFF lecture workspace must link to separate Admin settings instead of rendering the retired identity card',
 )
 

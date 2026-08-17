@@ -706,9 +706,10 @@ export function AdminRoute() {
           <span className="admin-login-icon">
             <AppIcon name="compass" size={25} />
           </span>
-          <p className="eyebrow">FOR EDUCATORS</p>
-          <h1>教員としてログイン</h1>
-          <p>登録済みのGoogleアカウントと認証アプリで本人確認します。</p>
+          <p className="eyebrow">EDUCATOR PORTAL</p>
+          <h1>教員ポータル</h1>
+          <p>登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。</p>
+          <p>セキュリティ保護のため、2段階認証が必要です。</p>
           {errorMessage ? (
             <p className="error-note" role="alert">
               {errorMessage}
@@ -787,11 +788,7 @@ export function AdminRoute() {
       <main className="page-shell join-page">
         <form className="join-card admin-identity-card" onSubmit={verifyTotp}>
           <p className="eyebrow">TWO-STEP VERIFICATION</p>
-          <h1>
-            {phase === 'enrollment'
-              ? '初回のみ認証アプリを設定'
-              : '認証アプリで確認'}
-          </h1>
+          <h1>2段階認証</h1>
           {phase === 'enrollment' && enrollmentSecret ? (
             <>
               <p>スマートフォンの認証アプリでQRコードを読み取ってください。</p>
@@ -808,12 +805,12 @@ export function AdminRoute() {
               </details>
             </>
           ) : (
-            <p>認証アプリに表示されている最新の6桁コードを入力してください。</p>
+            <p>認証アプリに表示されている6桁のコードを入力してください。</p>
           )}
           <label className="field">
-            <span>6桁コード</span>
+            <span>認証コード</span>
             <input
-              aria-label="認証アプリの6桁コード"
+              aria-label="認証コード"
               autoComplete="one-time-code"
               disabled={isSubmitting}
               inputMode="numeric"
@@ -822,6 +819,7 @@ export function AdminRoute() {
                 setTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))
               }
               pattern="[0-9]{6}"
+              placeholder="6桁のコード"
               type="text"
               value={totpCode}
             />
@@ -836,7 +834,7 @@ export function AdminRoute() {
             disabled={isSubmitting || totpCode.length !== 6}
             type="submit"
           >
-            {isSubmitting ? '確認中…' : '確認して続ける'}
+            {isSubmitting ? '確認中…' : '続ける'}
           </button>
         </form>
       </main>

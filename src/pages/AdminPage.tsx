@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
 import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
 import { useCompassState } from '../hooks/useCompassState'
@@ -9,6 +9,7 @@ import {
   AdminModerationPanel,
   AdminPdfControl,
   AdminPollControl,
+  TeacherWorkspaceNav,
 } from '../components/AdminWorkspace'
 import {
   type AdminLecture,
@@ -35,8 +36,10 @@ import { PublisherRequestError, publisherClient } from '../pdf/publisherClient'
 import { useBrowserPdfPublication } from '../hooks/useBrowserPdfPublication'
 import {
   buildAdminPageView,
+  deriveTeacherWorkspacePresentation,
   fromDatetimeLocalValue,
   makeJoinedLecture,
+  type TeacherWorkspaceView,
 } from './admin/adminPageViewModel'
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceSession'
@@ -56,7 +59,8 @@ export function AdminPage({
   onAdminLogout: () => Promise<void>
 }) {
   const {
-    activeLectureSessionId,
+    activeLectureSessionId: restoredActiveLectureSessionId,
+    clearSelectedLectureSession,
     comments,
     displayState: liveDisplayState,
     displayStateError: liveDisplayStateError,
@@ -64,24 +68,17 @@ export function AdminPage({
     hasOlderComments,
     getServerNow,
     isLoadingOlderComments,
-    lecture,
     loadOlderComments,
     participantCount,
     refreshComments,
     refreshDisplayState,
+    runtimeMode,
     setOperatorLiveAccess,
     selectLectureSession,
     visibleCommentCount,
   } = useCompassState()
   const adminToken = adminCredential
   const isAuthenticated = true
-  const { expireAdminSession, handleInvalidAdminSession, handleLogout } =
-    useGoogleAdminWorkspaceSession({
-      activeLectureSessionId,
-      adminCredential,
-      clearLocalWorkspace: clearLocalAdminSession,
-      onAdminLogout,
-    })
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
@@ -90,10 +87,11 @@ export function AdminPage({
   const [displayPageInput, setDisplayPageInput] = useState('1')
   const [pdfDocumentInput, setPdfDocumentInput] = useState('')
   const [lectures, setLectures] = useState<AdminLecture[]>([])
+  const [lecturesLoaded, setLecturesLoaded] = useState(false)
   const [showLectureHistory, setShowLectureHistory] = useState(false)
   const [lecturesError, setLecturesError] = useState<string | null>(null)
   const [lecturesLoading, setLecturesLoading] = useState(false)
-  const [newLectureTitle, setNewLectureTitle] = useState('Journal Club')
+  const [newLectureTitle, setNewLectureTitle] = useState('')
   const [newLectureStartsAt, setNewLectureStartsAt] = useState('')
   const [newLectureEndsAt, setNewLectureEndsAt] = useState('')
   const [adminPolls, setAdminPolls] = useState<AdminPoll[]>([])
@@ -125,6 +123,13 @@ export function AdminPage({
   const [pdfDisplayName, setPdfDisplayName] = useState('')
   const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
   const [pdfPublishing, setPdfPublishing] = useState(false)
+  const [workspaceView, setWorkspaceView] =
+    useState<TeacherWorkspaceView>('setup')
+  const [aiMasterActive, setAiMasterActive] = useState(false)
+  const lastWorkspaceLectureIdRef = useRef<string | null>(null)
+  const workspaceSelectionTouchedRef = useRef(false)
+  const requestedAdminLectureSessionId =
+    runtimeMode === 'live' ? restoredActiveLectureSessionId : null
   const {
     activeAdminLecture,
     activeJournalClubRun,
@@ -134,13 +139,21 @@ export function AdminPage({
     visibleAdminPolls,
     visibleLectures,
   } = buildAdminPageView({
-    activeLectureSessionId,
+    activeLectureSessionId: requestedAdminLectureSessionId,
     adminPolls,
     adminPollsHasMore,
     lectures,
     showLectureHistory,
     showPollHistory,
   })
+  const activeLectureSessionId = activeAdminLecture?.id ?? null
+  const { expireAdminSession, handleInvalidAdminSession, handleLogout } =
+    useGoogleAdminWorkspaceSession({
+      activeLectureSessionId,
+      adminCredential,
+      clearLocalWorkspace: clearLocalAdminSession,
+      onAdminLogout,
+    })
   const {
     abortInterruptedPdfPublication,
     pdfInterruptedPublicationId,
@@ -202,18 +215,72 @@ export function AdminPage({
   })
   const displayIsAvailable =
     Boolean(activeLectureSessionId) && activeAdminLecture?.status === 'open'
+  const hasPublishedMaterial = Boolean(
+    activeLectureSessionId &&
+    displayState?.pdfDocumentId &&
+    displayState.pdfVisible,
+  )
+  const workspacePresentation = deriveTeacherWorkspacePresentation({
+    activeLecture: activeAdminLecture,
+    hasPublishedMaterial,
+  })
+  const activeLectureStatus = activeAdminLecture?.status ?? 'draft'
 
   useEffect(() => {
-    if (!isAuthenticated || !adminToken) {
+    if (
+      lecturesLoaded &&
+      requestedAdminLectureSessionId &&
+      !activeAdminLecture
+    ) {
+      clearSelectedLectureSession()
+    }
+  }, [
+    activeAdminLecture,
+    clearSelectedLectureSession,
+    lecturesLoaded,
+    requestedAdminLectureSessionId,
+  ])
+
+  useEffect(() => {
+    const selectedViewIsAvailable =
+      workspaceView === 'setup' ||
+      (workspaceView === 'slides' && workspacePresentation.canShowSlides) ||
+      (workspaceView === 'participation' &&
+        workspacePresentation.canShowParticipation) ||
+      (workspaceView === 'ai' && workspacePresentation.canShowAi)
+
+    if (lastWorkspaceLectureIdRef.current !== activeLectureSessionId) {
+      lastWorkspaceLectureIdRef.current = activeLectureSessionId
+      workspaceSelectionTouchedRef.current = false
+      setWorkspaceView(workspacePresentation.defaultView)
+      return
+    }
+
+    if (!selectedViewIsAvailable || !workspaceSelectionTouchedRef.current) {
+      setWorkspaceView(workspacePresentation.defaultView)
+    }
+  }, [
+    activeLectureSessionId,
+    workspacePresentation.canShowAi,
+    workspacePresentation.canShowParticipation,
+    workspacePresentation.canShowSlides,
+    workspacePresentation.defaultView,
+    workspaceView,
+  ])
+
+  useEffect(() => {
+    if (!isAuthenticated || !adminToken || runtimeMode !== 'live') {
       setOperatorLiveAccess(null)
       return
     }
     setOperatorLiveAccess({ kind: 'admin', token: adminToken })
     return () => setOperatorLiveAccess(null)
-  }, [adminToken, isAuthenticated, setOperatorLiveAccess])
+  }, [adminToken, isAuthenticated, runtimeMode, setOperatorLiveAccess])
 
   function selectAdminLecture(lectureRow: AdminLecture) {
+    workspaceSelectionTouchedRef.current = false
     selectLectureSession(makeJoinedLecture(lectureRow))
+    setWorkspaceView('setup')
     if (!lectureRow.journalClub) return
 
     resetBrowserPdfPublication()
@@ -243,6 +310,7 @@ export function AdminPage({
         includeHistory,
       })
       setLectures(nextLectures)
+      setLecturesLoaded(true)
     } catch (error) {
       if (handleInvalidAdminSession(error)) return
       setLecturesError(
@@ -481,6 +549,7 @@ export function AdminPage({
     if (!isAuthenticated || !adminToken) {
       setLectures([])
       setLecturesError(null)
+      setLecturesLoaded(false)
       return
     }
 
@@ -576,6 +645,8 @@ export function AdminPage({
     setAdminPdfDocuments([])
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
     setPublisherMessage('')
+    setAiMasterActive(false)
+    setWorkspaceView('setup')
     resetBrowserPdfPublication()
   }
 
@@ -698,7 +769,7 @@ export function AdminPage({
       if (createdLecture) {
         selectAdminLecture(createdLecture)
       }
-      setNewLectureTitle('Journal Club')
+      setNewLectureTitle('')
       setNewLectureStartsAt('')
       setNewLectureEndsAt('')
     } catch (error) {
@@ -751,6 +822,13 @@ export function AdminPage({
         (action === 'start' || activeLectureSessionId === lectureSessionId)
       ) {
         selectLectureSession(makeJoinedLecture(updatedLecture))
+        setWorkspaceView(
+          action === 'start'
+            ? hasPublishedMaterial
+              ? 'slides'
+              : 'participation'
+            : 'setup',
+        )
         await refreshAdminPolls(
           lectureSessionId,
           adminToken,
@@ -809,6 +887,7 @@ export function AdminPage({
           startedLectures.find((item) => item.id === duplicatedLecture.id) ??
           duplicatedLecture
         selectLectureSession(makeJoinedLecture(startedLecture))
+        setWorkspaceView('participation')
         setShowLectureHistory(false)
       }
     } catch (error) {
@@ -963,27 +1042,42 @@ export function AdminPage({
     <main className="page-shell">
       <section className="page-header">
         <div>
-          <p className="eyebrow">LECTURE CONTROL</p>
-          <h1>{lecture.title}</h1>
-          <p>講義の流れと、教室の反応をひとつの画面で。</p>
+          <h1>{workspacePresentation.headerTitle}</h1>
+          <p>{workspacePresentation.headerDescription}</p>
         </div>
         <div className="admin-actions">
-          <button
-            className="secondary-button"
-            disabled={isOpeningDisplay || !displayIsAvailable}
-            onClick={() => void openClassroomDisplay()}
-            type="button"
-          >
-            {isOpeningDisplay ? '共有画面を準備中…' : '共有画面を開く'}
-          </button>
-          {isPhase728DisplayRealtimeEnabled ? (
-            <AdminDisplayLinkCopyButton
-              copied={displayLinkCopied}
-              isCopying={isCopyingDisplayLink}
-              isOpening={isOpeningDisplay}
-              lectureIsOpen={displayIsAvailable}
-              onCopy={() => void copyClassroomDisplayLink()}
-            />
+          {activeAdminLecture?.status === 'open' ? (
+            <button
+              className="secondary-button danger-button"
+              disabled={lecturesLoading}
+              onClick={() =>
+                void updateLectureStatus('close', activeAdminLecture.id)
+              }
+              type="button"
+            >
+              講義を終了
+            </button>
+          ) : null}
+          {displayIsAvailable ? (
+            <>
+              <button
+                className="secondary-button"
+                disabled={isOpeningDisplay}
+                onClick={() => void openClassroomDisplay()}
+                type="button"
+              >
+                {isOpeningDisplay ? '共有画面を準備中…' : '共有画面を開く'}
+              </button>
+              {isPhase728DisplayRealtimeEnabled ? (
+                <AdminDisplayLinkCopyButton
+                  copied={displayLinkCopied}
+                  isCopying={isCopyingDisplayLink}
+                  isOpening={isOpeningDisplay}
+                  lectureIsOpen
+                  onCopy={() => void copyClassroomDisplayLink()}
+                />
+              ) : null}
+            </>
           ) : null}
           <button
             className="secondary-button"
@@ -1002,218 +1096,249 @@ export function AdminPage({
             rel="noopener noreferrer"
             target="_blank"
           >
-            管理者設定
+            教員管理
           </a>
         </div>
       </section>
       {displayLaunchError ? (
         <p className="error-note">{displayLaunchError}</p>
       ) : null}
-      <nav className="admin-workflow" aria-label="講義運営の流れ">
-        <a href="#admin-prepare">
-          <span>1</span>
-          <strong>準備</strong>
-          <small>講義と資料</small>
-        </a>
-        <a href="#admin-live">
-          <span>2</span>
-          <strong>講義中</strong>
-          <small>投票と共有</small>
-        </a>
-        <a href="#admin-voices">
-          <span>3</span>
-          <strong>振り返り</strong>
-          <small>みんなの声</small>
-        </a>
-      </nav>
+      <TeacherWorkspaceNav
+        activeView={workspaceView}
+        aiActive={aiMasterActive}
+        canShowAi={workspacePresentation.canShowAi}
+        canShowParticipation={workspacePresentation.canShowParticipation}
+        canShowSlides={workspacePresentation.canShowSlides}
+        onSelect={(view) => {
+          workspaceSelectionTouchedRef.current = true
+          setWorkspaceView(view)
+        }}
+      />
 
-      <AdminLectureControl
-        activeLectureSessionId={activeLectureSessionId}
-        error={lecturesError}
-        hiddenCommentCount={hiddenCommentCount}
-        isLoading={lecturesLoading}
-        journalClubPreset={
-          isPhase728JournalClubPresetCreationEnabled ? (
-            <AdminJournalClubPreset
-              adminToken={adminToken}
-              isLoading={lecturesLoading}
-              lectures={lectures}
-              onLoadingChange={setLecturesLoading}
-              onPrepared={(preparedLecture, nextLectures) => {
-                setLectures(nextLectures)
-                selectAdminLecture(preparedLecture)
+      <section
+        aria-labelledby={`teacher-workspace-${
+          workspaceView === 'slides' ? 'slides' : 'setup'
+        }-tab`}
+        className="teacher-workspace-stage teacher-material-stage"
+        hidden={workspaceView !== 'setup' && workspaceView !== 'slides'}
+        id="teacher-workspace-material"
+        role="tabpanel"
+      >
+        <AdminPdfControl
+          activeLectureSessionId={activeLectureSessionId}
+          adminToken={adminToken}
+          availableAssets={availablePdfAssets}
+          browserPublishingEnabled={isPhase726BrowserPdfPublishingEnabled}
+          displayPageInput={displayPageInput}
+          displayState={displayState}
+          displayStateError={displayStateError}
+          displayStateLoading={displayStateLoading}
+          lectureStatus={activeLectureStatus}
+          onAbortInterruptedPublication={() =>
+            void abortInterruptedPdfPublication()
+          }
+          onCheckPublisher={() => void checkPublisher()}
+          onDisplayNameChange={setPdfDisplayName}
+          onDisplayStateRefresh={refreshDisplayState}
+          onDownloadEnabledChange={setPdfDownloadEnabled}
+          onFileChange={(file) => {
+            setPdfFile(file)
+            if (!pdfPublicationRequestId) {
+              setPdfPublicationDraftId(
+                activeJournalClubRun?.expectedDocumentId ?? '',
+              )
+            }
+            if (file && !pdfDisplayName) {
+              setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
+            }
+            if (file && !newLectureTitle.trim()) {
+              setNewLectureTitle(file.name.replace(/\.pdf$/i, ''))
+            }
+          }}
+          onGoToPage={handleGoToPage}
+          onNext={() => void updateDisplayState('next')}
+          onPageInputChange={setDisplayPageInput}
+          onPairingCodeChange={setPublisherPairingCode}
+          onPrevious={() => void updateDisplayState('previous')}
+          onPublish={() => void publishPdfDocument()}
+          onSelectDocument={setPdfDocumentInput}
+          onSetDocument={() =>
+            void updateDisplayState('setDocument', {
+              pdfDocumentId: pdfDocumentInput || null,
+            })
+          }
+          pdfDisplayName={pdfDisplayName}
+          pdfDocumentInput={pdfDocumentInput}
+          pdfDownloadEnabled={pdfDownloadEnabled}
+          pdfFile={pdfFile}
+          hasInterruptedPublication={Boolean(pdfInterruptedPublicationId)}
+          pdfPublishing={pdfPublishing}
+          privatePdfEnabled={isPhase3PrivatePdfEnabled}
+          publisherMessage={publisherMessage}
+          publisherPairingCode={publisherPairingCode}
+          publisherSessionToken={publisherSessionToken}
+          publisherStatus={publisherStatus}
+          requiredDocument={
+            activeJournalClubRun
+              ? {
+                  displayName: '260723 JournalClub Presentation.pdf',
+                  documentId: activeJournalClubRun.expectedDocumentId,
+                  expectedByteSize: activeJournalClubRun.expectedPdfByteSize,
+                  expectedPageCount: activeJournalClubRun.expectedPdfPageCount,
+                }
+              : null
+          }
+          selectedAsset={selectedPdfAsset}
+          view={workspaceView === 'slides' ? 'slides' : 'material'}
+        />
+
+        <div className="teacher-setup-stack" hidden={workspaceView !== 'setup'}>
+          <AdminLectureControl
+            activeLectureSessionId={activeLectureSessionId}
+            error={lecturesError}
+            hiddenCommentCount={activeLectureSessionId ? hiddenCommentCount : 0}
+            isLoading={lecturesLoading}
+            journalClubPreset={
+              isPhase728JournalClubPresetCreationEnabled ? (
+                <AdminJournalClubPreset
+                  adminToken={adminToken}
+                  isLoading={lecturesLoading}
+                  lectures={lectures}
+                  onLoadingChange={setLecturesLoading}
+                  onPrepared={(preparedLecture, nextLectures) => {
+                    setLectures(nextLectures)
+                    selectAdminLecture(preparedLecture)
+                    setShowLectureHistory(false)
+                  }}
+                  onSessionExpired={expireAdminSession}
+                  selectedRunKind={activeJournalClubRun?.runKind ?? null}
+                />
+              ) : undefined
+            }
+            lectures={orderedLectures}
+            newEndsAt={newLectureEndsAt}
+            newStartsAt={newLectureStartsAt}
+            newTitle={newLectureTitle}
+            onClose={(lectureSessionId) =>
+              void updateLectureStatus('close', lectureSessionId)
+            }
+            onCopyCode={(lectureCode) => void copyLectureCode(lectureCode)}
+            onCreate={handleCreateLecture}
+            onDuplicate={(lectureSessionId) =>
+              void duplicateLecture(lectureSessionId)
+            }
+            onEndsAtChange={setNewLectureEndsAt}
+            onRefresh={() => void refreshLectures()}
+            onSelect={selectAdminLecture}
+            onStart={(lectureSessionId) =>
+              void updateLectureStatus('start', lectureSessionId)
+            }
+            onStartsAtChange={setNewLectureStartsAt}
+            onTitleChange={setNewLectureTitle}
+            onToggleHistory={() => {
+              if (showLectureHistory) {
                 setShowLectureHistory(false)
-              }}
-              onSessionExpired={expireAdminSession}
-              selectedRunKind={activeJournalClubRun?.runKind ?? null}
-            />
-          ) : undefined
-        }
-        lectures={orderedLectures}
-        newEndsAt={newLectureEndsAt}
-        newStartsAt={newLectureStartsAt}
-        newTitle={newLectureTitle}
-        onClose={(lectureSessionId) =>
-          void updateLectureStatus('close', lectureSessionId)
-        }
-        onCopyCode={(lectureCode) => void copyLectureCode(lectureCode)}
-        onCreate={handleCreateLecture}
-        onDuplicate={(lectureSessionId) =>
-          void duplicateLecture(lectureSessionId)
-        }
-        onEndsAtChange={setNewLectureEndsAt}
-        onRefresh={() => void refreshLectures()}
-        onSelect={selectAdminLecture}
-        onStart={(lectureSessionId) =>
-          void updateLectureStatus('start', lectureSessionId)
-        }
-        onStartsAtChange={setNewLectureStartsAt}
-        onTitleChange={setNewLectureTitle}
-        onToggleHistory={() => {
-          if (showLectureHistory) {
-            setShowLectureHistory(false)
-            return
-          }
-          void refreshLectures(adminToken, true).then(() =>
-            setShowLectureHistory(true),
-          )
-        }}
-        participantCount={participantCount}
-        selectedLectureStatus={activeAdminLecture?.status ?? null}
-        showHistory={showLectureHistory}
-        visibleCommentCount={visibleCommentCount}
-        visibleLectures={visibleLectures}
-      />
-
-      <AdminPdfControl
-        activeLectureSessionId={activeLectureSessionId}
-        adminToken={adminToken}
-        availableAssets={availablePdfAssets}
-        browserPublishingEnabled={isPhase726BrowserPdfPublishingEnabled}
-        displayPageInput={displayPageInput}
-        displayState={displayState}
-        displayStateError={displayStateError}
-        displayStateLoading={displayStateLoading}
-        lectureStatus={lecture.status}
-        onCheckPublisher={() => void checkPublisher()}
-        onAbortInterruptedPublication={() =>
-          void abortInterruptedPdfPublication()
-        }
-        onDisplayNameChange={setPdfDisplayName}
-        onDisplayStateRefresh={refreshDisplayState}
-        onDownloadEnabledChange={setPdfDownloadEnabled}
-        onFileChange={(file) => {
-          setPdfFile(file)
-          if (!pdfPublicationRequestId) {
-            setPdfPublicationDraftId(
-              activeJournalClubRun?.expectedDocumentId ?? '',
-            )
-          }
-          if (file && !pdfDisplayName) {
-            setPdfDisplayName(file.name.replace(/\.pdf$/i, ''))
-          }
-        }}
-        onGoToPage={handleGoToPage}
-        onNext={() => void updateDisplayState('next')}
-        onPageInputChange={setDisplayPageInput}
-        onPairingCodeChange={setPublisherPairingCode}
-        onPrevious={() => void updateDisplayState('previous')}
-        onPublish={() => void publishPdfDocument()}
-        onSelectDocument={setPdfDocumentInput}
-        onSetDocument={() =>
-          void updateDisplayState('setDocument', {
-            pdfDocumentId: pdfDocumentInput || null,
-          })
-        }
-        pdfDisplayName={pdfDisplayName}
-        pdfDocumentInput={pdfDocumentInput}
-        pdfDownloadEnabled={pdfDownloadEnabled}
-        pdfFile={pdfFile}
-        hasInterruptedPublication={Boolean(pdfInterruptedPublicationId)}
-        pdfPublishing={pdfPublishing}
-        privatePdfEnabled={isPhase3PrivatePdfEnabled}
-        publisherMessage={publisherMessage}
-        publisherPairingCode={publisherPairingCode}
-        publisherSessionToken={publisherSessionToken}
-        publisherStatus={publisherStatus}
-        requiredDocument={
-          activeJournalClubRun
-            ? {
-                displayName: '260723 JournalClub Presentation.pdf',
-                documentId: activeJournalClubRun.expectedDocumentId,
-                expectedByteSize: activeJournalClubRun.expectedPdfByteSize,
-                expectedPageCount: activeJournalClubRun.expectedPdfPageCount,
+                return
               }
-            : null
-        }
-        selectedAsset={selectedPdfAsset}
-      />
+              void refreshLectures(adminToken, true).then(() =>
+                setShowLectureHistory(true),
+              )
+            }}
+            participantCount={activeLectureSessionId ? participantCount : 0}
+            selectedLectureStatus={activeAdminLecture?.status ?? null}
+            showHistory={showLectureHistory}
+            visibleCommentCount={
+              activeLectureSessionId ? visibleCommentCount : 0
+            }
+            visibleLectures={visibleLectures}
+          />
+        </div>
+      </section>
 
-      <AdminAiControlPanel
-        activeLecture={activeAdminLecture}
-        activeLectureSessionId={activeLectureSessionId}
-        adminToken={adminToken}
-        academicEnabled={isPhase72AcademicAnswersEnabled}
-        displayState={displayState}
-        documents={adminPdfDocuments}
-        fallbackHardStopAt={lecture.expiresAt}
-        fallbackStartedAt={lecture.startsAt}
-        getServerNow={getServerNow}
-        lectureStatus={lecture.status}
-        materialEnabled={isPhase5MaterialAnalysisEnabled}
-        onPollDraftCreated={async () => {
-          await refreshAdminPolls()
-        }}
-        publisherSessionToken={publisherSessionToken}
-        realtimeEnabled={isPhase4RealtimeCaptionsEnabled}
-        summariesEnabled={isPhase6SummariesEnabled}
-      />
-
-      <AdminPollControl
-        activeLectureSessionId={activeLectureSessionId}
-        canShowHistory={canShowPollHistory}
-        error={adminPollsError}
-        isLoading={adminPollsLoading}
-        lectureStatus={lecture.status}
-        newOptions={newPollOptions}
-        newQuestion={newPollQuestion}
-        newType={newPollType}
-        onCreate={handleCreatePoll}
-        onOptionsChange={setNewPollOptions}
-        onQuestionChange={setNewPollQuestion}
-        onRefresh={() => void refreshAdminPolls()}
-        onToggleHistory={() => {
-          if (showPollHistory) {
-            setShowPollHistory(false)
-            return
-          }
-          void refreshAdminPolls(activeLectureSessionId, adminToken, true).then(
-            (loaded) => {
+      <section
+        aria-labelledby="teacher-workspace-participation-tab"
+        className="teacher-workspace-stage"
+        hidden={workspaceView !== 'participation'}
+        id="teacher-workspace-participation"
+        role="tabpanel"
+      >
+        <AdminPollControl
+          activeLectureSessionId={activeLectureSessionId}
+          canShowHistory={canShowPollHistory}
+          error={adminPollsError}
+          isLoading={adminPollsLoading}
+          lectureStatus={activeLectureStatus}
+          newOptions={newPollOptions}
+          newQuestion={newPollQuestion}
+          newType={newPollType}
+          onCreate={handleCreatePoll}
+          onOptionsChange={setNewPollOptions}
+          onQuestionChange={setNewPollQuestion}
+          onRefresh={() => void refreshAdminPolls()}
+          onToggleHistory={() => {
+            if (showPollHistory) {
+              setShowPollHistory(false)
+              return
+            }
+            void refreshAdminPolls(
+              activeLectureSessionId,
+              adminToken,
+              true,
+            ).then((loaded) => {
               if (loaded) setShowPollHistory(true)
-            },
-          )
-        }}
-        onTogglePoll={(poll) => void updatePollStatus(poll)}
-        onTypeChange={setNewPollType}
-        polls={adminPolls}
-        showHistory={showPollHistory}
-        visiblePolls={visibleAdminPolls}
-      />
+            })
+          }}
+          onTogglePoll={(poll) => void updatePollStatus(poll)}
+          onTypeChange={setNewPollType}
+          polls={adminPolls}
+          showHistory={showPollHistory}
+          visiblePolls={visibleAdminPolls}
+        />
 
-      <AdminModerationPanel
-        comments={comments}
-        error={commentModerationError}
-        hasOlderComments={hasOlderComments}
-        isLoadingOlderComments={isLoadingOlderComments}
-        onLoadOlderComments={loadOlderComments}
-        onTogglePinned={(commentId) =>
-          void moderateComment(commentId, 'togglePin')
-        }
-        onToggleVisibility={(commentId) =>
-          void moderateComment(commentId, 'toggleVisibility')
-        }
-        pendingCommentId={commentModerationPendingId}
-      />
+        <AdminModerationPanel
+          comments={activeLectureSessionId ? comments : []}
+          error={commentModerationError}
+          hasOlderComments={Boolean(activeLectureSessionId && hasOlderComments)}
+          isLoadingOlderComments={isLoadingOlderComments}
+          onLoadOlderComments={loadOlderComments}
+          onTogglePinned={(commentId) =>
+            void moderateComment(commentId, 'togglePin')
+          }
+          onToggleVisibility={(commentId) =>
+            void moderateComment(commentId, 'toggleVisibility')
+          }
+          pendingCommentId={commentModerationPendingId}
+        />
+      </section>
+
+      <section
+        aria-labelledby="teacher-workspace-ai-tab"
+        className="teacher-workspace-stage"
+        hidden={workspaceView !== 'ai'}
+        id="teacher-workspace-ai"
+        role="tabpanel"
+      >
+        <AdminAiControlPanel
+          activeLecture={activeAdminLecture}
+          activeLectureSessionId={activeLectureSessionId}
+          adminToken={adminToken}
+          academicEnabled={isPhase72AcademicAnswersEnabled}
+          displayState={displayState}
+          documents={adminPdfDocuments}
+          fallbackHardStopAt={activeAdminLecture?.hardStopAt}
+          fallbackStartedAt={activeAdminLecture?.startsAt}
+          getServerNow={getServerNow}
+          lectureStatus={activeLectureStatus}
+          materialEnabled={isPhase5MaterialAnalysisEnabled}
+          onMasterAuthorizationChange={setAiMasterActive}
+          onPollDraftCreated={async () => {
+            await refreshAdminPolls()
+          }}
+          publisherSessionToken={publisherSessionToken}
+          realtimeEnabled={isPhase4RealtimeCaptionsEnabled}
+          summariesEnabled={isPhase6SummariesEnabled}
+        />
+      </section>
     </main>
   )
 }

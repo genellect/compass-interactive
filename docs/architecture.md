@@ -185,7 +185,11 @@ Role changes apply live. An instructor with `can_use_ai=false` loses AI
 authority without being logged out. A non-revoked Owner always retains the
 complete capability set, while provider admission remains separately gated.
 The lecture workspace and `/admin/settings` are separate authenticated browser
-surfaces; the settings route owns membership, invitation and session controls.
+surfaces; the settings route owns teacher membership, instructor AI access,
+invitation, login revocation, active-lecture emergency stop and audit review.
+Ordinary invitations are instructor-only with a fixed 48-hour lifetime, and
+the UI exposes no Owner-grant action. Owner recovery/elevation remains an
+operator-controlled server contract rather than a routine browser control.
 
 Paid intent becomes a personal AI PIN (or valid remembered-browser/future AI
 Passkey proof) checked once per new lecture master or explicit scope/cost

@@ -2,6 +2,28 @@
   margin-top: 14px;
 }
 
+.teacher-workspace-stage {
+  display: grid;
+  gap: 22px;
+}
+
+.teacher-workspace-stage[hidden] {
+  display: none;
+}
+
+.teacher-setup-stack {
+  display: grid;
+  gap: 22px;
+}
+
+.teacher-setup-stack[hidden] {
+  display: none;
+}
+
+.admin-material-workspace.is-material .pdf-document-control {
+  margin-top: 16px;
+}
+
 .admin-publisher-setup {
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   border: 1px solid var(--border);
@@ -355,10 +377,26 @@
   margin: 0;
 }
 
-.admin-settings-section .admin-ai-unlock-panel,
+.admin-settings-section .admin-ai-unlock-disclosure,
 .admin-settings-section .admin-totp-factor-panel {
   border-top: 1px solid var(--line);
   padding-top: 1rem;
+}
+
+.admin-ai-unlock-disclosure {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.9rem 1rem;
+}
+
+.admin-ai-unlock-disclosure > summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.admin-ai-unlock-disclosure[open] > summary {
+  margin-bottom: 1rem;
 }
 
 .admin-ledger-panel {
@@ -379,6 +417,37 @@
   margin-block: 0 0.4rem;
 }
 
+.admin-ledger-overview {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.admin-ledger-overview > div {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.admin-ledger-overview > div.needs-review,
+.admin-ledger-review.needs-review {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+}
+
+.admin-ledger-overview dt {
+  color: var(--text-muted, #5f6b78);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.admin-ledger-overview dd {
+  font-size: 1.35rem;
+  font-weight: 900;
+  margin: 0.2rem 0 0;
+}
+
 .admin-ledger-heading .secondary-button {
   width: auto;
 }
@@ -386,6 +455,13 @@
 .admin-ledger-panel > details {
   border-top: 1px solid var(--line);
   padding-top: 0.8rem;
+}
+
+.admin-ledger-add-teacher {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.8rem 1rem;
 }
 
 .admin-ledger-panel summary {
@@ -423,6 +499,57 @@
   margin-top: 1rem;
 }
 
+.admin-ledger-members {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  overflow: hidden;
+}
+
+.admin-ledger-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-ledger-table {
+  border-collapse: collapse;
+  min-width: 780px;
+  width: 100%;
+}
+
+.admin-ledger-table th,
+.admin-ledger-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.85rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-ledger-table th {
+  color: var(--text-muted, #5f6b78);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.admin-ledger-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-ledger-table td > small {
+  color: var(--text-muted, #5f6b78);
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.admin-ledger-row-actions > summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.admin-ledger-row-actions[open] > summary {
+  margin-bottom: 0.55rem;
+}
+
 .admin-ledger-card {
   border: 1px solid var(--line);
   border-radius: 0.85rem;
@@ -434,6 +561,39 @@
 .admin-ledger-card h3,
 .admin-ledger-card p {
   margin: 0;
+}
+
+.admin-ledger-monitor-section {
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 1rem;
+}
+
+.admin-ledger-section-heading {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.admin-ledger-section-heading h3 {
+  margin: 0;
+}
+
+.admin-ledger-section-heading > span {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  min-width: 2rem;
+  padding: 0.25rem 0.55rem;
+  text-align: center;
+}
+
+.admin-ledger-lecture {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .admin-ledger-actions {
@@ -473,5 +633,54 @@
   .admin-ledger-actions button,
   .admin-ledger-session button {
     width: 100%;
+  }
+
+  .admin-ledger-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-ledger-table-wrap {
+    overflow: visible;
+  }
+
+  .admin-ledger-table,
+  .admin-ledger-table tbody,
+  .admin-ledger-table tr,
+  .admin-ledger-table td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-ledger-table thead {
+    display: none;
+  }
+
+  .admin-ledger-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 0.65rem 0;
+  }
+
+  .admin-ledger-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-ledger-table td {
+    border: 0;
+    padding: 0.45rem 0.85rem;
+  }
+
+  .admin-ledger-table td::before {
+    color: var(--text-muted, #5f6b78);
+    content: attr(data-label);
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    margin-bottom: 0.2rem;
+  }
+
+  .admin-ledger-lecture {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 }

@@ -11,6 +11,7 @@ const identityEdge = read('supabase/functions/admin-identity-session/index.ts')
 const identityApi = read('src/lib/adminAuth/adminIdentityApi.ts')
 const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
 const ledgerPanel = read('src/components/AdminLedgerPanel.tsx')
+const aiUnlockPanel = read('src/components/AdminAiUnlockPanel.tsx')
 const adminRoute = read('src/pages/AdminRoute.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminSettingsPage = read('src/pages/AdminSettingsPage.tsx')
@@ -224,10 +225,80 @@ assert.match(
   ledgerPanel,
   /phase: 'authorized' \| 'completing' \| 'control' \| 'preparing'/,
 )
-assert.match(ledgerPanel, /新しい招待・権限追加は停止中です/)
+assert.match(ledgerPanel, /新しい教員の招待は停止中です/)
+assert.match(
+  ledgerPanel,
+  /INVITATION_LIFETIME_MS = 48 \* 60 \* 60 \* 1_000[\s\S]*membershipExpiresAt: null[\s\S]*role: 'instructor'/,
+  'teacher invitations must use a fixed 48-hour link with no membership expiry',
+)
+assert.match(
+  ledgerPanel,
+  /\[inviteCanUseAi, setInviteCanUseAi\] = useState\(false\)/,
+  'new teacher invitations must default to least-privilege AI access',
+)
+assert.match(
+  ledgerPanel,
+  /className="admin-ledger-add-teacher"[\s\S]*open=\{invitationLink \? true : undefined\}/,
+  'a recovered one-time invitation link must be revealed without another hidden step',
+)
+assert.doesNotMatch(
+  ledgerPanel,
+  /action: 'promoteOwner'/,
+  'the teacher-management UI must not grant full administrator authority',
+)
+assert.doesNotMatch(
+  ledgerPanel,
+  /招待リンクの期限|利用期限|Owner解除後の利用期限/,
+)
+assert.match(
+  ledgerPanel,
+  /'管理者（全権限付与）'[\s\S]*'教員（AI利用可）'[\s\S]*'教員（AI利用不可）'/,
+)
+assert.match(
+  ledgerPanel,
+  /aria-label="運用状況"[\s\S]*有効な教員[\s\S]*ログイン中[\s\S]*進行中の講義[\s\S]*要確認/,
+  'teacher management must foreground access, session, lecture, and review status',
+)
+assert.match(
+  ledgerPanel,
+  /<section className="admin-ledger-members" aria-label="教員一覧">[\s\S]*className="admin-ledger-add-teacher"/,
+  'the teacher permission table must remain the primary surface before invitation controls',
+)
+assert.match(
+  ledgerPanel,
+  /reviewEvents[\s\S]*\['denied', 'failed'\][\s\S]*拒否・失敗した操作はありません。/,
+  'teacher management must surface denied and failed operations without claiming abuse',
+)
+assert.match(
+  ledgerPanel,
+  /supabaseAdminRepository\.manageLectures\(\{[\s\S]*action: 'emergencyStop'[\s\S]*講義を停止/,
+  'owner teacher management must retain an explicit emergency lecture stop',
+)
+assert.match(
+  browserSpec,
+  /membershipId: instructorMembershipId[\s\S]*body\.action === 'emergencyStop'[\s\S]*body\.lectureSessionId === lectureSessionId[\s\S]*toHaveLength\(1\)/,
+  'the browser contract must prove an Owner uses emergencyStop for another instructor owned lecture',
+)
+assert.match(
+  ledgerPanel,
+  /action: 'list'[\s\S]*\.catch\(\(\) => \[\]\)[\s\S]*lectureTitlesById[\s\S]*講義 \$\{ownership\.lectureSessionId\.slice\(0, 8\)\}/,
+  'lecture monitoring must show readable titles without coupling teacher access management to lecture-list availability',
+)
+assert.match(
+  aiUnlockPanel,
+  /<summary id="admin-ai-unlock-title">AI PINの設定<\/summary>/,
+)
+assert.doesNotMatch(
+  aiUnlockPanel,
+  /PERSONAL AI CONTROL|通常の講義中に認証アプリを繰り返し要求しません/,
+)
 assert.match(ledgerPanel, /persistPendingMutation/)
 assert.match(ledgerPanel, /restorePendingMutation/)
-assert.match(ledgerPanel, /snapshot\.environmentKind === 'contest'/)
+assert.match(
+  ledgerPanel,
+  /membershipExpiresAt: null[\s\S]*role: 'instructor'/,
+  'all UI invitations must remain instructor-only in every environment',
+)
 assert.match(
   authStorage,
   /ADMIN_LEDGER_PENDING_STORAGE_KEY[\s\S]*removeItem\(ADMIN_LEDGER_PENDING_STORAGE_KEY\)/,
@@ -246,7 +317,7 @@ assert.match(
 )
 assert.match(
   adminPage,
-  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*管理者設定/,
+  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*教員管理/,
 )
 assert.match(
   adminPage,
@@ -258,11 +329,15 @@ assert.doesNotMatch(
 )
 assert.match(
   adminSettingsPage,
-  /<h1>管理者設定<\/h1>[\s\S]*メンバー、権限、ログイン状態を管理します。/,
+  /pageTitle = ledger \? '教員管理' : 'AI PINの設定'[\s\S]*<h1>\{pageTitle\}<\/h1>/,
+)
+assert.doesNotMatch(
+  adminSettingsPage,
+  /メンバー、権限、ログイン状態を管理します。|個人設定/,
 )
 assert.match(
   adminSettingsPage,
-  /href="\/admin"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*講義画面を開く/,
+  /href="\/admin"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*講義コントロール/,
 )
 assert.match(
   adminSettingsPage,
@@ -334,11 +409,11 @@ assert.match(
   ownerCapabilityPgTap,
   /normalize_admin_owner_capability_v1\(\)[\s\S]*apply_accepted_owner_capability_v1\(\)[\s\S]*enforce_admin_owner_capability_v1\(\)[\s\S]*not callable by application roles/,
 )
+assert.match(ledgerPanel, /canUseAi: inviteCanUseAi[\s\S]*role: 'instructor'/)
 assert.match(
   ledgerPanel,
-  /canUseAi: inviteRole === 'owner' \|\| inviteCanUseAi/,
+  /membership\.role === 'owner'[\s\S]*'管理者（全権限付与）'/,
 )
-assert.match(ledgerPanel, /membership\.role === 'owner'[\s\S]*全機能利用可/)
 assert.match(
   ledgerPanel,
   /membership\.role === 'instructor'[\s\S]*membership\.canUseAi[\s\S]*AI利用を停止/,

@@ -514,7 +514,7 @@ type ManageLecturesRequest =
       title: string
     }
   | {
-      action: 'start' | 'close'
+      action: 'start' | 'close' | 'emergencyStop'
       adminToken: AdminOperationCredentialInput
       lectureSessionId: string
     }

@@ -565,12 +565,38 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     await installNetworkMocks(page, student.accessToken)
 
   await installBroadcastCapture(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('compass-interactive-lecture-session-id', 'demo')
+    localStorage.setItem(
+      'compass-interactive-lecture-title',
+      'AI時代の英語と学び',
+    )
+    localStorage.setItem('compass-interactive-lecture-status', 'open')
+    localStorage.setItem('compass-interactive-lecture-runtime-mode', 'demo')
+  })
   await page.goto('/admin/')
-  await expect(page.locator('main .eyebrow')).toHaveText('FOR EDUCATORS')
+  const card = page.locator('main .admin-identity-card')
+  await expect(card.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  await expect(
+    card.getByRole('heading', { name: '教員ポータル', exact: true }),
+  ).toBeVisible()
+  await expect(
+    card.getByText(
+      '登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    card.getByText('セキュリティ保護のため、2段階認証が必要です。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    card.getByRole('button', { name: 'Googleで続ける', exact: true }),
+  ).toBeVisible()
   await installExistingStudentStorage(page, student.storageValue)
   await page.locator('main .admin-identity-card button.primary-button').click()
 
-  const card = page.locator('main .admin-identity-card')
   await expect
     .poll(async () => ({
       edgeActions: state.edgeCalls.map(({ action }) => action),
@@ -594,12 +620,19 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     })
   await expect(page).toHaveURL('/admin')
   await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  await expect(
+    card.getByRole('heading', { name: '2段階認証', exact: true }),
+  ).toBeVisible()
   await expect(card.locator('.admin-totp-qr')).toHaveAttribute(
     'src',
     /^data:image\/svg\+xml;utf-8,%3Csvg/,
   )
   await expect(
     card.locator('input[autocomplete="one-time-code"]'),
+  ).toHaveAttribute('placeholder', '6桁のコード')
+  await expect(card.getByLabel('認証コード', { exact: true })).toBeVisible()
+  await expect(
+    card.getByRole('button', { name: '続ける', exact: true }),
   ).toBeVisible()
 
   const storageAfterCallback = await page.evaluate(
@@ -659,6 +692,30 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
 
   await expect(page.locator('.admin-workflow')).toBeVisible()
   await expect(
+    page.getByRole('heading', { name: '講義を準備する', exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('main')).not.toContainText('AI時代の英語と学び')
+  await expect(page.getByRole('tab')).toHaveCount(1)
+  await expect(page.locator('#admin-live')).toBeVisible()
+  await expect(page.locator('#teacher-workspace-ai')).toBeHidden()
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        lectureSessionId: localStorage.getItem(
+          'compass-interactive-lecture-session-id',
+        ),
+        runtimeMode: localStorage.getItem(
+          'compass-interactive-lecture-runtime-mode',
+        ),
+        title: localStorage.getItem('compass-interactive-lecture-title'),
+      })),
+    )
+    .toEqual({
+      lectureSessionId: 'compass-demo-lecture',
+      runtimeMode: 'demo',
+      title: 'AI時代の英語と学び',
+    })
+  await expect(
     page.getByRole('button', { name: 'ログアウト', exact: true }),
   ).toBeVisible()
   await expect(page.locator('.admin-totp-qr')).toHaveCount(0)
@@ -708,13 +765,13 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
       },
     })
   }
-  const settingsLink = page.getByRole('link', { name: '管理者設定' })
+  const settingsLink = page.getByRole('link', { name: '教員管理' })
   await expect(settingsLink).toHaveAttribute('target', '_blank')
   const settingsPopupPromise = page.waitForEvent('popup')
   await settingsLink.click()
   const settingsPage = await settingsPopupPromise
   await expect(
-    settingsPage.getByRole('heading', { name: '管理者設定', exact: true }),
+    settingsPage.getByRole('heading', { name: '教員管理', exact: true }),
   ).toBeVisible()
   await expect(settingsPage.locator('.admin-identity-card')).toHaveCount(0)
   const pageCountBeforeChangedSessionHandoff = page.context().pages().length
@@ -730,7 +787,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   await settingsLink.click()
   await settingsReloadPromise
   await expect(
-    settingsPage.getByRole('heading', { name: '管理者設定', exact: true }),
+    settingsPage.getByRole('heading', { name: '教員管理', exact: true }),
   ).toBeVisible()
   expect(page.context().pages()).toHaveLength(
     pageCountBeforeChangedSessionHandoff,
@@ -760,7 +817,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     document.documentElement.dataset.adminWorkspaceDocument = 'preserved'
   })
   await settingsPage
-    .getByRole('link', { name: '講義画面を開く', exact: true })
+    .getByRole('link', { name: '講義コントロール', exact: true })
     .click()
   await expect(page.locator('.admin-workflow')).toBeVisible()
   expect(page.context().pages()).toHaveLength(pageCountBeforeWorkspaceReturn)
@@ -785,7 +842,10 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   await settingsPage
     .getByRole('button', { name: 'ログアウト', exact: true })
     .click()
-  await expect(card.locator('.eyebrow')).toHaveText('FOR EDUCATORS')
+  await expect(card.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  await expect(
+    card.getByRole('heading', { name: '教員ポータル', exact: true }),
+  ).toBeVisible()
   await settingsPage.close()
 
   const storageAfterLogout = await page.evaluate(
@@ -894,7 +954,25 @@ test('uses the existing verified factor instead of an abandoned unverified facto
 
   const card = page.locator('main .admin-identity-card')
   await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  await expect(
+    card.getByRole('heading', { name: '2段階認証', exact: true }),
+  ).toBeVisible()
+  await expect(
+    card.getByText(
+      '認証アプリに表示されている6桁のコードを入力してください。',
+      {
+        exact: true,
+      },
+    ),
+  ).toBeVisible()
   await expect(card.locator('.admin-totp-qr')).toHaveCount(0)
+  await expect(card.getByLabel('認証コード', { exact: true })).toHaveAttribute(
+    'placeholder',
+    '6桁のコード',
+  )
+  await expect(
+    card.getByRole('button', { name: '続ける', exact: true }),
+  ).toBeVisible()
   await card.locator('input[autocomplete="one-time-code"]').fill('123456')
   await card.locator('button[type="submit"]').click()
   await expect(page.locator('.admin-workflow')).toBeVisible()
@@ -915,7 +993,7 @@ test('uses the existing verified factor instead of an abandoned unverified facto
   }
   await page.goto('/admin/settings')
   await expect(
-    page.getByRole('heading', { name: '管理者設定', exact: true }),
+    page.getByRole('heading', { name: '教員管理', exact: true }),
   ).toBeVisible()
   await expect
     .poll(() =>

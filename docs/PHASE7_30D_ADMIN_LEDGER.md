@@ -17,6 +17,21 @@ the lecture workspace. It covers:
 - last-active-owner protection and immediate draining of affected sessions,
   personal AI factors, remembered-browser authority and lecture masters.
 
+The current `/admin/settings` UI is `教員管理`, not a general environment
+configuration console. Its primary surface is a table for granting, suspending
+or revoking teacher access, changing instructor AI access, and revoking active
+logins. It also keeps active-lecture emergency stop and a focused list of
+denied/failed operations visible. Full history, invitation history and personal
+`AI PINの設定` are secondary disclosures.
+
+New UI invitations are always `instructor`, have no membership expiry and use
+one fixed 48-hour link lifetime. Their AI entitlement defaults to disabled and
+must be selected explicitly. The UI never offers Owner promotion or an Owner
+invitation. Existing Owners remain visible as `管理者（全権限付与）` and the
+database/Edge owner invariants and operator recovery contracts remain intact;
+removing the elevation control from the ordinary UI does not weaken those
+server-side contracts.
+
 The database serializes writes by environment and request, rechecks actor and
 target authority under canonical locks, and consumes a five-minute TOTP control
 grant bound to operation key, request ID and canonical payload digest. Exact

@@ -343,7 +343,7 @@ assert.match(
   /const submittedPin = browserPin[\s\S]*setBrowserPin\(''\)/,
 )
 assert.match(aiPanel, /if \(!profile\.canUseAi\)/)
-assert.match(aiPanel, /AI機能はこのアカウントで停止されています。/)
+assert.match(aiPanel, /この教員はAI利用不可です。/)
 assert.match(
   aiPanel,
   /const factorId = await getVerifiedFactorId\(\)[\s\S]*beginAdminControlStepUp/,

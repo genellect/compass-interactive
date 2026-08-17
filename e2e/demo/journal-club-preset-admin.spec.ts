@@ -608,8 +608,13 @@ test.describe('Phase 7.27 flag ON', () => {
     await missingSnapshotResponse
     await expect(page.getByText('まだ講義がありません。')).toBeVisible()
     await expect(
-      page.locator('.stat-card').filter({ hasText: '講義状態' }),
-    ).toContainText('未選択')
+      page.getByRole('heading', { name: '講義を準備する', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByRole('tab')).toHaveCount(1)
+    await expect(page.locator('#teacher-workspace-material')).toBeVisible()
+    await expect(page.locator('main')).not.toContainText(
+      'Deleted local lecture',
+    )
     await expect
       .poll(() =>
         page.evaluate(() => ({
@@ -646,7 +651,7 @@ test.describe('Phase 7.27 flag ON', () => {
     await page.goto('/admin')
     await expect(page.locator('.admin-identity-card')).toBeVisible()
     await expect(
-      page.getByRole('heading', { name: '教員としてログイン' }),
+      page.getByRole('heading', { name: '教員ポータル' }),
     ).toBeVisible()
     await expect(page.locator('input[type="password"]')).toHaveCount(0)
     await expect(page.locator('#admin-live')).toHaveCount(0)
@@ -794,7 +799,7 @@ test.describe('Phase 7.28 Journal Club creation retired', () => {
     await page.goto('/admin')
     await expect(page.locator('#admin-live')).toBeVisible()
     const settingsLink = page.getByRole('link', {
-      name: '管理者設定',
+      name: '教員管理',
       exact: true,
     })
     await expect(settingsLink).toBeVisible()

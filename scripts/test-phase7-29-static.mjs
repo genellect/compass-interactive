@@ -348,7 +348,7 @@ for (const studentOrDisplaySource of [displayPage, lecturePage, adaptiveSync]) {
 assert.doesNotMatch(lecturePage, /supabase\.channel\(/)
 assert.match(
   flagOffBrowserSpec,
-  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '管理者設定',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
+  /const settingsLink = page\.getByRole\('link',[\s\S]*name: '教員管理',[\s\S]*exact: true[\s\S]*toHaveAttribute\('href', '\/admin\/settings'\)[\s\S]*toHaveAttribute\('target', '_blank'\)[\s\S]*\.admin-identity-card'[\s\S]*toHaveCount\(0\)/,
   'the flag-OFF Presenter workspace must link to separate Admin settings instead of restoring the identity card',
 )
 

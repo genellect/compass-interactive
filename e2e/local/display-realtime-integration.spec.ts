@@ -591,7 +591,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       ok: false,
     })
     await expect(
-      invalidAdminPage.getByRole('heading', { name: '教員としてログイン' }),
+      invalidAdminPage.getByRole('heading', { name: '教員ポータル' }),
     ).toBeVisible()
     await expect(invalidAdminPage.locator('.admin-workflow')).toHaveCount(0)
 

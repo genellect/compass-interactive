@@ -245,7 +245,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
   ).toBeVisible()
-  await expect(page.getByRole('link', { name: '管理者設定' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: '教員管理' })).toHaveAttribute(
     'target',
     '_blank',
   )
