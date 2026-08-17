@@ -103,7 +103,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       adminSettings.page.getByRole('heading', { name: '管理者台帳' }),
     ).toBeVisible()
     await expect(
-      adminSettings.page.getByText('現在のセッション', { exact: true }),
+      adminSettings.page
+        .locator('.admin-ledger-session')
+        .filter({ hasText: '現在のセッション' }),
     ).toBeVisible()
     await adminSettings.safety.assertClean()
     await adminSettings.page.close()

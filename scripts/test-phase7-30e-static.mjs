@@ -464,6 +464,11 @@ assert.match(
   'the isolated lifecycle Display page must claim a separately issued one-use URL instead of replaying the popup token',
 )
 assert.match(
+  localLifecycleBrowser,
+  /goto\('\/admin\/settings'\)[\s\S]*getByRole\('heading', \{ name: '管理者台帳' \}\)[\s\S]*locator\('\.admin-ledger-session'\)[\s\S]*filter\(\{ hasText: '現在のセッション' \}\)[\s\S]*toBeVisible\(\)/,
+  'the lifecycle must verify the current Admin session inside the separate settings page',
+)
+assert.match(
   browserRunner,
   /VITE_PHASE7_28_DISPLAY_REALTIME:[\s\S]*mode === 'local' \|\|[\s\S]*mode === 'local-jc'[\s\S]*\? 'true'[\s\S]*: 'false'/,
   'the local lifecycle harness must expose the separately issued Display URL while production remains default-off',
