@@ -40,6 +40,7 @@ const displayRealtimeBrowser = read(
 const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
 const localLifecycleBrowser = read('e2e/local/live-lecture.spec.ts')
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
+const concurrency = read('scripts/test-phase7-30e-concurrency.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
@@ -439,6 +440,12 @@ assert.equal(
   packageJson.scripts['test:phase7-30e-concurrency'],
   'node scripts/test-phase7-30e-concurrency.mjs',
 )
+assert.equal(
+  (concurrency.match(/'owner', 'active', true/g) ?? []).length,
+  2,
+  'Phase E concurrency fixture Owners must retain complete AI capability',
+)
+assert.doesNotMatch(concurrency, /'owner', 'active', false/)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(nonlive, /'test:phase7-30e-static'/)
 assert.match(
