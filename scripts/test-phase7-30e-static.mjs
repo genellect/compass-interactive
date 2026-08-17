@@ -455,6 +455,11 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
+  /#teacher-workspace-setup-tab'\)\.click\(\)[\s\S]*const adminQr = admin\.page[\s\S]*await expect\(adminQr\.locator\('img'\)\)\.toBeVisible\(\)[\s\S]*decodeQrImage\(admin\.page, '\.lecture-join-qr img'\)[\s\S]*#teacher-workspace-ai-tab'\)\.click\(\)/,
+  'the lifecycle must return to setup for the join QR before entering the optional AI stage',
+)
+assert.match(
+  localLifecycleBrowser,
   /popupSession = await issuedDisplaySession[\s\S]*installClipboardCapture\(admin\.page\)[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*issue-display-session[\s\S]*getByRole\('button', \{ name: '別ブラウザ用リンクをコピー' \}\)[\s\S]*\.click\(\)[\s\S]*await expect\([\s\S]*getByRole\('button', \{ name: 'リンクをコピーしました' \}\)[\s\S]*\)\.toBeVisible\(\)[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
   'the isolated lifecycle Display page must wait for a separately issued one-use URL to finish copying',
 )

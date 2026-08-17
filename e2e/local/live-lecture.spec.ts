@@ -131,6 +131,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
     await expect(lectureRow).toContainText('受付中')
 
+    await admin.page.locator('#teacher-workspace-setup-tab').click()
+
     const adminQr = admin.page
       .locator('.lecture-join-qr')
       .filter({ hasText: lectureTitle })
