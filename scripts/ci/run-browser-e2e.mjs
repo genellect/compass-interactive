@@ -45,6 +45,7 @@ const googleAdminWorkspaceMode =
     'demo-jc-off',
     'demo-presenter',
     'demo-presenter-off',
+    'demo-admin-identity',
     'demo-admin-ledger',
   ].includes(mode)
 const googleAdminIdentityMode =
@@ -290,7 +291,8 @@ const appEnvironment = {
       : 'false',
   VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_IDENTITY: googleAdminIdentityMode ? 'true' : 'false',
-  VITE_PHASE7_30_ADMIN_AI_UNLOCK: mode === 'local-ai' ? 'true' : 'false',
+  VITE_PHASE7_30_ADMIN_AI_UNLOCK:
+    mode === 'local-ai' || mode === 'demo-admin-ledger' ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION: 'false',
   VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: googleAdminWorkspaceMode
     ? 'true'

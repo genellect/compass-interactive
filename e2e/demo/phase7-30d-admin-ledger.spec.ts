@@ -28,6 +28,10 @@ const aiInstructorPrincipalId = '730d0000-0000-4000-8000-00000000000e'
 const aiInstructorMembershipId = '730d0000-0000-4000-8000-00000000000f'
 const lectureSessionId = '730d0000-0000-4000-8000-000000000010'
 const intentDigest = 'd'.repeat(64)
+const policyIntentDigest = 'e'.repeat(64)
+const policyId = '730d0000-0000-4000-8000-000000000012'
+
+type AdminRole = 'instructor' | 'owner'
 
 type FunctionCall = {
   authorization: string
@@ -46,6 +50,10 @@ type MockState = {
   commitBodies: Record<string, unknown>[]
   functionCalls: FunctionCall[]
   openLecture: boolean
+  policyCompleteAttempts: number
+  policyCovered: boolean
+  policyGrantAvailable: boolean
+  policySetAttempts: number
   unexpectedRequests: string[]
 }
 
@@ -167,17 +175,18 @@ function studentSession() {
   }
 }
 
-function trackedAdminSession() {
+function trackedAdminSession(role: AdminRole = 'owner') {
   const now = Date.now()
+  const isOwner = role === 'owner'
   return {
     canUseAi: true,
     environmentId,
     expiresAt: new Date(now + 8 * 60 * 60_000).toISOString(),
-    id: ownerSessionId,
+    id: isOwner ? ownerSessionId : instructorSessionId,
     idleExpiresAt: new Date(now + 30 * 60_000).toISOString(),
-    membershipId: ownerMembershipId,
-    principalId: ownerPrincipalId,
-    role: 'owner',
+    membershipId: isOwner ? ownerMembershipId : instructorMembershipId,
+    principalId: isOwner ? ownerPrincipalId : instructorPrincipalId,
+    role,
     stepUpVerifiedAt: new Date(now - 60_000).toISOString(),
   }
 }
@@ -363,7 +372,17 @@ async function installStoredSessions(
 async function installMocks(
   page: Page,
   admin: ReturnType<typeof adminSession>,
+  options: {
+    failFirstPolicySet?: boolean
+    loseFirstPolicyCompletionResponse?: boolean
+    role?: AdminRole
+  } = {},
 ) {
+  const {
+    failFirstPolicySet = false,
+    loseFirstPolicyCompletionResponse = false,
+    role = 'owner',
+  } = options
   const state: MockState = {
     admissionEnabled: false,
     anonymousRequests: 0,
@@ -371,6 +390,10 @@ async function installMocks(
     commitBodies: [],
     functionCalls: [],
     openLecture: true,
+    policyCompleteAttempts: 0,
+    policyCovered: false,
+    policyGrantAvailable: false,
+    policySetAttempts: 0,
     unexpectedRequests: [],
   }
   let commitAttempts = 0
@@ -438,7 +461,7 @@ async function installMocks(
         if (action === 'status') {
           await fulfillJson(route, {
             ok: true,
-            session: trackedAdminSession(),
+            session: trackedAdminSession(role),
           })
           return
         }
@@ -455,6 +478,21 @@ async function installMocks(
           return
         }
         if (action === 'completeControlStepUp') {
+          if (body.controlAction === 'environment_ai_policy_change') {
+            state.policyCompleteAttempts += 1
+            state.policyGrantAvailable = true
+            if (
+              loseFirstPolicyCompletionResponse &&
+              state.policyCompleteAttempts === 1
+            ) {
+              await fulfillJson(
+                route,
+                { code: 'service_unavailable', ok: false },
+                503,
+              )
+              return
+            }
+          }
           await fulfillJson(route, {
             controlAction: body.controlAction,
             controlIntentDigest: body.controlIntentDigest,
@@ -468,6 +506,132 @@ async function installMocks(
         }
         state.unexpectedRequests.push(
           `identity action ${action || '<missing>'}`,
+        )
+        await fulfillJson(route, { code: 'request_invalid', ok: false }, 400)
+        return
+      }
+
+      if (functionName === 'admin-ai-unlock') {
+        const action = String(body.action ?? '')
+        if (action === 'profile') {
+          await fulfillJson(route, {
+            activeBrowserCount: 0,
+            activePin: false,
+            canUseAi: true,
+            factorStatus: null,
+            factorVersion: null,
+            ok: true,
+            pinPepperVersion: null,
+            rememberedBrowserEnabled: false,
+            role,
+          })
+          return
+        }
+        if (action === 'policyStatus') {
+          const now = Date.now()
+          await fulfillJson(route, {
+            activeAiMembershipCount: 2,
+            canonicalPolicyTopologyComplete: state.policyCovered,
+            coveredMembershipCount: state.policyCovered ? 2 : 1,
+            memberships: [
+              {
+                covered: true,
+                maxCostMicrousdPerDay: 2_000_000,
+                maxCostMicrousdPerLecture: 500_000,
+                membershipId: ownerMembershipId,
+                policyId: '730d0000-0000-4000-8000-000000000011',
+                policyStatus: 'active',
+                policyVersion: 1,
+                validFrom: new Date(now - 60_000).toISOString(),
+                validUntil: new Date(now + 30 * 24 * 60 * 60_000).toISOString(),
+              },
+              {
+                covered: state.policyCovered,
+                maxCostMicrousdPerDay: state.policyCovered ? 2_000_000 : null,
+                maxCostMicrousdPerLecture: state.policyCovered ? 500_000 : null,
+                membershipId: aiInstructorMembershipId,
+                policyId: state.policyCovered ? policyId : null,
+                policyStatus: state.policyCovered ? 'active' : null,
+                policyVersion: state.policyCovered ? 1 : null,
+                validFrom: state.policyCovered
+                  ? new Date(now - 60_000).toISOString()
+                  : null,
+                validUntil: state.policyCovered
+                  ? new Date(now + 30 * 24 * 60 * 60_000).toISOString()
+                  : null,
+              },
+            ],
+            ok: true,
+            topologyComplete: state.policyCovered,
+          })
+          return
+        }
+        if (action === 'preparePolicyMutation' || action === 'setPolicy') {
+          const expectedKeys = [
+            'action',
+            'appSessionToken',
+            'maxCostMicrousdPerDay',
+            'maxCostMicrousdPerLecture',
+            'requestId',
+            'targetMembershipId',
+            'validFrom',
+            'validUntil',
+          ]
+          const receivedKeys = Object.keys(body).sort()
+          if (
+            JSON.stringify(receivedKeys) !==
+              JSON.stringify([...expectedKeys].sort()) ||
+            body.targetMembershipId !== aiInstructorMembershipId ||
+            body.maxCostMicrousdPerLecture !== 500_000 ||
+            body.maxCostMicrousdPerDay !== 2_000_000
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'request_invalid', ok: false },
+              400,
+            )
+            return
+          }
+          if (action === 'preparePolicyMutation') {
+            await fulfillJson(route, {
+              controlAction: 'environment_ai_policy_change',
+              controlIntentDigest: policyIntentDigest,
+              ok: true,
+              requestId: body.requestId,
+              targetMembershipId: body.targetMembershipId,
+            })
+            return
+          }
+          state.policySetAttempts += 1
+          if (!state.policyGrantAvailable) {
+            await fulfillJson(
+              route,
+              { code: 'control_proof_required', ok: false },
+              409,
+            )
+            return
+          }
+          if (failFirstPolicySet && state.policySetAttempts === 1) {
+            await fulfillJson(
+              route,
+              { code: 'service_unavailable', ok: false },
+              503,
+            )
+            return
+          }
+          state.policyGrantAvailable = false
+          state.policyCovered = true
+          await fulfillJson(route, {
+            membershipId: body.targetMembershipId,
+            ok: true,
+            policyId,
+            status: 'active',
+            version: 1,
+          })
+          return
+        }
+        state.unexpectedRequests.push(
+          `ai unlock action ${action || '<missing>'}`,
         )
         await fulfillJson(route, { code: 'request_invalid', ok: false }, 400)
         return
@@ -822,4 +986,222 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
       )
       .toBe(true)
   }
+})
+
+test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and policy responses', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstPolicySet: true,
+    loseFirstPolicyCompletionResponse: true,
+  })
+
+  await openLedger(page)
+  const summary = page
+    .locator('summary')
+    .filter({ hasText: '講義AIの利用設定' })
+  await expect(summary).toHaveCount(1)
+  const policyPanel = summary.locator('..')
+  await expect(policyPanel).not.toHaveAttribute('open', '')
+  await summary.click()
+  await expect(summary).toBeVisible()
+  await expect(policyPanel).toHaveAttribute('open', '')
+
+  const target = policyPanel.getByLabel('対象の教員')
+  const lectureCost = policyPanel.getByLabel('講義ごとの上限（USD）')
+  const dailyCost = policyPanel.getByLabel('1日ごとの上限（USD）')
+  const submit = policyPanel.getByRole('button', {
+    name: 'この設定で利用を許可',
+  })
+  await target.selectOption(aiInstructorMembershipId)
+  await policyPanel.getByLabel('確認に使う認証アプリ').selectOption(factorId)
+  await expect(lectureCost).toHaveValue(/^(?:0\.5|0\.50)$/)
+  await expect(dailyCost).toHaveValue(/^(?:2|2\.0|2\.00)$/)
+
+  await lectureCost.fill('2.01')
+  await dailyCost.fill('2.00')
+  await submit.click()
+  await expect(
+    policyPanel.getByText(
+      'コスト上限は講義0.01〜5.00 USD、1日0.01〜20.00 USDで入力してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  expect(
+    state.functionCalls.filter(
+      ({ body, functionName }) =>
+        functionName === 'admin-ai-unlock' &&
+        body.action === 'preparePolicyMutation',
+    ),
+  ).toHaveLength(0)
+
+  await lectureCost.fill('0.50')
+  await expect(submit).toBeEnabled()
+  await submit.click()
+  await expect(
+    policyPanel.getByRole('button', { name: '保留中の設定を取り消す' }),
+  ).toBeVisible()
+  await policyPanel.getByLabel('6桁コード').fill('123456')
+  await policyPanel.getByRole('button', { name: '認証アプリで確認' }).click()
+  await expect(
+    policyPanel.getByRole('button', { name: '同じ内容で再試行' }),
+  ).toBeVisible()
+  await policyPanel.getByRole('button', { name: '同じ内容で再試行' }).click()
+  await expect(
+    policyPanel.getByRole('button', { name: '同じ内容で再試行' }),
+  ).toBeVisible()
+  await policyPanel.getByRole('button', { name: '同じ内容で再試行' }).click()
+
+  await expect.poll(() => state.policyCovered).toBe(true)
+  await expect
+    .poll(
+      () =>
+        state.functionCalls.filter(
+          ({ body, functionName }) =>
+            functionName === 'admin-ai-unlock' &&
+            body.action === 'policyStatus',
+        ).length,
+    )
+    .toBeGreaterThanOrEqual(2)
+
+  const statusCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-ai-unlock' && body.action === 'policyStatus',
+  )
+  const prepareCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-ai-unlock' &&
+      body.action === 'preparePolicyMutation',
+  )
+  const setCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-ai-unlock' && body.action === 'setPolicy',
+  )
+  const beginCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-identity-session' &&
+      body.action === 'beginControlStepUp' &&
+      body.controlAction === 'environment_ai_policy_change',
+  )
+  const completeCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-identity-session' &&
+      body.action === 'completeControlStepUp' &&
+      body.controlAction === 'environment_ai_policy_change',
+  )
+  expect(statusCalls.length).toBeGreaterThanOrEqual(2)
+  for (const { body } of statusCalls) {
+    expect(Object.keys(body).sort()).toEqual(['action', 'appSessionToken'])
+  }
+  expect(prepareCalls).toHaveLength(1)
+  expect(setCalls).toHaveLength(2)
+  expect(setCalls[1]?.body).toEqual(setCalls[0]?.body)
+  const preparePayload = { ...(prepareCalls[0]?.body ?? {}) }
+  const setPayload = { ...(setCalls[0]?.body ?? {}) }
+  delete preparePayload.action
+  delete setPayload.action
+  expect(setPayload).toEqual(preparePayload)
+  expect(prepareCalls[0]?.body).toMatchObject({
+    appSessionToken,
+    maxCostMicrousdPerDay: 2_000_000,
+    maxCostMicrousdPerLecture: 500_000,
+    targetMembershipId: aiInstructorMembershipId,
+  })
+  const mutationBody = prepareCalls[0]?.body ?? {}
+  expect(typeof mutationBody.requestId).toBe('string')
+  expect(Date.parse(String(mutationBody.validFrom))).not.toBeNaN()
+  expect(Date.parse(String(mutationBody.validUntil))).not.toBeNaN()
+  expect(
+    Date.parse(String(mutationBody.validUntil)) -
+      Date.parse(String(mutationBody.validFrom)),
+  ).toBe(30 * 24 * 60 * 60_000)
+  for (const forbiddenPresetField of [
+    'allowedActions',
+    'allowedModels',
+    'maxCallsPerDay',
+    'maxCallsPerLecture',
+    'maxConcurrency',
+    'maxInputTokensPerDay',
+    'maxInputTokensPerLecture',
+    'maxOutputTokensPerDay',
+    'maxOutputTokensPerLecture',
+    'maxRealtimeMinutesPerDay',
+    'maxRealtimeMinutesPerLecture',
+  ]) {
+    expect(mutationBody).not.toHaveProperty(forbiddenPresetField)
+  }
+  expect(beginCalls).toHaveLength(1)
+  expect(completeCalls).toHaveLength(1)
+  expect(state.policyCompleteAttempts).toBe(1)
+  expect(beginCalls[0]?.body).toMatchObject({
+    appSessionToken,
+    controlAction: 'environment_ai_policy_change',
+    controlIntentDigest: policyIntentDigest,
+    controlRequestId: mutationBody.requestId,
+  })
+  expect(completeCalls[0]?.body).toMatchObject({
+    appSessionToken,
+    controlAction: 'environment_ai_policy_change',
+    controlIntentDigest: policyIntentDigest,
+    controlRequestId: mutationBody.requestId,
+  })
+  expect(
+    state.authRequests.filter(({ pathname }) =>
+      pathname.includes('/challenge'),
+    ),
+  ).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify(
+        [localStorage, sessionStorage].flatMap((storage) =>
+          Array.from({ length: storage.length }, (_, index) => {
+            const key = storage.key(index)
+            return key ? [key, storage.getItem(key)] : []
+          }),
+        ),
+      ),
+    ),
+  ).not.toContain('123456')
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('keeps the settings route available to an Instructor without exposing Owner AI policy controls', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, { role: 'instructor' })
+
+  await page.goto('/admin/settings')
+  await expect(page).toHaveURL('/admin/settings')
+  await expect(page.locator('main')).toBeVisible()
+  await expect(
+    page.locator('summary').filter({ hasText: '講義AIの利用設定' }),
+  ).toHaveCount(0)
+  await expect(page.locator('.admin-ledger-panel')).toHaveCount(0)
+  expect(
+    state.functionCalls.filter(
+      ({ body, functionName }) =>
+        functionName === 'admin-ai-unlock' && body.action === 'policyStatus',
+    ),
+  ).toHaveLength(0)
+  expect(
+    state.functionCalls.filter(
+      ({ functionName }) => functionName === 'manage-admin-ledger',
+    ),
+  ).toHaveLength(0)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
 })

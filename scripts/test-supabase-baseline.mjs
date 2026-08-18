@@ -100,6 +100,10 @@ const phase730fSourceReadinessPreflightMigrationName =
   '20260812142023_phase7_30f_source_readiness_preflight.sql'
 const adminOwnerCapabilityInvariantMigrationName =
   '20260817010000_admin_owner_capability_invariant.sql'
+const adminTotpStepUpAbsoluteCapMigrationName =
+  '20260818063834_admin_totp_step_up_auth_session_absolute_cap.sql'
+const adminAiPolicyManagementFacadeMigrationName =
+  '20260818070000_admin_ai_policy_management_facade.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -161,6 +165,8 @@ assert.deepEqual(
     phase730eAdminCutoverAuthorityMigrationName,
     phase730fSourceReadinessPreflightMigrationName,
     adminOwnerCapabilityInvariantMigrationName,
+    adminTotpStepUpAbsoluteCapMigrationName,
+    adminAiPolicyManagementFacadeMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

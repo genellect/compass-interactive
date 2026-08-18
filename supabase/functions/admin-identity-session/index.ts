@@ -192,6 +192,14 @@ function rpcErrorResponse(
     response.headers.set('Retry-After', '300')
     return response
   }
+  if (errorCode === 'P7322' || errorCode === 'P7323') {
+    return errorResponse(
+      jsonResponse,
+      'reauthentication_required',
+      'The Google sign-in session is no longer valid.',
+      401,
+    )
+  }
   if (errorCode === 'P7320' || errorCode === 'P7331' || errorCode === 'P7337') {
     return errorResponse(
       jsonResponse,
@@ -355,9 +363,7 @@ async function handleRequest(request: Request) {
                 'controlIntentDigest',
                 'controlOperationKey',
                 'controlRequestId',
-                ...(body.controlOperationKey === undefined
-                  ? []
-                  : ['controlStepUpNonce']),
+                'controlStepUpNonce',
               ]
             : body.action === 'completeControlStepUp'
               ? [
@@ -412,8 +418,7 @@ async function handleRequest(request: Request) {
 
   if (
     body.action === 'beginStepUp' &&
-    (!body.challengedFactorId ||
-      !UUID_PATTERN.test(body.challengedFactorId))
+    (!body.challengedFactorId || !UUID_PATTERN.test(body.challengedFactorId))
   ) {
     return errorResponse(
       jsonResponse,
@@ -559,9 +564,10 @@ async function handleRequest(request: Request) {
   const invitationAdmissionEnabled =
     Deno.env.get('PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED') === 'true' &&
     Deno.env.get('PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED') === 'true'
-  const invitationTokenHash = invitationToken && invitationAdmissionEnabled
-    ? await sha256Hex(invitationToken)
-    : null
+  const invitationTokenHash =
+    invitationToken && invitationAdmissionEnabled
+      ? await sha256Hex(invitationToken)
+      : null
   const pepperVersion = getSubjectPepperVersion()
 
   const admitIdentity = async () => {
@@ -750,10 +756,17 @@ async function handleRequest(request: Request) {
         401,
       )
     }
-    const rawNonce = ownerLedgerOperationKey
-      ? (body.controlStepUpNonce?.trim() ?? '')
-      : createAdminLoginNonce()
-    if (ownerLedgerOperationKey) {
+    const suppliedNonce = body.controlStepUpNonce?.trim() ?? ''
+    if (ownerLedgerOperationKey && !suppliedNonce) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+    const rawNonce = suppliedNonce || createAdminLoginNonce()
+    if (ownerLedgerOperationKey || body.controlStepUpNonce !== undefined) {
       try {
         assertAdminLoginNonce(rawNonce)
       } catch {

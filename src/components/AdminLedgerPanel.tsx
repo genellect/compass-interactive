@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from 'react'
 import type { AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
+import { isPhase730AdminAiUnlockEnabled } from '../lib/featureFlags'
 import {
   AdminLedgerError,
   commitAdminLedgerMutation,
@@ -18,7 +19,10 @@ import {
   type AdminLedgerMutationRequest,
   type AdminLedgerSnapshot,
 } from '../lib/adminAuth/adminLedgerApi'
-import { ADMIN_LEDGER_PENDING_STORAGE_KEY } from '../lib/adminAuth/adminAuthStorage'
+import {
+  ADMIN_AI_POLICY_PENDING_STORAGE_KEY,
+  ADMIN_LEDGER_PENDING_STORAGE_KEY,
+} from '../lib/adminAuth/adminAuthStorage'
 import {
   beginAdminControlStepUp,
   completeAdminControlStepUp,
@@ -29,6 +33,7 @@ import {
   supabaseAdminRepository,
   type AdminLecture,
 } from '../repositories/supabaseAdminRepository'
+import { AdminAiPolicyPanel } from './AdminAiPolicyPanel'
 
 type PendingMutation = AdminLedgerMutationRequest & {
   controlStepUpNonce: string
@@ -172,6 +177,15 @@ export function AdminLedgerPanel({
   const [pending, setPending] = useState<PendingMutation | null>(
     restorePendingMutation,
   )
+  const [policyPending, setPolicyPending] = useState(() => {
+    try {
+      return Boolean(
+        window.sessionStorage.getItem(ADMIN_AI_POLICY_PENDING_STORAGE_KEY),
+      )
+    } catch {
+      return false
+    }
+  })
   const [totpCode, setTotpCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -281,7 +295,7 @@ export function AdminLedgerPanel({
   }
 
   function startMutation(request: AdminLedgerMutationRequest) {
-    if (busy || pending) return
+    if (busy || pending || policyPending) return
     const attempt: PendingMutation = {
       ...request,
       controlStepUpNonce: createAdminControlStepUpNonce(),
@@ -294,7 +308,14 @@ export function AdminLedgerPanel({
 
   async function finishPending(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault()
-    if (!pending || busy || !pending.intent || !pending.factorId) return
+    if (
+      !pending ||
+      busy ||
+      policyPending ||
+      !pending.intent ||
+      !pending.factorId
+    )
+      return
     if (pending.phase === 'control' && !/^\d{6}$/.test(totpCode)) return
     setBusy(true)
     setMessage('')
@@ -394,7 +415,7 @@ export function AdminLedgerPanel({
   }
 
   async function stopLecture(lectureSessionId: string) {
-    if (busy || pending) return
+    if (busy || pending || policyPending) return
     if (
       !window.confirm(
         'この講義を終了します。学生の同期と書き込みが停止します。よろしいですか？',
@@ -453,6 +474,7 @@ export function AdminLedgerPanel({
       ),
     [auditEvents],
   )
+  const mutationBlocked = Boolean(pending) || policyPending
 
   if (!snapshot) {
     return (
@@ -515,6 +537,16 @@ export function AdminLedgerPanel({
           <dd>{reviewEvents.length}</dd>
         </div>
       </dl>
+
+      {isPhase730AdminAiUnlockEnabled ? (
+        <AdminAiPolicyPanel
+          appSessionToken={appSessionToken}
+          disabled={busy || Boolean(pending)}
+          factors={factors}
+          memberships={snapshot.memberships}
+          onPendingChange={setPolicyPending}
+        />
+      ) : null}
 
       {pending ? (
         <form className="admin-ledger-confirmation" onSubmit={finishPending}>
@@ -651,7 +683,7 @@ export function AdminLedgerPanel({
                             )}
                           </span>
                           <button
-                            disabled={busy || Boolean(pending)}
+                            disabled={busy || mutationBlocked}
                             onClick={() =>
                               startMutation({
                                 action: 'revokeSession',
@@ -675,7 +707,7 @@ export function AdminLedgerPanel({
                           {membership.status === 'active' &&
                           membership.role === 'owner' ? (
                             <button
-                              disabled={busy || Boolean(pending)}
+                              disabled={busy || mutationBlocked}
                               onClick={() =>
                                 startMutation({
                                   action: 'demoteOwner',
@@ -698,7 +730,7 @@ export function AdminLedgerPanel({
                           membership.role === 'instructor' &&
                           membership.canUseAi ? (
                             <button
-                              disabled={busy || Boolean(pending)}
+                              disabled={busy || mutationBlocked}
                               onClick={() =>
                                 startMutation({
                                   action: 'disableAi',
@@ -720,7 +752,7 @@ export function AdminLedgerPanel({
                           !membership.canUseAi ? (
                             <button
                               disabled={
-                                busy || Boolean(pending) || !admissionEnabled
+                                busy || mutationBlocked || !admissionEnabled
                               }
                               onClick={() =>
                                 startMutation({
@@ -740,7 +772,7 @@ export function AdminLedgerPanel({
                           ) : null}
                           {membership.status === 'active' ? (
                             <button
-                              disabled={busy || Boolean(pending)}
+                              disabled={busy || mutationBlocked}
                               onClick={() =>
                                 startMutation({
                                   action: 'suspendMembership',
@@ -760,7 +792,7 @@ export function AdminLedgerPanel({
                           {membership.status === 'suspended' ? (
                             <button
                               disabled={
-                                busy || Boolean(pending) || !admissionEnabled
+                                busy || mutationBlocked || !admissionEnabled
                               }
                               onClick={() =>
                                 startMutation({
@@ -779,7 +811,7 @@ export function AdminLedgerPanel({
                           ) : null}
                           {membership.status !== 'revoked' ? (
                             <button
-                              disabled={busy || Boolean(pending)}
+                              disabled={busy || mutationBlocked}
                               onClick={() =>
                                 startMutation({
                                   action: 'revokeMembership',
@@ -800,7 +832,7 @@ export function AdminLedgerPanel({
                           {membership.membershipId !==
                           snapshot.currentMembershipId ? (
                             <button
-                              disabled={busy || Boolean(pending)}
+                              disabled={busy || mutationBlocked}
                               onClick={() =>
                                 startMutation({
                                   action: 'globalRevoke',
@@ -870,7 +902,7 @@ export function AdminLedgerPanel({
           <p className="helper-note">招待リンクは作成から48時間有効です。</p>
           <button
             className="primary-button"
-            disabled={busy || Boolean(pending) || !admissionEnabled}
+            disabled={busy || mutationBlocked || !admissionEnabled}
             type="submit"
           >
             招待リンクを作成
@@ -923,7 +955,7 @@ export function AdminLedgerPanel({
               </span>
               <button
                 className="danger-button"
-                disabled={busy || Boolean(pending)}
+                disabled={busy || mutationBlocked}
                 onClick={() => void stopLecture(ownership.lectureSessionId)}
                 type="button"
               >
@@ -989,7 +1021,7 @@ export function AdminLedgerPanel({
               </p>
               {invitation.status === 'pending' ? (
                 <button
-                  disabled={busy || Boolean(pending)}
+                  disabled={busy || mutationBlocked}
                   onClick={() =>
                     startMutation({
                       action: 'revokeInvitation',

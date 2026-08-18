@@ -36,6 +36,9 @@ const directPrivateReadsAsServiceRole = (sql) => {
 const migration = read(
   'supabase/migrations/20260809231342_phase7_30b22a_admin_control_hardening.sql',
 )
+const authSessionCapMigration = read(
+  'supabase/migrations/20260818063834_admin_totp_step_up_auth_session_absolute_cap.sql',
+)
 const b1 = read(
   'supabase/migrations/20260809143000_phase7_30b1_admin_identity_aal2.sql',
 )
@@ -44,6 +47,7 @@ const b2 = read(
 )
 const edge = read('supabase/functions/admin-identity-session/index.ts')
 const client = read('src/lib/adminAuth/adminIdentityApi.ts')
+const adminRoute = read('src/pages/AdminRoute.tsx')
 const databaseTypes = read('src/types/database.ts')
 const localEdge = read('scripts/test-phase7-30b1-local-edge.mjs')
 const concurrency = read('scripts/test-phase7-30b2-concurrency.mjs')
@@ -74,6 +78,36 @@ const phase730UpgradeTest = read(
 assert.match(b1, /google_session_issue_enabled boolean not null default false/)
 assert.match(b2, /ai_unlock_enabled boolean not null default false/)
 assert.match(b2, /remembered_browser_enabled boolean not null default false/)
+assert.doesNotMatch(
+  authSessionCapMigration,
+  /create extension|drop\s+(?:table|function|schema)|alter\s+table|pg_cron|net\.http|vault\./i,
+)
+const authSessionCapBegin = authSessionCapMigration.slice(
+  authSessionCapMigration.indexOf(
+    'create or replace function private.begin_admin_totp_step_up_v2',
+  ),
+  authSessionCapMigration.indexOf(
+    'revoke all on function private.begin_admin_totp_step_up_v2',
+  ),
+)
+assert.match(
+  authSessionCapBegin,
+  /from auth\.sessions as auth_session[\s\S]*?auth_session\.id = target_supabase_auth_session_id[\s\S]*?auth_session\.user_id = target_auth_user_id[\s\S]*?for key share/,
+)
+assert.match(
+  authSessionCapBegin,
+  /auth_session_created_at \+ interval '8 hours' <= issued_at_value[\s\S]*?errcode = 'P7322'/,
+)
+assert.ok(
+  authSessionCapBegin.indexOf("errcode = 'P7322'") <
+    authSessionCapBegin.indexOf('nonce_id := extensions.gen_random_uuid()'),
+  'the absolute Auth-session cap must be checked before allocating a nonce ID',
+)
+assert.ok(
+  authSessionCapBegin.indexOf("errcode = 'P7322'") <
+    authSessionCapBegin.indexOf('insert into private.admin_step_up_nonces'),
+  'the absolute Auth-session cap must be checked before nonce persistence',
+)
 assert.doesNotMatch(migration, /create extension|pg_cron|net\.http|vault\./i)
 assert.doesNotMatch(
   migration,
@@ -140,7 +174,10 @@ assert.match(
   migration,
   /expires_at <= verified_totp_amr_at \+ interval '5 minutes'/,
 )
-assert.match(migration, /status in \('available', 'consumed', 'superseded', 'expired'\)/)
+assert.match(
+  migration,
+  /status in \('available', 'consumed', 'superseded', 'expired'\)/,
+)
 assert.match(migration, /where status = 'available'/)
 assert.match(migration, /compass:phase7\.30:admin-control-intent:v1\|/)
 for (const helper of [
@@ -190,10 +227,7 @@ assert.match(
   /private\.admin_ai_pin_terminal_control_intent_digest_v1\([\s\S]*?private\.consume_admin_control_step_up_grant_v1\(/,
 )
 
-assert.match(
-  migration,
-  /compass:phase7\.30:verified-totp-factor-set:v1\|user=/,
-)
+assert.match(migration, /compass:phase7\.30:verified-totp-factor-set:v1\|user=/)
 assert.match(migration, /string_agg\([\s\S]*?order by factor\.id::text/)
 assert.match(migration, /factor\.factor_type = 'totp'/)
 assert.match(migration, /factor\.status = 'verified'/)
@@ -210,7 +244,10 @@ assert.equal(
   1,
   'factor-set hash and count must come from one aggregate scan',
 )
-assert.match(factorSetSnapshot, /end as factor_set_hash,\s*count\(\*\)::integer as factor_count/)
+assert.match(
+  factorSetSnapshot,
+  /end as factor_set_hash,\s*count\(\*\)::integer as factor_count/,
+)
 assert.match(
   migration,
   /revoke all on function private\.current_verified_totp_factor_set_snapshot_v1\(uuid\)\s+from public, anon, authenticated, service_role;/,
@@ -224,7 +261,9 @@ for (const scalarHelper of [
   'current_verified_totp_factor_count_v1',
 ]) {
   const definition = migration.match(
-    new RegExp(`create function private\\.${scalarHelper}\\([\\s\\S]*?\\n\\$\\$;`),
+    new RegExp(
+      `create function private\\.${scalarHelper}\\([\\s\\S]*?\\n\\$\\$;`,
+    ),
   )?.[0]
   assert.ok(definition)
   assert.match(definition, /current_verified_totp_factor_set_snapshot_v1\(/)
@@ -276,7 +315,10 @@ assert.match(loginBeginV2, /target_challenged_factor_id/)
 assert.match(loginBeginV2, /expected_verified_totp_factor_set_hash_v1\(/)
 assert.match(loginBeginV2, /prechallenge_verified_totp_factor_set_hash/)
 assert.match(loginBeginV2, /verified_totp_factor_set_hash/)
-assert.match(loginBeginV2, /principal_row\.approved_totp_factor_set_hash is null/)
+assert.match(
+  loginBeginV2,
+  /principal_row\.approved_totp_factor_set_hash is null/,
+)
 assert.match(loginBeginV2, /membership_row\.status <> 'pending_mfa'/)
 assert.match(loginBeginV2, /current_factor_count <> 0/)
 assert.match(loginBeginV2, /challenged_factor_status <> 'unverified'/)
@@ -392,7 +434,9 @@ const factorBindingTrigger = migration.match(
 assert.ok(factorBindingTrigger)
 assert.ok(
   factorBindingTrigger.indexOf("if tg_op = 'UPDATE'") <
-    factorBindingTrigger.indexOf("if new.authentication_method <> 'google_totp'"),
+    factorBindingTrigger.indexOf(
+      "if new.authentication_method <> 'google_totp'",
+    ),
   'old Google bindings must be immutable before the non-Google early return',
 )
 assert.match(
@@ -433,9 +477,12 @@ const loginBegin = b1.match(
 assert.ok(loginBegin)
 assert.ok(
   loginBegin.indexOf('from private.admin_principals as principal') <
-    loginBegin.indexOf('from private.admin_environment_memberships as membership') &&
-    loginBegin.indexOf('from private.admin_environment_memberships as membership') <
-      loginBegin.indexOf('update private.admin_step_up_nonces'),
+    loginBegin.indexOf(
+      'from private.admin_environment_memberships as membership',
+    ) &&
+    loginBegin.indexOf(
+      'from private.admin_environment_memberships as membership',
+    ) < loginBegin.indexOf('update private.admin_step_up_nonces'),
   'begin and complete must share the principal -> membership -> nonce order',
 )
 
@@ -503,7 +550,9 @@ for (const wrapper of [
 ]) {
   assert.match(
     migration,
-    new RegExp(`create function public\\.${wrapper}\\([\\s\\S]*?security invoker`),
+    new RegExp(
+      `create function public\\.${wrapper}\\([\\s\\S]*?security invoker`,
+    ),
   )
   assert.match(
     migration,
@@ -525,15 +574,30 @@ assert.match(
   /current_factor_set_hash is distinct from[\s\S]*?session_row\.verified_totp_factor_set_hash/,
 )
 assert.match(migration, /revoke_reason = 'totp_factor_set_changed'/)
-assert.match(migration, /update private\.admin_control_step_up_nonces[\s\S]*?status = 'superseded'/)
-assert.match(migration, /update private\.admin_control_step_up_grants[\s\S]*?status = 'superseded'/)
-assert.match(migration, /update private\.admin_ai_browser_enrollment_nonces[\s\S]*?status = 'superseded'/)
-assert.match(migration, /update private\.admin_ai_browser_assertion_challenges[\s\S]*?status = 'superseded'/)
+assert.match(
+  migration,
+  /update private\.admin_control_step_up_nonces[\s\S]*?status = 'superseded'/,
+)
+assert.match(
+  migration,
+  /update private\.admin_control_step_up_grants[\s\S]*?status = 'superseded'/,
+)
+assert.match(
+  migration,
+  /update private\.admin_ai_browser_enrollment_nonces[\s\S]*?status = 'superseded'/,
+)
+assert.match(
+  migration,
+  /update private\.admin_ai_browser_assertion_challenges[\s\S]*?status = 'superseded'/,
+)
 const sessionDrain = migration.match(
   /create function private\.drain_admin_ai_on_session_revoke_v1\([\s\S]*?\n\$\$;/,
 )?.[0]
 assert.ok(sessionDrain)
-assert.doesNotMatch(sessionDrain, /update private\.admin_ai_browser_credentials/)
+assert.doesNotMatch(
+  sessionDrain,
+  /update private\.admin_ai_browser_credentials/,
+)
 assert.ok(
   sessionDrain.indexOf('update private.admin_ai_browser_assertion_challenges') <
     sessionDrain.indexOf('update private.admin_ai_browser_enrollment_nonces'),
@@ -563,8 +627,14 @@ assert.ok(
       controlBegin.indexOf('insert into private.admin_control_step_up_nonces'),
   'session-row context lock must serialize rate count before nonce insertion',
 )
-assert.match(controlBegin, /nonce\.issued_at >= effective_now - interval '5 minutes'/)
-assert.match(controlBegin, /raise exception 'Admin control step-up rate exceeded'/)
+assert.match(
+  controlBegin,
+  /nonce\.issued_at >= effective_now - interval '5 minutes'/,
+)
+assert.match(
+  controlBegin,
+  /raise exception 'Admin control step-up rate exceeded'/,
+)
 
 const factorReconcile = migration.match(
   /create function private\.reconcile_admin_totp_factor_set_v1\([\s\S]*?\n\$\$;/,
@@ -586,7 +656,9 @@ for (const normalPath of [
   'begin_admin_ai_browser_assertion_v1',
 ]) {
   const definition = b2.match(
-    new RegExp(`create function private\\.${normalPath}\\([\\s\\S]*?\\n\\$\\$;`),
+    new RegExp(
+      `create function private\\.${normalPath}\\([\\s\\S]*?\\n\\$\\$;`,
+    ),
   )?.[0]
   assert.ok(definition, `${normalPath} must be extractable`)
   assert.match(
@@ -610,7 +682,10 @@ assert.match(
   edge,
   /body\.controlIntentDigest[\s\S]*?target_intent_digest: body\.controlIntentDigest/,
 )
-assert.doesNotMatch(edge, /target_intent_digest: body\.controlIntentDigest \?\? null/)
+assert.doesNotMatch(
+  edge,
+  /target_intent_digest: body\.controlIntentDigest \?\? null/,
+)
 assert.match(edge, /begin_admin_totp_step_up_v2/)
 assert.match(edge, /target_challenged_factor_id: body\.challengedFactorId/)
 assert.match(edge, /errorCode === 'P7332'/)
@@ -629,6 +704,37 @@ assert.match(
   client,
   /typeof body\.code === 'string' && body\.code in ADMIN_IDENTITY_MESSAGES/,
   'allowlisted identity HTTP error codes must not collapse into the generic error',
+)
+assert.match(
+  edge,
+  /errorCode === 'P7322' \|\| errorCode === 'P7323'[\s\S]*?'reauthentication_required'[\s\S]*?401/,
+  'the Edge identity surface must translate an expired or missing backing Auth session into explicit reauthentication',
+)
+assert.match(client, /reauthentication_required:[\s\S]*?Googleで再認証/)
+assert.match(
+  adminRoute,
+  /error\.code === 'reauthentication_required'[\s\S]*?returnToGoogleReauthentication\([\s\S]*?restoreAdminAppSessionToken\(\)/,
+  'the TOTP route must clear stale Admin state on an absolute-cap response',
+)
+assert.match(
+  adminRoute,
+  /beginAdminOAuthAttempt\(adminPathname\)/,
+  'Google reauthentication must retain the current allowlisted Admin return path',
+)
+assert.match(
+  adminRoute,
+  /const returnToGoogleReauthentication = useCallback\([\s\S]*?signOut\(\{ scope: 'local' \}\)[\s\S]*?clearGoogleAdminWorkspace\(message, invalidatedAppSessionToken\)/,
+  'reauthentication must clear the local Supabase Auth session before returning to the CTA',
+)
+assert.match(
+  adminRoute,
+  /const clearGoogleAdminWorkspace = useCallback\([\s\S]*?clearEnrollmentSecret\(\)[\s\S]*?clearAdminAuthStorage\(\)[\s\S]*?setAppSessionToken\(''\)/,
+  'reauthentication must clear provider-bearing Auth storage and the old app token',
+)
+assert.match(
+  adminRoute,
+  /const clearEnrollmentSecret = useCallback\([\s\S]*?setTotpCode\(''\)/,
+  'reauthentication must clear any TOTP input and enrollment material',
 )
 assert.doesNotMatch(
   edge,
@@ -654,7 +760,20 @@ assert.match(
   migration,
   /target_terminal_action is null\s+or target_terminal_action not in/,
 )
-assert.match(localEdge, /action: 'beginStepUp', challengedFactorId: enrolled\.id/)
+assert.match(
+  localEdge,
+  /action: 'beginStepUp', challengedFactorId: enrolled\.id/,
+)
+assert.match(
+  localEdge,
+  /interval '8 hours 1 minute'[\s\S]*?expiredSessionBegin[\s\S]*?'reauthentication_required'[\s\S]*?expiredSessionNonceCount[\s\S]*?0/,
+  'Local Edge coverage must prove expired Auth sessions fail before nonce creation',
+)
+assert.match(
+  localEdge,
+  /delete from auth\.sessions[\s\S]*?missingSessionBegin[\s\S]*?'reauthentication_required'[\s\S]*?postMissingSessionMutationCounts[\s\S]*?preMissingSessionMutationCounts/,
+  'Local Edge coverage must prove missing Auth sessions fail without nonce or audit mutation',
+)
 assert.match(localEdge, /AAL2 -> AAL2 freshness semantics/)
 assert.match(localEdge, /action: 'beginControlStepUp'/)
 assert.match(localEdge, /authClient\.auth\.mfa\.challengeAndVerify/)
@@ -683,10 +802,7 @@ assert.doesNotMatch(
   /const pinControlAal2 = accessToken\(status,[\s\S]{0,160}?totpTimestamp: Math\.floor\(Date\.now\(\) \/ 1_000\)/,
   'the browser AI-PIN fixture must not synthesize its control-step-up AMR timestamp',
 )
-assert.doesNotMatch(
-  localEdge,
-  /invoke\([\s\S]{0,120}?reverified\.access_token/,
-)
+assert.doesNotMatch(localEdge, /invoke\([\s\S]{0,120}?reverified\.access_token/)
 assert.match(concurrency, /login-begin-lock-order/)
 assert.match(concurrency, /login-complete-lock-order/)
 assert.match(
@@ -769,14 +885,8 @@ assert.match(
 assert.match(concurrency, /challenged_totp_factor_id/)
 assert.match(concurrency, /verified_totp_factor_set_hash/)
 assert.match(upgradeRunner, /--version',\s*'20260809155129'/)
-assert.match(
-  upgradeRunner,
-  /phase7-30b22a-b2-head-upgrade-probe\.sql/,
-)
-assert.match(
-  upgradeRunner,
-  /phase7-30b22a-b2-head-upgrade-probe-test\.sql/,
-)
+assert.match(upgradeRunner, /phase7-30b22a-b2-head-upgrade-probe\.sql/)
+assert.match(upgradeRunner, /phase7-30b22a-b2-head-upgrade-probe-test\.sql/)
 for (const b2State of [
   'admin_ai_unlock_factors',
   'admin_ai_policies',
@@ -879,21 +989,50 @@ assert.match(
   'concurrency direct sessions require explicit approved anchors',
 )
 assert.match(concurrency, /stepUpCompletionHashA1/)
+assert.match(pgTap, /every B2\.2a foreign key has a valid leading lookup index/)
 assert.match(
-  pgTap,
-  /every B2\.2a foreign key has a valid leading lookup index/,
+  b1PgTap,
+  /an eight-hour-old backing Auth session fails before TOTP nonce creation/,
+)
+assert.match(b1PgTap, /absolute-cap rejection persists no Admin login nonce/)
+assert.match(
+  b1PgTap,
+  /absolute-cap rejection persists no accepted login audit event/,
+)
+assert.match(
+  adminIdentityE2e,
+  /expired or missing backing Auth session clears Admin state and preserves the settings return path for Google reauthentication/,
+)
+assert.match(
+  adminIdentityE2e,
+  /state\.factorChallengeBodies\)\.toEqual\(\[\]\)[\s\S]*?state\.factorVerifyBodies\)\.toEqual\(\[\]\)/,
+  'the browser must not enter the TOTP exchange after reauthentication is required',
+)
+assert.match(
+  adminIdentityE2e,
+  /adminAppSession: null,[\s\S]*?adminAuth: null,[\s\S]*?adminVerifier: null,[\s\S]*?oauthAttempt: null/,
+  'the browser regression must prove old app, provider Auth and OAuth-attempt state are cleared',
 )
 assert.match(
   pgTap,
   /factor-history-free initial PIN enrollment reuses the fresh login TOTP/,
 )
-assert.match(pgTap, /changed PIN input cannot replay the consumed login-source grant/)
+assert.match(
+  pgTap,
+  /changed PIN input cannot replay the consumed login-source grant/,
+)
 assert.match(pgTap, /explicit PIN revoke consumes its exact grant/)
 assert.match(pgTap, /same request\/grant cannot cross from revoke to reset/)
 assert.match(pgTap, /explicit PIN reset consumes its independent exact grant/)
 assert.match(pgTap, /reset records its distinct terminal factor outcome/)
-assert.match(pgTap, /existing verified set rejects an unverified login candidate/)
-assert.match(pgTap, /rejected post-enrollment factor addition writes no login nonce/)
+assert.match(
+  pgTap,
+  /existing verified set rejects an unverified login candidate/,
+)
+assert.match(
+  pgTap,
+  /rejected post-enrollment factor addition writes no login nonce/,
+)
 assert.match(pgTap, /factor A removal rejects its stale proof/)
 assert.match(pgTap, /session INSERT trigger rejects rather than laundering/)
 assert.match(
@@ -916,10 +1055,19 @@ assert.match(
   pgTap,
   /newly verified factor from an old AAL2 bearer cannot become Admin authority/,
 )
-assert.match(pgTap, /exact adoption retry survives the operator gate returning OFF/)
+assert.match(
+  pgTap,
+  /exact adoption retry survives the operator gate returning OFF/,
+)
 assert.match(pgTap, /non-admin and no-op reconciliation add no audit rows/)
-assert.match(pgTap, /reconciliation writes one audit row only for a committed revoke/)
-assert.match(pgTap, /exact control-begin retry is returned before rate accounting/)
+assert.match(
+  pgTap,
+  /reconciliation writes one audit row only for a committed revoke/,
+)
+assert.match(
+  pgTap,
+  /exact control-begin retry is returned before rate accounting/,
+)
 assert.match(pgTap, /rate rejection creates neither a nonce nor an audit row/)
 assert.deepEqual(
   directPrivateReadsAsServiceRole(pgTap),

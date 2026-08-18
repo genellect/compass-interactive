@@ -75,6 +75,7 @@ const packageJson = JSON.parse(read('package.json'))
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
 const docsTest = read('scripts/test-phase6-7-docs.mjs')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
+const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
 const c2UpgradeFixture = read(
   'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe.sql',
 )
@@ -1238,6 +1239,16 @@ assert.match(
   featureFlags,
   /VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS[\s\S]*=== 'true'/,
 )
+assert.match(
+  adminRoute,
+  /adminPathname === '\/admin\/settings'[\s\S]*isPhase730GoogleAdminOperationsEnabled[\s\S]*<AdminWorkspaceApp/,
+  'the lecture workspace must stay unmounted while Google operations are disabled',
+)
+assert.match(
+  adminRoute,
+  /講義コントロールは現在利用できません/,
+  'the operations-off state must fail closed with a concise educator-facing message',
+)
 assert.equal(
   packageJson.scripts?.['test:phase7-30c2-static'],
   'node scripts/test-phase7-30c2-static.mjs',
@@ -1345,6 +1356,11 @@ assert.match(
   adminRoute,
   /forcedSessionInvalidRef\.current = true[\s\S]*async function logout\(\)[\s\S]*finishForcedSessionInvalidation[\s\S]*forcedSessionInvalidRef\.current[\s\S]*if \(finishForcedSessionInvalidation\(\)\) return[\s\S]*hasAdminTotpTransitionRecovery[\s\S]*if \(finishForcedSessionInvalidation\(\)\) return/,
   'a stale child logout callback cannot replace forced sign-out with TOTP recovery',
+)
+assert.match(
+  browserRunner,
+  /const googleAdminWorkspaceMode =[\s\S]*'demo-admin-identity'[\s\S]*VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: googleAdminWorkspaceMode[\s\S]*\? 'true'/,
+  'the ready-state Admin identity browser profile must enable Google operations explicitly',
 )
 
 assert.match(

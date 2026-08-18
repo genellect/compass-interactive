@@ -92,6 +92,8 @@ const ADMIN_IDENTITY_MESSAGES: Record<string, string> = {
     'Googleアカウントを確認できませんでした。もう一度ログインしてください。',
   membership_unavailable:
     'このGoogleアカウントは管理者として登録されていません。',
+  reauthentication_required:
+    'Googleログインの有効期限が切れました。Googleで再認証してください。',
   rate_limited: '試行回数が多すぎます。5分待ってから再度お試しください。',
   request_invalid: '管理者認証の要求を確認できませんでした。',
   service_unavailable:

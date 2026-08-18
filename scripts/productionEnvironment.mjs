@@ -71,6 +71,52 @@ export const phase730FSecretInventoryNames = [
   'BILLING_PIN',
 ]
 
+export const completeLectureFrontendFlagNames = [
+  ...featureFlags,
+  'VITE_PHASE7_28_DISPLAY_REALTIME',
+  'VITE_PHASE7_30_ADMIN_IDENTITY',
+  'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
+  'VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER',
+]
+
+export const completeLectureServerFlagNames = [
+  'PHASE4_REALTIME_CAPTIONS_ENABLED',
+  'PHASE5_MATERIAL_ANALYSIS_ENABLED',
+  'PHASE6_SUMMARIES_ENABLED',
+  'PHASE68_RESUME_TOKENS_ENABLED',
+  'PHASE7_1_CLASSROOM_EXTENSIONS_ENABLED',
+  'PHASE7_2_ACADEMIC_ANSWERS_ENABLED',
+  'PHASE7_25_AUTO_ACADEMIC_ANSWERS_ENABLED',
+  'PHASE726_BROWSER_PDF_PUBLICATION_ENABLED',
+  'PHASE7_27_JOURNAL_CLUB_ENABLED',
+  'PHASE728_DISPLAY_REALTIME_ENABLED',
+  'PHASE730_ADMIN_IDENTITY_ENABLED',
+  'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
+  'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED',
+  'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+  'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
+]
+
+export const completeLectureDatabaseGateNames = [
+  'googleSessionIssueEnabled',
+  'googleOperationalAuthorizationEnabled',
+  'googleAdminLedgerEnabled',
+  'aiUnlockEnabled',
+  'googleAiMasterAdmissionEnabled',
+  'googleAiChildGrantEnabled',
+]
+
+export const completeLectureAiActions = [
+  'academic_answers',
+  'captions',
+  'material_analysis',
+  'poll_suggestions',
+  'summaries',
+]
+
+export const completeLectureAiModels = ['gpt-5.6-luna', 'gpt-realtime-whisper']
+
 export const phase730FEnvironmentAliasPattern = '^staging-identity-slot-[a-z]$'
 export const phase730FIsoTimestampPattern =
   '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$'
@@ -206,6 +252,10 @@ export function validateProductionEnvironment(environment) {
   )
   requireFlag('VITE_PHASE7_30_ADMIN_AI_UNLOCK', 'VITE_PHASE7_30_ADMIN_IDENTITY')
   requireFlag(
+    'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
+    'VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS',
+  )
+  requireFlag(
     'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
     'VITE_PHASE7_30_ADMIN_IDENTITY',
   )
@@ -252,6 +302,13 @@ export function validateProductionServerEnvironment(environment) {
       'PHASE7_28_JOURNAL_CLUB_PRESET_CREATION_ENABLED must be true, false or omitted.',
     )
   }
+  const operationalServerFlags = [
+    'PHASE4_REALTIME_CAPTIONS_ENABLED',
+    'PHASE5_MATERIAL_ANALYSIS_ENABLED',
+    'PHASE6_SUMMARIES_ENABLED',
+    'PHASE7_2_ACADEMIC_ANSWERS_ENABLED',
+    'PHASE726_BROWSER_PDF_PUBLICATION_ENABLED',
+  ]
   const googleAdminFlags = [
     'PHASE730_ADMIN_IDENTITY_ENABLED',
     'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
@@ -260,7 +317,7 @@ export function validateProductionServerEnvironment(environment) {
     'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
     'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
   ]
-  for (const name of googleAdminFlags) {
+  for (const name of [...operationalServerFlags, ...googleAdminFlags]) {
     const configuredValue = value(environment, name)
     if (configuredValue && !['false', 'true'].includes(configuredValue)) {
       errors.push(`${name} must be true, false or omitted.`)
@@ -316,6 +373,10 @@ export function validateProductionServerEnvironment(environment) {
     'PHASE730_ADMIN_AI_UNLOCK_ENABLED',
   )
   requireServerFlag(
+    'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED',
+    'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
+  )
+  requireServerFlag(
     'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
     'PHASE730_ADMIN_IDENTITY_ENABLED',
   )
@@ -323,6 +384,42 @@ export function validateProductionServerEnvironment(environment) {
     'PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED',
     'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED',
   )
+  for (const feature of operationalServerFlags) {
+    requireServerFlag(feature, 'PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED')
+  }
+  const aiProviderEnabled = [
+    'PHASE4_REALTIME_CAPTIONS_ENABLED',
+    'PHASE5_MATERIAL_ANALYSIS_ENABLED',
+    'PHASE6_SUMMARIES_ENABLED',
+    'PHASE7_2_ACADEMIC_ANSWERS_ENABLED',
+  ].some((name) => value(environment, name) === 'true')
+  const googleAiMasterEnabled =
+    value(environment, 'PHASE730_C1_GOOGLE_AI_MASTER_ENABLED') === 'true'
+  if (aiProviderEnabled || googleAiMasterEnabled) {
+    if (!value(environment, 'OPENAI_API_KEY')) {
+      errors.push(
+        'OPENAI_API_KEY must be configured when lecture AI providers are enabled.',
+      )
+    }
+    const childGrantSecret = value(environment, 'ADMIN_AI_CHILD_GRANT_SECRET')
+    if (new TextEncoder().encode(childGrantSecret).byteLength < 32) {
+      errors.push(
+        'ADMIN_AI_CHILD_GRANT_SECRET must contain at least 32 bytes when lecture AI is enabled.',
+      )
+    }
+    const childGrantVersion = Number(
+      value(environment, 'ADMIN_AI_CHILD_GRANT_SECRET_VERSION') || '1',
+    )
+    if (
+      !Number.isSafeInteger(childGrantVersion) ||
+      childGrantVersion < 1 ||
+      childGrantVersion > 2_147_483_647
+    ) {
+      errors.push(
+        'ADMIN_AI_CHILD_GRANT_SECRET_VERSION must be a positive safe integer.',
+      )
+    }
+  }
   if (presenterEnabled === 'true') {
     if (value(environment, 'PHASE728_DISPLAY_REALTIME_ENABLED') !== 'true') {
       errors.push(
@@ -357,6 +454,159 @@ export function validateProductionServerEnvironment(environment) {
       )
     }
   }
+  return errors
+}
+
+/**
+ * Validate redacted, value-free proof that every browser lecture path is
+ * activated together. Optional Presenter hardware, remembered-browser
+ * convenience and TOTP-factor mutation are intentionally outside this core
+ * lecture-cycle gate.
+ */
+export function validateCompleteLectureProductionTopology(topology) {
+  const errors = []
+  if (
+    !rejectUnknownKeys(
+      errors,
+      topology,
+      ['frontendFlags', 'serverFlags', 'databaseGates', 'runtime'],
+      'topology',
+    )
+  ) {
+    return errors
+  }
+
+  for (const [path, names] of [
+    ['topology.frontendFlags', completeLectureFrontendFlagNames],
+    ['topology.serverFlags', completeLectureServerFlagNames],
+    ['topology.databaseGates', completeLectureDatabaseGateNames],
+  ]) {
+    const candidate =
+      path === 'topology.frontendFlags'
+        ? topology.frontendFlags
+        : path === 'topology.serverFlags'
+          ? topology.serverFlags
+          : topology.databaseGates
+    if (!rejectUnknownKeys(errors, candidate, names, path)) continue
+    for (const name of names) {
+      if (candidate[name] !== true) {
+        errors.push(`${path}.${name} must be true.`)
+      }
+    }
+  }
+
+  const runtime = topology.runtime
+  if (
+    rejectUnknownKeys(
+      errors,
+      runtime,
+      [
+        'activeAiPolicyCount',
+        'activeAiMembershipCount',
+        'activeOwnerCount',
+        'aiPolicyAllowedActions',
+        'aiPolicyAllowedModels',
+        'aiPolicyTopologyComplete',
+        'browserPdfWorkerUploadEnabled',
+        'canonicalAiPolicyTopologyComplete',
+        'coveredAiMembershipCount',
+        'productionEnvironmentConfigured',
+        'requiredEdgeFunctionsCurrent',
+      ],
+      'topology.runtime',
+    )
+  ) {
+    const validActiveAiPolicyCount =
+      Number.isSafeInteger(runtime.activeAiPolicyCount) &&
+      runtime.activeAiPolicyCount > 0
+    if (!validActiveAiPolicyCount) {
+      errors.push('topology.runtime.activeAiPolicyCount must be at least 1.')
+    }
+    const validActiveAiMembershipCount =
+      Number.isSafeInteger(runtime.activeAiMembershipCount) &&
+      runtime.activeAiMembershipCount > 0
+    if (!validActiveAiMembershipCount) {
+      errors.push(
+        'topology.runtime.activeAiMembershipCount must be a positive integer.',
+      )
+    }
+    const validCoveredAiMembershipCount =
+      Number.isSafeInteger(runtime.coveredAiMembershipCount) &&
+      runtime.coveredAiMembershipCount >= 0
+    if (!validCoveredAiMembershipCount) {
+      errors.push(
+        'topology.runtime.coveredAiMembershipCount must be a non-negative integer.',
+      )
+    }
+    if (
+      validActiveAiMembershipCount &&
+      validCoveredAiMembershipCount &&
+      runtime.coveredAiMembershipCount !== runtime.activeAiMembershipCount
+    ) {
+      errors.push(
+        'topology.runtime AI membership coverage counts must match and be greater than zero.',
+      )
+    }
+    if (
+      validActiveAiPolicyCount &&
+      validCoveredAiMembershipCount &&
+      runtime.activeAiPolicyCount < runtime.coveredAiMembershipCount
+    ) {
+      errors.push(
+        'topology.runtime.activeAiPolicyCount cannot be less than coveredAiMembershipCount.',
+      )
+    }
+    if (runtime.aiPolicyTopologyComplete !== true) {
+      errors.push('topology.runtime.aiPolicyTopologyComplete must be true.')
+    }
+    if (runtime.canonicalAiPolicyTopologyComplete !== true) {
+      errors.push(
+        'topology.runtime.canonicalAiPolicyTopologyComplete must be true.',
+      )
+    }
+    if (
+      !Number.isSafeInteger(runtime.activeOwnerCount) ||
+      runtime.activeOwnerCount < 2
+    ) {
+      errors.push('topology.runtime.activeOwnerCount must be at least 2.')
+    }
+    const observedActions = Array.isArray(runtime.aiPolicyAllowedActions)
+      ? [...new Set(runtime.aiPolicyAllowedActions)].sort()
+      : []
+    if (
+      observedActions.length !== completeLectureAiActions.length ||
+      observedActions.some(
+        (action, index) => action !== completeLectureAiActions[index],
+      )
+    ) {
+      errors.push(
+        'topology.runtime.aiPolicyAllowedActions must contain the exact lecture AI action set.',
+      )
+    }
+    const observedModels = Array.isArray(runtime.aiPolicyAllowedModels)
+      ? [...new Set(runtime.aiPolicyAllowedModels)].sort()
+      : []
+    if (
+      observedModels.length !== completeLectureAiModels.length ||
+      observedModels.some(
+        (model, index) => model !== completeLectureAiModels[index],
+      )
+    ) {
+      errors.push(
+        'topology.runtime.aiPolicyAllowedModels must contain the exact lecture AI model set.',
+      )
+    }
+    for (const name of [
+      'browserPdfWorkerUploadEnabled',
+      'productionEnvironmentConfigured',
+      'requiredEdgeFunctionsCurrent',
+    ]) {
+      if (runtime[name] !== true) {
+        errors.push(`topology.runtime.${name} must be true.`)
+      }
+    }
+  }
+
   return errors
 }
 

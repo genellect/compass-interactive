@@ -260,6 +260,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     body: JSON.stringify(body),
     contentType: 'application/json',
+    headers: { 'cache-control': 'no-store' },
     status,
   })
 }
@@ -320,7 +321,11 @@ async function installBroadcastCapture(page: Page) {
 async function installNetworkMocks(
   page: Page,
   studentAccessToken: string,
-  options: { includeAbandonedFactor?: boolean; initialVerified?: boolean } = {},
+  options: {
+    beginStepUpReauthenticationRequired?: boolean
+    includeAbandonedFactor?: boolean
+    initialVerified?: boolean
+  } = {},
 ) {
   const aal1Session = authSession('aal1', {
     includeAbandonedFactor: options.includeAbandonedFactor,
@@ -475,6 +480,19 @@ async function installNetworkMocks(
         if (body.challengedFactorId !== factorId) {
           state.unexpectedRequests.push('beginStepUp factor binding mismatch')
           await fulfillJson(route, { code: 'request_invalid' }, 400)
+          return
+        }
+        if (options.beginStepUpReauthenticationRequired) {
+          await fulfillJson(
+            route,
+            {
+              code: 'reauthentication_required',
+              message:
+                'The Google sign-in session has reached its absolute lifetime.',
+              ok: false,
+            },
+            401,
+          )
           return
         }
         await fulfillJson(route, {
@@ -934,6 +952,93 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   ).toEqual([])
   expect(state.unexpectedRequests).toEqual([])
   expect(pageErrors).toEqual([])
+})
+
+test('an expired or missing backing Auth session clears Admin state and preserves the settings return path for Google reauthentication', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { state } = await installNetworkMocks(page, student.accessToken, {
+    beginStepUpReauthenticationRequired: true,
+    initialVerified: true,
+  })
+
+  await page.goto('/admin/settings')
+  const card = page.locator('main .admin-identity-card')
+  await card.getByRole('button', { name: 'Googleで続ける' }).click()
+  await expect(page).toHaveURL('/admin/settings')
+  await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+
+  await installExistingStudentStorage(page, student.storageValue)
+  await page.evaluate(
+    ({ adminAppSessionStorageKey }) =>
+      window.sessionStorage.setItem(
+        adminAppSessionStorageKey,
+        'stale-admin-app-session',
+      ),
+    { adminAppSessionStorageKey },
+  )
+  await card.getByLabel('認証コード', { exact: true }).fill('123456')
+  await card.getByRole('button', { name: '続ける', exact: true }).click()
+
+  await expect(card.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  await expect(card.getByRole('alert')).toHaveText(
+    'Googleログインの有効期限が切れました。Googleで再認証してください。',
+  )
+  await expect(page).toHaveURL('/admin/settings')
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+    'admit',
+    'beginStepUp',
+  ])
+  expect(state.factorChallengeBodies).toEqual([])
+  expect(state.factorVerifyBodies).toEqual([])
+
+  const clearedStorage = await page.evaluate(
+    ({
+      adminAppSessionStorageKey,
+      adminAuthStorageKey,
+      adminOAuthAttemptStorageKey,
+      studentAuthStorageKey,
+    }) => ({
+      adminAppSession: window.sessionStorage.getItem(adminAppSessionStorageKey),
+      adminAuth: window.localStorage.getItem(adminAuthStorageKey),
+      adminVerifier: window.localStorage.getItem(
+        `${adminAuthStorageKey}-code-verifier`,
+      ),
+      oauthAttempt: window.sessionStorage.getItem(adminOAuthAttemptStorageKey),
+      studentAuth: window.localStorage.getItem(studentAuthStorageKey),
+    }),
+    {
+      adminAppSessionStorageKey,
+      adminAuthStorageKey,
+      adminOAuthAttemptStorageKey,
+      studentAuthStorageKey,
+    },
+  )
+  expect(clearedStorage).toEqual({
+    adminAppSession: null,
+    adminAuth: null,
+    adminVerifier: null,
+    oauthAttempt: null,
+    studentAuth: student.storageValue,
+  })
+  expect(
+    state.authRequests.filter(
+      ({ method, pathname }) =>
+        method === 'POST' && pathname === '/auth/v1/logout',
+    ),
+  ).toHaveLength(1)
+
+  await card.getByRole('button', { name: 'Googleで続ける' }).click()
+  await expect(page).toHaveURL('/admin/settings')
+  await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  expect(state.authorizeQueries).toHaveLength(2)
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+    'admit',
+    'beginStepUp',
+    'admit',
+  ])
+  expect(state.unexpectedRequests).toEqual([])
 })
 
 test('uses the existing verified factor instead of an abandoned unverified factor', async ({
