@@ -1,5 +1,11 @@
 import { AxeBuilder } from '@axe-core/playwright'
-import { expect, test, type Page, type Route } from '@playwright/test'
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type Route,
+} from '@playwright/test'
 import {
   createMockGoogleAdminSession,
   expectMockGoogleAdminCredential,
@@ -53,6 +59,11 @@ function createDeferred() {
     resolve = done
   })
   return { promise, resolve }
+}
+
+async function dispatchEnabledClick(locator: Locator) {
+  await expect(locator).toBeEnabled()
+  await locator.dispatchEvent('click')
 }
 
 function encodeJwtPart(value: unknown) {
@@ -466,22 +477,25 @@ async function installLocalActivationFailure(page: Page, hold = false) {
       return
     }
     started.resolve()
-    if (hold) await release.promise
-    await route.fulfill({
-      body: JSON.stringify({
-        code: 'invalid_session',
-        message: 'Request rejected.',
-        ok: false,
-      }),
-      contentType: 'application/json',
-      headers: {
-        'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
-        'Cache-Control': 'no-store',
-        Vary: 'Origin',
-      },
-      status: 401,
-    })
-    completed.resolve()
+    try {
+      if (hold) await release.promise
+      await route.fulfill({
+        body: JSON.stringify({
+          code: 'invalid_session',
+          message: 'Request rejected.',
+          ok: false,
+        }),
+        contentType: 'application/json',
+        headers: {
+          'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+          'Cache-Control': 'no-store',
+          Vary: 'Origin',
+        },
+        status: 401,
+      })
+    } finally {
+      completed.resolve()
+    }
   })
   return {
     completed: completed.promise,
@@ -491,6 +505,8 @@ async function installLocalActivationFailure(page: Page, hold = false) {
 }
 
 async function holdLoopbackDisconnect(page: Page) {
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
   const started = createDeferred()
   const release = createDeferred()
   const completed = createDeferred()
@@ -500,10 +516,21 @@ async function holdLoopbackDisconnect(page: Page) {
       return
     }
     started.resolve()
-    await release.promise
-    const response = await route.fetch()
-    await route.fulfill({ response })
-    completed.resolve()
+    try {
+      await release.promise
+      await route.fulfill({
+        body: JSON.stringify({ ok: true, state: 'disconnected' }),
+        contentType: 'application/json',
+        headers: {
+          'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+          'Cache-Control': 'no-store',
+          Vary: 'Origin',
+        },
+        status: 200,
+      })
+    } finally {
+      completed.resolve()
+    }
   })
   return {
     completed: completed.promise,
@@ -824,9 +851,11 @@ for (const outcome of ['active', 'terminal'] as const) {
     })
 
     const review = await startAutomaticPresenterReview(page)
-    await review
-      .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-      .click()
+    await dispatchEnabledClick(
+      review.getByRole('button', {
+        name: 'このPowerPointと講義資料を同期',
+      }),
+    )
 
     await disconnect.started
     const recoveryCode = page.locator('.admin-presenter-recovery-code')
@@ -877,9 +906,11 @@ test('keeps active when a delayed local activation fails after server activation
   })
 
   const review = await startAutomaticPresenterReview(page)
-  await review
-    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-    .click()
+  await dispatchEnabledClick(
+    review.getByRole('button', {
+      name: 'このPowerPointと講義資料を同期',
+    }),
+  )
 
   await activation.started
   state.completeServerActivation()
