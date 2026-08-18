@@ -12,11 +12,25 @@ const UUID_PATTERN =
 const container =
   process.env.SUPABASE_DB_CONTAINER ?? 'supabase_db_compass-interactive'
 const expectedOrigin = 'http://127.0.0.1:4173'
-const environmentId = '00000000-0000-4000-8000-000000000730'
+const environmentId =
+  process.env.TEST_ADMIN_ENVIRONMENT_ID?.trim() ??
+  '00000000-0000-4000-8000-000000000730'
+assert.match(
+  environmentId,
+  UUID_PATTERN,
+  'TEST_ADMIN_ENVIRONMENT_ID must be an optional UUID.',
+)
 const browserFixtureMode = process.argv.includes('--browser-fixture')
 const browserFixtureRetainEnvironment =
   browserFixtureMode &&
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_RETAIN_ENVIRONMENT === 'true'
+const browserFixtureResetRetainedMemberships =
+  browserFixtureMode &&
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS === 'true'
+assert.ok(
+  !browserFixtureResetRetainedMemberships || browserFixtureRetainEnvironment,
+  'Retained membership reset requires a retained browser fixture.',
+)
 const browserFixtureAiPin =
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN?.trim() ?? ''
 assert.ok(
@@ -483,6 +497,38 @@ try {
   )
   assert.equal(admitted.eligible, true)
 
+  await runSql(`
+    update auth.sessions
+    set created_at = statement_timestamp() - interval '8 hours 1 minute',
+        updated_at = statement_timestamp()
+    where id = ${sqlLiteral(sessionId)}::uuid
+      and user_id = ${sqlLiteral(authUserId)}::uuid;
+  `)
+  const expiredSessionBegin = await invoke(
+    status,
+    aal1,
+    'admin-identity-session',
+    { action: 'beginStepUp', challengedFactorId: enrolled.id },
+    401,
+  )
+  assert.equal(expiredSessionBegin.code, 'reauthentication_required')
+  const expiredSessionNonceCount = Number(
+    await runSql(`
+      select count(*)
+      from private.admin_step_up_nonces
+      where supabase_auth_session_id = ${sqlLiteral(sessionId)}::uuid
+        and intended_action = 'admin_login';
+    `),
+  )
+  assert.equal(expiredSessionNonceCount, 0)
+  await runSql(`
+    update auth.sessions
+    set created_at = statement_timestamp() - interval '1 hour',
+        updated_at = statement_timestamp()
+    where id = ${sqlLiteral(sessionId)}::uuid
+      and user_id = ${sqlLiteral(authUserId)}::uuid;
+  `)
+
   const begun = await invoke(
     status,
     aal1,
@@ -534,6 +580,63 @@ try {
   assert.equal(completed.session?.role, 'owner')
   assert.equal(completed.session?.canUseAi, true)
   let browserAal2 = aal2
+
+  if (browserFixtureResetRetainedMemberships) {
+    const resetState = JSON.parse(
+      await runSql(`
+        begin;
+        update public.admin_sessions
+        set revoked_at = coalesce(revoked_at, statement_timestamp()),
+            revoke_reason = coalesce(
+              revoke_reason,
+              'browser_fixture_replaced'
+            ),
+            updated_at = statement_timestamp()
+        where environment_id = ${sqlLiteral(environmentId)}::uuid
+          and membership_id <> ${sqlLiteral(
+            completed.session.membershipId,
+          )}::uuid
+          and revoked_at is null;
+        update private.admin_environment_memberships
+        set role = 'instructor',
+            can_use_ai = false,
+            updated_at = statement_timestamp()
+        where environment_id = ${sqlLiteral(environmentId)}::uuid
+          and id <> ${sqlLiteral(completed.session.membershipId)}::uuid
+          and status = 'active'
+          and (role <> 'instructor' or can_use_ai);
+        select jsonb_build_object(
+          'activeAiMemberships', (
+            select count(*)
+            from private.admin_environment_memberships
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and status = 'active'
+              and can_use_ai
+          ),
+          'activeOwners', (
+            select count(*)
+            from private.admin_environment_memberships
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and status = 'active'
+              and role = 'owner'
+          ),
+          'activePriorSessions', (
+            select count(*)
+            from public.admin_sessions
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and membership_id <> ${sqlLiteral(
+                completed.session.membershipId,
+              )}::uuid
+              and revoked_at is null
+          )
+        );
+        commit;
+      `),
+    )
+    assert.equal(Number(resetState.activeAiMemberships), 1)
+    assert.equal(Number(resetState.activeOwners), 1)
+    assert.equal(Number(resetState.activePriorSessions), 0)
+  }
 
   if (browserFixtureMode) {
     if (browserFixtureAiPin) {
@@ -669,6 +772,192 @@ try {
         200,
       )
       assert.equal(pinSet.status, 'active')
+
+      const policyRequestId = randomUUID()
+      const policyValidFromMs = Date.now() - 60_000
+      const policyRequest = {
+        appSessionToken: completed.appSessionToken,
+        maxCostMicrousdPerDay: 2_000_000,
+        maxCostMicrousdPerLecture: 500_000,
+        requestId: policyRequestId,
+        targetMembershipId: completed.session.membershipId,
+        validFrom: new Date(policyValidFromMs).toISOString(),
+        validUntil: new Date(
+          policyValidFromMs + 30 * 24 * 60 * 60 * 1_000,
+        ).toISOString(),
+      }
+      const invalidPolicy = await invoke(
+        status,
+        pinControlAal2,
+        'admin-ai-unlock',
+        {
+          action: 'preparePolicyMutation',
+          ...policyRequest,
+          maxCostMicrousdPerDay: 400_000,
+        },
+        400,
+      )
+      assert.equal(invalidPolicy.code, 'request_invalid')
+      const policyPrepared = await invoke(
+        status,
+        pinControlAal2,
+        'admin-ai-unlock',
+        { action: 'preparePolicyMutation', ...policyRequest },
+        200,
+      )
+      assert.equal(policyPrepared.controlAction, 'environment_ai_policy_change')
+      assert.match(policyPrepared.controlIntentDigest, /^[0-9a-f]{64}$/)
+      assert.equal(policyPrepared.requestId, policyRequestId)
+      assert.equal(
+        policyPrepared.targetMembershipId,
+        completed.session.membershipId,
+      )
+
+      const policyControlBegunAt = Math.floor(Date.now() / 1_000)
+      const policyControlBegun = await invoke(
+        status,
+        pinControlAal2,
+        'admin-identity-session',
+        {
+          action: 'beginControlStepUp',
+          appSessionToken: completed.appSessionToken,
+          controlAction: policyPrepared.controlAction,
+          controlIntentDigest: policyPrepared.controlIntentDigest,
+          controlRequestId: policyRequestId,
+        },
+        200,
+      )
+      await waitForNextTotpWindow()
+      const { data: policyControlVerified, error: policyControlVerifyError } =
+        await authClient.auth.mfa.challengeAndVerify({
+          code: currentTotp(enrolled.totp.secret),
+          factorId: enrolled.id,
+        })
+      if (policyControlVerifyError) throw policyControlVerifyError
+      assert.ok(policyControlVerified.access_token)
+      const policyControlClaims = decodeJwtPayload(
+        policyControlVerified.access_token,
+      )
+      assert.equal(policyControlClaims.aal, 'aal2')
+      assert.equal(policyControlClaims.session_id, sessionId)
+      assert.ok(policyControlClaims.iat > pinControlClaims.iat)
+      const policyControlTotpAmrTimestamp =
+        latestTotpAmrTimestamp(policyControlClaims)
+      assert.ok(Number.isSafeInteger(policyControlTotpAmrTimestamp))
+      assert.ok(policyControlTotpAmrTimestamp > pinControlTotpAmrTimestamp)
+      assert.ok(policyControlTotpAmrTimestamp >= policyControlBegunAt - 1)
+      const policyControlAal2 = accessToken(status, {
+        aal: 'aal2',
+        totpTimestamp: policyControlTotpAmrTimestamp,
+      })
+      browserAal2 = policyControlAal2
+      const policyControlCompleted = await invoke(
+        status,
+        policyControlAal2,
+        'admin-identity-session',
+        {
+          action: 'completeControlStepUp',
+          appSessionToken: completed.appSessionToken,
+          controlAction: policyPrepared.controlAction,
+          controlIntentDigest: policyPrepared.controlIntentDigest,
+          controlRequestId: policyRequestId,
+          controlStepUpNonce: policyControlBegun.controlStepUpNonce,
+        },
+        200,
+      )
+      assert.equal(
+        policyControlCompleted.controlIntentDigest,
+        policyPrepared.controlIntentDigest,
+      )
+
+      const policySet = await invoke(
+        status,
+        policyControlAal2,
+        'admin-ai-unlock',
+        { action: 'setPolicy', ...policyRequest },
+        200,
+      )
+      assert.equal(policySet.membershipId, completed.session.membershipId)
+      assert.match(policySet.policyId, UUID_PATTERN)
+      assert.equal(policySet.status, 'active')
+      assert.equal(policySet.version, 2)
+
+      const policyStatus = await invoke(
+        status,
+        policyControlAal2,
+        'admin-ai-unlock',
+        {
+          action: 'policyStatus',
+          appSessionToken: completed.appSessionToken,
+        },
+        200,
+      )
+      const currentPolicyStatus = policyStatus.memberships.find(
+        (membership) =>
+          membership.membershipId === completed.session.membershipId,
+      )
+      assert.equal(policyStatus.topologyComplete, true)
+      assert.equal(policyStatus.canonicalPolicyTopologyComplete, true)
+      assert.equal(currentPolicyStatus?.covered, true)
+      assert.equal(currentPolicyStatus?.policyId, policySet.policyId)
+      assert.equal(currentPolicyStatus?.policyVersion, 2)
+      assert.equal(currentPolicyStatus?.maxCostMicrousdPerLecture, 500_000)
+      assert.equal(currentPolicyStatus?.maxCostMicrousdPerDay, 2_000_000)
+
+      const persistedPolicy = JSON.parse(
+        await runSql(`
+          select jsonb_build_object(
+            'allowedActions', allowed_actions,
+            'allowedModels', allowed_models,
+            'maxCallsPerLecture', max_calls_per_lecture,
+            'maxCallsPerDay', max_calls_per_day,
+            'maxInputTokensPerLecture', max_input_tokens_per_lecture,
+            'maxInputTokensPerDay', max_input_tokens_per_day,
+            'maxOutputTokensPerLecture', max_output_tokens_per_lecture,
+            'maxOutputTokensPerDay', max_output_tokens_per_day,
+            'maxCostMicrousdPerLecture', max_cost_microusd_per_lecture,
+            'maxCostMicrousdPerDay', max_cost_microusd_per_day,
+            'maxRealtimeMinutesPerLecture', max_realtime_minutes_per_lecture,
+            'maxRealtimeMinutesPerDay', max_realtime_minutes_per_day,
+            'maxConcurrency', max_concurrency,
+            'validFrom', valid_from,
+            'validUntil', valid_until,
+            'version', version,
+            'status', status
+          )
+          from private.admin_ai_policies
+          where id = ${sqlLiteral(policySet.policyId)}::uuid;
+        `),
+      )
+      assert.deepEqual(persistedPolicy.allowedActions, [
+        'academic_answers',
+        'captions',
+        'material_analysis',
+        'poll_suggestions',
+        'summaries',
+      ])
+      assert.deepEqual(persistedPolicy.allowedModels, [
+        'gpt-5.6-luna',
+        'gpt-realtime-whisper',
+      ])
+      assert.equal(persistedPolicy.maxCallsPerLecture, 24)
+      assert.equal(persistedPolicy.maxCallsPerDay, 96)
+      assert.equal(persistedPolicy.maxInputTokensPerLecture, 200_000)
+      assert.equal(persistedPolicy.maxInputTokensPerDay, 800_000)
+      assert.equal(persistedPolicy.maxOutputTokensPerLecture, 40_000)
+      assert.equal(persistedPolicy.maxOutputTokensPerDay, 160_000)
+      assert.equal(persistedPolicy.maxCostMicrousdPerLecture, 500_000)
+      assert.equal(persistedPolicy.maxCostMicrousdPerDay, 2_000_000)
+      assert.equal(persistedPolicy.maxRealtimeMinutesPerLecture, 90)
+      assert.equal(persistedPolicy.maxRealtimeMinutesPerDay, 180)
+      assert.equal(persistedPolicy.maxConcurrency, 2)
+      assert.equal(persistedPolicy.version, 2)
+      assert.equal(persistedPolicy.status, 'active')
+      assert.equal(
+        Date.parse(persistedPolicy.validUntil) -
+          Date.parse(persistedPolicy.validFrom),
+        30 * 24 * 60 * 60 * 1_000,
+      )
     }
     const fixture = {
       accessToken: browserAal2,
@@ -772,8 +1061,102 @@ try {
     )
     assert.equal(sourceOffC1Admission.code, 'feature_disabled')
 
-    const controlRequestId = randomUUID()
-    const controlIntentDigest = randomBytes(32).toString('hex')
+    const policyValidFromMs = Date.now() - 60_000
+    const policyRequest = {
+      appSessionToken: completed.appSessionToken,
+      maxCostMicrousdPerDay: 2_000_000,
+      maxCostMicrousdPerLecture: 500_000,
+      requestId: randomUUID(),
+      targetMembershipId: completed.session.membershipId,
+      validFrom: new Date(policyValidFromMs).toISOString(),
+      validUntil: new Date(
+        policyValidFromMs + 30 * 24 * 60 * 60 * 1_000,
+      ).toISOString(),
+    }
+    const closedPolicyStatus = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'policyStatus',
+        appSessionToken: completed.appSessionToken,
+        targetMembershipId: completed.session.membershipId,
+      },
+      400,
+    )
+    assert.equal(closedPolicyStatus.code, 'request_invalid')
+    const closedPolicyPrepare = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'preparePolicyMutation',
+        ...policyRequest,
+        allowedModels: ['gpt-5.6-luna'],
+      },
+      400,
+    )
+    assert.equal(closedPolicyPrepare.code, 'request_invalid')
+    const closedPolicySet = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'setPolicy',
+        ...policyRequest,
+        allowedActions: ['academic_answers'],
+      },
+      400,
+    )
+    assert.equal(closedPolicySet.code, 'request_invalid')
+
+    const initialPolicyStatus = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'policyStatus',
+        appSessionToken: completed.appSessionToken,
+      },
+      200,
+    )
+    assert.equal(initialPolicyStatus.activeAiMembershipCount, 1)
+    assert.equal(initialPolicyStatus.coveredMembershipCount, 0)
+    assert.equal(initialPolicyStatus.topologyComplete, false)
+    assert.equal(initialPolicyStatus.canonicalPolicyTopologyComplete, false)
+    assert.equal(initialPolicyStatus.memberships.length, 1)
+    assert.equal(initialPolicyStatus.memberships[0]?.covered, false)
+    assert.equal(
+      initialPolicyStatus.memberships[0]?.membershipId,
+      completed.session.membershipId,
+    )
+
+    const preparedPolicy = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      { action: 'preparePolicyMutation', ...policyRequest },
+      200,
+    )
+    assert.equal(preparedPolicy.controlAction, 'environment_ai_policy_change')
+    assert.match(preparedPolicy.controlIntentDigest, /^[0-9a-f]{64}$/)
+    assert.equal(preparedPolicy.requestId, policyRequest.requestId)
+    assert.equal(
+      preparedPolicy.targetMembershipId,
+      completed.session.membershipId,
+    )
+
+    const policyWithoutControlProof = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      { action: 'setPolicy', ...policyRequest },
+      409,
+    )
+    assert.equal(policyWithoutControlProof.code, 'control_proof_required')
+
+    const controlRequestId = policyRequest.requestId
+    const controlIntentDigest = preparedPolicy.controlIntentDigest
     const controlBegunAt = Math.floor(Date.now() / 1_000)
     const controlBegun = await invoke(
       status,
@@ -835,6 +1218,39 @@ try {
       Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
     )
 
+    const policySet = await invoke(
+      status,
+      refreshedAal2,
+      'admin-ai-unlock',
+      { action: 'setPolicy', ...policyRequest },
+      200,
+    )
+    assert.equal(policySet.membershipId, completed.session.membershipId)
+    assert.match(policySet.policyId, UUID_PATTERN)
+    assert.equal(policySet.status, 'active')
+    assert.equal(policySet.version, 1)
+
+    const completedPolicyStatus = await invoke(
+      status,
+      refreshedAal2,
+      'admin-ai-unlock',
+      {
+        action: 'policyStatus',
+        appSessionToken: completed.appSessionToken,
+      },
+      200,
+    )
+    assert.equal(completedPolicyStatus.activeAiMembershipCount, 1)
+    assert.equal(completedPolicyStatus.coveredMembershipCount, 1)
+    assert.equal(completedPolicyStatus.topologyComplete, true)
+    assert.equal(completedPolicyStatus.canonicalPolicyTopologyComplete, true)
+    assert.equal(completedPolicyStatus.memberships[0]?.covered, true)
+    assert.equal(
+      completedPolicyStatus.memberships[0]?.policyId,
+      policySet.policyId,
+    )
+    assert.equal(completedPolicyStatus.memberships[0]?.policyVersion, 1)
+
     const legacyEndpoint = await fetch(
       `${status.API_URL}/functions/v1/verify-admin-pin`,
       {
@@ -866,6 +1282,58 @@ try {
       401,
     )
     assert.equal(revokedStatus.code, 'app_session_invalid')
+
+    const preMissingSessionMutationCounts = JSON.parse(
+      await runSql(`
+        select jsonb_build_object(
+          'nonces', (
+            select count(*)
+            from private.admin_step_up_nonces
+            where supabase_auth_session_id = ${sqlLiteral(sessionId)}::uuid
+              and intended_action = 'admin_login'
+          ),
+          'audit_events', (
+            select count(*)
+            from private.admin_audit_events
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+          )
+        );
+      `),
+    )
+    await runSql(`
+      delete from auth.sessions
+      where id = ${sqlLiteral(sessionId)}::uuid
+        and user_id = ${sqlLiteral(authUserId)}::uuid;
+    `)
+    const missingSessionBegin = await invoke(
+      status,
+      aal1,
+      'admin-identity-session',
+      { action: 'beginStepUp', challengedFactorId: enrolled.id },
+      401,
+    )
+    assert.equal(missingSessionBegin.code, 'reauthentication_required')
+    const postMissingSessionMutationCounts = JSON.parse(
+      await runSql(`
+        select jsonb_build_object(
+          'nonces', (
+            select count(*)
+            from private.admin_step_up_nonces
+            where supabase_auth_session_id = ${sqlLiteral(sessionId)}::uuid
+              and intended_action = 'admin_login'
+          ),
+          'audit_events', (
+            select count(*)
+            from private.admin_audit_events
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+          )
+        );
+      `),
+    )
+    assert.deepEqual(
+      postMissingSessionMutationCounts,
+      preMissingSessionMutationCounts,
+    )
 
     const state = JSON.parse(
       await runSql(`

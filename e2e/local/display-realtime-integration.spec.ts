@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AxeBuilder } from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Request } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
@@ -284,6 +284,33 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     )
     expect(displayRegistration.error).toBeNull()
 
+    const pendingAdminPdfRequests = new Set<Request>()
+    let maxConcurrentAdminPdfRequests = 0
+    const isAdminPdfRequest = (request: Request) => {
+      if (!request.url().endsWith('/functions/v1/issue-pdf-access-token')) {
+        return false
+      }
+      const body = request.postDataJSON() as {
+        action?: string
+        lectureSessionId?: string
+      }
+      return body.action === 'admin' && body.lectureSessionId === lecture.id
+    }
+    const trackAdminPdfRequest = (request: Request) => {
+      if (!isAdminPdfRequest(request)) return
+      pendingAdminPdfRequests.add(request)
+      maxConcurrentAdminPdfRequests = Math.max(
+        maxConcurrentAdminPdfRequests,
+        pendingAdminPdfRequests.size,
+      )
+    }
+    const settleAdminPdfRequest = (request: Request) => {
+      pendingAdminPdfRequests.delete(request)
+    }
+    adminPage.on('request', trackAdminPdfRequest)
+    adminPage.on('requestfinished', settleAdminPdfRequest)
+    adminPage.on('requestfailed', settleAdminPdfRequest)
+
     await adminPage.reload()
     const lectureRow = adminPage
       .locator('.lecture-admin-row')
@@ -294,6 +321,11 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await expect(adminPage.locator('.admin-pdf-page-controller')).toContainText(
       '1 / 34',
     )
+    await expect.poll(() => pendingAdminPdfRequests.size).toBe(0)
+    expect(maxConcurrentAdminPdfRequests).toBe(1)
+    adminPage.off('request', trackAdminPdfRequest)
+    adminPage.off('requestfinished', settleAdminPdfRequest)
+    adminPage.off('requestfailed', settleAdminPdfRequest)
     await expectNoSeriousAccessibilityViolations(adminPage)
 
     await installClipboardCapture(adminPage)
@@ -366,16 +398,46 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         )
       })
 
-    const pageStartedAt = Date.now()
+    await displayPage.evaluate(() => {
+      const root = document.documentElement
+      root.removeAttribute('data-display-page-probe-elapsed-ms')
+      const startedAt = performance.now()
+      const observer = new MutationObserver(() => {
+        const pageChanged = Array.from(
+          document.querySelectorAll('.pdf-page-controls'),
+        ).some((controls) => controls.textContent?.includes('2 / 3'))
+        if (!pageChanged) return
+        root.dataset.displayPageProbeElapsedMs = String(
+          performance.now() - startedAt,
+        )
+        observer.disconnect()
+      })
+      observer.observe(document.body, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      })
+    })
     await adminPage
       .locator('.admin-pdf-page-controller')
       .locator('button')
       .filter({ hasText: /次/ })
       .click()
     await expect(displayPage.getByText('2 / 3', { exact: true })).toBeVisible({
-      timeout: 2_000,
+      timeout: 3_000,
     })
-    expect(Date.now() - pageStartedAt).toBeLessThan(2_000)
+    const pageAccelerationValue = await displayPage
+      .locator('html')
+      .getAttribute('data-display-page-probe-elapsed-ms')
+    expect(pageAccelerationValue).not.toBeNull()
+    const pageAccelerationMs = Number(pageAccelerationValue)
+    expect(Number.isFinite(pageAccelerationMs)).toBe(true)
+    expect(pageAccelerationMs).toBeLessThan(2_000)
+    await displayPage
+      .locator('html')
+      .evaluate((element) =>
+        element.removeAttribute('data-display-page-probe-elapsed-ms'),
+      )
 
     const streamId = randomUUID()
     await adminPage.evaluate(

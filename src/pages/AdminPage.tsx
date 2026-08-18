@@ -123,10 +123,15 @@ export function AdminPage({
   const [pdfDisplayName, setPdfDisplayName] = useState('')
   const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
   const [pdfPublishing, setPdfPublishing] = useState(false)
+  const [
+    pendingPublicationDisplayRefreshId,
+    setPendingPublicationDisplayRefreshId,
+  ] = useState<string | null>(null)
   const [workspaceView, setWorkspaceView] =
     useState<TeacherWorkspaceView>('setup')
   const [aiMasterActive, setAiMasterActive] = useState(false)
   const lastWorkspaceLectureIdRef = useRef<string | null>(null)
+  const publicationFlowInFlightRef = useRef(false)
   const workspaceSelectionTouchedRef = useRef(false)
   const requestedAdminLectureSessionId =
     runtimeMode === 'live' ? restoredActiveLectureSessionId : null
@@ -171,6 +176,7 @@ export function AdminPage({
     pdfDisplayName,
     pdfDownloadEnabled,
     pdfFile,
+    onPublicationActivated: setPendingPublicationDisplayRefreshId,
     requiredDocumentId: activeJournalClubRun?.expectedDocumentId ?? null,
     refreshAdminPdfDocuments,
     setPdfDisplayName,
@@ -278,18 +284,25 @@ export function AdminPage({
   }, [adminToken, isAuthenticated, runtimeMode, setOperatorLiveAccess])
 
   function selectAdminLecture(lectureRow: AdminLecture) {
+    const switchedLecture = Boolean(
+      activeLectureSessionId && activeLectureSessionId !== lectureRow.id,
+    )
     workspaceSelectionTouchedRef.current = false
     selectLectureSession(makeJoinedLecture(lectureRow))
     setWorkspaceView('setup')
+    if (switchedLecture) {
+      setPdfFile(null)
+    }
     if (!lectureRow.journalClub) return
 
     resetBrowserPdfPublication()
     setPdfPublicationDraftId(lectureRow.journalClub.expectedDocumentId)
     setPdfDisplayName('260723 JournalClub Presentation')
-    setPdfFile(null)
-    setPublisherMessage(
-      '修正版PDFを選択し、「学生に講義資料を公開する」を押してください。',
-    )
+    if (switchedLecture || !pdfFile) {
+      setPublisherMessage(
+        '修正版PDFを選択し、「学生に講義資料を公開する」を押してください。',
+      )
+    }
   }
 
   async function refreshLectures(
@@ -427,8 +440,10 @@ export function AdminPage({
     }
   }
 
-  async function publishPdfDocumentWithLocalPublisher() {
-    if (!activeLectureSessionId || !adminToken) {
+  async function publishPdfDocumentWithLocalPublisher(
+    targetLectureSessionId = activeLectureSessionId,
+  ) {
+    if (!targetLectureSessionId || !adminToken) {
       setPublisherMessage('先に講義を選択してください。')
       return
     }
@@ -465,7 +480,7 @@ export function AdminPage({
       }
       const access = await issuePdfAccessSession({
         adminToken,
-        lectureSessionId: activeLectureSessionId,
+        lectureSessionId: targetLectureSessionId,
       })
       setPublisherMessage('学生が閲覧できるように公開しています…')
       const published = await publisherClient.publish({
@@ -487,7 +502,7 @@ export function AdminPage({
         documentVersion: published.document.documentVersion,
         downloadEnabled: published.document.downloadEnabled,
         expectedAccessVersion: published.accessVersion,
-        lectureSessionId: activeLectureSessionId,
+        lectureSessionId: targetLectureSessionId,
         manifestEtag: published.manifestEtag,
         manifestVersion: published.manifestVersion,
         pageCount: published.document.pageCount,
@@ -501,9 +516,11 @@ export function AdminPage({
       setPdfPublicationDraftId(activeJournalClubRun?.expectedDocumentId ?? '')
       setPdfPublicationRequestId('')
       setPdfDisplayName('')
-      const displayUpdated = await updateDisplayState('setDocument', {
-        pdfDocumentId: published.document.documentId,
-      })
+      const displayUpdated = await updateDisplayState(
+        'setDocument',
+        { pdfDocumentId: published.document.documentId },
+        targetLectureSessionId,
+      )
       if (!displayUpdated) {
         setPublisherMessage(
           '資料ファイルは公開されましたが、講義画面への表示切替に失敗しました。資料一覧から「この資料を表示」をもう一度押してください。',
@@ -538,11 +555,28 @@ export function AdminPage({
   }
 
   async function publishPdfDocument() {
-    if (isPhase726BrowserPdfPublishingEnabled) {
-      await publishPdfDocumentInBrowser()
-      return
+    if (publicationFlowInFlightRef.current) return
+    publicationFlowInFlightRef.current = true
+    try {
+      let targetLectureSessionId = activeLectureSessionId
+      if (!targetLectureSessionId) {
+        if (!newLectureTitle.trim()) {
+          setPublisherMessage('講義タイトルを入力してください。')
+          return
+        }
+        const createdLecture = await createDraftLecture()
+        if (!createdLecture) return
+        targetLectureSessionId = createdLecture.id
+      }
+
+      if (isPhase726BrowserPdfPublishingEnabled) {
+        await publishPdfDocumentInBrowser(targetLectureSessionId)
+        return
+      }
+      await publishPdfDocumentWithLocalPublisher(targetLectureSessionId)
+    } finally {
+      publicationFlowInFlightRef.current = false
     }
-    await publishPdfDocumentWithLocalPublisher()
   }
 
   useEffect(() => {
@@ -670,14 +704,45 @@ export function AdminPage({
     liveDisplayStateError,
   ])
 
+  useEffect(() => {
+    if (
+      !pendingPublicationDisplayRefreshId ||
+      pendingPublicationDisplayRefreshId !== activeLectureSessionId
+    ) {
+      return
+    }
+
+    let active = true
+    void refreshDisplayState()
+      .then(() => {
+        if (active) setPendingPublicationDisplayRefreshId(null)
+      })
+      .catch(() => {
+        if (!active) return
+        setPendingPublicationDisplayRefreshId(null)
+        setPublisherMessage(
+          '資料は公開済みですが、最新の表示状態を読み込めませんでした。「再読み込み」を押してください。',
+        )
+      })
+
+    return () => {
+      active = false
+    }
+  }, [
+    activeLectureSessionId,
+    pendingPublicationDisplayRefreshId,
+    refreshDisplayState,
+  ])
+
   async function updateDisplayState(
     action: 'next' | 'previous' | 'goToPage' | 'setDocument',
     options: {
       currentPdfPage?: number
       pdfDocumentId?: string | null
     } = {},
+    targetLectureSessionId = activeLectureSessionId,
   ) {
-    if (!activeLectureSessionId) {
+    if (!targetLectureSessionId) {
       setDisplayStateError('先に講義へ参加してください。')
       return false
     }
@@ -701,20 +766,20 @@ export function AdminPage({
           action,
           adminToken,
           currentPdfPage: options.currentPdfPage ?? 1,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
         })
       } else if (action === 'setDocument') {
         nextDisplayState = await supabaseAdminRepository.updateDisplayState({
           action,
           adminToken,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
           pdfDocumentId: options.pdfDocumentId ?? null,
         })
       } else {
         nextDisplayState = await supabaseAdminRepository.updateDisplayState({
           action,
           adminToken,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
         })
       }
 
@@ -743,14 +808,12 @@ export function AdminPage({
     }
   }
 
-  async function handleCreateLecture(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
+  async function createDraftLecture(): Promise<AdminLecture | null> {
     if (!adminToken) {
       setLecturesError(
         '管理者認証の有効期限が切れました。再度ログインしてください。',
       )
-      return
+      return null
     }
 
     setLecturesLoading(true)
@@ -772,16 +835,23 @@ export function AdminPage({
       setNewLectureTitle('')
       setNewLectureStartsAt('')
       setNewLectureEndsAt('')
+      return createdLecture ?? null
     } catch (error) {
-      if (handleInvalidAdminSession(error)) return
+      if (handleInvalidAdminSession(error)) return null
       setLecturesError(
         error instanceof Error
           ? `講義作成に失敗しました: ${error.message}`
           : '講義作成に失敗しました。',
       )
+      return null
     } finally {
       setLecturesLoading(false)
     }
+  }
+
+  async function handleCreateLecture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await createDraftLecture()
   }
 
   async function updateLectureStatus(
@@ -1129,6 +1199,7 @@ export function AdminPage({
           adminToken={adminToken}
           availableAssets={availablePdfAssets}
           browserPublishingEnabled={isPhase726BrowserPdfPublishingEnabled}
+          canCreateLectureForPublication={Boolean(newLectureTitle.trim())}
           displayPageInput={displayPageInput}
           displayState={displayState}
           displayStateError={displayStateError}

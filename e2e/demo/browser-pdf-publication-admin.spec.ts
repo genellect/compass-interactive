@@ -29,6 +29,9 @@ type MockState = {
   active: boolean
   inflightDocumentId: string | null
   initiateIdempotencyKeys: string[]
+  lectureCreateCount: number
+  lectureCreated: boolean
+  lectureTitle: string | null
   publicationActions: PublicationAction[]
   storedPublicationAtUpload: string | null
   uploadCount: number
@@ -80,7 +83,12 @@ function anonymousSessionResponse() {
   }
 }
 
-function lectureResponse() {
+function lectureResponse(
+  options: {
+    status?: 'open' | 'scheduled'
+    title?: string
+  } = {},
+) {
   const now = new Date()
   return {
     archiveExpiresAt: null,
@@ -93,8 +101,8 @@ function lectureResponse() {
     id: lectureSessionId,
     lectureCode: '285463',
     startsAt: new Date(now.getTime() - 60_000).toISOString(),
-    status: 'open',
-    title: 'Phase 7.26 browser publication E2E',
+    status: options.status ?? 'open',
+    title: options.title ?? 'Phase 7.26 browser publication E2E',
     updatedAt: now.toISOString(),
   }
 }
@@ -124,13 +132,22 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   })
 }
 
-async function installAdminState(page: Page, recoverPublication: boolean) {
+async function installAdminState(
+  page: Page,
+  recoverPublication: boolean,
+  activeLecture = true,
+) {
   await installMockGoogleAdminSession(page, googleAdmin, {
     localStorage: {
       'compass-interactive-lecture-runtime-mode': 'live',
-      'compass-interactive-lecture-session-id': lectureSessionId,
-      'compass-interactive-lecture-status': 'open',
-      'compass-interactive-lecture-title': 'Phase 7.26 browser publication E2E',
+      ...(activeLecture
+        ? {
+            'compass-interactive-lecture-session-id': lectureSessionId,
+            'compass-interactive-lecture-status': 'open',
+            'compass-interactive-lecture-title':
+              'Phase 7.26 browser publication E2E',
+          }
+        : {}),
     },
     sessionStorage: recoverPublication
       ? {
@@ -154,12 +171,16 @@ async function installNetworkMocks(
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
     recoverPublication?: boolean
+    startWithoutLecture?: boolean
   } = {},
 ) {
   const state: MockState = {
     active: false,
     inflightDocumentId: null,
     initiateIdempotencyKeys: [],
+    lectureCreateCount: 0,
+    lectureCreated: !options.startWithoutLecture,
+    lectureTitle: null,
     publicationActions: [],
     storedPublicationAtUpload: null,
     uploadCount: 0,
@@ -213,7 +234,22 @@ async function installNetworkMocks(
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
     expectMockGoogleAdminCredential(body, googleAdmin)
     if (functionName === 'manage-lectures') {
-      await fulfillJson(route, { lectures: [lectureResponse()], ok: true })
+      if (body.action === 'create') {
+        state.lectureCreateCount += 1
+        state.lectureCreated = true
+        state.lectureTitle = String(body.title ?? '')
+      }
+      await fulfillJson(route, {
+        lectures: state.lectureCreated
+          ? [
+              lectureResponse({
+                status: options.startWithoutLecture ? 'scheduled' : 'open',
+                title: state.lectureTitle ?? undefined,
+              }),
+            ]
+          : [],
+        ok: true,
+      })
       return
     }
     if (functionName === 'manage-polls') {
@@ -318,21 +354,36 @@ async function installNetworkMocks(
     }
 
     if (functionName === 'operator-live-snapshot') {
+      const now = new Date().toISOString()
       await fulfillJson(route, {
         ok: true,
         result: {
           mode: 'live',
           snapshot: {
-            changed: {},
+            changed: state.active
+              ? {
+                  pdf: {
+                    current_pdf_page: 1,
+                    display_mode: 'normal',
+                    lecture_session_id: lectureSessionId,
+                    pdf_document_id: state.inflightDocumentId ?? documentId,
+                    pdf_document_version: 'a'.repeat(64),
+                    pdf_manifest_version: 2,
+                    pdf_page_count: 3,
+                    pdf_visible: true,
+                    updated_at: now,
+                  },
+                }
+              : {},
             contract_version: 2,
-            server_time: new Date().toISOString(),
+            server_time: now,
             versions: {
               caption: 0,
               comments: 0,
               lecture: 0,
               likes: 0,
               metrics: 0,
-              pdf: 0,
+              pdf: state.active ? 1 : 0,
               polls: 0,
               summaries: 0,
             },
@@ -407,6 +458,7 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
   await expect(
     page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
   await expect
     .poll(() =>
       page.evaluate(
@@ -418,6 +470,45 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
       ),
     )
     .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin creates a draft and publishes a preselected PDF with one CTA', async ({
+  page,
+}) => {
+  await installAdminState(page, false, false)
+  const state = await installNetworkMocks(page, { startWithoutLecture: true })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+
+  await expect(
+    pdfPanel.getByText(
+      '大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。',
+    ),
+  ).toHaveCount(0)
+  await expect(
+    pdfPanel.getByText(
+      '資料はこのブラウザで選択した状態を保ちます。講義を作成すると公開できます。',
+    ),
+  ).toHaveCount(0)
+  const publishButton = pdfPanel.getByRole('button', {
+    name: '講義を作成して資料を公開する',
+  })
+  await expect(publishButton).toBeEnabled()
+  await publishButton.click()
+
+  await expect.poll(() => state.lectureCreateCount).toBe(1)
+  expect(state.lectureTitle).toBe('m4-sample-v1')
+  await expect
+    .poll(() => withoutDiscovery(state.publicationActions))
+    .toEqual(['initiate', 'finalize'])
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  await expect(
+    page.locator(`#admin-live select option[value="${documentId}"]`),
+  ).toHaveCount(1)
   await stopAdminOperatorPolling(page)
 })
 

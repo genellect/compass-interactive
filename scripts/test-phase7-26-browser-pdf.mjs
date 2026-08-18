@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (...parts) =>
-  readFileSync(new URL(parts.join('/'), `${new URL(`file:///${root.replaceAll('\\', '/')}/`)}`), 'utf8')
+  readFileSync(
+    new URL(
+      parts.join('/'),
+      `${new URL(`file:///${root.replaceAll('\\', '/')}/`)}`,
+    ),
+    'utf8',
+  )
 
 const featureFlags = read('src', 'lib', 'featureFlags.ts')
 const envExample = read('.env.local.example')
@@ -14,11 +20,7 @@ const browserRunner = read('scripts', 'ci', 'run-browser-e2e.mjs')
 const localPlaywrightConfig = read('playwright.local.config.ts')
 const preflight = read('src', 'pdf', 'browserPdfPreflight.ts')
 const preflightWorker = read('src', 'pdf', 'browserPdfPreflight.worker.ts')
-const publicationClient = read(
-  'src',
-  'pdf',
-  'browserPdfPublicationClient.ts',
-)
+const publicationClient = read('src', 'pdf', 'browserPdfPublicationClient.ts')
 const localPublisherClient = read('src', 'pdf', 'publisherClient.ts')
 const adminPdfExtraction = read('src', 'pdf', 'adminPdfExtraction.ts')
 const adminPage = read('src', 'pages', 'AdminPage.tsx')
@@ -59,7 +61,10 @@ for (const action of ['discover', 'initiate', 'status', 'finalize', 'abort']) {
   assert.match(publicationClient, new RegExp(`action: '${action}'`))
 }
 assert.match(publicationClient, /method: 'PUT'/)
-assert.match(publicationClient, /Authorization: `Bearer \$\{handle\.uploadTicket\}`/)
+assert.match(
+  publicationClient,
+  /Authorization: `Bearer \$\{handle\.uploadTicket\}`/,
+)
 assert.match(publicationClient, /credentials: 'omit'/)
 assert.match(publicationClient, /redirect: 'error'/)
 assert.match(publicationClient, /referrerPolicy: 'no-referrer'/)
@@ -72,7 +77,9 @@ assert.match(
   /action: 'finalize'[\s\S]*?FINALIZE_TIMEOUT_MS,\s*\)/,
 )
 const uploadRequest =
-  publicationClient.match(/fetch\(handle\.uploadUrl, \{[\s\S]*?\n\s*\}\)/)?.[0] ?? ''
+  publicationClient.match(
+    /fetch\(handle\.uploadUrl, \{[\s\S]*?\n\s*\}\)/,
+  )?.[0] ?? ''
 assert.ok(uploadRequest)
 assert.doesNotMatch(uploadRequest, /['"]Content-Length['"]\s*:/)
 assert.doesNotMatch(publicationClient, /uploadReceipt/)
@@ -85,20 +92,46 @@ assert.doesNotMatch(
 
 assert.match(adminPage, /publishPdfDocumentInBrowser/)
 assert.match(adminPage, /publishPdfDocumentWithLocalPublisher/)
+assert.match(
+  adminPage,
+  /const switchedLecture = Boolean\([\s\S]*activeLectureSessionId !== lectureRow\.id[\s\S]*if \(switchedLecture\) \{\s*setPdfFile\(null\)/,
+)
+assert.match(
+  adminPage,
+  /const createdLecture = await createDraftLecture\(\)[\s\S]*publishPdfDocumentInBrowser\(targetLectureSessionId\)/,
+)
 assert.match(adminPage, /expectedAccessVersion: published\.accessVersion/)
 assert.match(adminPage, /manifestEtag: published\.manifestEtag/)
 assert.match(localPublisherClient, /manifestEtag: string/)
 assert.match(localPublisherClient, /accessVersion: number/)
 assert.match(adminPdfExtraction, /clearAdminPdfExtractionCache/)
-assert.match(adminPdfExtraction, /AbortSignal\.timeout\(PDF_DOWNLOAD_TIMEOUT_MS\)/)
+assert.match(
+  adminPdfExtraction,
+  /AbortSignal\.timeout\(PDF_DOWNLOAD_TIMEOUT_MS\)/,
+)
 assert.match(adminPdfExtraction, /response\.body\?\.getReader\(\)/)
-assert.match(adminPdfExtraction, /await issuePdfAccessSession\(\{[\s\S]*?return cached/)
+assert.match(
+  adminPdfExtraction,
+  /await issuePdfAccessSession\(\{[\s\S]*?return cached/,
+)
 assert.doesNotMatch(adminPdfExtraction, /response\.arrayBuffer\(\)/)
 assert.match(browserPublicationHook, /restoreBrowserPdfPublication/)
 assert.match(browserPublicationHook, /browserPdfPublicationClient\.discover/)
 assert.match(browserPublicationHook, /abortInterruptedPdfPublication/)
 assert.match(browserPublicationHook, /browserPublishingEnabled/)
+assert.match(
+  browserPublicationHook,
+  /refreshAdminPdfDocuments\(targetLectureSessionId, adminToken\)[\s\S]*onPublicationActivatedRef\.current\(targetLectureSessionId\)/,
+)
 assert.match(adminPdfControl, /中断した公開を破棄してやり直す/)
+assert.match(adminPdfControl, /講義を作成して資料を公開する/)
+for (const removedCopy of [
+  '大きい資料は公開やAI分析に時間と費用がかかります',
+  '資料はこのブラウザで選択した状態を保ちます',
+  '公開した資料は、学生画面と教室表示へ同じページ状態で配信されます',
+]) {
+  assert.doesNotMatch(adminPdfControl, new RegExp(removedCopy))
+}
 assert.doesNotMatch(adminPdfControl, /復旧・互換オプション/)
 assert.doesNotMatch(adminPdfControl, /Local Publisherで公開する/)
 assert.match(
@@ -116,7 +149,10 @@ assert.match(browserRunner, /port:\s*0/)
 assert.match(browserRunner, /String\(port\)/)
 assert.match(browserRunner, /PLAYWRIGHT_BASE_URL:\s*baseURL/)
 assert.doesNotMatch(browserRunner, /43_000\s*\+\s*\(process\.pid/)
-assert.match(browserRunner, /await waitForServer\(\)[\s\S]*await startPresenterFixture\(\)/)
+assert.match(
+  browserRunner,
+  /await waitForServer\(\)[\s\S]*await startPresenterFixture\(\)/,
+)
 assert.match(browserRunner, /viteReady && response\.ok/)
 assert.match(
   browserRunner,

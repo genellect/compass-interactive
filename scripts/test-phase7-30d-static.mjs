@@ -12,6 +12,9 @@ const identityApi = read('src/lib/adminAuth/adminIdentityApi.ts')
 const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
 const ledgerPanel = read('src/components/AdminLedgerPanel.tsx')
 const aiUnlockPanel = read('src/components/AdminAiUnlockPanel.tsx')
+const aiPolicyPanel = read('src/components/AdminAiPolicyPanel.tsx')
+const aiUnlockEdge = read('supabase/functions/admin-ai-unlock/index.ts')
+const aiUnlockApi = read('src/lib/adminAuth/adminAiUnlockApi.ts')
 const adminRoute = read('src/pages/AdminRoute.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminSettingsPage = read('src/pages/AdminSettingsPage.tsx')
@@ -25,6 +28,15 @@ const ownerCapabilityMigration = read(
 )
 const ownerCapabilityPgTap = read(
   'supabase/tests/phase7_30g_owner_capability_invariant_test.sql',
+)
+const aiPolicyManagementMigration = read(
+  'supabase/migrations/20260818070000_admin_ai_policy_management_facade.sql',
+)
+const productionAiProviderEnable = read(
+  'scripts/production-ai-provider-enable.sql',
+)
+const productionAiProviderRollback = read(
+  'scripts/production-ai-provider-rollback.sql',
 )
 const transport = read('src/repositories/supabase/transport.ts')
 const featureFlags = read('src/lib/featureFlags.ts')
@@ -192,12 +204,12 @@ assert.match(
 )
 assert.match(
   identityEdge,
-  /body\.action === 'beginControlStepUp'[\s\S]*body\.controlOperationKey === undefined[\s\S]*\['controlStepUpNonce'\]/,
+  /body\.action === 'beginControlStepUp'[\s\S]*'controlOperationKey'[\s\S]*'controlStepUpNonce'[\s\S]*const ownerLedgerOperationKey = body\.controlOperationKey \?\? null[\s\S]*const suppliedNonce = body\.controlStepUpNonce\?\.trim\(\) \?\? ''[\s\S]*const rawNonce = suppliedNonce \|\| createAdminLoginNonce\(\)/,
   'owner-ledger begin step-up accepts its caller-retained recovery nonce',
 )
 assert.match(
   identityEdge,
-  /const invitationAdmissionEnabled =[\s\S]*PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED[\s\S]*PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED[\s\S]*const invitationTokenHash = invitationToken && invitationAdmissionEnabled/,
+  /const invitationAdmissionEnabled =[\s\S]*PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED[\s\S]*PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED[\s\S]*const invitationTokenHash =[\s\S]*invitationToken && invitationAdmissionEnabled/,
   'only both server rollout gates may admit a tokenized D invitation',
 )
 assert.match(
@@ -480,5 +492,259 @@ assert.match(
 assert.match(browserSpec, /AxeBuilder/)
 assert.match(browserSpec, /scrollWidth/)
 assert.match(workflow, /npm run test:e2e:phase7-30d-browser/)
+
+for (const facade of [
+  'prepare_admin_ai_policy_change_v1',
+  'get_admin_ai_policy_status_v1',
+]) {
+  assert.match(
+    aiPolicyManagementMigration,
+    new RegExp(`create function public\\.${facade}\\(`),
+  )
+  assert.match(
+    aiPolicyManagementMigration,
+    new RegExp(
+      `revoke all on function public\\.${facade}\\([\\s\\S]*?from public, anon, authenticated, service_role;`,
+    ),
+  )
+  assert.match(
+    aiPolicyManagementMigration,
+    new RegExp(
+      `grant execute on function public\\.${facade}\\([\\s\\S]*?to service_role;`,
+    ),
+  )
+}
+assert.match(
+  aiPolicyManagementMigration,
+  /prepare_admin_ai_policy_change_v1[\s\S]*require_admin_ai_context_v1[\s\S]*membership\.environment_id = \(context_value ->> 'environment_id'\)::uuid[\s\S]*membership\.status = 'active'[\s\S]*membership\.can_use_ai/,
+  'policy preparation must stay Owner-context-bound and target only an active AI-capable membership in the same environment',
+)
+assert.match(
+  aiPolicyManagementMigration,
+  /admin_ai_policy_control_intent_digest_v1[\s\S]*'control_action', 'environment_ai_policy_change'[\s\S]*'request_id', target_request_id[\s\S]*'target_membership_id', target_membership_id/,
+  'policy preparation must bind the canonical preset, target and request to the existing TOTP control intent',
+)
+assert.match(
+  aiPolicyManagementMigration,
+  /create function private\.admin_ai_policy_matches_production_preset_v1[\s\S]*target_valid_until = target_valid_from \+ interval '30 days'[\s\S]*target_max_calls_per_lecture = 24[\s\S]*target_max_calls_per_day = 96[\s\S]*target_max_input_tokens_per_lecture = 200000[\s\S]*target_max_input_tokens_per_day = 800000[\s\S]*target_max_output_tokens_per_lecture = 40000[\s\S]*target_max_output_tokens_per_day = 160000[\s\S]*target_max_cost_microusd_per_lecture between 10000 and 5000000[\s\S]*target_max_cost_microusd_per_day between target_max_cost_microusd_per_lecture and 20000000[\s\S]*target_max_realtime_minutes_per_lecture = 90[\s\S]*target_max_realtime_minutes_per_day = 180[\s\S]*target_max_concurrency = 2/,
+  'the database-owned Production predicate must pin the complete bounded policy preset',
+)
+assert.match(
+  aiPolicyManagementMigration,
+  /prepare_admin_ai_policy_change_v1[\s\S]*admin_ai_policy_matches_production_preset_v1[\s\S]*get_admin_ai_policy_status_v1[\s\S]*admin_ai_policy_matches_production_preset_v1[\s\S]*canonical_policy_topology_complete/,
+  'preparation and coverage must share the canonical database predicate',
+)
+
+for (const gateTable of [
+  'admin_identity_runtime_gate',
+  'admin_ai_unlock_runtime_gate',
+]) {
+  assert.match(
+    productionAiProviderEnable,
+    new RegExp(
+      `from private\\.${gateTable} as gate[\\s\\S]*?where gate\\.singleton[\\s\\S]*?for update;`,
+    ),
+    `production activation must lock the singleton ${gateTable} row`,
+  )
+}
+assert.match(
+  productionAiProviderRollback,
+  /from private\.admin_ai_unlock_runtime_gate as gate[\s\S]*where gate\.singleton[\s\S]*for update;/,
+  'production rollback must lock the singleton AI gate row',
+)
+for (const requiredGate of [
+  'google_session_issue_enabled',
+  'google_operational_authorization_enabled',
+  'google_admin_ledger_enabled',
+  'ai_unlock_enabled',
+]) {
+  assert.match(productionAiProviderEnable, new RegExp(requiredGate))
+}
+assert.match(
+  productionAiProviderEnable,
+  /membership\.role = 'owner'[\s\S]*membership\.can_use_ai[\s\S]*active_owner_count <> 2 or ai_owner_count <> 2/,
+  'activation requires exactly two current AI-enabled Owners',
+)
+assert.match(
+  productionAiProviderEnable,
+  /eligible_membership_count[\s\S]*membership\.status = 'active'[\s\S]*membership\.can_use_ai[\s\S]*covered_membership_count[\s\S]*admin_ai_policy_matches_production_preset_v1[\s\S]*covered_membership_count <> eligible_membership_count/,
+  'activation must use the same canonical database predicate for every current AI-enabled membership',
+)
+for (const idleInvariant of [
+  /public\.lecture_sessions as lecture where lecture\.status = 'open'/,
+  /public\.lecture_ai_master_authorizations as master[\s\S]*master\.status = 'active'/,
+  /public\.ai_billing_grants as grant_row[\s\S]*grant_row\.status = 'issued'/,
+  /public\.ai_usage_ledger as usage where usage\.status = 'running'/,
+  /private\.admin_google_ai_provider_start_intents as intent[\s\S]*left join private\.admin_google_ai_provider_start_receipts[\s\S]*receipt\.start_request_id is null/,
+  /public\.lecture_summary_runs as run[\s\S]*run\.status = 'running'/,
+  /public\.lecture_summary_windows as window_row[\s\S]*window_row\.status in \('pending', 'running'\)/,
+  /public\.academic_answer_requests as request_row[\s\S]*request_row\.status in \('evidence_checking', 'running'\)/,
+]) {
+  assert.match(productionAiProviderEnable, idleInvariant)
+}
+assert.equal(
+  productionAiProviderEnable.match(/\bupdate private\./gi)?.length,
+  2,
+  'activation may update only the two admission bits',
+)
+assert.match(
+  productionAiProviderEnable,
+  /update private\.admin_ai_unlock_runtime_gate[\s\S]*google_ai_master_admission_enabled = true[\s\S]*update private\.admin_ai_unlock_runtime_gate[\s\S]*google_ai_child_grant_enabled = true/,
+  'activation enables master admission before child grants',
+)
+assert.equal(
+  productionAiProviderRollback.match(/\bupdate private\./gi)?.length,
+  2,
+  'rollback may update only the two admission bits',
+)
+assert.match(
+  productionAiProviderRollback,
+  /update private\.admin_ai_unlock_runtime_gate[\s\S]*google_ai_child_grant_enabled = false[\s\S]*update private\.admin_ai_unlock_runtime_gate[\s\S]*google_ai_master_admission_enabled = false/,
+  'rollback disables child grants before master admission',
+)
+
+assert.match(
+  aiUnlockEdge,
+  /policyStatus: new Set\(\['action', 'appSessionToken'\]\)/,
+)
+assert.match(
+  browserSpec,
+  /failFirstPolicySet: true[\s\S]*loseFirstPolicyCompletionResponse: true[\s\S]*policyCompleteAttempts[\s\S]*toBe\(1\)/,
+  'browser recovery must prove one committed TOTP completion survives a lost response and a later policy response failure',
+)
+assert.match(
+  read('src/components/AdminAiPolicyPanel.tsx'),
+  /recoverCompleting[\s\S]*commitPolicy\(\{ \.\.\.attempt, phase: 'authorized' \}\)[\s\S]*error\.code !== 'control_proof_required'[\s\S]*completeControl\(attempt\)/,
+  'a completing mutation must consume an existing exact grant before attempting TOTP completion again',
+)
+for (const action of ['preparePolicyMutation', 'setPolicy']) {
+  assert.match(
+    aiUnlockEdge,
+    new RegExp(
+      `${action}: new Set\\(\\[[\\s\\S]*?'action'[\\s\\S]*?'appSessionToken'[\\s\\S]*?'maxCostMicrousdPerDay'[\\s\\S]*?'maxCostMicrousdPerLecture'[\\s\\S]*?'requestId'[\\s\\S]*?'targetMembershipId'[\\s\\S]*?'validFrom'[\\s\\S]*?'validUntil'[\\s\\S]*?\\]\\)`,
+    ),
+  )
+}
+assert.match(
+  aiUnlockEdge,
+  /if \(action === 'policyStatus'\)[\s\S]*context!\.role !== 'owner'[\s\S]*get_admin_ai_policy_status_v1/,
+)
+assert.match(
+  aiUnlockEdge,
+  /action === 'preparePolicyMutation' \|\| action === 'setPolicy'[\s\S]*context!\.role !== 'owner'[\s\S]*getAiPolicyMutationInput\(body\)/,
+)
+assert.match(
+  aiUnlockEdge,
+  /prepare_admin_ai_policy_change_v1[\s\S]*control_action !== 'environment_ai_policy_change'[\s\S]*set_admin_ai_policy_v1[\s\S]*value\.status !== 'active'/,
+)
+
+const policyActions = [
+  'academic_answers',
+  'captions',
+  'material_analysis',
+  'poll_suggestions',
+  'summaries',
+]
+const policyModels = ['gpt-5.6-luna', 'gpt-realtime-whisper']
+for (const source of [aiUnlockEdge, aiUnlockApi]) {
+  for (const action of policyActions) assert.match(source, new RegExp(action))
+  for (const model of policyModels) assert.match(source, new RegExp(model))
+  for (const [name, value] of [
+    ['maxCallsPerLecture', '24'],
+    ['maxCallsPerDay', '96'],
+    ['maxInputTokensPerLecture', '200_000'],
+    ['maxInputTokensPerDay', '800_000'],
+    ['maxOutputTokensPerLecture', '40_000'],
+    ['maxOutputTokensPerDay', '160_000'],
+    ['maxRealtimeMinutesPerLecture', '90'],
+    ['maxRealtimeMinutesPerDay', '180'],
+    ['maxConcurrency', '2'],
+  ]) {
+    assert.match(source, new RegExp(`${name}: ${value}`))
+  }
+}
+assert.match(
+  aiUnlockEdge,
+  /validUntilMs - validFromMs !== ADMIN_AI_POLICY_VALIDITY_MS/,
+)
+assert.match(
+  aiUnlockApi,
+  /createAdminAiPolicyMutationRequest[\s\S]*validFromMs = now - 60_000[\s\S]*validFromMs \+ ADMIN_AI_POLICY_VALIDITY_MS/,
+)
+assert.match(
+  aiUnlockApi,
+  /getAdminAiPolicyStatus[\s\S]*action: 'policyStatus'[\s\S]*activeAiMembershipCount[\s\S]*canonicalPolicyTopologyComplete[\s\S]*coveredMembershipCount[\s\S]*topologyComplete/,
+)
+assert.match(
+  aiUnlockApi,
+  /prepareAdminAiPolicyMutation[\s\S]*action: 'preparePolicyMutation'[\s\S]*controlAction: 'environment_ai_policy_change'/,
+)
+assert.match(
+  aiUnlockApi,
+  /setAdminAiPolicy[\s\S]*action: 'setPolicy'[\s\S]*data\.status !== 'active'/,
+)
+
+assert.match(aiPolicyPanel, /<summary[^>]*>講義AIの利用設定<\/summary>/)
+for (const label of [
+  '対象の教員',
+  '講義ごとの上限（USD）',
+  '1日ごとの上限（USD）',
+  '確認に使う認証アプリ',
+  '6桁コード',
+  'この設定で利用を許可',
+  '認証アプリで確認',
+  '同じ内容で再試行',
+  '保留中の設定を取り消す',
+]) {
+  assert.match(aiPolicyPanel, new RegExp(label))
+}
+assert.match(aiPolicyPanel, /0\.50[\s\S]*2\.00/)
+for (const clientCall of [
+  'getAdminAiPolicyStatus',
+  'prepareAdminAiPolicyMutation',
+  'beginAdminControlStepUp',
+  'challengeAndVerify',
+  'completeAdminControlStepUp',
+  'setAdminAiPolicy',
+]) {
+  assert.match(aiPolicyPanel, new RegExp(clientCall))
+}
+for (const statusField of [
+  'activeAiMembershipCount',
+  'canonicalPolicyTopologyComplete',
+  'coveredMembershipCount',
+  'topologyComplete',
+]) {
+  assert.match(aiPolicyPanel, new RegExp(statusField))
+}
+assert.match(
+  aiPolicyPanel,
+  /ADMIN_AI_POLICY_PRESET\.allowedModels[\s\S]*maxCallsPerLecture[\s\S]*maxCallsPerDay[\s\S]*maxInputTokensPerLecture[\s\S]*maxOutputTokensPerLecture[\s\S]*maxRealtimeMinutesPerLecture[\s\S]*maxConcurrency[\s\S]*validityDays/,
+  'the browser may describe, but cannot choose, the server-owned action/model preset',
+)
+assert.match(
+  adminRoute,
+  /session\?\.role === 'owner'[\s\S]*AdminLedgerPanel/,
+  'only an Owner receives the Admin ledger that owns environment policy controls',
+)
+assert.match(
+  ledgerPanel,
+  /AdminAiPolicyPanel[\s\S]*appSessionToken=\{appSessionToken\}[\s\S]*factors=\{factors\}[\s\S]*memberships=\{snapshot\.memberships\}/,
+  'the Owner ledger supplies only server-derived active membership and factor inputs to policy settings',
+)
+for (const browserInvariant of [
+  '講義AIの利用設定',
+  'preparePolicyMutation',
+  'environment_ai_policy_change',
+  'setPolicy',
+  '同じ内容で再試行',
+  "role: 'instructor'",
+  'toHaveCount(0)',
+]) {
+  assert.match(
+    browserSpec,
+    new RegExp(browserInvariant.replace(/[()]/g, '\\$&')),
+  )
+}
 
 console.log('Phase 7.30D Admin ledger static checks passed.')

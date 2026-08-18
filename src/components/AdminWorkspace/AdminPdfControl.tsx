@@ -12,6 +12,7 @@ type AdminPdfControlProps = {
   adminToken: AdminOperationCredentialInput
   availableAssets: readonly PdfAsset[]
   browserPublishingEnabled: boolean
+  canCreateLectureForPublication: boolean
   displayPageInput: string
   displayState: DisplayState | null
   displayStateError: string | null
@@ -58,6 +59,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     adminToken,
     availableAssets,
     browserPublishingEnabled,
+    canCreateLectureForPublication,
     displayPageInput,
     displayState,
     displayStateError,
@@ -288,7 +290,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <button
               className="primary-button"
               disabled={
-                !activeLectureSessionId ||
+                (!activeLectureSessionId && !canCreateLectureForPublication) ||
                 !pdfFile ||
                 pdfPublishing ||
                 closed ||
@@ -299,19 +301,22 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               onClick={onPublish}
               type="button"
             >
-              {pdfPublishing ? '学生画面へ反映中…' : '学生に講義資料を公開する'}
+              {pdfPublishing
+                ? '学生画面へ反映中…'
+                : activeLectureSessionId
+                  ? '学生に講義資料を公開する'
+                  : '講義を作成して資料を公開する'}
             </button>
           </div>
-          <p
-            className={
-              publisherMessage.includes('失敗') ? 'error-note' : 'note'
-            }
-          >
-            {publisherMessage ||
-              (activeLectureSessionId
-                ? 'PDFを選択して公開してください。'
-                : 'PDFを選択し、続けて講義タイトルを設定してください。')}
-          </p>
+          {publisherMessage ? (
+            <p
+              className={
+                publisherMessage.includes('失敗') ? 'error-note' : 'note'
+              }
+            >
+              {publisherMessage}
+            </p>
+          ) : null}
           {requiredDocument ? (
             <p className="note">講義資料: {requiredDocument.displayName}</p>
           ) : null}
@@ -325,16 +330,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               中断した公開を破棄してやり直す
             </button>
           ) : null}
-          <p className="note">
-            大きい資料は公開やAI分析に時間と費用がかかります。可能な範囲で圧縮してください。
-          </p>
         </div>
       ) : null}
-      {!activeLectureSessionId ? (
-        <p className="note">
-          資料はこのブラウザで選択した状態を保ちます。講義を作成すると公開できます。
-        </p>
-      ) : (
+      {activeLectureSessionId ? (
         <div className="display-control-grid">
           <div className="display-control-form pdf-document-control">
             <label className="field compact-field">
@@ -368,7 +366,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             </button>
           </div>
         </div>
-      )}
+      ) : null}
       {activeLectureSessionId && displayState?.pdfDocumentId ? (
         <div className="admin-current-pdf-preview" hidden={view !== 'slides'}>
           <h3>現在、学生に表示しているページ</h3>
@@ -389,13 +387,13 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
       {displayStateError ? (
         <p className="error-note">{displayStateError}</p>
       ) : null}
-      <p className="note">
-        {view === 'material'
-          ? '公開した資料は、学生画面と教室表示へ同じページ状態で配信されます。'
-          : closed
+      {view === 'slides' ? (
+        <p className="note">
+          {closed
             ? '講義終了時点で表示していた資料とページです。'
             : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
-      </p>
+        </p>
+      ) : null}
     </section>
   )
 }

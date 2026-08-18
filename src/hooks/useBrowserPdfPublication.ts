@@ -17,6 +17,7 @@ type UseBrowserPdfPublicationInput = {
   pdfDisplayName: string
   pdfDownloadEnabled: boolean
   pdfFile: File | null
+  onPublicationActivated: (lectureSessionId: string) => void
   requiredDocumentId?: string | null
   refreshAdminPdfDocuments: (
     lectureSessionId?: string,
@@ -37,6 +38,7 @@ export function useBrowserPdfPublication({
   pdfDisplayName,
   pdfDownloadEnabled,
   pdfFile,
+  onPublicationActivated,
   requiredDocumentId,
   refreshAdminPdfDocuments,
   setPdfDisplayName,
@@ -50,12 +52,16 @@ export function useBrowserPdfPublication({
   const [pdfInterruptedPublicationId, setPdfInterruptedPublicationId] =
     useState('')
   const publishInFlightRef = useRef(false)
+  const onPublicationActivatedRef = useRef(onPublicationActivated)
   const refreshAdminPdfDocumentsRef = useRef(refreshAdminPdfDocuments)
+  onPublicationActivatedRef.current = onPublicationActivated
   refreshAdminPdfDocumentsRef.current = refreshAdminPdfDocuments
 
-  async function publishPdfDocumentInBrowser() {
+  async function publishPdfDocumentInBrowser(
+    targetLectureSessionId = activeLectureSessionId,
+  ) {
     if (!browserPublishingEnabled) return
-    if (!activeLectureSessionId || !adminToken) {
+    if (!targetLectureSessionId || !adminToken) {
       setPublisherMessage('先に講義を選択してください。')
       return
     }
@@ -102,7 +108,7 @@ export function useBrowserPdfPublication({
       if (!idempotencyKey) {
         const inflight = await browserPdfPublicationClient.discover({
           adminToken,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
         })
         if (inflight && !adoptInflight(inflight)) {
           setPublisherMessage(
@@ -123,7 +129,7 @@ export function useBrowserPdfPublication({
           downloadEnabled: pdfDownloadEnabled,
           fileName: pdfFile.name,
           idempotencyKey,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
           preflight,
         })
       setPublisherMessage('安全な公開先を準備しています…')
@@ -133,7 +139,7 @@ export function useBrowserPdfPublication({
       } catch (error) {
         const concurrent = await browserPdfPublicationClient.discover({
           adminToken,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
         })
         if (!concurrent || !adoptInflight(concurrent)) throw error
         publication = await initiate()
@@ -147,7 +153,7 @@ export function useBrowserPdfPublication({
       setPublisherMessage('講義画面への反映を確定しています…')
       const finalized = await browserPdfPublicationClient.finalize({
         adminToken,
-        lectureSessionId: activeLectureSessionId,
+        lectureSessionId: targetLectureSessionId,
         publicationId: publication.publicationId,
       })
 
@@ -159,13 +165,14 @@ export function useBrowserPdfPublication({
       if (finalized.status === 'active') {
         rememberBrowserPdfExtraction({
           documentId,
-          lectureSessionId: activeLectureSessionId,
+          lectureSessionId: targetLectureSessionId,
           preflight,
         })
-        forgetBrowserPdfPublication(activeLectureSessionId)
+        forgetBrowserPdfPublication(targetLectureSessionId)
         setPdfInterruptedPublicationId('')
       }
-      await refreshAdminPdfDocuments(activeLectureSessionId, adminToken)
+      await refreshAdminPdfDocuments(targetLectureSessionId, adminToken)
+      onPublicationActivatedRef.current(targetLectureSessionId)
       setPublisherMessage(
         `学生への公開が完了しました（${preflight.pageCount}ページ・${(
           preflight.byteSize /
@@ -281,6 +288,7 @@ export function useBrowserPdfPublication({
           adminToken,
         )
         if (active) {
+          onPublicationActivatedRef.current(activeLectureSessionId)
           setPublisherMessage('中断したPDFの公開が完了しました。')
         }
         return
@@ -293,7 +301,10 @@ export function useBrowserPdfPublication({
           activeLectureSessionId,
           adminToken,
         )
-        if (active) setPublisherMessage('PDFは公開済みです。')
+        if (active) {
+          onPublicationActivatedRef.current(activeLectureSessionId)
+          setPublisherMessage('PDFは公開済みです。')
+        }
         return
       }
       if (status.status === 'pending') {

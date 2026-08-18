@@ -64,6 +64,7 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                           | Reasoning budget and internal/external agent responsibility                                        |
 | [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)                               | Planned                           | Private-source, no-regression lecture-cycle candidate and 50-hour bounded release plan             |
 | [`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)                                         | Planned                           | Copy-ready parallel cloud task instructions, ownership and handoff contract                        |
+| [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)                                       | Implemented, verification pending | Direct Production topology, UI canary, stop conditions and repair-forward release contract         |
 | [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Implemented, verification pending | A-C1 source checkpoint plus Google identity, AAL2, RBAC and rollout contract                       |
 | [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Implemented, verification pending | A-B1 source/local boundary, dormant gates, evidence scope and rollback                             |
 | [`PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](PHASE7_30B2_AI_UNLOCK_FOUNDATION.md)                                             | Implemented, verification pending | B2 default-OFF database foundation, source evidence and pending runtime/Hosted boundaries          |
@@ -78,16 +79,17 @@ A document dated in the past is not automatically `Historical` — `architecture
 
 ## Setup and deployment
 
-| Document                                                                                         | Status                            | Scope                                             |
-| ------------------------------------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------- |
-| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup            |
-| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery                         |
-| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary           |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5                 |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6                 |
-| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Production                        | PPT rescue, dormant deploy and rollback           |
-| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)         | Local source; activation HOLD     | Gateway, signed delivery and activation contract  |
-| [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)   | Historical                        | Dated Hosted evidence for the default-OFF release |
+| Document                                                                                         | Status                            | Scope                                              |
+| ------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------- |
+| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup             |
+| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery                          |
+| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary            |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5                  |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6                  |
+| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Production                        | PPT rescue, dormant deploy and rollback            |
+| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)         | Local source; activation HOLD     | Gateway, signed delivery and activation contract   |
+| [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)   | Historical                        | Dated Hosted evidence for the default-OFF release  |
+| [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)               | Implemented, verification pending | Current direct Production lecture-cycle activation |
 
 A runbook records the contract in source and the operational procedure. External state — Cloudflare dashboard, hosted secrets, real mail delivery — is not proven current by the document's date. The operator confirms it.
 

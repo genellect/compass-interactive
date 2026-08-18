@@ -5314,6 +5314,14 @@ export type Database = {
         }
         Returns: Json
       }
+      get_admin_ai_policy_status_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       get_admin_ai_unlock_profile_v1: {
         Args: {
           target_auth_user_id: string
@@ -6277,6 +6285,31 @@ export type Database = {
           target_participant_id: string
         }
         Returns: boolean
+      }
+      prepare_admin_ai_policy_change_v1: {
+        Args: {
+          target_allowed_actions: string[]
+          target_allowed_models: string[]
+          target_auth_user_id: string
+          target_max_calls_per_day: number
+          target_max_calls_per_lecture: number
+          target_max_concurrency: number
+          target_max_cost_microusd_per_day: number
+          target_max_cost_microusd_per_lecture: number
+          target_max_input_tokens_per_day: number
+          target_max_input_tokens_per_lecture: number
+          target_max_output_tokens_per_day: number
+          target_max_output_tokens_per_lecture: number
+          target_max_realtime_minutes_per_day: number
+          target_max_realtime_minutes_per_lecture: number
+          target_membership_id: string
+          target_request_id: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_valid_from: string
+          target_valid_until: string
+        }
+        Returns: Json
       }
       prepare_google_admin_academic_answer_v1: {
         Args: {

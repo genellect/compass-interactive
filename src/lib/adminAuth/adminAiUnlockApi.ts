@@ -13,6 +13,79 @@ export type GoogleAiMasterPolicy = {
   version: number
 }
 
+export const ADMIN_AI_POLICY_PRESET = Object.freeze({
+  allowedActions: Object.freeze([
+    'academic_answers',
+    'captions',
+    'material_analysis',
+    'poll_suggestions',
+    'summaries',
+  ]),
+  allowedModels: Object.freeze(['gpt-5.6-luna', 'gpt-realtime-whisper']),
+  maxCallsPerDay: 96,
+  maxCallsPerLecture: 24,
+  maxConcurrency: 2,
+  maxInputTokensPerDay: 800_000,
+  maxInputTokensPerLecture: 200_000,
+  maxOutputTokensPerDay: 160_000,
+  maxOutputTokensPerLecture: 40_000,
+  maxRealtimeMinutesPerDay: 180,
+  maxRealtimeMinutesPerLecture: 90,
+  validityDays: 30,
+})
+
+export type AdminAiPolicyMutationRequest = {
+  maxCostMicrousdPerDay: number
+  maxCostMicrousdPerLecture: number
+  requestId: string
+  targetMembershipId: string
+  validFrom: string
+  validUntil: string
+}
+
+export type AdminAiPolicyStatusMembership = {
+  covered: boolean
+  maxCostMicrousdPerDay: number | null
+  maxCostMicrousdPerLecture: number | null
+  membershipId: string
+  policyId: string | null
+  policyStatus: string | null
+  policyVersion: number | null
+  validFrom: string | null
+  validUntil: string | null
+}
+
+export type AdminAiPolicyStatus = {
+  activeAiMembershipCount: number
+  canonicalPolicyTopologyComplete: boolean
+  coveredMembershipCount: number
+  memberships: AdminAiPolicyStatusMembership[]
+  topologyComplete: boolean
+}
+
+const ADMIN_AI_POLICY_VALIDITY_MS =
+  ADMIN_AI_POLICY_PRESET.validityDays * 24 * 60 * 60 * 1_000
+
+export function createAdminAiPolicyMutationRequest(
+  targetMembershipId: string,
+  maxCostMicrousdPerLecture: number,
+  maxCostMicrousdPerDay: number,
+  requestId: string = crypto.randomUUID(),
+  now: number = Date.now(),
+) {
+  const validFromMs = now - 60_000
+  return {
+    maxCostMicrousdPerDay,
+    maxCostMicrousdPerLecture,
+    requestId,
+    targetMembershipId,
+    validFrom: new Date(validFromMs).toISOString(),
+    validUntil: new Date(
+      validFromMs + ADMIN_AI_POLICY_VALIDITY_MS,
+    ).toISOString(),
+  } satisfies AdminAiPolicyMutationRequest
+}
+
 export type AdminAiUnlockProfile = {
   activeBrowserCount: number
   activePin: boolean
@@ -144,6 +217,119 @@ export async function getAdminAiUnlockProfile(appSessionToken: string) {
     rememberedBrowserEnabled: data.rememberedBrowserEnabled === true,
     role: typeof data.role === 'string' ? data.role : null,
   } satisfies AdminAiUnlockProfile
+}
+
+export async function getAdminAiPolicyStatus(appSessionToken: string) {
+  const data = await invoke(appSessionToken, { action: 'policyStatus' })
+  if (
+    !Number.isSafeInteger(data.activeAiMembershipCount) ||
+    Number(data.activeAiMembershipCount) < 0 ||
+    !Number.isSafeInteger(data.coveredMembershipCount) ||
+    Number(data.coveredMembershipCount) < 0 ||
+    !Array.isArray(data.memberships)
+  ) {
+    throw new AdminAiUnlockError(
+      'policy_status_unavailable',
+      '講義AIの利用状況を確認できませんでした。',
+    )
+  }
+  const memberships = data.memberships.map((entry) => {
+    const value =
+      entry && typeof entry === 'object'
+        ? (entry as Record<string, unknown>)
+        : null
+    if (!value || typeof value.membershipId !== 'string') {
+      throw new AdminAiUnlockError(
+        'policy_status_unavailable',
+        '講義AIの利用状況を確認できませんでした。',
+      )
+    }
+    return {
+      covered: value.covered === true,
+      maxCostMicrousdPerDay:
+        typeof value.maxCostMicrousdPerDay === 'number'
+          ? value.maxCostMicrousdPerDay
+          : null,
+      maxCostMicrousdPerLecture:
+        typeof value.maxCostMicrousdPerLecture === 'number'
+          ? value.maxCostMicrousdPerLecture
+          : null,
+      membershipId: value.membershipId,
+      policyId: typeof value.policyId === 'string' ? value.policyId : null,
+      policyStatus:
+        typeof value.policyStatus === 'string' ? value.policyStatus : null,
+      policyVersion:
+        typeof value.policyVersion === 'number' ? value.policyVersion : null,
+      validFrom: typeof value.validFrom === 'string' ? value.validFrom : null,
+      validUntil:
+        typeof value.validUntil === 'string' ? value.validUntil : null,
+    } satisfies AdminAiPolicyStatusMembership
+  })
+  return {
+    activeAiMembershipCount: Number(data.activeAiMembershipCount),
+    canonicalPolicyTopologyComplete:
+      data.canonicalPolicyTopologyComplete === true,
+    coveredMembershipCount: Number(data.coveredMembershipCount),
+    memberships,
+    topologyComplete: data.topologyComplete === true,
+  } satisfies AdminAiPolicyStatus
+}
+
+export async function prepareAdminAiPolicyMutation(
+  appSessionToken: string,
+  request: AdminAiPolicyMutationRequest,
+) {
+  const data = await invoke(appSessionToken, {
+    action: 'preparePolicyMutation',
+    ...request,
+  })
+  if (
+    data.controlAction !== 'environment_ai_policy_change' ||
+    typeof data.controlIntentDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(data.controlIntentDigest) ||
+    data.requestId !== request.requestId ||
+    data.targetMembershipId !== request.targetMembershipId
+  ) {
+    throw new AdminAiUnlockError(
+      'policy_intent_invalid',
+      '講義AIの設定内容を確認できませんでした。',
+    )
+  }
+  return {
+    controlAction: 'environment_ai_policy_change' as const,
+    controlIntentDigest: data.controlIntentDigest,
+    requestId: request.requestId,
+    targetMembershipId: request.targetMembershipId,
+  }
+}
+
+export async function setAdminAiPolicy(
+  appSessionToken: string,
+  request: AdminAiPolicyMutationRequest,
+) {
+  const data = await invoke(appSessionToken, {
+    action: 'setPolicy',
+    ...request,
+  })
+  if (
+    data.membershipId !== request.targetMembershipId ||
+    typeof data.policyId !== 'string' ||
+    data.status !== 'active' ||
+    typeof data.version !== 'number' ||
+    !Number.isSafeInteger(data.version) ||
+    data.version < 1
+  ) {
+    throw new AdminAiUnlockError(
+      'policy_commit_invalid',
+      '講義AIの利用設定を完了できませんでした。',
+    )
+  }
+  return {
+    membershipId: request.targetMembershipId,
+    policyId: data.policyId,
+    status: 'active' as const,
+    version: data.version,
+  }
 }
 
 export async function prepareAdminAiPinMutation(

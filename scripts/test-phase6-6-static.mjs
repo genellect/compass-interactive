@@ -276,7 +276,7 @@ assert.match(adminRepository, /Promise<AdminPollList>/)
 assert.match(adminPage, /adminPollsHasMore/)
 assert.match(
   adminPage,
-  /const displayUpdated = await updateDisplayState\('setDocument'/,
+  /const displayUpdated = await updateDisplayState\(\s*'setDocument'/,
 )
 assert.match(adminPage, /if \(!displayUpdated\)/)
 assert.doesNotMatch(

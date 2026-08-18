@@ -484,6 +484,16 @@ assert.match(
   'the local lifecycle harness must expose the separately issued Display URL while production remains default-off',
 )
 assert.match(
+  browserRunner,
+  /const localFixtureEnvironmentId = localMode[\s\S]*00000000-0000-4000-8000-000000000730[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:[\s\S]*googleAdminFixtureHandles\.length === 0 \? 'true' : 'false'[\s\S]*retainEnvironment: true/,
+  'local browser runs must share the create-only Edge environment and reset retained memberships exactly once before each Playwright run',
+)
+assert.match(
+  localGoogleFixture,
+  /browserFixtureResetRetainedMemberships[\s\S]*role = 'instructor'[\s\S]*can_use_ai = false[\s\S]*id <> \$\{sqlLiteral\(completed\.session\.membershipId\)\}[\s\S]*activeAiMemberships[\s\S]*activeOwners[\s\S]*activePriorSessions[\s\S]*assert\.equal\(Number\(resetState\.activeAiMemberships\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activeOwners\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activePriorSessions\), 0\)/,
+  'the first retained fixture must deprivilege stale memberships while preserving exactly one active AI Owner and no stale active session',
+)
+assert.match(
   adminIdentityBrowser,
   /\/auth\/v1\/factors\/\$\{factorId\}\/challenge[\s\S]*\/auth\/v1\/factors\/\$\{factorId\}\/verify/,
   'the identity demo must exercise the Supabase TOTP challenge and verification endpoints',

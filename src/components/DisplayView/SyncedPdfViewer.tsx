@@ -221,22 +221,31 @@ export function SyncedPdfViewer({
       if (!canvas || !stage) {
         return
       }
+      const isCurrentRequest = () =>
+        requestId === renderRequestRef.current &&
+        canvasRef.current === canvas &&
+        stageRef.current === stage
 
       const previousRenderTask = renderTaskRef.current
       if (previousRenderTask) {
-        await cancelAndSettleRenderTask(previousRenderTask)
+        try {
+          await cancelAndSettleRenderTask(previousRenderTask)
+        } catch (error) {
+          if (!isCurrentRequest()) return
+          throw error
+        }
         if (renderTaskRef.current === previousRenderTask) {
           renderTaskRef.current = null
         }
       }
-      const page = await document.getPage(pageNumber)
-      if (
-        requestId !== renderRequestRef.current ||
-        canvasRef.current !== canvas ||
-        stageRef.current !== stage
-      ) {
-        return
+      let page
+      try {
+        page = await document.getPage(pageNumber)
+      } catch (error) {
+        if (!isCurrentRequest()) return
+        throw error
       }
+      if (!isCurrentRequest()) return
       const baseViewport = page.getViewport({ scale: 1 })
       setPageAspectRatio(baseViewport.width / baseViewport.height)
       const stageRect = stage.getBoundingClientRect()
@@ -272,7 +281,7 @@ export function SyncedPdfViewer({
       try {
         await renderTask.promise
       } catch (error) {
-        if (isRenderingCancelledError(error)) {
+        if (isRenderingCancelledError(error) || !isCurrentRequest()) {
           return
         }
         throw error
@@ -363,7 +372,7 @@ export function SyncedPdfViewer({
       active = false
       renderRequestRef.current += 1
       renderTaskRef.current?.cancel()
-      void loadingTask.destroy()
+      void loadingTask.destroy().catch(() => undefined)
     }
   }, [assetUrl, renderPage])
 
@@ -395,10 +404,21 @@ export function SyncedPdfViewer({
     if (!pdfDocument) {
       return
     }
+    let active = true
     const timer = window.setTimeout(() => {
-      void renderPage(currentPage, pdfDocument)
+      void renderPage(currentPage, pdfDocument).catch((error: unknown) => {
+        if (!active) return
+        setErrorMessage(
+          error instanceof Error
+            ? `PDFページの描画に失敗しました: ${error.message}`
+            : 'PDFページの描画に失敗しました。',
+        )
+      })
     }, 120)
-    return () => window.clearTimeout(timer)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [currentPage, isPdfFullscreen, pdfDocument, renderPage])
 
   async function resumePresenterFollow() {

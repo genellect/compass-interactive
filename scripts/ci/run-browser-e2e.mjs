@@ -36,6 +36,9 @@ const demoMode =
   mode === 'demo-admin-ledger'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
+const localFixtureEnvironmentId = localMode
+  ? '00000000-0000-4000-8000-000000000730'
+  : ''
 const googleAdminWorkspaceMode =
   localMode ||
   [
@@ -45,6 +48,7 @@ const googleAdminWorkspaceMode =
     'demo-jc-off',
     'demo-presenter',
     'demo-presenter-off',
+    'demo-admin-identity',
     'demo-admin-ledger',
   ].includes(mode)
 const googleAdminIdentityMode =
@@ -290,7 +294,8 @@ const appEnvironment = {
       : 'false',
   VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_IDENTITY: googleAdminIdentityMode ? 'true' : 'false',
-  VITE_PHASE7_30_ADMIN_AI_UNLOCK: mode === 'local-ai' ? 'true' : 'false',
+  VITE_PHASE7_30_ADMIN_AI_UNLOCK:
+    mode === 'local-ai' || mode === 'demo-admin-ledger' ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION: 'false',
   VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: googleAdminWorkspaceMode
     ? 'true'
@@ -526,9 +531,16 @@ try {
             cwd: root,
             env: {
               ...appEnvironment,
+              TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId,
+              TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:
+                googleAdminFixtureHandles.length === 0 ? 'true' : 'false',
               TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
                 mode === 'local-ai' ? '1357' : '',
             },
+            // Every browser invocation uses the one create-only local Admin
+            // environment expected by the running Edge process. The first
+            // fixture deprivileges retained memberships from an earlier run;
+            // later fixtures remain active together for this Playwright run.
             retainEnvironment: true,
           })
           googleAdminFixtureHandles.push(handle)

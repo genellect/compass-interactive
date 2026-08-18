@@ -17,6 +17,7 @@ import {
   isPhase730AdminIdentityEnabled,
   isPhase730AdminTotpFactorMutationEnabled,
   isPhase730GoogleAdminLedgerAdmissionEnabled,
+  isPhase730GoogleAdminOperationsEnabled,
 } from '../lib/featureFlags'
 import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
 import {
@@ -180,6 +181,18 @@ export function AdminRoute() {
     [clearEnrollmentSecret],
   )
 
+  const returnToGoogleReauthentication = useCallback(
+    async (message: string, invalidatedAppSessionToken = '') => {
+      await adminSupabase.auth
+        .signOut({ scope: 'local' })
+        .catch(() => undefined)
+      clearGoogleAdminWorkspace(message, invalidatedAppSessionToken)
+      // Keep the current safe Admin pathname. startGoogleLogin records that
+      // pathname as the next OAuth return path when the educator uses the CTA.
+    },
+    [clearGoogleAdminWorkspace],
+  )
+
   useEffect(() => {
     const {
       data: { subscription },
@@ -275,12 +288,10 @@ export function AdminRoute() {
               'aal2_required',
               'app_session_invalid',
               'identity_invalid',
+              'reauthentication_required',
             ].includes(error.code)
           ) {
-            await adminSupabase.auth
-              .signOut({ scope: 'local' })
-              .catch(() => undefined)
-            clearGoogleAdminWorkspace(
+            await returnToGoogleReauthentication(
               '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
               appSessionToken,
             )
@@ -322,7 +333,7 @@ export function AdminRoute() {
       setFactorId(enrolled.id)
       setPhase('enrollment')
     },
-    [clearGoogleAdminWorkspace],
+    [returnToGoogleReauthentication],
   )
 
   useEffect(() => {
@@ -458,6 +469,16 @@ export function AdminRoute() {
       setPhase('ready')
     } catch (error) {
       setTotpCode('')
+      if (
+        error instanceof AdminIdentityError &&
+        error.code === 'reauthentication_required'
+      ) {
+        await returnToGoogleReauthentication(
+          error.message,
+          restoreAdminAppSessionToken(),
+        )
+        return
+      }
       setErrorMessage(
         error instanceof AdminIdentityError
           ? error.message
@@ -848,11 +869,29 @@ export function AdminRoute() {
             onAdminLogout={logout}
             personalSettings={personalSettings}
           />
-        ) : (
+        ) : isPhase730GoogleAdminOperationsEnabled ? (
           <AdminWorkspaceApp
             adminCredential={googleAdminCredential}
             onAdminLogout={logout}
           />
+        ) : (
+          <main className="page-shell join-page">
+            <section className="join-card admin-identity-card">
+              <p className="eyebrow">EDUCATOR PORTAL</p>
+              <h1>講義コントロールは現在利用できません</h1>
+              <p>
+                教員アカウントの確認は完了しています。講義機能の準備が整ってから、もう一度お試しください。
+              </p>
+              <button
+                className="secondary-button"
+                disabled={isSubmitting}
+                onClick={() => void logout()}
+                type="button"
+              >
+                ログアウト
+              </button>
+            </section>
+          </main>
         )}
       </Suspense>
     )

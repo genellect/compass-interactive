@@ -448,6 +448,60 @@
   margin: 0.2rem 0 0;
 }
 
+.admin-ai-policy-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.9rem 1rem;
+}
+
+.admin-ai-policy-panel[open] > summary {
+  margin-bottom: 1rem;
+}
+
+.admin-ai-policy-content {
+  margin-top: 0;
+}
+
+.admin-ai-policy-coverage {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-ai-policy-coverage li {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-top: 0.45rem;
+}
+
+.admin-ai-policy-preset {
+  line-height: 1.65;
+  margin: 0;
+}
+
+.admin-ai-policy-costs {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-ai-policy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.admin-ai-policy-recovery {
+  display: grid;
+  gap: 0.8rem;
+}
+
 .admin-ledger-heading .secondary-button {
   width: auto;
 }
@@ -637,6 +691,15 @@
 
   .admin-ledger-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-ai-policy-costs {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-ai-policy-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .admin-ledger-table-wrap {

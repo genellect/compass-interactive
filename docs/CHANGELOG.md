@@ -3,6 +3,26 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-18 - Direct Production lecture-cycle activation hardening
+
+- Fixed saved-browser Google Admin reauthentication at the backing Supabase
+  Auth session's eight-hour absolute cap. The database now rejects an expired
+  session before creating a TOTP nonce, and the browser returns to Google sign
+  in without discarding the requested Admin route.
+- Made the material-first Educator flow actionable: selecting a PDF can create
+  the draft lecture and publish in one CTA, a real lecture switch clears the
+  pending file, and successful browser publication refreshes the active Display
+  document so the Slides surface appears without a reload.
+- Removed the verbose material helper paragraphs requested for the compact
+  Educator workspace while retaining progress, failure, recovery and closed
+  lecture messages.
+- Added a fail-closed Google operations boundary to `/admin` and a closed,
+  redacted complete-lecture topology validator covering browser/server flags,
+  database gates, Edge/Worker state, owners and AI policy.
+- Added the direct Production activation runbook. The final production claim
+  still requires one exact-SHA CI run, server-first activation and one complete
+  canonical UI lecture through PDF, Student, Display, AI, stop and close.
+
 ## 2026-08-17 - Owner capability and separate Admin settings
 
 - Reorganized the teacher lecture workspace into four server-state-derived

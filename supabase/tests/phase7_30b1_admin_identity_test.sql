@@ -371,6 +371,61 @@ SELECT is(
   'AAL1 admission does not activate Admin membership'
 );
 
+UPDATE auth.sessions
+SET
+  created_at = statement_timestamp() - interval '8 hours 1 minute',
+  updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-000000000711'::uuid;
+
+SET ROLE service_role;
+
+SELECT throws_ok(
+  $$
+    SELECT public.begin_admin_totp_step_up_v2(
+      '00000000-0000-4000-8000-000000000730'::uuid,
+      '00000000-0000-4000-8000-000000000701'::uuid,
+      '00000000-0000-4000-8000-000000000711'::uuid,
+      '00000000-0000-4000-8000-000000000712'::uuid,
+      repeat('8', 64),
+      '00000000-0000-4000-8000-000000000722'::uuid,
+      repeat('9', 64),
+      '00000000-0000-4000-8000-000000000752'::uuid
+    )
+  $$,
+  'P7322',
+  'Supabase Auth session absolute cap elapsed',
+  'an eight-hour-old backing Auth session fails before TOTP nonce creation'
+);
+
+RESET ROLE;
+
+SELECT is(
+  (
+    SELECT count(*)::integer
+    FROM private.admin_step_up_nonces
+    WHERE nonce_hash = repeat('8', 64)
+       OR request_id = '00000000-0000-4000-8000-000000000752'::uuid
+  ),
+  0,
+  'absolute-cap rejection persists no Admin login nonce'
+);
+
+SELECT is(
+  (
+    SELECT count(*)::integer
+    FROM private.admin_audit_events
+    WHERE request_id = '00000000-0000-4000-8000-000000000752'::uuid
+  ),
+  0,
+  'absolute-cap rejection persists no accepted login audit event'
+);
+
+UPDATE auth.sessions
+SET
+  created_at = statement_timestamp() - interval '1 hour',
+  updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-000000000711'::uuid;
+
 SET ROLE service_role;
 
 SELECT lives_ok(

@@ -21,6 +21,7 @@ secret change and paid call still require an explicit task.
 | Agent/reasoning routing        | `docs/AGENT_EXECUTION_ROUTING.md`                                |
 | Lecture-cycle candidate plan   | `docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`                |
 | Cloud lane agent prompts       | `docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`                     |
+| Production lecture activation  | `docs/LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`                    |
 | Phase 6.7 acceptance           | `docs/PHASE6_7_DOCUMENTATION_BASELINE.md`                        |
 | Phase 6.7 local evidence       | `docs/PHASE6_7_LOCAL_GATE_2026-07-18.md`                         |
 | Phase 6.8 design               | `docs/PHASE6_8_SECURITY_SESSIONS_TIMEOUTS.md`                    |

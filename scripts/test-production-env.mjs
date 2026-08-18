@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
 import {
+  completeLectureAiActions,
+  completeLectureAiModels,
+  completeLectureDatabaseGateNames,
+  completeLectureFrontendFlagNames,
+  completeLectureServerFlagNames,
   phase730FDatabaseGateNames,
   phase730FFrontendFlagNames,
   phase730FSecretInventoryNames,
   phase730FServerFlagNames,
   productionFeatureFlags,
+  validateCompleteLectureProductionTopology,
   validatePhase730FReadinessMetadata,
   validateProductionEnvironment,
   validateProductionServerEnvironment,
@@ -66,6 +72,14 @@ assert.match(
 assert.match(
   validateProductionEnvironment({
     ...safeEnvironment,
+    VITE_PHASE7_30_ADMIN_IDENTITY: 'true',
+    VITE_PHASE7_30_ADMIN_AI_UNLOCK: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS=true/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
     VITE_PHASE7_29_POWERPOINT_SYNC: 'true',
   }).join('\n'),
   /requires VITE_PHASE3_PRIVATE_PDF=true/,
@@ -107,6 +121,107 @@ assert.deepEqual(
       'test-only-presenter-gateway-secret-at-least-thirty-two-bytes',
   }),
   [],
+)
+
+const completeLectureTopology = {
+  frontendFlags: Object.fromEntries(
+    completeLectureFrontendFlagNames.map((name) => [name, true]),
+  ),
+  serverFlags: Object.fromEntries(
+    completeLectureServerFlagNames.map((name) => [name, true]),
+  ),
+  databaseGates: Object.fromEntries(
+    completeLectureDatabaseGateNames.map((name) => [name, true]),
+  ),
+  runtime: {
+    activeAiPolicyCount: 2,
+    activeAiMembershipCount: 2,
+    activeOwnerCount: 2,
+    aiPolicyAllowedActions: completeLectureAiActions,
+    aiPolicyAllowedModels: completeLectureAiModels,
+    aiPolicyTopologyComplete: true,
+    browserPdfWorkerUploadEnabled: true,
+    canonicalAiPolicyTopologyComplete: true,
+    coveredAiMembershipCount: 2,
+    productionEnvironmentConfigured: true,
+    requiredEdgeFunctionsCurrent: true,
+  },
+}
+assert.deepEqual(
+  validateCompleteLectureProductionTopology(completeLectureTopology),
+  [],
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    databaseGates: {
+      ...completeLectureTopology.databaseGates,
+      googleAiChildGrantEnabled: false,
+    },
+  }).join('\n'),
+  /googleAiChildGrantEnabled must be true/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      aiPolicyAllowedActions: completeLectureAiActions.filter(
+        (action) => action !== 'captions',
+      ),
+    },
+  }).join('\n'),
+  /exact lecture AI action set/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      aiPolicyAllowedModels: ['gpt-5.6-luna'],
+    },
+  }).join('\n'),
+  /exact lecture AI model set/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      coveredAiMembershipCount: 1,
+    },
+  }).join('\n'),
+  /AI membership coverage counts must match and be greater than zero/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      aiPolicyTopologyComplete: false,
+    },
+  }).join('\n'),
+  /aiPolicyTopologyComplete must be true/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      canonicalAiPolicyTopologyComplete: false,
+    },
+  }).join('\n'),
+  /canonicalAiPolicyTopologyComplete must be true/,
+)
+assert.match(
+  validateCompleteLectureProductionTopology({
+    ...completeLectureTopology,
+    runtime: {
+      ...completeLectureTopology.runtime,
+      activeAiPolicyCount: 1,
+    },
+  }).join('\n'),
+  /activeAiPolicyCount cannot be less than coveredAiMembershipCount/,
 )
 assert.match(
   validateProductionServerEnvironment({
@@ -235,6 +350,45 @@ assert.deepEqual(
     PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
     PHASE730_ADMIN_AI_UNLOCK_ENABLED: 'true',
     PHASE730_C1_GOOGLE_AI_MASTER_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
+    OPENAI_API_KEY: 'test-only-openai-key',
+    ADMIN_AI_CHILD_GRANT_SECRET:
+      'test-only-child-grant-secret-at-least-thirty-two-bytes',
+    ADMIN_AI_CHILD_GRANT_SECRET_VERSION: '1',
+  }),
+  [],
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
+    PHASE4_REALTIME_CAPTIONS_ENABLED: 'true',
+  }).join('\n'),
+  /OPENAI_API_KEY must be configured/,
+)
+assert.match(
+  validateProductionServerEnvironment({
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
+    PHASE5_MATERIAL_ANALYSIS_ENABLED: 'true',
+    OPENAI_API_KEY: 'test-only-openai-key',
+    ADMIN_AI_CHILD_GRANT_SECRET: 'short',
+  }).join('\n'),
+  /ADMIN_AI_CHILD_GRANT_SECRET must contain at least 32 bytes/,
+)
+assert.deepEqual(
+  validateProductionServerEnvironment({
+    PHASE730_ADMIN_IDENTITY_ENABLED: 'true',
+    PHASE730_GOOGLE_ADMIN_OPERATIONS_ENABLED: 'true',
+    PHASE4_REALTIME_CAPTIONS_ENABLED: 'true',
+    PHASE5_MATERIAL_ANALYSIS_ENABLED: 'true',
+    PHASE6_SUMMARIES_ENABLED: 'true',
+    PHASE7_2_ACADEMIC_ANSWERS_ENABLED: 'true',
+    PHASE726_BROWSER_PDF_PUBLICATION_ENABLED: 'true',
+    OPENAI_API_KEY: 'test-only-openai-key',
+    ADMIN_AI_CHILD_GRANT_SECRET:
+      'test-only-child-grant-secret-at-least-thirty-two-bytes',
+    ADMIN_AI_CHILD_GRANT_SECRET_VERSION: '2',
   }),
   [],
 )

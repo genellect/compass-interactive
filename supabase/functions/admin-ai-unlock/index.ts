@@ -44,7 +44,9 @@ type AiUnlockAction =
   | 'finalizeTotpTransition'
   | 'getBrowserEnrollmentStatus'
   | 'masterStatus'
+  | 'policyStatus'
   | 'preparePinMutation'
+  | 'preparePolicyMutation'
   | 'prepareTotpTransition'
   | 'profile'
   | 'resetPin'
@@ -52,6 +54,7 @@ type AiUnlockAction =
   | 'revokeMaster'
   | 'revokePin'
   | 'setPin'
+  | 'setPolicy'
   | 'verifyPin'
 
 type RequestBody = Record<string, unknown> & {
@@ -96,18 +99,56 @@ type AiRuntimeGate = {
   remembered_browser_enabled?: boolean
 }
 
+type AiPolicyMutationInput = {
+  maxCostMicrousdPerDay: number
+  maxCostMicrousdPerLecture: number
+  requestId: string
+  targetMembershipId: string
+  validFrom: string
+  validUntil: string
+}
+
+const ADMIN_AI_POLICY_PRESET = Object.freeze({
+  allowedActions: Object.freeze([
+    'academic_answers',
+    'captions',
+    'material_analysis',
+    'poll_suggestions',
+    'summaries',
+  ]),
+  allowedModels: Object.freeze(['gpt-5.6-luna', 'gpt-realtime-whisper']),
+  maxCallsPerDay: 96,
+  maxCallsPerLecture: 24,
+  maxConcurrency: 2,
+  maxInputTokensPerDay: 800_000,
+  maxInputTokensPerLecture: 200_000,
+  maxOutputTokensPerDay: 160_000,
+  maxOutputTokensPerLecture: 40_000,
+  maxRealtimeMinutesPerDay: 180,
+  maxRealtimeMinutesPerLecture: 90,
+})
+
+const ADMIN_AI_POLICY_VALIDITY_MS = 30 * 24 * 60 * 60 * 1_000
+const ADMIN_AI_POLICY_RECOVERY_MS = 24 * 60 * 60 * 1_000
+const MIN_POLICY_COST_MICROUSD = 10_000
+const MAX_POLICY_LECTURE_COST_MICROUSD = 5_000_000
+const MAX_POLICY_DAY_COST_MICROUSD = 20_000_000
+
 const AI_ACTIONS = new Set<AiUnlockAction>([
   'beginBrowserAssertion',
   'beginBrowserEnrollment',
   'completeBrowserAssertion',
   'completeBrowserEnrollment',
   'getBrowserEnrollmentStatus',
+  'policyStatus',
   'preparePinMutation',
+  'preparePolicyMutation',
   'profile',
   'resetPin',
   'revokeBrowserCredential',
   'revokePin',
   'setPin',
+  'setPolicy',
   'verifyPin',
 ])
 
@@ -213,12 +254,23 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
     'publicKeyFingerprint',
   ]),
   masterStatus: new Set(['action', 'appSessionToken', 'lectureSessionId']),
+  policyStatus: new Set(['action', 'appSessionToken']),
   preparePinMutation: new Set([
     'action',
     'appSessionToken',
     'pin',
     'pinAction',
     'requestId',
+  ]),
+  preparePolicyMutation: new Set([
+    'action',
+    'appSessionToken',
+    'maxCostMicrousdPerDay',
+    'maxCostMicrousdPerLecture',
+    'requestId',
+    'targetMembershipId',
+    'validFrom',
+    'validUntil',
   ]),
   prepareTotpTransition: new Set([
     'action',
@@ -243,6 +295,16 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
   ]),
   revokePin: new Set(['action', 'appSessionToken', 'requestId']),
   setPin: new Set(['action', 'appSessionToken', 'pin', 'requestId']),
+  setPolicy: new Set([
+    'action',
+    'appSessionToken',
+    'maxCostMicrousdPerDay',
+    'maxCostMicrousdPerLecture',
+    'requestId',
+    'targetMembershipId',
+    'validFrom',
+    'validUntil',
+  ]),
   verifyPin: new Set(['action', 'appSessionToken', 'pin', 'requestId']),
 }
 
@@ -291,6 +353,14 @@ function rpcErrorResponse(
   jsonResponse: ReturnType<typeof createJsonResponse>,
   code: string,
 ) {
+  if (code === '22023') {
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
+  }
   if (
     code === 'P7300' ||
     code === 'P7320' ||
@@ -357,6 +427,92 @@ function isUuid(value: unknown): value is string {
 
 function isPositiveInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 1
+}
+
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
+function isCanonicalIsoTimestamp(value: unknown): value is string {
+  if (!isString(value)) return false
+  const timestamp = Date.parse(value)
+  return (
+    Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value
+  )
+}
+
+function getAiPolicyMutationInput(body: RequestBody) {
+  if (
+    !isUuid(body.targetMembershipId) ||
+    !isUuid(body.requestId) ||
+    !isCanonicalIsoTimestamp(body.validFrom) ||
+    !isCanonicalIsoTimestamp(body.validUntil) ||
+    !isSafeInteger(body.maxCostMicrousdPerLecture) ||
+    !isSafeInteger(body.maxCostMicrousdPerDay)
+  ) {
+    return null
+  }
+  const validFromMs = Date.parse(body.validFrom)
+  const validUntilMs = Date.parse(body.validUntil)
+  const now = Date.now()
+  if (
+    body.maxCostMicrousdPerLecture < MIN_POLICY_COST_MICROUSD ||
+    body.maxCostMicrousdPerLecture > MAX_POLICY_LECTURE_COST_MICROUSD ||
+    body.maxCostMicrousdPerDay < body.maxCostMicrousdPerLecture ||
+    body.maxCostMicrousdPerDay > MAX_POLICY_DAY_COST_MICROUSD ||
+    validFromMs > now ||
+    validFromMs < now - ADMIN_AI_POLICY_RECOVERY_MS ||
+    validUntilMs <= now ||
+    validUntilMs - validFromMs !== ADMIN_AI_POLICY_VALIDITY_MS
+  ) {
+    return null
+  }
+  return {
+    maxCostMicrousdPerDay: body.maxCostMicrousdPerDay,
+    maxCostMicrousdPerLecture: body.maxCostMicrousdPerLecture,
+    requestId: body.requestId,
+    targetMembershipId: body.targetMembershipId,
+    validFrom: body.validFrom,
+    validUntil: body.validUntil,
+  } satisfies AiPolicyMutationInput
+}
+
+function getAiPolicyRpcArgs(
+  input: AiPolicyMutationInput,
+  identity: {
+    authUserId: string
+    authSessionId: string
+    tokenHash: string
+  },
+) {
+  return {
+    target_allowed_actions: [...ADMIN_AI_POLICY_PRESET.allowedActions],
+    target_allowed_models: [...ADMIN_AI_POLICY_PRESET.allowedModels],
+    target_auth_user_id: identity.authUserId,
+    target_max_calls_per_day: ADMIN_AI_POLICY_PRESET.maxCallsPerDay,
+    target_max_calls_per_lecture: ADMIN_AI_POLICY_PRESET.maxCallsPerLecture,
+    target_max_concurrency: ADMIN_AI_POLICY_PRESET.maxConcurrency,
+    target_max_cost_microusd_per_day: input.maxCostMicrousdPerDay,
+    target_max_cost_microusd_per_lecture: input.maxCostMicrousdPerLecture,
+    target_max_input_tokens_per_day:
+      ADMIN_AI_POLICY_PRESET.maxInputTokensPerDay,
+    target_max_input_tokens_per_lecture:
+      ADMIN_AI_POLICY_PRESET.maxInputTokensPerLecture,
+    target_max_output_tokens_per_day:
+      ADMIN_AI_POLICY_PRESET.maxOutputTokensPerDay,
+    target_max_output_tokens_per_lecture:
+      ADMIN_AI_POLICY_PRESET.maxOutputTokensPerLecture,
+    target_max_realtime_minutes_per_day:
+      ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerDay,
+    target_max_realtime_minutes_per_lecture:
+      ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerLecture,
+    target_membership_id: input.targetMembershipId,
+    target_request_id: input.requestId,
+    target_supabase_auth_session_id: identity.authSessionId,
+    target_token_hash: identity.tokenHash,
+    target_valid_from: input.validFrom,
+    target_valid_until: input.validUntil,
+  }
 }
 
 function masterResultResponse(
@@ -667,6 +823,171 @@ async function handleRequest(request: Request) {
       )
     }
     return null
+  }
+
+  if (action === 'policyStatus') {
+    if (context!.role !== 'owner') {
+      return errorResponse(
+        jsonResponse,
+        'owner_required',
+        'Owner authority is required.',
+        403,
+      )
+    }
+    const result = await serviceClient.rpc('get_admin_ai_policy_status_v1', {
+      target_auth_user_id: userData.user.id,
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: tokenHash,
+    })
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    const value = result.data as Record<string, unknown> | null
+    const rawMemberships = Array.isArray(value?.memberships)
+      ? value.memberships
+      : null
+    const activeAiMembershipCount = Number(value?.active_ai_membership_count)
+    const coveredMembershipCount = Number(value?.covered_membership_count)
+    if (
+      !value ||
+      !rawMemberships ||
+      !Number.isSafeInteger(activeAiMembershipCount) ||
+      activeAiMembershipCount < 0 ||
+      !Number.isSafeInteger(coveredMembershipCount) ||
+      coveredMembershipCount < 0
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'policy_status_unavailable',
+        'Lecture AI policy status is unavailable.',
+        409,
+      )
+    }
+    const memberships = rawMemberships.map((entry) => {
+      const policy =
+        entry && typeof entry === 'object'
+          ? (entry as Record<string, unknown>)
+          : {}
+      return {
+        covered: policy.covered === true,
+        maxCostMicrousdPerDay:
+          typeof policy.max_cost_microusd_per_day === 'number'
+            ? policy.max_cost_microusd_per_day
+            : null,
+        maxCostMicrousdPerLecture:
+          typeof policy.max_cost_microusd_per_lecture === 'number'
+            ? policy.max_cost_microusd_per_lecture
+            : null,
+        membershipId: isUuid(policy.membership_id)
+          ? policy.membership_id
+          : null,
+        policyId: isUuid(policy.policy_id) ? policy.policy_id : null,
+        policyStatus: isString(policy.policy_status)
+          ? policy.policy_status
+          : null,
+        policyVersion:
+          typeof policy.policy_version === 'number'
+            ? policy.policy_version
+            : null,
+        validFrom: isString(policy.valid_from) ? policy.valid_from : null,
+        validUntil: isString(policy.valid_until) ? policy.valid_until : null,
+      }
+    })
+    if (memberships.some((membership) => !membership.membershipId)) {
+      return errorResponse(
+        jsonResponse,
+        'policy_status_unavailable',
+        'Lecture AI policy status is unavailable.',
+        409,
+      )
+    }
+    return jsonResponse({
+      activeAiMembershipCount,
+      canonicalPolicyTopologyComplete:
+        value.canonical_policy_topology_complete === true,
+      coveredMembershipCount,
+      memberships,
+      ok: true,
+      topologyComplete: value.topology_complete === true,
+    })
+  }
+
+  if (action === 'preparePolicyMutation' || action === 'setPolicy') {
+    if (context!.role !== 'owner') {
+      return errorResponse(
+        jsonResponse,
+        'owner_required',
+        'Owner authority is required.',
+        403,
+      )
+    }
+    const input = getAiPolicyMutationInput(body)
+    if (!input) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+    const rpcArgs = getAiPolicyRpcArgs(input, {
+      authSessionId: claims.sessionId,
+      authUserId: userData.user.id,
+      tokenHash,
+    })
+    if (action === 'preparePolicyMutation') {
+      const result = await serviceClient.rpc(
+        'prepare_admin_ai_policy_change_v1',
+        rpcArgs,
+      )
+      if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+      const value = result.data as Record<string, unknown> | null
+      if (
+        !value ||
+        value.control_action !== 'environment_ai_policy_change' ||
+        !isString(value.control_intent_digest) ||
+        !SHA256_HEX_PATTERN.test(value.control_intent_digest) ||
+        value.request_id !== input.requestId ||
+        value.target_membership_id !== input.targetMembershipId
+      ) {
+        return errorResponse(
+          jsonResponse,
+          'policy_target_unavailable',
+          'The selected AI-enabled membership is unavailable.',
+          409,
+        )
+      }
+      return jsonResponse({
+        controlAction: 'environment_ai_policy_change',
+        controlIntentDigest: value.control_intent_digest,
+        ok: true,
+        requestId: input.requestId,
+        targetMembershipId: input.targetMembershipId,
+      })
+    }
+
+    const result = await serviceClient.rpc('set_admin_ai_policy_v1', rpcArgs)
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    const value = result.data as Record<string, unknown> | null
+    if (
+      !value ||
+      !isUuid(value.id) ||
+      value.membership_id !== input.targetMembershipId ||
+      value.status !== 'active' ||
+      !isPositiveInteger(Number(value.version))
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'control_proof_required',
+        'Fresh control approval is required.',
+        409,
+      )
+    }
+    return jsonResponse({
+      membershipId: input.targetMembershipId,
+      ok: true,
+      policyId: value.id,
+      status: value.status,
+      version: Number(value.version),
+    })
   }
 
   if (action === 'masterStatus') {
