@@ -55,7 +55,11 @@ export async function installBrowserSafetyMonitor(
         'E2E must not contact Hosted Supabase, Cloudflare, R2, OpenAI, or any other external host.',
       ).toEqual([])
       expect(
-        browserErrors.map((error) => error.message),
+        browserErrors.map((error) =>
+          error.locationUrl
+            ? `${error.message} (${error.locationUrl})`
+            : error.message,
+        ),
         'The browser emitted runtime errors.',
       ).toEqual([])
       await expect

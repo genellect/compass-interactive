@@ -53,6 +53,7 @@ type PublicManifestResponse = {
 }
 
 const memberSessionCache = new Map<string, PdfAccessSession>()
+const pendingAdminSessions = new Map<string, Promise<PdfAccessSession>>()
 
 function getWorkerBaseUrl(responseValue?: string | null, required = true) {
   const value = responseValue || import.meta.env.VITE_PDF_WORKER_BASE_URL
@@ -143,10 +144,22 @@ async function getAdminSession(
   adminToken: AdminOperationCredentialInput,
   lectureSessionId: string,
 ) {
-  return issuePdfAccessSession({
+  const key = `${adminToken.appSessionToken}:${lectureSessionId}`
+  const pending = pendingAdminSessions.get(key)
+  if (pending) return pending
+
+  const request = issuePdfAccessSession({
     adminToken,
     lectureSessionId,
   })
+  pendingAdminSessions.set(key, request)
+  try {
+    return await request
+  } finally {
+    if (pendingAdminSessions.get(key) === request) {
+      pendingAdminSessions.delete(key)
+    }
+  }
 }
 
 async function getDisplaySession(

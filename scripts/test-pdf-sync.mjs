@@ -9,8 +9,12 @@ const read = (path) => readFileSync(join(root, path), 'utf8')
 const migration = read('supabase/migrations/20260711111834_pdf_sync.sql')
 const edgeCatalog = read('supabase/functions/_shared/pdfAssets.ts')
 const frontendCatalog = read('src/pdf/lectureAssets.ts')
+const pdfDelivery = read('src/pdf/pdfDelivery.ts')
 const updateDisplay = read('supabase/functions/update-display-state/index.ts')
 const viewer = read('src/components/DisplayView/SyncedPdfViewer.tsx')
+const displayRealtimeE2e = read(
+  'e2e/local/display-realtime-integration.spec.ts',
+)
 const adminPage = read('src/pages/AdminPage.tsx')
 const lecturePage = read('src/pages/LecturePage.tsx')
 const displayView = read('src/components/DisplayView/DisplayView.tsx')
@@ -39,6 +43,21 @@ assert.match(updateDisplay, /displayState: result\.displayState/)
 assert.doesNotMatch(updateDisplay, /admin_update_pdf_display/)
 assert.doesNotMatch(updateDisplay, /from\('lecture_live_state'\)/)
 assert.doesNotMatch(updateDisplay, /from\('lecture_display_state'\)/)
+
+assert.match(
+  pdfDelivery,
+  /const pendingAdminSessions = new Map<string, Promise<PdfAccessSession>>\(\)/,
+)
+assert.match(
+  pdfDelivery,
+  /const key = `\$\{adminToken\.appSessionToken\}:\$\{lectureSessionId\}`[\s\S]*pendingAdminSessions\.get\(key\)[\s\S]*pendingAdminSessions\.set\(key, request\)[\s\S]*pendingAdminSessions\.get\(key\) === request[\s\S]*pendingAdminSessions\.delete\(key\)/,
+  'concurrent Admin PDF authorization shares one in-flight request without extending its lifetime',
+)
+assert.match(
+  displayRealtimeE2e,
+  /const pendingAdminPdfRequests = new Set<Request>\(\)[\s\S]*maxConcurrentAdminPdfRequests = Math\.max[\s\S]*await expect\.poll\(\(\) => pendingAdminPdfRequests\.size\)\.toBe\(0\)[\s\S]*expect\(maxConcurrentAdminPdfRequests\)\.toBe\(1\)/,
+  'the real-Edge Display flow proves Admin PDF authorization never overlaps',
+)
 
 for (const catalog of [edgeCatalog, frontendCatalog]) {
   assert.match(catalog, /id: 'm4-sample-v1'/)
