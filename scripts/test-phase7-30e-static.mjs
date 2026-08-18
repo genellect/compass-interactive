@@ -32,9 +32,6 @@ const packageJson = JSON.parse(read('package.json'))
 const ci = read('.github/workflows/ci.yml')
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
 const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
-const localAdminEnvironmentSetter = read(
-  'scripts/ci/set-local-admin-environment.mjs',
-)
 const browserGoogleFixture = read('e2e/helpers/googleAdminSession.ts')
 const browserSafety = read('e2e/helpers/browserSafety.ts')
 const displayRealtimeBrowser = read(
@@ -488,13 +485,13 @@ assert.match(
 )
 assert.match(
   browserRunner,
-  /const localFixtureEnvironmentId = localMode[\s\S]*TEST_ADMIN_ENVIRONMENT_ID[\s\S]*randomUUID\(\)[\s\S]*alignManagedLocalEdgeEnvironment\(\)[\s\S]*set-local-admin-environment\.mjs[\s\S]*manage-local-edge\.mjs[\s\S]*restart[\s\S]*wait-for-local-edge\.mjs[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*retainEnvironment: true/,
-  'each local browser run must align the managed Edge and fixtures on one isolated environment',
+  /const localFixtureEnvironmentId = localMode[\s\S]*00000000-0000-4000-8000-000000000730[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:[\s\S]*googleAdminFixtureHandles\.length === 0 \? 'true' : 'false'[\s\S]*retainEnvironment: true/,
+  'local browser runs must share the create-only Edge environment and reset retained memberships exactly once before each Playwright run',
 )
 assert.match(
-  localAdminEnvironmentSetter,
-  /UUID_PATTERN[\s\S]*RUNNER_TEMP[\s\S]*\^PHASE730_ADMIN_ENVIRONMENT_ID=\.\*\$[\s\S]*matches\?\.length !== 1[\s\S]*PHASE730_ADMIN_ENVIRONMENT_ID=\$\{environmentId\}[\s\S]*mode: 0o600/,
-  'the local Edge environment updater must replace exactly one validated Admin environment ID without weakening file permissions',
+  localGoogleFixture,
+  /browserFixtureResetRetainedMemberships[\s\S]*role = 'instructor'[\s\S]*can_use_ai = false[\s\S]*id <> \$\{sqlLiteral\(completed\.session\.membershipId\)\}[\s\S]*activeAiMemberships[\s\S]*activeOwners[\s\S]*activePriorSessions[\s\S]*assert\.equal\(Number\(resetState\.activeAiMemberships\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activeOwners\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activePriorSessions\), 0\)/,
+  'the first retained fixture must deprivilege stale memberships while preserving exactly one active AI Owner and no stale active session',
 )
 assert.match(
   adminIdentityBrowser,

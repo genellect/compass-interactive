@@ -24,6 +24,13 @@ const browserFixtureMode = process.argv.includes('--browser-fixture')
 const browserFixtureRetainEnvironment =
   browserFixtureMode &&
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_RETAIN_ENVIRONMENT === 'true'
+const browserFixtureResetRetainedMemberships =
+  browserFixtureMode &&
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS === 'true'
+assert.ok(
+  !browserFixtureResetRetainedMemberships || browserFixtureRetainEnvironment,
+  'Retained membership reset requires a retained browser fixture.',
+)
 const browserFixtureAiPin =
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN?.trim() ?? ''
 assert.ok(
@@ -573,6 +580,63 @@ try {
   assert.equal(completed.session?.role, 'owner')
   assert.equal(completed.session?.canUseAi, true)
   let browserAal2 = aal2
+
+  if (browserFixtureResetRetainedMemberships) {
+    const resetState = JSON.parse(
+      await runSql(`
+        begin;
+        update public.admin_sessions
+        set revoked_at = coalesce(revoked_at, statement_timestamp()),
+            revoke_reason = coalesce(
+              revoke_reason,
+              'browser_fixture_replaced'
+            ),
+            updated_at = statement_timestamp()
+        where environment_id = ${sqlLiteral(environmentId)}::uuid
+          and membership_id <> ${sqlLiteral(
+            completed.session.membershipId,
+          )}::uuid
+          and revoked_at is null;
+        update private.admin_environment_memberships
+        set role = 'instructor',
+            can_use_ai = false,
+            updated_at = statement_timestamp()
+        where environment_id = ${sqlLiteral(environmentId)}::uuid
+          and id <> ${sqlLiteral(completed.session.membershipId)}::uuid
+          and status = 'active'
+          and (role <> 'instructor' or can_use_ai);
+        select jsonb_build_object(
+          'activeAiMemberships', (
+            select count(*)
+            from private.admin_environment_memberships
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and status = 'active'
+              and can_use_ai
+          ),
+          'activeOwners', (
+            select count(*)
+            from private.admin_environment_memberships
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and status = 'active'
+              and role = 'owner'
+          ),
+          'activePriorSessions', (
+            select count(*)
+            from public.admin_sessions
+            where environment_id = ${sqlLiteral(environmentId)}::uuid
+              and membership_id <> ${sqlLiteral(
+                completed.session.membershipId,
+              )}::uuid
+              and revoked_at is null
+          )
+        );
+        commit;
+      `),
+    )
+    assert.equal(Number(resetState.activeAiMemberships), 1)
+    assert.equal(Number(resetState.activeOwners), 1)
+    assert.equal(Number(resetState.activePriorSessions), 0)
+  }
 
   if (browserFixtureMode) {
     if (browserFixtureAiPin) {

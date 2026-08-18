@@ -1,5 +1,4 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +37,7 @@ const demoMode =
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
 const localFixtureEnvironmentId = localMode
-  ? (process.env.TEST_ADMIN_ENVIRONMENT_ID?.trim() ?? randomUUID())
+  ? '00000000-0000-4000-8000-000000000730'
   : ''
 const googleAdminWorkspaceMode =
   localMode ||
@@ -317,39 +316,6 @@ const appEnvironment = {
   ),
 }
 
-function runLocalEdgeScript(script, args, description) {
-  const result = spawnSync(process.execPath, [script, ...args], {
-    cwd: root,
-    encoding: 'utf8',
-    env: appEnvironment,
-  })
-  if (result.stdout) process.stdout.write(result.stdout)
-  if (result.stderr) process.stderr.write(result.stderr)
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`${description} failed (${result.status ?? 'signal'}).`)
-  }
-}
-
-function alignManagedLocalEdgeEnvironment() {
-  if (!localMode || !process.env.RUNNER_TEMP?.trim()) return
-  runLocalEdgeScript(
-    'scripts/ci/set-local-admin-environment.mjs',
-    [localFixtureEnvironmentId],
-    'Local Edge Admin environment update',
-  )
-  runLocalEdgeScript(
-    'scripts/ci/manage-local-edge.mjs',
-    ['restart'],
-    'Local Edge restart',
-  )
-  runLocalEdgeScript(
-    'scripts/ci/wait-for-local-edge.mjs',
-    [],
-    'Local Edge readiness check',
-  )
-}
-
 async function assertPortAvailable(targetPort, description) {
   await new Promise((resolve, reject) => {
     const probe = createServer()
@@ -542,7 +508,6 @@ try {
   if (!baseURL) {
     throw new Error('Vite did not report its loopback origin.')
   }
-  alignManagedLocalEdgeEnvironment()
   if (presenterFixtureMode) {
     await startPresenterFixture()
   }
@@ -567,12 +532,15 @@ try {
             env: {
               ...appEnvironment,
               TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId,
+              TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:
+                googleAdminFixtureHandles.length === 0 ? 'true' : 'false',
               TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
                 mode === 'local-ai' ? '1357' : '',
             },
-            // Fixtures for one Playwright run share an isolated environment.
-            // The next browser run receives another UUID, so its exact policy
-            // topology cannot include memberships from an earlier run.
+            // Every browser invocation uses the one create-only local Admin
+            // environment expected by the running Edge process. The first
+            // fixture deprivileges retained memberships from an earlier run;
+            // later fixtures remain active together for this Playwright run.
             retainEnvironment: true,
           })
           googleAdminFixtureHandles.push(handle)
