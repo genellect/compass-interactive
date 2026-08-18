@@ -990,16 +990,16 @@ try {
     )
     assert.equal(sourceOffC1Admission.code, 'feature_disabled')
 
-    const sourceOffPolicyValidFromMs = Date.now() - 60_000
-    const sourceOffPolicyRequest = {
+    const policyValidFromMs = Date.now() - 60_000
+    const policyRequest = {
       appSessionToken: completed.appSessionToken,
       maxCostMicrousdPerDay: 2_000_000,
       maxCostMicrousdPerLecture: 500_000,
       requestId: randomUUID(),
       targetMembershipId: completed.session.membershipId,
-      validFrom: new Date(sourceOffPolicyValidFromMs).toISOString(),
+      validFrom: new Date(policyValidFromMs).toISOString(),
       validUntil: new Date(
-        sourceOffPolicyValidFromMs + 30 * 24 * 60 * 60 * 1_000,
+        policyValidFromMs + 30 * 24 * 60 * 60 * 1_000,
       ).toISOString(),
     }
     const closedPolicyStatus = await invoke(
@@ -1020,7 +1020,7 @@ try {
       'admin-ai-unlock',
       {
         action: 'preparePolicyMutation',
-        ...sourceOffPolicyRequest,
+        ...policyRequest,
         allowedModels: ['gpt-5.6-luna'],
       },
       400,
@@ -1032,14 +1032,14 @@ try {
       'admin-ai-unlock',
       {
         action: 'setPolicy',
-        ...sourceOffPolicyRequest,
+        ...policyRequest,
         allowedActions: ['academic_answers'],
       },
       400,
     )
     assert.equal(closedPolicySet.code, 'request_invalid')
 
-    const sourceOffPolicyStatus = await invoke(
+    const initialPolicyStatus = await invoke(
       status,
       aal2,
       'admin-ai-unlock',
@@ -1047,28 +1047,45 @@ try {
         action: 'policyStatus',
         appSessionToken: completed.appSessionToken,
       },
-      503,
+      200,
     )
-    assert.equal(sourceOffPolicyStatus.code, 'feature_disabled')
-    const sourceOffPolicyPrepare = await invoke(
-      status,
-      aal2,
-      'admin-ai-unlock',
-      { action: 'preparePolicyMutation', ...sourceOffPolicyRequest },
-      503,
+    assert.equal(initialPolicyStatus.activeAiMembershipCount, 1)
+    assert.equal(initialPolicyStatus.coveredMembershipCount, 0)
+    assert.equal(initialPolicyStatus.topologyComplete, false)
+    assert.equal(initialPolicyStatus.canonicalPolicyTopologyComplete, false)
+    assert.equal(initialPolicyStatus.memberships.length, 1)
+    assert.equal(initialPolicyStatus.memberships[0]?.covered, false)
+    assert.equal(
+      initialPolicyStatus.memberships[0]?.membershipId,
+      completed.session.membershipId,
     )
-    assert.equal(sourceOffPolicyPrepare.code, 'feature_disabled')
-    const sourceOffPolicySet = await invoke(
-      status,
-      aal2,
-      'admin-ai-unlock',
-      { action: 'setPolicy', ...sourceOffPolicyRequest },
-      503,
-    )
-    assert.equal(sourceOffPolicySet.code, 'feature_disabled')
 
-    const controlRequestId = randomUUID()
-    const controlIntentDigest = randomBytes(32).toString('hex')
+    const preparedPolicy = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      { action: 'preparePolicyMutation', ...policyRequest },
+      200,
+    )
+    assert.equal(preparedPolicy.controlAction, 'environment_ai_policy_change')
+    assert.match(preparedPolicy.controlIntentDigest, /^[0-9a-f]{64}$/)
+    assert.equal(preparedPolicy.requestId, policyRequest.requestId)
+    assert.equal(
+      preparedPolicy.targetMembershipId,
+      completed.session.membershipId,
+    )
+
+    const policyWithoutControlProof = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      { action: 'setPolicy', ...policyRequest },
+      409,
+    )
+    assert.equal(policyWithoutControlProof.code, 'control_proof_required')
+
+    const controlRequestId = policyRequest.requestId
+    const controlIntentDigest = preparedPolicy.controlIntentDigest
     const controlBegunAt = Math.floor(Date.now() / 1_000)
     const controlBegun = await invoke(
       status,
@@ -1129,6 +1146,39 @@ try {
     assert.ok(
       Date.parse(controlCompleted.verifiedTotpAmrAt) >= controlBegunAt * 1000,
     )
+
+    const policySet = await invoke(
+      status,
+      refreshedAal2,
+      'admin-ai-unlock',
+      { action: 'setPolicy', ...policyRequest },
+      200,
+    )
+    assert.equal(policySet.membershipId, completed.session.membershipId)
+    assert.match(policySet.policyId, UUID_PATTERN)
+    assert.equal(policySet.status, 'active')
+    assert.equal(policySet.version, 2)
+
+    const completedPolicyStatus = await invoke(
+      status,
+      refreshedAal2,
+      'admin-ai-unlock',
+      {
+        action: 'policyStatus',
+        appSessionToken: completed.appSessionToken,
+      },
+      200,
+    )
+    assert.equal(completedPolicyStatus.activeAiMembershipCount, 1)
+    assert.equal(completedPolicyStatus.coveredMembershipCount, 1)
+    assert.equal(completedPolicyStatus.topologyComplete, true)
+    assert.equal(completedPolicyStatus.canonicalPolicyTopologyComplete, true)
+    assert.equal(completedPolicyStatus.memberships[0]?.covered, true)
+    assert.equal(
+      completedPolicyStatus.memberships[0]?.policyId,
+      policySet.policyId,
+    )
+    assert.equal(completedPolicyStatus.memberships[0]?.policyVersion, 2)
 
     const legacyEndpoint = await fetch(
       `${status.API_URL}/functions/v1/verify-admin-pin`,
