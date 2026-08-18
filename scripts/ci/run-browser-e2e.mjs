@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +37,7 @@ const demoMode =
   mode === 'demo-admin-ledger'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
+const localFixtureEnvironmentId = localMode ? randomUUID() : ''
 const googleAdminWorkspaceMode =
   localMode ||
   [
@@ -528,15 +530,14 @@ try {
             cwd: root,
             env: {
               ...appEnvironment,
+              TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId,
               TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
                 mode === 'local-ai' ? '1357' : '',
             },
-            // The first fixture owns the shared environment cleanup. Later
-            // fixtures retain it while Playwright is running, and reverse-order
-            // teardown guarantees that the owner exits last. This prevents
-            // memberships from one browser run leaking into the next run's
-            // exact AI-policy topology check.
-            retainEnvironment: googleAdminFixtureHandles.length > 0,
+            // Fixtures for one Playwright run share an isolated environment.
+            // The next browser run receives another UUID, so its exact policy
+            // topology cannot include memberships from an earlier run.
+            retainEnvironment: true,
           })
           googleAdminFixtureHandles.push(handle)
           projectFixtures.push({

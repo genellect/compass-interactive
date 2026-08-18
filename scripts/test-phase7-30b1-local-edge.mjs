@@ -12,7 +12,14 @@ const UUID_PATTERN =
 const container =
   process.env.SUPABASE_DB_CONTAINER ?? 'supabase_db_compass-interactive'
 const expectedOrigin = 'http://127.0.0.1:4173'
-const environmentId = '00000000-0000-4000-8000-000000000730'
+const environmentId =
+  process.env.TEST_ADMIN_ENVIRONMENT_ID?.trim() ??
+  '00000000-0000-4000-8000-000000000730'
+assert.match(
+  environmentId,
+  UUID_PATTERN,
+  'TEST_ADMIN_ENVIRONMENT_ID must be an optional UUID.',
+)
 const browserFixtureMode = process.argv.includes('--browser-fixture')
 const browserFixtureRetainEnvironment =
   browserFixtureMode &&

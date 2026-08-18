@@ -485,8 +485,8 @@ assert.match(
 )
 assert.match(
   browserRunner,
-  /retainEnvironment:\s*googleAdminFixtureHandles\.length > 0[\s\S]*googleAdminFixtureHandles\.toReversed\(\)/,
-  'the first local browser fixture must own cleanup and exit last so memberships cannot leak between browser runs',
+  /const localFixtureEnvironmentId = localMode \? randomUUID\(\) : ''[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*retainEnvironment: true/,
+  'each local browser run must use one isolated environment so memberships cannot leak into another run',
 )
 assert.match(
   adminIdentityBrowser,
