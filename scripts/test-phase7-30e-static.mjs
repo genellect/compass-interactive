@@ -32,6 +32,9 @@ const packageJson = JSON.parse(read('package.json'))
 const ci = read('.github/workflows/ci.yml')
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
 const browserRunner = read('scripts/ci/run-browser-e2e.mjs')
+const localAdminEnvironmentSetter = read(
+  'scripts/ci/set-local-admin-environment.mjs',
+)
 const browserGoogleFixture = read('e2e/helpers/googleAdminSession.ts')
 const browserSafety = read('e2e/helpers/browserSafety.ts')
 const displayRealtimeBrowser = read(
@@ -485,8 +488,13 @@ assert.match(
 )
 assert.match(
   browserRunner,
-  /const localFixtureEnvironmentId = localMode \? randomUUID\(\) : ''[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*retainEnvironment: true/,
-  'each local browser run must use one isolated environment so memberships cannot leak into another run',
+  /const localFixtureEnvironmentId = localMode[\s\S]*TEST_ADMIN_ENVIRONMENT_ID[\s\S]*randomUUID\(\)[\s\S]*alignManagedLocalEdgeEnvironment\(\)[\s\S]*set-local-admin-environment\.mjs[\s\S]*manage-local-edge\.mjs[\s\S]*restart[\s\S]*wait-for-local-edge\.mjs[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*retainEnvironment: true/,
+  'each local browser run must align the managed Edge and fixtures on one isolated environment',
+)
+assert.match(
+  localAdminEnvironmentSetter,
+  /UUID_PATTERN[\s\S]*RUNNER_TEMP[\s\S]*\^PHASE730_ADMIN_ENVIRONMENT_ID=\.\*\$[\s\S]*matches\?\.length !== 1[\s\S]*PHASE730_ADMIN_ENVIRONMENT_ID=\$\{environmentId\}[\s\S]*mode: 0o600/,
+  'the local Edge environment updater must replace exactly one validated Admin environment ID without weakening file permissions',
 )
 assert.match(
   adminIdentityBrowser,

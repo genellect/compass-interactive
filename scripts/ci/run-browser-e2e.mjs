@@ -37,7 +37,9 @@ const demoMode =
   mode === 'demo-admin-ledger'
 const presenterFixtureMode = mode === 'demo-presenter'
 const localMode = mode === 'local' || mode === 'local-jc' || mode === 'local-ai'
-const localFixtureEnvironmentId = localMode ? randomUUID() : ''
+const localFixtureEnvironmentId = localMode
+  ? (process.env.TEST_ADMIN_ENVIRONMENT_ID?.trim() ?? randomUUID())
+  : ''
 const googleAdminWorkspaceMode =
   localMode ||
   [
@@ -315,6 +317,39 @@ const appEnvironment = {
   ),
 }
 
+function runLocalEdgeScript(script, args, description) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: appEnvironment,
+  })
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`${description} failed (${result.status ?? 'signal'}).`)
+  }
+}
+
+function alignManagedLocalEdgeEnvironment() {
+  if (!localMode || !process.env.RUNNER_TEMP?.trim()) return
+  runLocalEdgeScript(
+    'scripts/ci/set-local-admin-environment.mjs',
+    [localFixtureEnvironmentId],
+    'Local Edge Admin environment update',
+  )
+  runLocalEdgeScript(
+    'scripts/ci/manage-local-edge.mjs',
+    ['restart'],
+    'Local Edge restart',
+  )
+  runLocalEdgeScript(
+    'scripts/ci/wait-for-local-edge.mjs',
+    [],
+    'Local Edge readiness check',
+  )
+}
+
 async function assertPortAvailable(targetPort, description) {
   await new Promise((resolve, reject) => {
     const probe = createServer()
@@ -507,6 +542,7 @@ try {
   if (!baseURL) {
     throw new Error('Vite did not report its loopback origin.')
   }
+  alignManagedLocalEdgeEnvironment()
   if (presenterFixtureMode) {
     await startPresenterFixture()
   }
