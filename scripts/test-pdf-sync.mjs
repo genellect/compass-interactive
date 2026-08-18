@@ -58,6 +58,11 @@ assert.match(
   /const pendingAdminPdfRequests = new Set<Request>\(\)[\s\S]*maxConcurrentAdminPdfRequests = Math\.max[\s\S]*await expect\.poll\(\(\) => pendingAdminPdfRequests\.size\)\.toBe\(0\)[\s\S]*expect\(maxConcurrentAdminPdfRequests\)\.toBe\(1\)/,
   'the real-Edge Display flow proves Admin PDF authorization never overlaps',
 )
+assert.match(
+  displayRealtimeE2e,
+  /const startedAt = performance\.now\(\)[\s\S]*new MutationObserver[\s\S]*displayPageProbeElapsedMs = String\([\s\S]*performance\.now\(\) - startedAt[\s\S]*expect\(pageAccelerationMs\)\.toBeLessThan\(2_000\)/,
+  'Display acceleration records the browser DOM mutation time without Playwright polling delay',
+)
 
 for (const catalog of [edgeCatalog, frontendCatalog]) {
   assert.match(catalog, /id: 'm4-sample-v1'/)

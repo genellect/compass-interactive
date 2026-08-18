@@ -398,16 +398,46 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         )
       })
 
-    const pageStartedAt = Date.now()
+    await displayPage.evaluate(() => {
+      const root = document.documentElement
+      root.removeAttribute('data-display-page-probe-elapsed-ms')
+      const startedAt = performance.now()
+      const observer = new MutationObserver(() => {
+        const pageChanged = Array.from(
+          document.querySelectorAll('.pdf-page-controls'),
+        ).some((controls) => controls.textContent?.includes('2 / 3'))
+        if (!pageChanged) return
+        root.dataset.displayPageProbeElapsedMs = String(
+          performance.now() - startedAt,
+        )
+        observer.disconnect()
+      })
+      observer.observe(document.body, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      })
+    })
     await adminPage
       .locator('.admin-pdf-page-controller')
       .locator('button')
       .filter({ hasText: /次/ })
       .click()
     await expect(displayPage.getByText('2 / 3', { exact: true })).toBeVisible({
-      timeout: 2_000,
+      timeout: 3_000,
     })
-    expect(Date.now() - pageStartedAt).toBeLessThan(2_000)
+    const pageAccelerationValue = await displayPage
+      .locator('html')
+      .getAttribute('data-display-page-probe-elapsed-ms')
+    expect(pageAccelerationValue).not.toBeNull()
+    const pageAccelerationMs = Number(pageAccelerationValue)
+    expect(Number.isFinite(pageAccelerationMs)).toBe(true)
+    expect(pageAccelerationMs).toBeLessThan(2_000)
+    await displayPage
+      .locator('html')
+      .evaluate((element) =>
+        element.removeAttribute('data-display-page-probe-elapsed-ms'),
+      )
 
     const streamId = randomUUID()
     await adminPage.evaluate(
