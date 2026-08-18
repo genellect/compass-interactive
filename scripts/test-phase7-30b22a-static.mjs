@@ -710,6 +710,11 @@ assert.match(
   /errorCode === 'P7322' \|\| errorCode === 'P7323'[\s\S]*?'reauthentication_required'[\s\S]*?401/,
   'the Edge identity surface must translate an expired or missing backing Auth session into explicit reauthentication',
 )
+assert.match(
+  edge,
+  /userError \|\| !userData\.user[\s\S]*?'reauthentication_required'[\s\S]*?401[\s\S]*?userData\.user\.is_anonymous/,
+  'the Edge identity surface must translate a GoTrue session lookup failure before validating signed Google claims',
+)
 assert.match(client, /reauthentication_required:[\s\S]*?Googleで再認証/)
 assert.match(
   adminRoute,

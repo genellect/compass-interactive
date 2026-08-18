@@ -491,9 +491,15 @@ async function handleRequest(request: Request) {
   const { data: userData, error: userError } =
     await serviceClient.auth.getUser(bearerToken)
   const claims = decodeVerifiedAdminJwtClaims(bearerToken)
+  if (userError || !userData.user) {
+    return errorResponse(
+      jsonResponse,
+      'reauthentication_required',
+      'The Google sign-in session is no longer valid.',
+      401,
+    )
+  }
   if (
-    userError ||
-    !userData.user ||
     userData.user.is_anonymous === true ||
     !claims ||
     claims.subject !== userData.user.id ||
