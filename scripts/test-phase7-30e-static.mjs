@@ -484,6 +484,11 @@ assert.match(
   'the local lifecycle harness must expose the separately issued Display URL while production remains default-off',
 )
 assert.match(
+  browserRunner,
+  /retainEnvironment:\s*googleAdminFixtureHandles\.length > 0[\s\S]*googleAdminFixtureHandles\.toReversed\(\)/,
+  'the first local browser fixture must own cleanup and exit last so memberships cannot leak between browser runs',
+)
+assert.match(
   adminIdentityBrowser,
   /\/auth\/v1\/factors\/\$\{factorId\}\/challenge[\s\S]*\/auth\/v1\/factors\/\$\{factorId\}\/verify/,
   'the identity demo must exercise the Supabase TOTP challenge and verification endpoints',

@@ -531,7 +531,12 @@ try {
               TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
                 mode === 'local-ai' ? '1357' : '',
             },
-            retainEnvironment: true,
+            // The first fixture owns the shared environment cleanup. Later
+            // fixtures retain it while Playwright is running, and reverse-order
+            // teardown guarantees that the owner exits last. This prevents
+            // memberships from one browser run leaking into the next run's
+            // exact AI-policy topology check.
+            retainEnvironment: googleAdminFixtureHandles.length > 0,
           })
           googleAdminFixtureHandles.push(handle)
           projectFixtures.push({
