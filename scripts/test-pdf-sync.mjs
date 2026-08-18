@@ -27,8 +27,14 @@ assert.doesNotMatch(migration, /create table public\.lecture_materials/)
 
 assert.match(updateDisplay, /verifyGoogleAdminOperationRequest/)
 assert.match(updateDisplay, /manage_google_admin_display_state_v1/)
-assert.match(updateDisplay, /target_pdf_document_id: body\.pdfDocumentId \?\? null/)
-assert.match(updateDisplay, /target_current_pdf_page: body\.currentPdfPage \?\? null/)
+assert.match(
+  updateDisplay,
+  /target_pdf_document_id: body\.pdfDocumentId \?\? null/,
+)
+assert.match(
+  updateDisplay,
+  /target_current_pdf_page: body\.currentPdfPage \?\? null/,
+)
 assert.match(updateDisplay, /displayState: result\.displayState/)
 assert.doesNotMatch(updateDisplay, /admin_update_pdf_display/)
 assert.doesNotMatch(updateDisplay, /from\('lecture_live_state'\)/)
@@ -75,7 +81,11 @@ assert.match(
 )
 assert.match(
   viewer,
-  /await cancelAndSettleRenderTask\(previousRenderTask\)[\s\S]*await document\.getPage\(pageNumber\)[\s\S]*requestId !== renderRequestRef\.current[\s\S]*canvasRef\.current !== canvas[\s\S]*stageRef\.current !== stage/,
+  /const isCurrentRequest = \(\) =>[\s\S]*requestId === renderRequestRef\.current[\s\S]*canvasRef\.current === canvas[\s\S]*stageRef\.current === stage[\s\S]*await cancelAndSettleRenderTask\(previousRenderTask\)[\s\S]*if \(!isCurrentRequest\(\)\) return[\s\S]*page = await document\.getPage\(pageNumber\)[\s\S]*if \(!isCurrentRequest\(\)\) return/,
+)
+assert.match(
+  viewer,
+  /isRenderingCancelledError\(error\) \|\| !isCurrentRequest\(\)/,
 )
 assert.match(
   viewer,
@@ -85,13 +95,15 @@ assert.match(
   viewer,
   /active = false[\s\S]*renderRequestRef\.current \+= 1[\s\S]*renderTaskRef\.current\?\.cancel\(\)/,
 )
+assert.match(viewer, /loadingTask\.destroy\(\)\.catch\(\(\) => undefined\)/)
+assert.match(
+  viewer,
+  /const timer = window\.setTimeout\(\(\) => \{[\s\S]*renderPage\(currentPage, pdfDocument\)\.catch[\s\S]*if \(!active\) return[\s\S]*PDFページの描画に失敗しました/,
+)
 assert.match(viewer, /教員のページに戻る/)
 assert.doesNotMatch(viewer, /type="file"|arrayBuffer\(\)/)
 assert.match(adminPage, /availablePdfAssets/)
-assert.match(
-  adminPage,
-  /activeJournalClubRun \? \[\] : lecturePdfAssets/,
-)
+assert.match(adminPage, /activeJournalClubRun \? \[\] : lecturePdfAssets/)
 assert.match(adminPage, /updateDisplayState\('setDocument'/)
 assert.match(lecturePage, /<SyncedPdfViewer/)
 assert.match(displayView, /<SyncedPdfViewer/)
