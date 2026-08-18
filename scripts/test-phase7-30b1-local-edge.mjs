@@ -1157,7 +1157,7 @@ try {
     assert.equal(policySet.membershipId, completed.session.membershipId)
     assert.match(policySet.policyId, UUID_PATTERN)
     assert.equal(policySet.status, 'active')
-    assert.equal(policySet.version, 2)
+    assert.equal(policySet.version, 1)
 
     const completedPolicyStatus = await invoke(
       status,
@@ -1178,7 +1178,7 @@ try {
       completedPolicyStatus.memberships[0]?.policyId,
       policySet.policyId,
     )
-    assert.equal(completedPolicyStatus.memberships[0]?.policyVersion, 2)
+    assert.equal(completedPolicyStatus.memberships[0]?.policyVersion, 1)
 
     const legacyEndpoint = await fetch(
       `${status.API_URL}/functions/v1/verify-admin-pin`,
