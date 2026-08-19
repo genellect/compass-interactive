@@ -39,6 +39,14 @@ const displayRealtimeBrowser = read(
 )
 const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
 const localLifecycleBrowser = read('e2e/local/live-lecture.spec.ts')
+const browserPdfPublication = read(
+  'e2e/demo/browser-pdf-publication-admin.spec.ts',
+)
+const adminPage = read('src/pages/AdminPage.tsx')
+const adminPageViewModel = read('src/pages/admin/adminPageViewModel.ts')
+const adminLectureControl = read(
+  'src/components/AdminWorkspace/AdminLectureControl.tsx',
+)
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const concurrency = read('scripts/test-phase7-30e-concurrency.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
@@ -446,6 +454,45 @@ assert.equal(
   'Phase E concurrency fixture Owners must retain complete AI capability',
 )
 assert.doesNotMatch(concurrency, /'owner', 'active', false/)
+assert.match(
+  concurrency,
+  /approval-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?approval\/cutover environment serialization diverged/,
+  'approval versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
+)
+assert.match(
+  concurrency,
+  /claim-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?claim\/cutover environment serialization diverged/,
+  'claim versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
+)
+const pgTapCutoverRetry =
+  pgTap.match(
+    /create function pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?\n\$\$;/i,
+  )?.[0] ?? ''
+assert.match(
+  pgTapCutoverRetry,
+  /return private\.commit_google_only_admin_cutover_v1\([\s\S]*?exception[\s\S]*?when lock_not_available then[\s\S]*?attempt_count >= 20[\s\S]*?raise;[\s\S]*?pg_catalog\.pg_sleep\(0\.05\)/i,
+  'the pgTAP-only helper may retry only bounded transient NOWAIT conflicts from the running local stack',
+)
+const pgTapAfterCutoverRetry = pgTap.slice(
+  pgTap.indexOf(pgTapCutoverRetry) + pgTapCutoverRetry.length,
+)
+assert.equal(
+  pgTapAfterCutoverRetry.match(
+    /pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\(/gi,
+  )?.length,
+  1,
+  'only the positive cutover assertion may use the bounded test retry',
+)
+assert.match(
+  pgTapAfterCutoverRetry,
+  /select is\(\s*pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?'false',\s*'SERIALIZABLE operator transaction commits the Google-only identity cutover'/i,
+  'the bounded test retry must still prove the first immutable cutover commit',
+)
+assert.match(
+  pgTapAfterCutoverRetry,
+  /select is\(\s*private\.commit_google_only_admin_cutover_v1\([\s\S]*?'true',\s*'cutover exact replay remains available after the irreversible tombstone'/i,
+  'the exact replay assertion must call the Production function directly',
+)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(
   ci,
@@ -462,6 +509,57 @@ assert.match(
   localLifecycleBrowser,
   /#teacher-workspace-setup-tab'\)\.click\(\)[\s\S]*const adminQr = admin\.page[\s\S]*await expect\(adminQr\.locator\('img'\)\)\.toBeVisible\(\)[\s\S]*decodeQrImage\(admin\.page, '\.lecture-join-qr img'\)[\s\S]*#teacher-workspace-ai-tab'\)\.click\(\)/,
   'the lifecycle must return to setup for the join QR before entering the optional AI stage',
+)
+assert.match(
+  localLifecycleBrowser,
+  /const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?別ブラウザ用リンクをコピー[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
+  'the lifecycle must replace an already-connected Display and use the connected replacement for cross-surface checks',
+)
+assert.match(
+  localLifecycleBrowser,
+  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
+  'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+)
+assert.match(
+  localLifecycleBrowser,
+  /講義を終了'[\s\S]*講義を準備する[\s\S]*終了した講義です。履歴を確認するか、次の講義を準備できます。[\s\S]*toHaveCount\(0\)[\s\S]*getByLabel\('講義タイトル'\)[\s\S]*toBeEnabled\(\)[\s\S]*講義履歴を表示する[\s\S]*name: '選択', exact: true[\s\S]*toHaveCount\(0\)[\s\S]*同じタイトルで準備/,
+  'the non-PDF local lifecycle must return to neutral lecture creation while its dedicated PDF profile proves file publication',
+)
+assert.match(
+  adminPage,
+  /lecturesLoaded[\s\S]*?requestedAdminLectureSessionId[\s\S]*?activeAdminLecture\.status === 'closed'[\s\S]*?clearSelectedLectureSession\(\)/,
+  'a restored closed lecture must be cleared before the next preparation flow',
+)
+assert.match(
+  adminPage,
+  /initialRestoredLectureSessionIdRef = useRef\([\s\S]*?runtimeMode === 'live'[\s\S]*?restoredActiveLectureSessionId[\s\S]*?refreshLectures\([\s\S]*?adminToken,[\s\S]*?Boolean\(initialRestoredLectureSessionIdRef\.current\)/,
+  'the initial list must include history only when resolving a restored live lecture so an older open lecture is not cleared as missing',
+)
+assert.doesNotMatch(
+  adminPageViewModel,
+  /終了した講義です。履歴を確認するか、次の講義を準備できます。/,
+  'the preparation workspace must not retain the closed-lecture explanation',
+)
+assert.match(
+  adminPageViewModel,
+  /filter\(\(lecture\) => lecture\.status !== 'closed'\)/,
+  'closed lectures must stay out of the default preparation list',
+)
+const duplicateLectureBlock = adminPage.slice(
+  adminPage.indexOf('async function duplicateLecture'),
+  adminPage.indexOf('async function handleCreatePoll'),
+)
+assert.match(duplicateLectureBlock, /selectAdminLecture\(duplicatedLecture\)/)
+assert.doesNotMatch(duplicateLectureBlock, /action: 'start'/)
+assert.match(
+  adminLectureControl,
+  /lecture\.status !== 'closed'[\s\S]*?onSelect\(lecture\)/,
+  'closed history rows must not become mutable preparation targets',
+)
+assert.match(
+  browserPdfPublication,
+  /lectureStatus: 'closed'[\s\S]*?講義を準備する[\s\S]*?input\[type="file"\][\s\S]*?toBeEnabled\(\)[\s\S]*?講義を作成して資料を公開する[\s\S]*?toBeEnabled\(\)/,
+  'browser coverage must prove that a restored closed lecture cannot block the next PDF',
 )
 assert.match(
   localLifecycleBrowser,
@@ -681,6 +779,26 @@ assert.match(
   localGoogleFixture,
   /disable trigger admin_google_operation_receipts_append_only[\s\S]*delete from private\.admin_google_operation_receipts[\s\S]*where environment_id =[\s\S]*enable trigger admin_google_operation_receipts_append_only[\s\S]*delete from public\.admin_sessions/,
   'the isolated local fixture must remove immutable operation receipts before deleting its Admin sessions',
+)
+assert.match(
+  localEdgeContract,
+  /const transientGatewayStatuses = new Set\(\[502, 503, 504\]\)[\s\S]*retryTransient = false[\s\S]*const maximumAttempts = retryTransient \? 3 : 1[\s\S]*setTimeout\(\(\) => abortController\.abort\(\), 15_000\)[\s\S]*await response\.text\(\)[\s\S]*transientGatewayStatuses\.has\(response\.status\)[\s\S]*error\.name === 'AbortError'/,
+  'the local Edge POST helper must bound and retry only explicitly safe transient gateway probes',
+)
+assert.match(
+  localEdgeContract,
+  /fetchPreflightWithRetry\([\s\S]*await response\.arrayBuffer\(\)[\s\S]*functionName} preflight must pass`[\s\S]*for \(const removedFunctionName[\s\S]*await response\.arrayBuffer\(\)[\s\S]*removedFunctionName} must not remain routable`/,
+  'the local Edge contract must drain every preflight response before exercising POST routes',
+)
+assert.equal(
+  [...localEdgeContract.matchAll(/retryTransient: true/g)].length,
+  1,
+  'only one read-only local Edge probe may enable transient POST retries',
+)
+assert.match(
+  localEdgeContract,
+  /const hostile = await postFunction\('manage-lectures',[\s\S]*action: 'list'[\s\S]*origin: 'https:\/\/hostile\.example'[\s\S]*retryTransient: true[\s\S]*assert\.equal\(hostile\.response\.status, 403\)/,
+  'only the read-only hostile-origin probe may absorb bounded gateway startup transients before proving the exact 403',
 )
 assert.match(
   localEdgeContract,

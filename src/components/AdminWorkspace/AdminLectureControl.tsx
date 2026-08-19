@@ -137,7 +137,7 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
         {error ? <p className="error-note">{error}</p> : null}
         {isLoading ? <p className="note">講義情報を更新しています。</p> : null}
         <div className="table-like lecture-table">
-          {lectures.length > 0 ? (
+          {visibleLectures.length > 0 ? (
             visibleLectures.map((lecture) => {
               const isActive = activeLectureSessionId === lecture.id
               return (
@@ -183,13 +183,15 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
                     {getStatusLabel(lecture.status)}
                   </span>
                   <div className="lecture-row-actions">
-                    <button
-                      className="secondary-button"
-                      onClick={() => onSelect(lecture)}
-                      type="button"
-                    >
-                      {isActive ? '操作対象' : '選択'}
-                    </button>
+                    {lecture.status !== 'closed' ? (
+                      <button
+                        className="secondary-button"
+                        onClick={() => onSelect(lecture)}
+                        type="button"
+                      >
+                        {isActive ? '操作対象' : '選択'}
+                      </button>
+                    ) : null}
                     <button
                       className="secondary-button"
                       disabled={isLoading || lecture.status !== 'draft'}
@@ -212,26 +214,26 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
                         disabled={isLoading}
                         onClick={() => {
                           const confirmed = window.confirm(
-                            '同じタイトルで新しい講義コードを発行し、講義を開始します。過去の記録は変更されず、資料と投票は引き継がれません。続けますか？',
+                            '同じタイトルで新しい講義を準備します。過去の記録は変更されず、資料と投票は引き継がれません。続けますか？',
                           )
                           if (confirmed) onDuplicate(lecture.id)
                         }}
                         type="button"
                       >
-                        もう一度開催する
+                        同じタイトルで準備
                       </button>
                     ) : null}
                   </div>
                 </div>
               )
             })
-          ) : (
+          ) : lectures.length === 0 ? (
             <p className="note">
               まだ講義がありません。最初の講義を作成しましょう。
             </p>
-          )}
+          ) : null}
         </div>
-        {lectures.length > 2 ? (
+        {showHistory || visibleLectures.length < lectures.length ? (
           <button
             className="secondary-button admin-history-toggle"
             onClick={onToggleHistory}

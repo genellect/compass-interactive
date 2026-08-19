@@ -179,25 +179,35 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     )
     await admin.page.getByRole('button', { name: '共有画面を開く' }).click()
     displayPage = await displayPopup
+    const initialDisplayPage = displayPage
     const issuedDisplaySession = (
       await displaySessionResponse
     ).json() as Promise<{
       displayToken: string
       lectureSessionId: string
     }>
-    const displaySafety = await installBrowserSafetyMonitor(displayPage)
+    const displaySafety = await installBrowserSafetyMonitor(initialDisplayPage)
     await expect(
-      displayPage.getByRole('heading', { name: lectureTitle }),
+      initialDisplayPage.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()
-    const displayQr = displayPage.locator('.lecture-join-qr')
+    const displayQr = initialDisplayPage.locator('.lecture-join-qr')
     await expect(displayQr.locator('img')).toBeVisible()
     await expect(displayQr).toHaveAttribute(
       'data-lecture-join-url',
       canonicalJoinUrl,
     )
-    expect(await decodeQrImage(displayPage, '.lecture-join-qr img')).toBe(
-      canonicalJoinUrl,
-    )
+    expect(
+      await decodeQrImage(initialDisplayPage, '.lecture-join-qr img'),
+    ).toBe(canonicalJoinUrl)
+    await expect
+      .poll(
+        () =>
+          initialDisplayPage
+            .locator('html')
+            .getAttribute('data-display-realtime'),
+        { timeout: 15_000 },
+      )
+      .toBe('connected')
 
     const popupSession = await issuedDisplaySession
     await installClipboardCapture(admin.page)
@@ -239,7 +249,21 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       isolatedDisplayPage.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()
     await expect(isolatedDisplayPage).toHaveURL(/\/display$/)
+    await expect
+      .poll(
+        () =>
+          isolatedDisplayPage
+            ?.locator('html')
+            .getAttribute('data-display-realtime'),
+        { timeout: 15_000 },
+      )
+      .toBe('connected')
     await isolatedDisplaySafety.assertClean()
+    await expect(
+      initialDisplayPage.getByRole('heading', {
+        name: '共有画面の確認が必要です',
+      }),
+    ).toBeVisible({ timeout: 8_000 })
 
     await student.page.goto('/join')
     await student.page.getByLabel('講義コード').fill(lectureCode ?? '')
@@ -293,6 +317,35 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       .filter({ hasText: 'ローカルE2Eからの質問です' })
     await expect(comment).toContainText('CI学生')
 
+    await admin.page.locator('#teacher-workspace-participation-tab').click()
+    const adminComment = admin.page
+      .locator('#admin-voices .comment-card')
+      .filter({ hasText: 'ローカルE2Eからの質問です' })
+    await expect(adminComment).toContainText('CI学生', { timeout: 8_000 })
+    if (!isolatedDisplayPage) {
+      throw new Error('The active isolated Display page was not opened.')
+    }
+    const displayComment = isolatedDisplayPage
+      .locator('.comment-card')
+      .filter({ hasText: 'ローカルE2Eからの質問です' })
+    await expect(displayComment).toBeVisible({ timeout: 8_000 })
+
+    await adminComment.getByRole('button', { name: '非表示にする' }).click()
+    await expect(adminComment).toContainText('非表示')
+    await expect(
+      adminComment.getByRole('button', { name: '表示に戻す' }),
+    ).toBeVisible()
+    await expect(comment).toHaveCount(0, { timeout: 8_000 })
+    await expect(displayComment).toHaveCount(0, { timeout: 8_000 })
+
+    await adminComment.getByRole('button', { name: '表示に戻す' }).click()
+    await expect(adminComment.locator('.tag.muted')).toHaveCount(0)
+    await expect(
+      adminComment.getByRole('button', { name: '非表示にする' }),
+    ).toBeVisible()
+    await expect(comment).toContainText('CI学生', { timeout: 8_000 })
+    await expect(displayComment).toBeVisible({ timeout: 8_000 })
+
     const ownHistoryRequests: string[] = []
     student.page.on('request', (request) => {
       if (request.url().includes('/rpc/get_lecture_comment_history_v3')) {
@@ -322,7 +375,23 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await admin.page
       .getByRole('button', { name: '講義を終了', exact: true })
       .click()
+    await expect(
+      admin.page.getByRole('heading', { name: '講義を準備する' }),
+    ).toBeVisible()
+    await expect(
+      admin.page.getByText(
+        '終了した講義です。履歴を確認するか、次の講義を準備できます。',
+      ),
+    ).toHaveCount(0)
+    await expect(admin.page.getByLabel('講義タイトル')).toBeEnabled()
+    await admin.page.getByRole('button', { name: '講義履歴を表示する' }).click()
     await expect(lectureRow).toContainText('締切')
+    await expect(
+      lectureRow.getByRole('button', { name: '選択', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      lectureRow.getByRole('button', { name: '同じタイトルで準備' }),
+    ).toBeVisible()
     await expect(admin.page.locator('.lecture-join-qr')).toHaveCount(0)
     if (displayPage) {
       await expect(displayPage.locator('.lecture-join-qr')).toHaveCount(0, {

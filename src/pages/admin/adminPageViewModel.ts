@@ -19,17 +19,15 @@ export function deriveTeacherWorkspacePresentation(input: {
     canShowAi: canShowLiveTools,
     canShowParticipation: canShowLiveTools,
     canShowSlides,
-    defaultView: (lectureIsOpen
-      ? canShowSlides
-        ? 'slides'
-        : 'participation'
+    defaultView: (lectureIsOpen && canShowSlides
+      ? 'slides'
       : 'setup') as TeacherWorkspaceView,
     headerDescription: !input.activeLecture
       ? '資料を選び、講義タイトルを設定して開始します。'
       : status === 'open'
         ? '講義中の操作を、必要な画面だけに分けて表示します。'
         : status === 'closed'
-          ? '終了した講義です。履歴を確認するか、次の講義を準備できます。'
+          ? null
           : '資料と講義情報を確認してから開始します。',
     headerTitle: input.activeLecture?.title ?? '講義を準備する',
   }
@@ -67,7 +65,9 @@ export function buildAdminPageView(input: {
   )
   const visibleLectures = input.showLectureHistory
     ? orderedLectures
-    : orderedLectures.slice(0, 2)
+    : orderedLectures
+        .filter((lecture) => lecture.status !== 'closed')
+        .slice(0, 2)
   const orderedAdminPolls = [...input.adminPolls].sort((left, right) => {
     if (activeJournalClubRun) {
       const leftOrder = left.templateOrder ?? Number.MAX_SAFE_INTEGER

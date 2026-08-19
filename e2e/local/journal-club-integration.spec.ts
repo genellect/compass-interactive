@@ -712,6 +712,8 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
 
   page.once('dialog', (dialog) => dialog.accept())
   await rehearsalRow.getByRole('button', { name: '終了', exact: true }).click()
+  await page.getByRole('button', { name: '講義履歴を表示する' }).click()
+  await expect(rehearsalRow).toBeVisible()
   await expect(rehearsalRow.locator('.status-pill.closed')).toHaveText('締切')
   const closedRehearsal = await service
     .from('lecture_sessions')

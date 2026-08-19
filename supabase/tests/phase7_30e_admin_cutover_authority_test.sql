@@ -692,8 +692,44 @@ SELECT is(
   'a second reviewed approval may remain deliberately unclaimed'
 );
 
+CREATE FUNCTION pg_temp.commit_google_only_admin_cutover_with_bounded_retry(
+  target_environment_id uuid,
+  target_request_id uuid,
+  target_operator_actor text,
+  target_reason text,
+  target_deployment_evidence_digest text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SET search_path = ''
+AS $$
+DECLARE
+  attempt_count integer := 0;
+BEGIN
+  LOOP
+    attempt_count := attempt_count + 1;
+    BEGIN
+      RETURN private.commit_google_only_admin_cutover_v1(
+        target_environment_id,
+        target_request_id,
+        target_operator_actor,
+        target_reason,
+        target_deployment_evidence_digest
+      );
+    EXCEPTION
+      WHEN lock_not_available THEN
+        IF attempt_count >= 20 THEN
+          RAISE;
+        END IF;
+        PERFORM pg_catalog.pg_sleep(0.05);
+    END;
+  END LOOP;
+END;
+$$;
+
 SELECT is(
-  private.commit_google_only_admin_cutover_v1(
+  pg_temp.commit_google_only_admin_cutover_with_bounded_retry(
     '00000000-0000-4000-8000-00000000e101'::uuid,
     '00000000-0000-4000-8000-00000000e150'::uuid,
     'operator:phase730e', 'verified Google-only deployment', repeat('b', 64)
