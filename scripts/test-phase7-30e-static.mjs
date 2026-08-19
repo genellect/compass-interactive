@@ -483,7 +483,12 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*displayComment[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
+  /const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?別ブラウザ用リンクをコピー[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
+  'the lifecycle must replace an already-connected Display and use the connected replacement for cross-surface checks',
+)
+assert.match(
+  localLifecycleBrowser,
+  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
   'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
 )
 assert.match(
