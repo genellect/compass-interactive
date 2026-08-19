@@ -429,7 +429,7 @@ test('Admin clears a restored closed lecture before preparing the next PDF', asy
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
   ).toBeVisible()
-  expect(state.lectureListIncludeHistory[0]).toBe(true)
+  await expect.poll(() => state.lectureListIncludeHistory[0]).toBe(true)
   await expect(
     page.getByText(
       '終了した講義です。履歴を確認するか、次の講義を準備できます。',
