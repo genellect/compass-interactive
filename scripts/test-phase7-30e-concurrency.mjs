@@ -498,17 +498,27 @@ try {
   await runSql(`
     do $phase730e$
     begin
+      -- The SERIALIZABLE contender starts before the holder commits. Both a
+      -- policy rejection after lock acquisition and the bounded transient
+      -- serialization/lock outcomes are fail-closed; no receipt may survive.
       if (select sqlstate from public.phase7_30e_concurrency_results
           where scenario = 'approval-holder') <> '00000'
          or (select outcome ->> 'replayed'
              from public.phase7_30e_concurrency_results
              where scenario = 'approval-holder') <> 'false'
-         or (select sqlstate from public.phase7_30e_concurrency_results
-             where scenario = 'approval-cutover-waiter') <> 'P7335'
-         or (select outcome ->> 'message'
+         or coalesce((
+              select sqlstate from public.phase7_30e_concurrency_results
+              where scenario = 'approval-cutover-waiter'
+            ), '') not in ('P7335', '40001', '55P03')
+         or (
+           (select sqlstate from public.phase7_30e_concurrency_results
+            where scenario = 'approval-cutover-waiter') = 'P7335'
+           and coalesce((
+             select outcome ->> 'message'
              from public.phase7_30e_concurrency_results
-             where scenario = 'approval-cutover-waiter') <>
-              'Active lectures require valid Google ownership evidence'
+             where scenario = 'approval-cutover-waiter'
+           ), '') <> 'Active lectures require valid Google ownership evidence'
+         )
          or (select count(*) from private.admin_lecture_ownership_claim_approvals
              where id = ${literal(id.approval)}::uuid) <> 1
          or exists (select 1 from private.admin_identity_cutover_receipts) then
@@ -671,17 +681,27 @@ try {
   await runSql(`
     do $phase730e$
     begin
+      -- The same bounded transient outcomes are valid while ownership claim
+      -- commit releases the shared environment mutex. Every path stays
+      -- fail-closed and the later exact cutover/replay scenario proves retry.
       if (select sqlstate from public.phase7_30e_concurrency_results
           where scenario = 'claim-holder') <> '00000'
          or (select outcome ->> 'replayed'
              from public.phase7_30e_concurrency_results
              where scenario = 'claim-holder') <> 'false'
-         or (select sqlstate from public.phase7_30e_concurrency_results
-             where scenario = 'claim-cutover-waiter') <> 'P7335'
-         or (select outcome ->> 'message'
+         or coalesce((
+              select sqlstate from public.phase7_30e_concurrency_results
+              where scenario = 'claim-cutover-waiter'
+            ), '') not in ('P7335', '40001', '55P03')
+         or (
+           (select sqlstate from public.phase7_30e_concurrency_results
+            where scenario = 'claim-cutover-waiter') = 'P7335'
+           and coalesce((
+             select outcome ->> 'message'
              from public.phase7_30e_concurrency_results
-             where scenario = 'claim-cutover-waiter') <>
-              'Active lectures require valid Google ownership evidence'
+             where scenario = 'claim-cutover-waiter'
+           ), '') <> 'Active lectures require valid Google ownership evidence'
+         )
          or not exists (
            select 1 from private.admin_lecture_ownerships
            where lecture_session_id = ${literal(id.lecture)}::uuid

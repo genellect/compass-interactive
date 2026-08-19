@@ -454,6 +454,16 @@ assert.equal(
   'Phase E concurrency fixture Owners must retain complete AI capability',
 )
 assert.doesNotMatch(concurrency, /'owner', 'active', false/)
+assert.match(
+  concurrency,
+  /approval-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?approval\/cutover environment serialization diverged/,
+  'approval versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
+)
+assert.match(
+  concurrency,
+  /claim-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?claim\/cutover environment serialization diverged/,
+  'claim versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
+)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(
   ci,
