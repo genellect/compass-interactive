@@ -293,6 +293,33 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       .filter({ hasText: 'ローカルE2Eからの質問です' })
     await expect(comment).toContainText('CI学生')
 
+    await admin.page.locator('#teacher-workspace-participation-tab').click()
+    const adminComment = admin.page
+      .locator('#admin-voices .comment-card')
+      .filter({ hasText: 'ローカルE2Eからの質問です' })
+    await expect(adminComment).toContainText('CI学生', { timeout: 8_000 })
+    if (!displayPage) throw new Error('Display page was not opened.')
+    const displayComment = displayPage
+      .locator('.comment-card')
+      .filter({ hasText: 'ローカルE2Eからの質問です' })
+    await expect(displayComment).toBeVisible({ timeout: 8_000 })
+
+    await adminComment.getByRole('button', { name: '非表示にする' }).click()
+    await expect(adminComment).toContainText('非表示')
+    await expect(
+      adminComment.getByRole('button', { name: '表示に戻す' }),
+    ).toBeVisible()
+    await expect(comment).toHaveCount(0, { timeout: 8_000 })
+    await expect(displayComment).toHaveCount(0, { timeout: 8_000 })
+
+    await adminComment.getByRole('button', { name: '表示に戻す' }).click()
+    await expect(adminComment.locator('.tag.muted')).toHaveCount(0)
+    await expect(
+      adminComment.getByRole('button', { name: '非表示にする' }),
+    ).toBeVisible()
+    await expect(comment).toContainText('CI学生', { timeout: 8_000 })
+    await expect(displayComment).toBeVisible({ timeout: 8_000 })
+
     const ownHistoryRequests: string[] = []
     student.page.on('request', (request) => {
       if (request.url().includes('/rpc/get_lecture_comment_history_v3')) {
@@ -322,7 +349,27 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await admin.page
       .getByRole('button', { name: '講義を終了', exact: true })
       .click()
+    await expect(
+      admin.page.getByRole('heading', { name: '講義を準備する' }),
+    ).toBeVisible()
+    await expect(
+      admin.page.getByText(
+        '終了した講義です。履歴を確認するか、次の講義を準備できます。',
+      ),
+    ).toHaveCount(0)
+    await expect(
+      admin.page.locator(
+        '#admin-live .publisher-control-panel input[type="file"]',
+      ),
+    ).toBeEnabled()
+    await admin.page.getByRole('button', { name: '講義履歴を表示する' }).click()
     await expect(lectureRow).toContainText('締切')
+    await expect(
+      lectureRow.getByRole('button', { name: '選択', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      lectureRow.getByRole('button', { name: '同じタイトルで準備' }),
+    ).toBeVisible()
     await expect(admin.page.locator('.lecture-join-qr')).toHaveCount(0)
     if (displayPage) {
       await expect(displayPage.locator('.lecture-join-qr')).toHaveCount(0, {

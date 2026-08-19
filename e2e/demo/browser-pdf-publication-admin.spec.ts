@@ -31,6 +31,7 @@ type MockState = {
   initiateIdempotencyKeys: string[]
   lectureCreateCount: number
   lectureCreated: boolean
+  lectureListIncludeHistory: boolean[]
   lectureTitle: string | null
   publicationActions: PublicationAction[]
   storedPublicationAtUpload: string | null
@@ -85,7 +86,7 @@ function anonymousSessionResponse() {
 
 function lectureResponse(
   options: {
-    status?: 'open' | 'scheduled'
+    status?: 'closed' | 'open' | 'scheduled'
     title?: string
   } = {},
 ) {
@@ -136,6 +137,7 @@ async function installAdminState(
   page: Page,
   recoverPublication: boolean,
   activeLecture = true,
+  lectureStatus: 'closed' | 'open' = 'open',
 ) {
   await installMockGoogleAdminSession(page, googleAdmin, {
     localStorage: {
@@ -143,7 +145,7 @@ async function installAdminState(
       ...(activeLecture
         ? {
             'compass-interactive-lecture-session-id': lectureSessionId,
-            'compass-interactive-lecture-status': 'open',
+            'compass-interactive-lecture-status': lectureStatus,
             'compass-interactive-lecture-title':
               'Phase 7.26 browser publication E2E',
           }
@@ -170,6 +172,7 @@ async function installNetworkMocks(
     conflictOnFirstInitiate?: boolean
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
+    initialLectureStatus?: 'closed' | 'open'
     recoverPublication?: boolean
     startWithoutLecture?: boolean
   } = {},
@@ -180,6 +183,7 @@ async function installNetworkMocks(
     initiateIdempotencyKeys: [],
     lectureCreateCount: 0,
     lectureCreated: !options.startWithoutLecture,
+    lectureListIncludeHistory: [],
     lectureTitle: null,
     publicationActions: [],
     storedPublicationAtUpload: null,
@@ -234,6 +238,9 @@ async function installNetworkMocks(
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
     expectMockGoogleAdminCredential(body, googleAdmin)
     if (functionName === 'manage-lectures') {
+      if (body.action === 'list') {
+        state.lectureListIncludeHistory.push(body.includeHistory === true)
+      }
       if (body.action === 'create') {
         state.lectureCreateCount += 1
         state.lectureCreated = true
@@ -243,7 +250,9 @@ async function installNetworkMocks(
         lectures: state.lectureCreated
           ? [
               lectureResponse({
-                status: options.startWithoutLecture ? 'scheduled' : 'open',
+                status: options.startWithoutLecture
+                  ? 'scheduled'
+                  : (options.initialLectureStatus ?? 'open'),
                 title: state.lectureTitle ?? undefined,
               }),
             ]
@@ -407,6 +416,44 @@ async function openTeacherSetup(page: Page) {
   await page.locator('#teacher-workspace-setup-tab').click()
   await expect(page.locator('#teacher-workspace-material')).toBeVisible()
 }
+
+test('Admin clears a restored closed lecture before preparing the next PDF', async ({
+  page,
+}) => {
+  await installAdminState(page, false, true, 'closed')
+  const state = await installNetworkMocks(page, {
+    initialLectureStatus: 'closed',
+  })
+
+  await page.goto('/admin')
+  await expect(
+    page.getByRole('heading', { name: '講義を準備する' }),
+  ).toBeVisible()
+  expect(state.lectureListIncludeHistory[0]).toBe(true)
+  await expect(
+    page.getByText(
+      '終了した講義です。履歴を確認するか、次の講義を準備できます。',
+    ),
+  ).toHaveCount(0)
+
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await expect(fileInput).toBeEnabled()
+  await expect(page.locator('.lecture-admin-row')).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: '講義履歴を表示する' }),
+  ).toBeVisible()
+
+  await fileInput.setInputFiles(samplePdfPath)
+  await expect(page.getByLabel('講義タイトル')).toHaveValue('m4-sample-v1')
+  await expect(
+    pdfPanel.getByRole('button', {
+      name: '講義を作成して資料を公開する',
+    }),
+  ).toBeEnabled()
+
+  await stopAdminOperatorPolling(page)
+})
 
 test('Admin publishes a PDF in-browser without exposing Local Publisher controls', async ({
   browserName,

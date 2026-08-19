@@ -39,6 +39,14 @@ const displayRealtimeBrowser = read(
 )
 const adminIdentityBrowser = read('e2e/demo/phase7-30-admin-identity.spec.ts')
 const localLifecycleBrowser = read('e2e/local/live-lecture.spec.ts')
+const browserPdfPublication = read(
+  'e2e/demo/browser-pdf-publication-admin.spec.ts',
+)
+const adminPage = read('src/pages/AdminPage.tsx')
+const adminPageViewModel = read('src/pages/admin/adminPageViewModel.ts')
+const adminLectureControl = read(
+  'src/components/AdminWorkspace/AdminLectureControl.tsx',
+)
 const localGoogleFixture = read('scripts/test-phase7-30b1-local-edge.mjs')
 const concurrency = read('scripts/test-phase7-30e-concurrency.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
@@ -462,6 +470,47 @@ assert.match(
   localLifecycleBrowser,
   /#teacher-workspace-setup-tab'\)\.click\(\)[\s\S]*const adminQr = admin\.page[\s\S]*await expect\(adminQr\.locator\('img'\)\)\.toBeVisible\(\)[\s\S]*decodeQrImage\(admin\.page, '\.lecture-join-qr img'\)[\s\S]*#teacher-workspace-ai-tab'\)\.click\(\)/,
   'the lifecycle must return to setup for the join QR before entering the optional AI stage',
+)
+assert.match(
+  localLifecycleBrowser,
+  /みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*displayComment[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
+  'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+)
+assert.match(
+  adminPage,
+  /lecturesLoaded[\s\S]*?requestedAdminLectureSessionId[\s\S]*?activeAdminLecture\.status === 'closed'[\s\S]*?clearSelectedLectureSession\(\)/,
+  'a restored closed lecture must be cleared before the next preparation flow',
+)
+assert.match(
+  adminPage,
+  /initialRestoredLectureSessionIdRef = useRef\([\s\S]*?restoredActiveLectureSessionId[\s\S]*?refreshLectures\([\s\S]*?adminToken,[\s\S]*?Boolean\(initialRestoredLectureSessionIdRef\.current\)/,
+  'the initial list must include history when resolving a restored lecture so an older open lecture is not cleared as missing',
+)
+assert.doesNotMatch(
+  adminPageViewModel,
+  /終了した講義です。履歴を確認するか、次の講義を準備できます。/,
+  'the preparation workspace must not retain the closed-lecture explanation',
+)
+assert.match(
+  adminPageViewModel,
+  /filter\(\(lecture\) => lecture\.status !== 'closed'\)/,
+  'closed lectures must stay out of the default preparation list',
+)
+const duplicateLectureBlock = adminPage.slice(
+  adminPage.indexOf('async function duplicateLecture'),
+  adminPage.indexOf('async function handleCreatePoll'),
+)
+assert.match(duplicateLectureBlock, /selectAdminLecture\(duplicatedLecture\)/)
+assert.doesNotMatch(duplicateLectureBlock, /action: 'start'/)
+assert.match(
+  adminLectureControl,
+  /lecture\.status !== 'closed'[\s\S]*?onSelect\(lecture\)/,
+  'closed history rows must not become mutable preparation targets',
+)
+assert.match(
+  browserPdfPublication,
+  /lectureStatus: 'closed'[\s\S]*?講義を準備する[\s\S]*?input\[type="file"\][\s\S]*?toBeEnabled\(\)[\s\S]*?講義を作成して資料を公開する[\s\S]*?toBeEnabled\(\)/,
+  'browser coverage must prove that a restored closed lecture cannot block the next PDF',
 )
 assert.match(
   localLifecycleBrowser,

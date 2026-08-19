@@ -130,6 +130,9 @@ export function AdminPage({
   const [workspaceView, setWorkspaceView] =
     useState<TeacherWorkspaceView>('setup')
   const [aiMasterActive, setAiMasterActive] = useState(false)
+  const initialRestoredLectureSessionIdRef = useRef(
+    restoredActiveLectureSessionId,
+  )
   const lastWorkspaceLectureIdRef = useRef<string | null>(null)
   const publicationFlowInFlightRef = useRef(false)
   const workspaceSelectionTouchedRef = useRef(false)
@@ -236,7 +239,7 @@ export function AdminPage({
     if (
       lecturesLoaded &&
       requestedAdminLectureSessionId &&
-      !activeAdminLecture
+      (!activeAdminLecture || activeAdminLecture.status === 'closed')
     ) {
       clearSelectedLectureSession()
     }
@@ -284,6 +287,12 @@ export function AdminPage({
   }, [adminToken, isAuthenticated, runtimeMode, setOperatorLiveAccess])
 
   function selectAdminLecture(lectureRow: AdminLecture) {
+    if (lectureRow.status === 'closed') {
+      clearSelectedLectureSession()
+      workspaceSelectionTouchedRef.current = false
+      setWorkspaceView('setup')
+      return
+    }
     const switchedLecture = Boolean(
       activeLectureSessionId && activeLectureSessionId !== lectureRow.id,
     )
@@ -587,7 +596,10 @@ export function AdminPage({
       return
     }
 
-    void refreshLectures(adminToken)
+    void refreshLectures(
+      adminToken,
+      Boolean(initialRestoredLectureSessionIdRef.current),
+    )
   }, [adminToken, isAuthenticated])
 
   useEffect(() => {
@@ -887,6 +899,18 @@ export function AdminPage({
       const updatedLecture = nextLectures.find(
         (item) => item.id === lectureSessionId,
       )
+      if (action === 'close') {
+        if (activeLectureSessionId === lectureSessionId) {
+          clearSelectedLectureSession()
+          workspaceSelectionTouchedRef.current = false
+          setWorkspaceView('setup')
+          setPdfFile(null)
+          setPdfDisplayName('')
+          setPdfDocumentInput('')
+          setPublisherMessage('')
+        }
+        return
+      }
       if (
         updatedLecture &&
         (action === 'start' || activeLectureSessionId === lectureSessionId)
@@ -947,24 +971,15 @@ export function AdminPage({
         (item) => !existingIds.has(item.id),
       )
       if (duplicatedLecture) {
-        const startedLectures = await supabaseAdminRepository.manageLectures({
-          action: 'start',
-          adminToken,
-          lectureSessionId: duplicatedLecture.id,
-        })
-        setLectures(startedLectures)
-        const startedLecture =
-          startedLectures.find((item) => item.id === duplicatedLecture.id) ??
-          duplicatedLecture
-        selectLectureSession(makeJoinedLecture(startedLecture))
-        setWorkspaceView('participation')
+        selectAdminLecture(duplicatedLecture)
+        setWorkspaceView('setup')
         setShowLectureHistory(false)
       }
     } catch (error) {
       setLecturesError(
         error instanceof Error
-          ? `講義をもう一度開始できませんでした: ${error.message}`
-          : '講義をもう一度開始できませんでした。',
+          ? `講義を準備できませんでした: ${error.message}`
+          : '講義を準備できませんでした。',
       )
     } finally {
       setLecturesLoading(false)
@@ -1113,13 +1128,15 @@ export function AdminPage({
       <section className="page-header">
         <div>
           <h1>{workspacePresentation.headerTitle}</h1>
-          <p>{workspacePresentation.headerDescription}</p>
+          {workspacePresentation.headerDescription ? (
+            <p>{workspacePresentation.headerDescription}</p>
+          ) : null}
         </div>
         <div className="admin-actions">
           {activeAdminLecture?.status === 'open' ? (
             <button
               className="secondary-button danger-button"
-              disabled={lecturesLoading}
+              disabled={lecturesLoading || pdfPublishing}
               onClick={() =>
                 void updateLectureStatus('close', activeAdminLecture.id)
               }
@@ -1268,7 +1285,7 @@ export function AdminPage({
             activeLectureSessionId={activeLectureSessionId}
             error={lecturesError}
             hiddenCommentCount={activeLectureSessionId ? hiddenCommentCount : 0}
-            isLoading={lecturesLoading}
+            isLoading={lecturesLoading || pdfPublishing}
             journalClubPreset={
               isPhase728JournalClubPresetCreationEnabled ? (
                 <AdminJournalClubPreset
