@@ -777,6 +777,26 @@ assert.match(
 )
 assert.match(
   localEdgeContract,
+  /const transientGatewayStatuses = new Set\(\[502, 503, 504\]\)[\s\S]*retryTransient = false[\s\S]*const maximumAttempts = retryTransient \? 3 : 1[\s\S]*setTimeout\(\(\) => abortController\.abort\(\), 15_000\)[\s\S]*await response\.text\(\)[\s\S]*transientGatewayStatuses\.has\(response\.status\)[\s\S]*error\.name === 'AbortError'/,
+  'the local Edge POST helper must bound and retry only explicitly safe transient gateway probes',
+)
+assert.match(
+  localEdgeContract,
+  /fetchPreflightWithRetry\([\s\S]*await response\.arrayBuffer\(\)[\s\S]*functionName} preflight must pass`[\s\S]*for \(const removedFunctionName[\s\S]*await response\.arrayBuffer\(\)[\s\S]*removedFunctionName} must not remain routable`/,
+  'the local Edge contract must drain every preflight response before exercising POST routes',
+)
+assert.equal(
+  [...localEdgeContract.matchAll(/retryTransient: true/g)].length,
+  1,
+  'only one read-only local Edge probe may enable transient POST retries',
+)
+assert.match(
+  localEdgeContract,
+  /const hostile = await postFunction\('manage-lectures',[\s\S]*action: 'list'[\s\S]*origin: 'https:\/\/hostile\.example'[\s\S]*retryTransient: true[\s\S]*assert\.equal\(hostile\.response\.status, 403\)/,
+  'only the read-only hostile-origin probe may absorb bounded gateway startup transients before proving the exact 403',
+)
+assert.match(
+  localEdgeContract,
   /action: 'revokeAll'[\s\S]*requestId: randomUUID\(\)/,
   'the Google-only local revokeAll contract must carry its mutation request ID',
 )

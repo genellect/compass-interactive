@@ -20,13 +20,13 @@ assert.ok(
   'The production-contract Edge test refuses non-local Supabase URLs.',
 )
 
-const transientPreflightStatuses = new Set([502, 503, 504])
+const transientGatewayStatuses = new Set([502, 503, 504])
 
 async function fetchPreflightWithRetry(url, init, maximumAttempts = 3) {
   let response
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     response = await fetch(url, init)
-    if (!transientPreflightStatuses.has(response.status)) return response
+    if (!transientGatewayStatuses.has(response.status)) return response
     if (attempt === maximumAttempts) return response
     await response.arrayBuffer().catch(() => undefined)
     await new Promise((resolve) => setTimeout(resolve, attempt * 1_000))
@@ -36,29 +36,58 @@ async function fetchPreflightWithRetry(url, init, maximumAttempts = 3) {
 
 async function postFunction(
   functionName,
-  { body, jwt, origin = allowedOrigin, contentType = 'application/json' },
+  {
+    body,
+    jwt,
+    origin = allowedOrigin,
+    contentType = 'application/json',
+    retryTransient = false,
+  },
 ) {
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/${functionName}`,
-    {
-      body: typeof body === 'string' ? body : JSON.stringify(body),
-      headers: {
-        apikey: publishableKey,
-        Authorization: `Bearer ${jwt}`,
-        'Content-Type': contentType,
-        Origin: origin,
-      },
-      method: 'POST',
-    },
-  )
-  const rawBody = await response.text()
-  let responseBody = null
-  try {
-    responseBody = rawBody ? JSON.parse(rawBody) : null
-  } catch {
-    responseBody = rawBody
+  const encodedBody = typeof body === 'string' ? body : JSON.stringify(body)
+  const maximumAttempts = retryTransient ? 3 : 1
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    const abortController = new AbortController()
+    const timeout = setTimeout(() => abortController.abort(), 15_000)
+    try {
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/${functionName}`,
+        {
+          body: encodedBody,
+          headers: {
+            apikey: publishableKey,
+            Authorization: `Bearer ${jwt}`,
+            'Content-Type': contentType,
+            Origin: origin,
+          },
+          method: 'POST',
+          signal: abortController.signal,
+        },
+      )
+      const rawBody = await response.text()
+      let responseBody = null
+      try {
+        responseBody = rawBody ? JSON.parse(rawBody) : null
+      } catch {
+        responseBody = rawBody
+      }
+      if (
+        !retryTransient ||
+        !transientGatewayStatuses.has(response.status) ||
+        attempt === maximumAttempts
+      ) {
+        return { body: responseBody, response }
+      }
+    } catch (error) {
+      const aborted = error instanceof Error && error.name === 'AbortError'
+      if (!retryTransient || !aborted || attempt === maximumAttempts)
+        throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000))
   }
-  return { body: responseBody, response }
+  throw new Error('POST retry loop ended without a response.')
 }
 
 const fixtureHandle = await startGoogleAdminAal2Fixture({
@@ -105,6 +134,7 @@ try {
         method: 'OPTIONS',
       },
     )
+    await response.arrayBuffer()
     assert.equal(response.status, 200, `${functionName} preflight must pass`)
     assert.ok(
       [allowedOrigin, '*'].includes(
@@ -129,6 +159,7 @@ try {
         method: 'OPTIONS',
       },
     )
+    await response.arrayBuffer()
     assert.equal(
       response.status,
       404,
@@ -140,6 +171,7 @@ try {
     body: { action: 'list', appSessionToken: fixture.appSessionToken },
     jwt: fixture.accessToken,
     origin: 'https://hostile.example',
+    retryTransient: true,
   })
   assert.equal(hostile.response.status, 403)
 
