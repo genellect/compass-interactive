@@ -464,6 +464,35 @@ assert.match(
   /claim-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?claim\/cutover environment serialization diverged/,
   'claim versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
 )
+const pgTapCutoverRetry =
+  pgTap.match(
+    /create function pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?\n\$\$;/i,
+  )?.[0] ?? ''
+assert.match(
+  pgTapCutoverRetry,
+  /return private\.commit_google_only_admin_cutover_v1\([\s\S]*?exception[\s\S]*?when lock_not_available then[\s\S]*?attempt_count >= 20[\s\S]*?raise;[\s\S]*?pg_catalog\.pg_sleep\(0\.05\)/i,
+  'the pgTAP-only helper may retry only bounded transient NOWAIT conflicts from the running local stack',
+)
+const pgTapAfterCutoverRetry = pgTap.slice(
+  pgTap.indexOf(pgTapCutoverRetry) + pgTapCutoverRetry.length,
+)
+assert.equal(
+  pgTapAfterCutoverRetry.match(
+    /pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\(/gi,
+  )?.length,
+  1,
+  'only the positive cutover assertion may use the bounded test retry',
+)
+assert.match(
+  pgTapAfterCutoverRetry,
+  /select is\(\s*pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?'false',\s*'SERIALIZABLE operator transaction commits the Google-only identity cutover'/i,
+  'the bounded test retry must still prove the first immutable cutover commit',
+)
+assert.match(
+  pgTapAfterCutoverRetry,
+  /select is\(\s*private\.commit_google_only_admin_cutover_v1\([\s\S]*?'true',\s*'cutover exact replay remains available after the irreversible tombstone'/i,
+  'the exact replay assertion must call the Production function directly',
+)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
 assert.match(
   ci,
