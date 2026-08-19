@@ -521,6 +521,11 @@ assert.match(
   'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
 )
 assert.match(
+  localLifecycleBrowser,
+  /講義を終了'[\s\S]*講義を準備する[\s\S]*終了した講義です。履歴を確認するか、次の講義を準備できます。[\s\S]*toHaveCount\(0\)[\s\S]*getByLabel\('講義タイトル'\)[\s\S]*toBeEnabled\(\)[\s\S]*講義履歴を表示する[\s\S]*name: '選択', exact: true[\s\S]*toHaveCount\(0\)[\s\S]*同じタイトルで準備/,
+  'the non-PDF local lifecycle must return to neutral lecture creation while its dedicated PDF profile proves file publication',
+)
+assert.match(
   adminPage,
   /lecturesLoaded[\s\S]*?requestedAdminLectureSessionId[\s\S]*?activeAdminLecture\.status === 'closed'[\s\S]*?clearSelectedLectureSession\(\)/,
   'a restored closed lecture must be cleared before the next preparation flow',

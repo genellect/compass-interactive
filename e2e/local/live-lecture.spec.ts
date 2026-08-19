@@ -383,11 +383,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
         '終了した講義です。履歴を確認するか、次の講義を準備できます。',
       ),
     ).toHaveCount(0)
-    await expect(
-      admin.page.locator(
-        '#admin-live .publisher-control-panel input[type="file"]',
-      ),
-    ).toBeEnabled()
+    await expect(admin.page.getByLabel('講義タイトル')).toBeEnabled()
     await admin.page.getByRole('button', { name: '講義履歴を表示する' }).click()
     await expect(lectureRow).toContainText('締切')
     await expect(
