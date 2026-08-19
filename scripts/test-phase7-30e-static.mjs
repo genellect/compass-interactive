@@ -447,6 +447,11 @@ assert.equal(
 )
 assert.doesNotMatch(concurrency, /'owner', 'active', false/)
 assert.match(ci, /run: npm run test:phase7-30e-concurrency/)
+assert.match(
+  ci,
+  /local-supabase:[\s\S]*?- run: npm ci[\s\S]*?- name: Install Chromium and WebKit[\s\S]*?run: npx playwright install --with-deps chromium webkit[\s\S]*?- name: Start isolated local Supabase/,
+  'the Local job must install browsers before Docker-backed Supabase consumes runner resources',
+)
 assert.match(nonlive, /'test:phase7-30e-static'/)
 assert.match(
   localGoogleFixture,

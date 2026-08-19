@@ -206,6 +206,42 @@ export function AdminAiUnlockPanel({
     setPin('')
     setPinConfirmation('')
     try {
+      // After the one-time Authenticator check, finish the exact pending PIN
+      // request before inspecting the still-unset profile. Until enrollment
+      // commits, factorStatus remains null; checking it first would allocate a
+      // new request and send the teacher back through TOTP indefinitely.
+      if (needsPinConfirmation && pendingControl?.kind === 'pin') {
+        try {
+          await setAdminAiPin(
+            appSessionToken,
+            submittedPin,
+            pendingControl.requestId,
+          )
+        } catch (error) {
+          if (
+            !(error instanceof AdminAiUnlockError) ||
+            error.code !== 'control_proof_required'
+          ) {
+            throw error
+          }
+          setNeedsPinConfirmation(false)
+          setPendingControl(null)
+          setMessage(
+            '認証の有効時間を過ぎたため登録を停止しました。もう一度PINを入力してください。',
+          )
+          return
+        }
+        setNeedsPinConfirmation(false)
+        setPendingControl(null)
+        setMessage(
+          profile?.factorStatus === null
+            ? 'AI PINを登録しました。'
+            : 'AI PINを更新しました。',
+        )
+        await refresh()
+        return
+      }
+
       if (profile?.factorStatus === null) {
         const requestId = crypto.randomUUID()
         try {
@@ -238,49 +274,6 @@ export function AdminAiUnlockPanel({
         setMessage(
           'ログイン確認の再利用期限を過ぎたため、認証アプリで今回だけ再確認してください。確認後、同じ新PINをもう一度入力します。',
         )
-        return
-      }
-      if (needsPinConfirmation && pendingControl?.kind === 'pin') {
-        try {
-          await setAdminAiPin(
-            appSessionToken,
-            submittedPin,
-            pendingControl.requestId,
-          )
-        } catch (error) {
-          if (
-            !(error instanceof AdminAiUnlockError) ||
-            error.code !== 'control_proof_required'
-          ) {
-            throw error
-          }
-          const prepared = await prepareAdminAiPinMutation(
-            appSessionToken,
-            submittedPin,
-            pendingControl.action === 'ai_pin_rotate' ? 'rotate' : 'enroll',
-            pendingControl.requestId,
-          )
-          if (
-            prepared.controlIntentDigest !== pendingControl.controlIntentDigest
-          ) {
-            throw new Error('AI PIN control intent changed unexpectedly.')
-          }
-          setNeedsPinConfirmation(false)
-          await startControl(
-            'pin',
-            pendingControl.action,
-            pendingControl.requestId,
-            pendingControl.controlIntentDigest,
-          )
-          setMessage(
-            'Fresh Authenticator approval is required to finish this PIN change.',
-          )
-          return
-        }
-        setNeedsPinConfirmation(false)
-        setPendingControl(null)
-        setMessage('AI PINを更新しました。')
-        await refresh()
         return
       }
 

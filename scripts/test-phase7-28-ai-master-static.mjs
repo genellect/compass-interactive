@@ -140,7 +140,16 @@ assert.match(academic, /講義中のAI許可を使用します/)
 assert.doesNotMatch(repository, /billingPin\?: string/)
 assert.match(repository, /aiMasterAuthorizationRepository/)
 assert.match(masterRepository, /authorizeAiMaster/)
+assert.match(masterRepository, /authorizeGoogleAiMasterWithPin/)
 assert.match(masterRepository, /revokeAiMasterAuthorization/)
+for (const lectureAiAuthorizationSurface of [masterControl, masterRepository]) {
+  assert.doesNotMatch(lectureAiAuthorizationSurface, /challengeAndVerify/)
+  assert.doesNotMatch(lectureAiAuthorizationSurface, /beginAdminControlStepUp/)
+  assert.doesNotMatch(
+    lectureAiAuthorizationSurface,
+    /completeAdminControlStepUp/,
+  )
+}
 assert.doesNotMatch(envExample, /PHASE7_28_AI_MASTER_AUTH/)
 assert.doesNotMatch(featureFlags, /isPhase728AiMasterAuthorizationEnabled/)
 assert.match(localBrowser, /installGoogleAdminSession/)

@@ -368,6 +368,32 @@ assert.doesNotMatch(
 assert.match(aiPanel, /pendingControl !== null && !completingPendingPin/)
 assert.match(aiPanel, /if \(busy \|\| pendingControl\) return/)
 assert.match(aiPanel, /setupRememberedBrowser[\s\S]*busy \|\| pendingControl/)
+const pendingPinCompletionIndex = aiPanel.indexOf(
+  "if (needsPinConfirmation && pendingControl?.kind === 'pin')",
+)
+const unsetPinProfileIndex = aiPanel.indexOf(
+  'if (profile?.factorStatus === null)',
+)
+assert.ok(
+  pendingPinCompletionIndex >= 0 &&
+    unsetPinProfileIndex >= 0 &&
+    pendingPinCompletionIndex < unsetPinProfileIndex,
+  'the exact approved PIN request must complete before an unset profile can allocate another request',
+)
+const pendingPinCompletionBlock = aiPanel.slice(
+  pendingPinCompletionIndex,
+  unsetPinProfileIndex,
+)
+assert.match(
+  pendingPinCompletionBlock,
+  /setAdminAiPin\([\s\S]*pendingControl\.requestId/,
+)
+assert.match(pendingPinCompletionBlock, /setPendingControl\(null\)/)
+assert.doesNotMatch(
+  pendingPinCompletionBlock,
+  /startControl\(/,
+  'an approved PIN request must not start a second Authenticator challenge',
+)
 assert.match(
   aiPanel,
   /phase: 'authorization' as const[\s\S]*completeAdminControlStepUp/,

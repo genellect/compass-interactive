@@ -50,6 +50,10 @@ type MockState = {
   commitBodies: Record<string, unknown>[]
   functionCalls: FunctionCall[]
   openLecture: boolean
+  pinControlBeganAtSeconds: number
+  pinGrantAvailable: boolean
+  pinGrantRequestId: string | null
+  pinRegistered: boolean
   policyCompleteAttempts: number
   policyCovered: boolean
   policyGrantAvailable: boolean
@@ -109,25 +113,34 @@ function adminUser() {
   }
 }
 
-function adminSession() {
+function adminSession({
+  issuedAgeSeconds,
+  signature = 'phase730d-admin-signature',
+  totpAgeSeconds = 60,
+}: {
+  issuedAgeSeconds?: number
+  signature?: string
+  totpAgeSeconds?: number
+} = {}) {
   const user = adminUser()
   const nowSeconds = Math.floor(Date.now() / 1_000)
+  const tokenAgeSeconds = issuedAgeSeconds ?? Math.max(120, totpAgeSeconds + 60)
   const accessToken = [
     encodeJwtPart({ alg: 'HS256', typ: 'JWT' }),
     encodeJwtPart({
       aal: 'aal2',
       amr: [
-        { method: 'oauth', timestamp: nowSeconds - 120 },
-        { method: 'totp', timestamp: nowSeconds - 60 },
+        { method: 'oauth', timestamp: nowSeconds - tokenAgeSeconds },
+        { method: 'totp', timestamp: nowSeconds - totpAgeSeconds },
       ],
       aud: 'authenticated',
       exp: nowSeconds + 3_600,
-      iat: nowSeconds - 120,
+      iat: nowSeconds - tokenAgeSeconds,
       role: 'authenticated',
       session_id: authSessionId,
       sub: authUserId,
     }),
-    'phase730d-admin-signature',
+    signature,
   ].join('.')
   return {
     access_token: accessToken,
@@ -375,14 +388,17 @@ async function installMocks(
   options: {
     failFirstPolicySet?: boolean
     loseFirstPolicyCompletionResponse?: boolean
+    refreshSessionOnTotp?: boolean
     role?: AdminRole
   } = {},
 ) {
   const {
     failFirstPolicySet = false,
     loseFirstPolicyCompletionResponse = false,
+    refreshSessionOnTotp = false,
     role = 'owner',
   } = options
+  let verifiedAdmin = admin
   const state: MockState = {
     admissionEnabled: false,
     anonymousRequests: 0,
@@ -390,6 +406,10 @@ async function installMocks(
     commitBodies: [],
     functionCalls: [],
     openLecture: true,
+    pinControlBeganAtSeconds: 0,
+    pinGrantAvailable: false,
+    pinGrantRequestId: null,
+    pinRegistered: false,
     policyCompleteAttempts: 0,
     policyCovered: false,
     policyGrantAvailable: false,
@@ -397,6 +417,9 @@ async function installMocks(
     unexpectedRequests: [],
   }
   let commitAttempts = 0
+  let pinControlIntentDigest = ''
+  let pinControlNonce = ''
+  let pinControlRequestId = ''
 
   await page.route('https://example.supabase.co/**', async (route) => {
     const request = route.request()
@@ -443,7 +466,14 @@ async function installMocks(
         url.pathname === `/auth/v1/factors/${factorId}/verify` &&
         request.method() === 'POST'
       ) {
-        await fulfillJson(route, admin)
+        if (refreshSessionOnTotp) {
+          verifiedAdmin = adminSession({
+            issuedAgeSeconds: 0,
+            signature: 'phase730d-admin-fresh-signature',
+            totpAgeSeconds: 1,
+          })
+        }
+        await fulfillJson(route, verifiedAdmin)
         return
       }
       state.unexpectedRequests.push(`${request.method()} ${url.pathname}`)
@@ -466,18 +496,44 @@ async function installMocks(
           return
         }
         if (action === 'beginControlStepUp') {
+          const controlStepUpNonce =
+            body.controlStepUpNonce ?? `n.${'b'.repeat(41)}`
+          if (body.controlAction === 'ai_pin_enroll') {
+            state.pinControlBeganAtSeconds = Math.floor(Date.now() / 1_000)
+            pinControlIntentDigest = String(body.controlIntentDigest)
+            pinControlNonce = String(controlStepUpNonce)
+            pinControlRequestId = String(body.controlRequestId)
+          }
           await fulfillJson(route, {
             controlAction: body.controlAction,
             controlIntentDigest: body.controlIntentDigest,
             controlOperationKey: body.controlOperationKey,
             controlRequestId: body.controlRequestId,
-            controlStepUpNonce: body.controlStepUpNonce,
+            controlStepUpNonce,
             expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
             ok: true,
           })
           return
         }
         if (action === 'completeControlStepUp') {
+          if (body.controlAction === 'ai_pin_enroll') {
+            if (
+              authorization !== `Bearer ${verifiedAdmin.access_token}` ||
+              body.controlIntentDigest !== pinControlIntentDigest ||
+              body.controlRequestId !== pinControlRequestId ||
+              body.controlStepUpNonce !== pinControlNonce
+            ) {
+              state.unexpectedRequests.push('invalid AI PIN control proof')
+              await fulfillJson(
+                route,
+                { code: 'request_invalid', ok: false },
+                400,
+              )
+              return
+            }
+            state.pinGrantAvailable = true
+            state.pinGrantRequestId = String(body.controlRequestId)
+          }
           if (body.controlAction === 'environment_ai_policy_change') {
             state.policyCompleteAttempts += 1
             state.policyGrantAvailable = true
@@ -516,14 +572,72 @@ async function installMocks(
         if (action === 'profile') {
           await fulfillJson(route, {
             activeBrowserCount: 0,
-            activePin: false,
+            activePin: state.pinRegistered,
             canUseAi: true,
-            factorStatus: null,
-            factorVersion: null,
+            factorStatus: state.pinRegistered ? 'active' : null,
+            factorVersion: state.pinRegistered ? 1 : null,
             ok: true,
-            pinPepperVersion: null,
+            pinPepperVersion: state.pinRegistered ? 1 : null,
             rememberedBrowserEnabled: false,
             role,
+          })
+          return
+        }
+        if (action === 'preparePinMutation') {
+          const expectedKeys = [
+            'action',
+            'appSessionToken',
+            'pin',
+            'pinAction',
+            'requestId',
+          ]
+          if (
+            JSON.stringify(Object.keys(body).sort()) !==
+              JSON.stringify(expectedKeys.sort()) ||
+            body.pin !== '1357' ||
+            body.pinAction !== 'enroll' ||
+            typeof body.requestId !== 'string'
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'request_invalid', ok: false },
+              400,
+            )
+            return
+          }
+          await fulfillJson(route, {
+            controlAction: 'ai_pin_enroll',
+            controlIntentDigest: 'f'.repeat(64),
+            ok: true,
+            requestId: body.requestId,
+          })
+          return
+        }
+        if (action === 'setPin') {
+          const requestId = String(body.requestId ?? '')
+          const expectedAuthorization = state.pinGrantAvailable
+            ? `Bearer ${verifiedAdmin.access_token}`
+            : `Bearer ${admin.access_token}`
+          if (
+            body.pin !== '1357' ||
+            authorization !== expectedAuthorization ||
+            !state.pinGrantAvailable ||
+            state.pinGrantRequestId !== requestId
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'control_proof_required', ok: false },
+              409,
+            )
+            return
+          }
+          state.pinGrantAvailable = false
+          state.pinGrantRequestId = null
+          state.pinRegistered = true
+          await fulfillJson(route, {
+            factorVersion: 1,
+            ok: true,
+            status: 'active',
           })
           return
         }
@@ -986,6 +1100,135 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
       )
       .toBe(true)
   }
+})
+
+test('completes one AI PIN enrollment with one Authenticator challenge and the same request', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession({ totpAgeSeconds: 600 })
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    refreshSessionOnTotp: true,
+  })
+
+  await openLedger(page)
+  const summary = page.locator('summary').filter({ hasText: 'AI PINの設定' })
+  await expect(summary).toHaveCount(1)
+  const pinPanel = summary.locator('..')
+  await summary.click()
+
+  await pinPanel.getByLabel('4桁の新AI PIN').fill('1357')
+  await pinPanel.getByLabel('確認', { exact: true }).fill('1357')
+  await pinPanel.getByRole('button', { name: 'PINを登録' }).click()
+  await expect(
+    pinPanel.getByLabel('認証アプリの6桁コード（今回のみ）'),
+  ).toBeVisible()
+  await pinPanel.getByLabel('認証アプリの6桁コード（今回のみ）').fill('123456')
+  await pinPanel.getByRole('button', { name: '重要操作を承認' }).click()
+
+  await expect(pinPanel.getByLabel('同じ新PINを再入力')).toBeVisible()
+  await expect(
+    pinPanel.getByLabel('認証アプリの6桁コード（今回のみ）'),
+  ).toHaveCount(0)
+  await pinPanel.getByLabel('同じ新PINを再入力').fill('1357')
+  await pinPanel.getByRole('button', { name: 'PINを登録' }).click()
+
+  await expect(
+    pinPanel.getByText('AI PINを登録しました。', { exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => state.pinRegistered).toBe(true)
+  await expect(
+    pinPanel.getByRole('button', { name: 'PINを変更' }),
+  ).toBeVisible()
+
+  const prepareCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-ai-unlock' &&
+      body.action === 'preparePinMutation',
+  )
+  const setCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-ai-unlock' && body.action === 'setPin',
+  )
+  const beginCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-identity-session' &&
+      body.action === 'beginControlStepUp' &&
+      body.controlAction === 'ai_pin_enroll',
+  )
+  const completeCalls = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'admin-identity-session' &&
+      body.action === 'completeControlStepUp' &&
+      body.controlAction === 'ai_pin_enroll',
+  )
+  expect(prepareCalls).toHaveLength(1)
+  expect(setCalls).toHaveLength(2)
+  expect(setCalls[1]?.body.requestId).toBe(setCalls[0]?.body.requestId)
+  expect(prepareCalls[0]?.body.requestId).toBe(setCalls[0]?.body.requestId)
+  expect(setCalls[0]?.authorization).toBe(`Bearer ${admin.access_token}`)
+  expect(setCalls[1]?.authorization).not.toBe(setCalls[0]?.authorization)
+  const staleJwt = JSON.parse(
+    Buffer.from(admin.access_token.split('.')[1] ?? '', 'base64url').toString(),
+  ) as {
+    amr: Array<{ method: string; timestamp: number }>
+    iat: number
+    session_id: string
+  }
+  const freshJwt = JSON.parse(
+    Buffer.from(
+      setCalls[1]?.authorization.split(' ')[1]?.split('.')[1] ?? '',
+      'base64url',
+    ).toString(),
+  ) as {
+    amr: Array<{ method: string; timestamp: number }>
+    iat: number
+    session_id: string
+  }
+  expect(freshJwt.session_id).toBe(staleJwt.session_id)
+  expect(freshJwt.iat).toBeGreaterThan(staleJwt.iat)
+  expect(freshJwt.iat).toBeGreaterThanOrEqual(
+    state.pinControlBeganAtSeconds - 1,
+  )
+  expect(
+    freshJwt.amr.find(({ method }) => method === 'totp')?.timestamp,
+  ).toBeGreaterThan(
+    staleJwt.amr.find(({ method }) => method === 'totp')?.timestamp ?? 0,
+  )
+  expect(beginCalls).toHaveLength(1)
+  expect(completeCalls).toHaveLength(1)
+  expect(beginCalls[0]?.body.controlRequestId).toBe(setCalls[0]?.body.requestId)
+  expect(completeCalls[0]?.body.controlRequestId).toBe(
+    setCalls[0]?.body.requestId,
+  )
+  expect(completeCalls[0]?.authorization).toBe(setCalls[1]?.authorization)
+  expect(completeCalls[0]?.body.controlIntentDigest).toBe('f'.repeat(64))
+  expect(completeCalls[0]?.body.controlStepUpNonce).toBeTruthy()
+  expect(
+    state.authRequests.filter(({ pathname }) =>
+      pathname.includes('/challenge'),
+    ),
+  ).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify(
+        [localStorage, sessionStorage].flatMap((storage) =>
+          Array.from({ length: storage.length }, (_, index) => {
+            const key = storage.key(index)
+            return key ? [key, storage.getItem(key)] : []
+          }),
+        ),
+      ),
+    ),
+  ).not.toContain('1357')
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
 })
 
 test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and policy responses', async ({

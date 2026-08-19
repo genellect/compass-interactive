@@ -137,6 +137,9 @@ jobs:
           cache: npm
       - run: npm ci
 
+      - name: Install Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
+
       - name: Start isolated local Supabase
         run: npx supabase start
 
@@ -284,9 +287,6 @@ jobs:
 
       - name: Wait for dormant local Edge Functions
         run: node scripts/ci/wait-for-local-edge.mjs
-
-      - name: Install Chromium and WebKit
-        run: npx playwright install --with-deps chromium webkit
 
       - name: Run Journal Club browser-to-Edge-to-database integration
         run: npm run test:e2e:phase7-27:local
