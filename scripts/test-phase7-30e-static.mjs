@@ -483,8 +483,8 @@ assert.match(
 )
 assert.match(
   adminPage,
-  /initialRestoredLectureSessionIdRef = useRef\([\s\S]*?restoredActiveLectureSessionId[\s\S]*?refreshLectures\([\s\S]*?adminToken,[\s\S]*?Boolean\(initialRestoredLectureSessionIdRef\.current\)/,
-  'the initial list must include history when resolving a restored lecture so an older open lecture is not cleared as missing',
+  /initialRestoredLectureSessionIdRef = useRef\([\s\S]*?runtimeMode === 'live'[\s\S]*?restoredActiveLectureSessionId[\s\S]*?refreshLectures\([\s\S]*?adminToken,[\s\S]*?Boolean\(initialRestoredLectureSessionIdRef\.current\)/,
+  'the initial list must include history only when resolving a restored live lecture so an older open lecture is not cleared as missing',
 )
 assert.doesNotMatch(
   adminPageViewModel,

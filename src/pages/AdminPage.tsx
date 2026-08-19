@@ -131,7 +131,7 @@ export function AdminPage({
     useState<TeacherWorkspaceView>('setup')
   const [aiMasterActive, setAiMasterActive] = useState(false)
   const initialRestoredLectureSessionIdRef = useRef(
-    restoredActiveLectureSessionId,
+    runtimeMode === 'live' ? restoredActiveLectureSessionId : null,
   )
   const lastWorkspaceLectureIdRef = useRef<string | null>(null)
   const publicationFlowInFlightRef = useRef(false)
