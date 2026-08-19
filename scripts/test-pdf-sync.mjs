@@ -55,8 +55,8 @@ assert.match(
 )
 assert.match(
   displayRealtimeE2e,
-  /const pendingAdminPdfRequests = new Set<Request>\(\)[\s\S]*maxConcurrentAdminPdfRequests = Math\.max[\s\S]*await expect\.poll\(\(\) => pendingAdminPdfRequests\.size\)\.toBe\(0\)[\s\S]*expect\(maxConcurrentAdminPdfRequests\)\.toBe\(1\)/,
-  'the real-Edge Display flow proves Admin PDF authorization never overlaps',
+  /const pendingAdminPdfRequests = new Set<Request>\(\)[\s\S]*maxConcurrentAdminPdfRequests = Math\.max[\s\S]*await expect\.poll\(\(\) => maxConcurrentAdminPdfRequests\)\.toBe\(1\)[\s\S]*await expect\.poll\(\(\) => pendingAdminPdfRequests\.size\)\.toBe\(0\)[\s\S]*expect\(maxConcurrentAdminPdfRequests\)\.toBe\(1\)/,
+  'the real-Edge Display flow observes Admin PDF authorization before proving it never overlaps',
 )
 assert.match(
   displayRealtimeE2e,

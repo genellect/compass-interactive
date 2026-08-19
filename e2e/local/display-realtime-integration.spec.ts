@@ -321,6 +321,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await expect(adminPage.locator('.admin-pdf-page-controller')).toContainText(
       '1 / 34',
     )
+    await expect.poll(() => maxConcurrentAdminPdfRequests).toBe(1)
     await expect.poll(() => pendingAdminPdfRequests.size).toBe(0)
     expect(maxConcurrentAdminPdfRequests).toBe(1)
     adminPage.off('request', trackAdminPdfRequest)
