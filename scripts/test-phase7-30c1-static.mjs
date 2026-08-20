@@ -700,7 +700,7 @@ assert.match(
 )
 assert.match(
   masterBrowserE2e,
-  /503 master status keeps AI readiness blocked and cannot reach authorization[\s\S]*payload\.action === 'masterStatus'[\s\S]*status: 503[\s\S]*toHaveText\([\s\S]*'停止中'[\s\S]*toBeDisabled\(\)[\s\S]*sessionAdmissionRequests\)\.toBe\(0\)/,
+  /503 master status keeps AI readiness blocked and cannot reach authorization[\s\S]*payload\.action === 'masterStatus'[\s\S]*status: 503[\s\S]*aiPanel\.locator\([\s\S]*':scope > \.panel-heading > \.support-state'[\s\S]*toHaveText\('停止中'\)[\s\S]*toBeDisabled\(\)[\s\S]*sessionAdmissionRequests\)\.toBe\(0\)/,
   'browser contract proves a 503 status cannot expose ready state or reach authorization',
 )
 assert.match(

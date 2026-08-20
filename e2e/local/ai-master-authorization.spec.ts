@@ -275,13 +275,12 @@ test('503 master status keeps AI readiness blocked and cannot reach authorizatio
   await page.locator('#teacher-workspace-ai-tab').click()
 
   const aiPanel = page.locator('.ai-readiness-panel')
-  await expect.poll(() => masterStatusRequests).toBeGreaterThan(0)
-  await expect(aiPanel.locator('.panel-heading .support-state')).toHaveText(
-    '停止中',
+  const readinessBadge = aiPanel.locator(
+    ':scope > .panel-heading > .support-state',
   )
-  await expect(
-    aiPanel.locator('.panel-heading .support-state'),
-  ).not.toHaveClass(/is-ready/)
+  await expect.poll(() => masterStatusRequests).toBeGreaterThan(0)
+  await expect(readinessBadge).toHaveText('停止中')
+  await expect(readinessBadge).not.toHaveClass(/is-ready/)
   const authorizeButton = page
     .getByTestId('ai-master-auth')
     .getByRole('button', { name: 'AI機能を有効にする' })
