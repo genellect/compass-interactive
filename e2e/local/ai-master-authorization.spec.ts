@@ -40,6 +40,16 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   })
 
   await installGoogleAdminSession(page)
+  await page.goto('/admin/settings')
+  await expect(page.getByRole('heading', { name: '教員管理' })).toBeVisible()
+  const pinSettings = page.locator('details').filter({
+    has: page.locator('summary', { hasText: 'AI PINの設定' }),
+  })
+  await pinSettings.locator('summary').click()
+  await pinSettings.getByLabel('現在の4桁AI PIN').fill(aiPin)
+  await pinSettings.getByRole('button', { name: '現在のPINで登録' }).click()
+  await expect(pinSettings).toContainText('このブラウザを登録しました。')
+
   await page.goto('/admin')
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
@@ -64,6 +74,25 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   expect(lecture?.id).toBeTruthy()
   const lectureId = lecture!.id
 
+  const rememberedBeginRequestIds: string[] = []
+  const rememberedCompletionRequestIds: string[] = []
+  await page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    const payload = route.request().postDataJSON() as Record<string, unknown>
+    if (payload.action === 'beginBrowserAssertion') {
+      rememberedBeginRequestIds.push(String(payload.requestId ?? ''))
+      if (rememberedBeginRequestIds.length === 1) {
+        // Let the server commit the challenge, then lose only its response.
+        // The next CTA attempt must supersede it with a new begin request.
+        await route.fetch()
+        await route.abort('connectionreset')
+        return
+      }
+    } else if (payload.action === 'completeBrowserMasterAdmission') {
+      rememberedCompletionRequestIds.push(String(payload.requestId ?? ''))
+    }
+    await route.continue()
+  })
+
   const paidRequests: string[] = []
   page.on('request', (request) => {
     if (
@@ -77,15 +106,26 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
 
   const master = page.getByTestId('ai-master-auth')
   await expect(master).toContainText('許可だけではAPIは呼び出されません')
+  await expect(master).toContainText(
+    '登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。',
+  )
+  await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
   await expectNoSeriousAccessibilityViolations(page)
-  await master.getByLabel('個人AI PIN').fill(aiPin)
   const authorizeButton = master.getByRole('button', {
     name: '字幕も含めて許可',
   })
   await authorizeButton.focus()
   await expect(authorizeButton).toBeFocused()
   await page.keyboard.press('Enter')
+  await expect(master).toContainText(
+    '通信結果を確認できませんでした。同じ許可ボタンでもう一度確認できます。',
+  )
+  await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
+  await authorizeButton.click()
   await expect(master).toContainText('許可済み')
+  expect(rememberedBeginRequestIds).toHaveLength(2)
+  expect(new Set(rememberedBeginRequestIds).size).toBe(2)
+  expect(rememberedCompletionRequestIds).toHaveLength(1)
 
   await expect
     .poll(async () => {

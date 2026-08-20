@@ -2,10 +2,17 @@ import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOpe
 import {
   AdminAiUnlockError,
   authorizeGoogleAiMasterWithPin,
+  beginRememberedBrowserAssertion,
+  completeRememberedBrowserMasterAdmission,
   getGoogleAiMasterStatus,
   revokeGoogleAiMaster,
   type GoogleAiMasterPolicy,
 } from '../../lib/adminAuth/adminAiUnlockApi'
+import {
+  listRememberedBrowserCredentials,
+  signRememberedBrowserAssertion,
+  type RememberedBrowserIdentityScope,
+} from '../../lib/adminAuth/rememberedBrowserCredential'
 import {
   completeAdminOperationRequestId,
   reserveAdminOperationRequestId,
@@ -181,6 +188,131 @@ export const aiMasterAuthorizationRepository = {
       // A durable PIN denial is a completed attempt. A corrected explicit
       // submission must use a new request ID, while a transport-ambiguous
       // failure keeps the same ID so a lost success response can converge.
+      if (
+        error instanceof AdminAiUnlockError &&
+        error.code !== 'request_failed'
+      ) {
+        completeAdminOperationRequestId(reserved.key, reserved.requestId)
+      }
+      throw error
+    }
+    completeAdminOperationRequestId(reserved.key, reserved.requestId)
+    return {
+      admissionBlockedReason: status.admissionBlockedReason,
+      admissionEnabled: status.admissionEnabled,
+      allowedScopes: status.allowedScopes,
+      authorization: toAiMasterAuthorization(
+        data.authorization as RawAiMasterAuthorization | null | undefined,
+      ),
+      canUseAi: status.canUseAi,
+      lectureOpen: true,
+      policy: status.policy,
+      reason: status.reason,
+      serverTime: typeof data.serverTime === 'string' ? data.serverTime : null,
+    }
+  },
+
+  async authorizeAiMasterWithRememberedBrowser(request: {
+    adminToken: AdminOperationCredentialInput
+    identityScope: RememberedBrowserIdentityScope
+    lectureSessionId: string
+    masterScope: AiMasterAuthorizationScope
+  }): Promise<AiMasterAuthorizationStatus> {
+    const status = await getGoogleAiMasterStatus(
+      request.adminToken.appSessionToken,
+      request.lectureSessionId,
+    )
+    const currentAuthorization = toAiMasterAuthorization(status.authorization)
+    if (
+      currentAuthorization?.status === 'active' &&
+      currentAuthorization.ownedByRequester
+    ) {
+      return {
+        admissionBlockedReason: status.admissionBlockedReason,
+        admissionEnabled: status.admissionEnabled,
+        allowedScopes: status.allowedScopes,
+        authorization: currentAuthorization,
+        canUseAi: status.canUseAi,
+        lectureOpen: status.lectureOpen,
+        policy: status.policy,
+        reason: status.reason,
+        serverTime: status.serverTime,
+      }
+    }
+    if (!status.policy) {
+      throw new Error('この講義で利用できるAIポリシーがありません。')
+    }
+    if (
+      !status.admissionEnabled ||
+      !status.allowedScopes.includes(request.masterScope)
+    ) {
+      throw new Error('この講義では選択したAI機能を新しく許可できません。')
+    }
+    const credentials = (
+      await listRememberedBrowserCredentials(request.identityScope)
+    ).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    const credential = credentials[0]
+    if (!credential) {
+      throw new AdminAiUnlockError(
+        'remembered_browser_unavailable',
+        'このブラウザはまだ登録されていません。AI PINで許可してください。',
+      )
+    }
+    const reserved = reserveAdminOperationRequestId(
+      'admin-ai-unlock:completeBrowserMasterAdmission',
+      {
+        browserCredentialId: credential.id,
+        lectureSessionId: request.lectureSessionId,
+        policyId: status.policy.id,
+        policyVersion: status.policy.version,
+        requestedScope: request.masterScope,
+      },
+    )
+    let data: Awaited<
+      ReturnType<typeof completeRememberedBrowserMasterAdmission>
+    >
+    try {
+      const challenge = await beginRememberedBrowserAssertion(
+        request.adminToken.appSessionToken,
+        {
+          credentialToken: credential.credentialToken,
+          lectureSessionId: request.lectureSessionId,
+          policyId: status.policy.id,
+          policyVersion: status.policy.version,
+          // A lost begin response cannot replay its random challenge because
+          // only the challenge hash is persisted. A fresh begin request safely
+          // supersedes the old pending challenge, while the completion request
+          // ID remains durable across a lost completion response.
+          requestId: crypto.randomUUID(),
+          requestedScope: request.masterScope,
+        },
+      )
+      if (
+        challenge.browserCredentialId !== credential.id ||
+        typeof challenge.assertionPayload !== 'string' ||
+        typeof challenge.assertionPayloadMac !== 'string'
+      ) {
+        throw new AdminAiUnlockError(
+          'assertion_unavailable',
+          'このブラウザの登録を確認できませんでした。',
+        )
+      }
+      const signature = await signRememberedBrowserAssertion(
+        credential,
+        challenge.assertionPayload,
+      )
+      data = await completeRememberedBrowserMasterAdmission(
+        request.adminToken.appSessionToken,
+        {
+          assertionPayload: challenge.assertionPayload,
+          assertionPayloadMac: challenge.assertionPayloadMac,
+          credentialToken: credential.credentialToken,
+          publicKeyJwk: credential.publicKeyJwk,
+          requestId: reserved.requestId,
+          signature,
+        },
+      )
+    } catch (error) {
       if (
         error instanceof AdminAiUnlockError &&
         error.code !== 'request_failed'

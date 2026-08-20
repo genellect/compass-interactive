@@ -685,6 +685,17 @@ export function AdminRoute() {
         : undefined,
     [appSessionToken],
   )
+  const rememberedBrowserIdentityScope = useMemo(
+    () =>
+      session
+        ? {
+            environmentId: session.environmentId,
+            membershipId: session.membershipId,
+            principalId: session.principalId,
+          }
+        : null,
+    [session],
+  )
   const personalSettings =
     phase === 'ready' && session ? (
       <>
@@ -698,11 +709,7 @@ export function AdminRoute() {
         {isPhase730AdminAiUnlockEnabled ? (
           <AdminAiUnlockPanel
             appSessionToken={appSessionToken}
-            identityScope={{
-              environmentId: session.environmentId,
-              membershipId: session.membershipId,
-              principalId: session.principalId,
-            }}
+            identityScope={rememberedBrowserIdentityScope!}
           />
         ) : null}
       </>
@@ -872,6 +879,7 @@ export function AdminRoute() {
         ) : isPhase730GoogleAdminOperationsEnabled ? (
           <AdminWorkspaceApp
             adminCredential={googleAdminCredential}
+            identityScope={rememberedBrowserIdentityScope!}
             onAdminLogout={logout}
           />
         ) : (

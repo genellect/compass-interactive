@@ -693,8 +693,8 @@ assert.match(
 )
 assert.match(
   localGoogleFixture,
-  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true/,
-  'the local AI-PIN fixture must enable both master admission and child-grant scheduling',
+  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
+  'the local AI fixture must enable master admission, child grants, and remembered-browser admission',
 )
 assert.equal(
   (

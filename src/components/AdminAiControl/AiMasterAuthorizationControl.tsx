@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
+import { AdminAiUnlockError } from '../../lib/adminAuth/adminAiUnlockApi'
+import {
+  listRememberedBrowserCredentials,
+  type RememberedBrowserIdentityScope,
+} from '../../lib/adminAuth/rememberedBrowserCredential'
 
 import type {
   AiMasterAuthorization,
@@ -9,6 +14,7 @@ import { supabaseAdminRepository } from '../../repositories/supabaseAdminReposit
 
 type Props = {
   adminToken: AdminOperationCredentialInput
+  identityScope: RememberedBrowserIdentityScope
   lectureSessionId: string
   lectureStatus: string
   onAuthorizationChange: (authorization: AiMasterAuthorization | null) => void
@@ -32,6 +38,7 @@ function admissionBlockedMessage(reason: string | null) {
 
 export function AiMasterAuthorizationControl({
   adminToken,
+  identityScope,
   lectureSessionId,
   lectureStatus,
   onAuthorizationChange,
@@ -47,6 +54,9 @@ export function AiMasterAuthorizationControl({
     lectureStatus === 'open',
   )
   const [busy, setBusy] = useState(false)
+  const [rememberedBrowserAvailable, setRememberedBrowserAvailable] =
+    useState(false)
+  const [rememberedBrowserFailed, setRememberedBrowserFailed] = useState(false)
   const [message, setMessage] = useState('')
   const statusRequestVersionRef = useRef(0)
   const pinReady = /^\d{4}$/.test(aiPin)
@@ -62,12 +72,16 @@ export function AiMasterAuthorizationControl({
   const refresh = useCallback(async () => {
     const requestVersion = ++statusRequestVersionRef.current
     try {
-      const status = await supabaseAdminRepository.getAiMasterAuthorization({
-        adminToken,
-        lectureSessionId,
-      })
+      const [status, rememberedBrowsers] = await Promise.all([
+        supabaseAdminRepository.getAiMasterAuthorization({
+          adminToken,
+          lectureSessionId,
+        }),
+        listRememberedBrowserCredentials(identityScope).catch(() => []),
+      ])
       if (requestVersion === statusRequestVersionRef.current) {
         applyAuthorization(status.authorization)
+        setRememberedBrowserAvailable(rememberedBrowsers.length > 0)
         setAdmissionEnabled(status.admissionEnabled)
         setAllowedScopes(status.allowedScopes)
         setServerLectureOpen(status.lectureOpen)
@@ -88,12 +102,13 @@ export function AiMasterAuthorizationControl({
         )
       }
     }
-  }, [adminToken, applyAuthorization, lectureSessionId])
+  }, [adminToken, applyAuthorization, identityScope, lectureSessionId])
 
   useEffect(() => {
     applyAuthorization(null)
     setAiPin('')
     setMessage('')
+    setRememberedBrowserFailed(false)
     void refresh()
   }, [applyAuthorization, refresh])
 
@@ -118,8 +133,10 @@ export function AiMasterAuthorizationControl({
   }, [lectureStatus, refresh])
 
   async function authorize(scope: AiMasterAuthorizationScope) {
+    const useRememberedBrowser =
+      rememberedBrowserAvailable && !rememberedBrowserFailed
     if (
-      !pinReady ||
+      (!useRememberedBrowser && !pinReady) ||
       lectureStatus !== 'open' ||
       !serverLectureOpen ||
       !admissionEnabled ||
@@ -129,14 +146,25 @@ export function AiMasterAuthorizationControl({
       return
     statusRequestVersionRef.current += 1
     setBusy(true)
-    setMessage('個人AI PINと講義状態を確認しています…')
+    setMessage(
+      useRememberedBrowser
+        ? 'このブラウザの登録と講義状態を確認しています…'
+        : '個人AI PINと講義状態を確認しています…',
+    )
     try {
-      const status = await supabaseAdminRepository.authorizeAiMaster({
-        adminToken,
-        aiPin,
-        lectureSessionId,
-        masterScope: scope,
-      })
+      const status = useRememberedBrowser
+        ? await supabaseAdminRepository.authorizeAiMasterWithRememberedBrowser({
+            adminToken,
+            identityScope,
+            lectureSessionId,
+            masterScope: scope,
+          })
+        : await supabaseAdminRepository.authorizeAiMaster({
+            adminToken,
+            aiPin,
+            lectureSessionId,
+            masterScope: scope,
+          })
       statusRequestVersionRef.current += 1
       applyAuthorization(status.authorization)
       setMessage(
@@ -145,10 +173,19 @@ export function AiMasterAuthorizationControl({
           : '字幕以外のAI機能を講義終了まで許可しました。各AI機能は個別に開始します。',
       )
     } catch (error) {
+      const rememberedBrowserRetryable =
+        useRememberedBrowser &&
+        error instanceof AdminAiUnlockError &&
+        error.code === 'request_failed'
+      if (useRememberedBrowser && !rememberedBrowserRetryable) {
+        setRememberedBrowserFailed(true)
+      }
       setMessage(
-        error instanceof Error
-          ? error.message
-          : '講義中のAI機能を許可できませんでした。',
+        rememberedBrowserRetryable
+          ? '通信結果を確認できませんでした。同じ許可ボタンでもう一度確認できます。'
+          : error instanceof Error
+            ? `${error.message}${useRememberedBrowser ? ' AI PINでも続けられます。' : ''}`
+            : '講義中のAI機能を許可できませんでした。',
       )
     } finally {
       setAiPin('')
@@ -207,22 +244,32 @@ export function AiMasterAuthorizationControl({
 
       {!authorizationActive ? (
         <div className="summary-control-actions">
-          <label className="field compact-field">
-            <span>個人AI PIN</span>
-            <input
-              autoComplete="off"
-              disabled={busy || !canAdmit}
-              inputMode="numeric"
-              maxLength={4}
-              onChange={(event) => setAiPin(event.target.value)}
-              type="password"
-              value={aiPin}
-            />
-          </label>
+          {rememberedBrowserAvailable && !rememberedBrowserFailed ? (
+            <span className="note">
+              登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。
+            </span>
+          ) : (
+            <label className="field compact-field">
+              <span>個人AI PIN</span>
+              <input
+                autoComplete="off"
+                disabled={busy || !canAdmit}
+                inputMode="numeric"
+                maxLength={4}
+                onChange={(event) => setAiPin(event.target.value)}
+                type="password"
+                value={aiPin}
+              />
+            </label>
+          )}
           <button
             className="secondary-button"
             disabled={
-              busy || !pinReady || !canAdmit || !allExceptCaptionsAllowed
+              busy ||
+              (!rememberedBrowserAvailable && !pinReady) ||
+              (rememberedBrowserFailed && !pinReady) ||
+              !canAdmit ||
+              !allExceptCaptionsAllowed
             }
             onClick={() => void authorize('all_except_captions')}
             type="button"
@@ -232,7 +279,11 @@ export function AiMasterAuthorizationControl({
           <button
             className="primary-button"
             disabled={
-              busy || !pinReady || !canAdmit || !allIncludingCaptionsAllowed
+              busy ||
+              (!rememberedBrowserAvailable && !pinReady) ||
+              (rememberedBrowserFailed && !pinReady) ||
+              !canAdmit ||
+              !allIncludingCaptionsAllowed
             }
             onClick={() => void authorize('all_including_captions')}
             type="button"

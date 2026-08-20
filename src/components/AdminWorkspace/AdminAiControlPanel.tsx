@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
+import type { RememberedBrowserIdentityScope } from '../../lib/adminAuth/rememberedBrowserCredential'
 
 import { AppIcon } from '../AppIcon'
 import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
@@ -35,6 +36,7 @@ type Props = {
   fallbackHardStopAt: string | null | undefined
   fallbackStartedAt: string | null | undefined
   getServerNow: () => string | null
+  identityScope: RememberedBrowserIdentityScope
   lectureStatus: AdminLecture['status']
   materialEnabled: boolean
   onMasterAuthorizationChange?: (active: boolean) => void
@@ -54,6 +56,7 @@ export function AdminAiControlPanel({
   fallbackHardStopAt,
   fallbackStartedAt,
   getServerNow,
+  identityScope,
   lectureStatus,
   materialEnabled,
   onMasterAuthorizationChange,
@@ -110,6 +113,7 @@ export function AdminAiControlPanel({
         >
           <AiMasterAuthorizationControl
             adminToken={adminToken}
+            identityScope={identityScope}
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}
             onAuthorizationChange={handleMasterAuthorizationChange}

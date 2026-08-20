@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
+import type { RememberedBrowserIdentityScope } from '../lib/adminAuth/rememberedBrowserCredential'
 import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
 import { useCompassState } from '../hooks/useCompassState'
 import {
@@ -53,9 +54,11 @@ import './AdminPage.css'
 
 export function AdminPage({
   adminCredential,
+  identityScope,
   onAdminLogout,
 }: {
   adminCredential: AdminOperationCredential
+  identityScope: RememberedBrowserIdentityScope
   onAdminLogout: () => Promise<void>
 }) {
   const {
@@ -1416,6 +1419,7 @@ export function AdminPage({
           fallbackHardStopAt={activeAdminLecture?.hardStopAt}
           fallbackStartedAt={activeAdminLecture?.startsAt}
           getServerNow={getServerNow}
+          identityScope={identityScope}
           lectureStatus={activeLectureStatus}
           materialEnabled={isPhase5MaterialAnalysisEnabled}
           onMasterAuthorizationChange={setAiMasterActive}
