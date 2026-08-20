@@ -242,6 +242,11 @@ assert.match(
 )
 assert.match(
   browserSpec,
+  /keeps the canonical Journal Club document binding[\s\S]*setInputFiles\(samplePdfPath\)[\s\S]*expect\(publishButton\)\.toBeEnabled\(\)[\s\S]*publishButton\.dispatchEvent\('click'\)[\s\S]*pdfPublicationRequests\.find[\s\S]*action: 'initiate'/,
+  'the canonical Journal Club PDF path must dispatch its enabled React CTA reliably in WebKit before checking the initiate request',
+)
+assert.match(
+  browserSpec,
   /waitForEvent\('dialog'\)[\s\S]*dialog\.message\(\)[\s\S]*dialog\.accept\(\)[\s\S]*7\/23 本番を一覧に追加/,
   'the accepted production path must still verify the real confirmation dialog',
 )
