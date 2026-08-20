@@ -99,6 +99,14 @@ assert.doesNotMatch(
 assert.match(masterControl, /字幕以外を許可/)
 assert.match(masterControl, /字幕も含めて許可/)
 assert.match(masterControl, /許可だけではAPIは呼び出されません/)
+assert.match(masterControl, /listRememberedBrowserCredentials/)
+assert.match(masterControl, /authorizeAiMasterWithRememberedBrowser/)
+assert.match(masterControl, /error\.code === 'request_failed'/)
+assert.match(masterControl, /同じ許可ボタンでもう一度確認できます/)
+assert.match(
+  masterControl,
+  /登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。/,
+)
 assert.match(
   masterControl,
   /onAuthorizationChange\(next\?\.status === 'active'/,
@@ -141,6 +149,14 @@ assert.doesNotMatch(repository, /billingPin\?: string/)
 assert.match(repository, /aiMasterAuthorizationRepository/)
 assert.match(masterRepository, /authorizeAiMaster/)
 assert.match(masterRepository, /authorizeGoogleAiMasterWithPin/)
+assert.match(masterRepository, /beginRememberedBrowserAssertion/)
+assert.match(masterRepository, /signRememberedBrowserAssertion/)
+assert.match(masterRepository, /completeRememberedBrowserMasterAdmission/)
+assert.match(
+  masterRepository,
+  /beginRememberedBrowserAssertion[\s\S]*?requestId: crypto\.randomUUID\(\)[\s\S]*?completeRememberedBrowserMasterAdmission[\s\S]*?requestId: reserved\.requestId/,
+  'a lost begin response must use a fresh challenge while completion retains its durable request ID',
+)
 assert.match(masterRepository, /revokeAiMasterAuthorization/)
 for (const lectureAiAuthorizationSurface of [masterControl, masterRepository]) {
   assert.doesNotMatch(lectureAiAuthorizationSurface, /challengeAndVerify/)
@@ -154,6 +170,33 @@ assert.doesNotMatch(envExample, /PHASE7_28_AI_MASTER_AUTH/)
 assert.doesNotMatch(featureFlags, /isPhase728AiMasterAuthorizationEnabled/)
 assert.match(localBrowser, /installGoogleAdminSession/)
 assert.match(localBrowser, /個人AI PIN/)
+assert.match(localBrowser, /現在のPINで登録/)
+assert.match(localBrowser, /登録済みのこのブラウザで許可します/)
+assert.match(localBrowser, /getByLabel\('個人AI PIN'\)\)\.toHaveCount\(0\)/)
+assert.match(
+  localBrowser,
+  /const startResponsePromise = page\.waitForResponse[\s\S]*?\/functions\/v1\/manage-lectures[\s\S]*?body\.action === 'start'[\s\S]*?getByRole\('button', \{ name: '開始', exact: true \}\)\.click\(\)[\s\S]*?await startResponsePromise[\s\S]*?toContainText\('受付中'\)/,
+)
+assert.match(
+  localBrowser,
+  /select\('id,status'\)[\s\S]*?status\)\.toBe\('open'\)/,
+)
+assert.match(
+  localBrowser,
+  /route\.fetch\(\)[\s\S]*?route\.fulfill\(\{[\s\S]*?status: 200[\s\S]*?ok: false[\s\S]*?code: 'request_failed'/,
+)
+assert.match(
+  localBrowser,
+  /expect\(authorizeButton\)\.toBeEnabled\(\)[\s\S]*?authorizeButton\.focus\(\)[\s\S]*?expect\(authorizeButton\)\.toBeFocused\(\)/,
+)
+assert.match(
+  localBrowser,
+  /new Set\(rememberedBeginRequestIds\)\.size\)\.toBe\(2\)/,
+)
+assert.match(
+  localBrowser,
+  /rememberedCompletionRequestIds\)\.toHaveLength\(1\)/,
+)
 assert.match(localBrowser, /要約を開始/)
 assert.match(localBrowser, /lecture_summary_runs/)
 assert.match(

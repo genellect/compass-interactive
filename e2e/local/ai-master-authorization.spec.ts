@@ -40,6 +40,16 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   })
 
   await installGoogleAdminSession(page)
+  await page.goto('/admin/settings')
+  await expect(page.getByRole('heading', { name: '教員管理' })).toBeVisible()
+  const pinSettings = page.locator('details').filter({
+    has: page.locator('summary', { hasText: 'AI PINの設定' }),
+  })
+  await pinSettings.locator('summary').click()
+  await pinSettings.getByLabel('現在の4桁AI PIN').fill(aiPin)
+  await pinSettings.getByRole('button', { name: '現在のPINで登録' }).click()
+  await expect(pinSettings).toContainText('このブラウザを登録しました。')
+
   await page.goto('/admin')
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
@@ -51,18 +61,65 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   const lectureRow = page
     .locator('.lecture-admin-row')
     .filter({ hasText: title })
+  const startResponsePromise = page.waitForResponse((response) => {
+    const request = response.request()
+    if (
+      new URL(response.url()).pathname !== '/functions/v1/manage-lectures' ||
+      request.method() !== 'POST' ||
+      response.status() !== 200
+    ) {
+      return false
+    }
+    try {
+      const body = request.postDataJSON() as Record<string, unknown>
+      return body.action === 'start'
+    } catch {
+      return false
+    }
+  })
   await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
+  await startResponsePromise
   await expect(lectureRow).toContainText('受付中')
   await page.locator('#teacher-workspace-ai-tab').click()
 
   const { data: lecture, error: lectureError } = await service
     .from('lecture_sessions')
-    .select('id')
+    .select('id,status')
     .eq('title', title)
     .single()
   expect(lectureError).toBeNull()
   expect(lecture?.id).toBeTruthy()
+  expect(lecture?.status).toBe('open')
   const lectureId = lecture!.id
+
+  const rememberedBeginRequestIds: string[] = []
+  const rememberedCompletionRequestIds: string[] = []
+  await page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    const payload = route.request().postDataJSON() as Record<string, unknown>
+    if (payload.action === 'beginBrowserAssertion') {
+      rememberedBeginRequestIds.push(String(payload.requestId ?? ''))
+      if (rememberedBeginRequestIds.length === 1) {
+        // Let the server commit the challenge, then replace only its response
+        // with the same retryable envelope used for an ambiguous transport
+        // failure. This keeps the browser console clean on every engine while
+        // proving that the next CTA supersedes the committed challenge.
+        await route.fetch()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: false,
+            code: 'request_failed',
+            message: 'The browser assertion response could not be confirmed.',
+          }),
+        })
+        return
+      }
+    } else if (payload.action === 'completeBrowserMasterAdmission') {
+      rememberedCompletionRequestIds.push(String(payload.requestId ?? ''))
+    }
+    await route.continue()
+  })
 
   const paidRequests: string[] = []
   page.on('request', (request) => {
@@ -77,15 +134,27 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
 
   const master = page.getByTestId('ai-master-auth')
   await expect(master).toContainText('許可だけではAPIは呼び出されません')
+  await expect(master).toContainText(
+    '登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。',
+  )
+  await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
   await expectNoSeriousAccessibilityViolations(page)
-  await master.getByLabel('個人AI PIN').fill(aiPin)
   const authorizeButton = master.getByRole('button', {
     name: '字幕も含めて許可',
   })
+  await expect(authorizeButton).toBeEnabled()
   await authorizeButton.focus()
   await expect(authorizeButton).toBeFocused()
   await page.keyboard.press('Enter')
+  await expect(master).toContainText(
+    '通信結果を確認できませんでした。同じ許可ボタンでもう一度確認できます。',
+  )
+  await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
+  await authorizeButton.click()
   await expect(master).toContainText('許可済み')
+  expect(rememberedBeginRequestIds).toHaveLength(2)
+  expect(new Set(rememberedBeginRequestIds).size).toBe(2)
+  expect(rememberedCompletionRequestIds).toHaveLength(1)
 
   await expect
     .poll(async () => {

@@ -1,18 +1,10 @@
-import { spawnSync } from 'node:child_process'
+import { runSupabaseCommand } from './lib/run-supabase-command.mjs'
 
 const npmCli = process.env.npm_execpath
 if (!npmCli) throw new Error('Run this upgrade check through npm.')
 
 function runSupabase(args) {
-  const result = spawnSync(
-    process.execPath,
-    [npmCli, 'exec', '--', 'supabase', ...args],
-    { cwd: process.cwd(), env: process.env, stdio: 'inherit' },
-  )
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`supabase ${args.join(' ')} exited with ${result.status}`)
-  }
+  runSupabaseCommand({ npmCli, args })
 }
 
 let failure

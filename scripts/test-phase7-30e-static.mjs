@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
+import { runSupabaseCommand } from './lib/run-supabase-command.mjs'
 
 const read = (path) =>
   readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -52,6 +53,68 @@ const concurrency = read('scripts/test-phase7-30e-concurrency.mjs')
 const localEdgeContract = read('scripts/test-production-local-edge.mjs')
 const manageLectures = read('supabase/functions/manage-lectures/index.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
+const upgradeRunners = [
+  'scripts/test-phase7-26-upgrade.mjs',
+  'scripts/test-phase7-27-upgrade.mjs',
+  'scripts/test-phase7-28-upgrade.mjs',
+  'scripts/test-phase7-29-upgrade.mjs',
+  'scripts/test-phase7-30-upgrade.mjs',
+].map(read)
+
+for (const runner of upgradeRunners) {
+  assert.match(
+    runner,
+    /runSupabaseCommand\(\{ npmCli, args \}\)/,
+    'every populated upgrade runner must share the bounded local reset retry',
+  )
+}
+
+{
+  const calls = []
+  runSupabaseCommand({
+    npmCli: 'npm-cli.js',
+    args: ['db', 'reset', '--local', '--no-seed'],
+    spawn: (...args) => {
+      calls.push(args)
+      return { status: calls.length === 1 ? 1 : 0 }
+    },
+  })
+  assert.equal(calls.length, 2)
+}
+
+{
+  let calls = 0
+  assert.throws(
+    () =>
+      runSupabaseCommand({
+        npmCli: 'npm-cli.js',
+        args: ['db', 'reset', '--local', '--no-seed'],
+        spawn: () => {
+          calls += 1
+          return { status: 1 }
+        },
+      }),
+    /supabase db reset --local --no-seed exited with 1/,
+  )
+  assert.equal(calls, 2)
+}
+
+{
+  let calls = 0
+  assert.throws(
+    () =>
+      runSupabaseCommand({
+        npmCli: 'npm-cli.js',
+        args: ['migration', 'up', '--local'],
+        spawn: () => {
+          calls += 1
+          return { status: 1 }
+        },
+      }),
+    /supabase migration up --local exited with 1/,
+  )
+  assert.equal(calls, 1)
+}
 const c1HeadUpgradeProbe = read(
   'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
 )
@@ -693,8 +756,8 @@ assert.match(
 )
 assert.match(
   localGoogleFixture,
-  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true/,
-  'the local AI-PIN fixture must enable both master admission and child-grant scheduling',
+  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
+  'the local AI fixture must enable master admission, child grants, and remembered-browser admission',
 )
 assert.equal(
   (

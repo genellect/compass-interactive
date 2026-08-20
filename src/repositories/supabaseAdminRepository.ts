@@ -1,6 +1,4 @@
-import {
-  type AdminOperationCredentialInput,
-} from '../lib/adminAuth/adminOperationCredential'
+import { type AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 import type { LectureStatus } from '../types'
 
 import {
@@ -8,9 +6,7 @@ import {
   SUPABASE_REQUEST_TIMEOUT_MS,
 } from './supabase/requestPolicy'
 import { invokeEdgeFunction } from './supabase/transport'
-import {
-  aiMasterAuthorizationRepository,
-} from './supabase/aiMasterAuthorizationRepository'
+import { aiMasterAuthorizationRepository } from './supabase/aiMasterAuthorizationRepository'
 import {
   adminContentAiRepository,
   providerAttemptIsAmbiguous,
@@ -666,13 +662,27 @@ export const supabaseAdminRepository = {
   async manageLectures(
     request: ManageLecturesRequest,
   ): Promise<AdminLecture[]> {
-    const { data, error } = await invokeEdgeFunction<ManageLecturesResponse>(
+    let response = await invokeEdgeFunction<ManageLecturesResponse>(
       'manage-lectures',
       {
         body: request,
         timeout: ADMIN_FUNCTION_TIMEOUT_MS,
       },
     )
+    if (
+      response.error &&
+      request.action !== 'list' &&
+      (await providerAttemptIsAmbiguous(response.error))
+    ) {
+      response = await invokeEdgeFunction<ManageLecturesResponse>(
+        'manage-lectures',
+        {
+          body: request,
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+        },
+      )
+    }
+    const { data, error } = response
 
     if (error) {
       throw new Error(
@@ -751,10 +761,7 @@ export const supabaseAdminRepository = {
       'issue-realtime-client-secret',
       { body: request, timeout: REALTIME_START_TIMEOUT_MS },
     )
-    if (
-      response.error &&
-      (await providerAttemptIsAmbiguous(response.error))
-    ) {
+    if (response.error && (await providerAttemptIsAmbiguous(response.error))) {
       response = await invokeEdgeFunction<RealtimeCaptionCallResponse>(
         'issue-realtime-client-secret',
         { body: request, timeout: REALTIME_START_TIMEOUT_MS },
