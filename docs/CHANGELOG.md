@@ -22,9 +22,10 @@ gate evidence. Commit IDs identify the main implementation landmarks.
   No new secret, production mutation, deployment or paid provider call is part
   of this source change.
 - Bound the student foreground snapshot cadence to five seconds and spread each
-  student's initial phase across the same five-second window. This restores the
-  five-second cross-student comment/like objective while preserving the
-  established periodic request envelope and avoiding synchronized join bursts.
+  student's initial phase across the same five-second window. Hosted canaries
+  measure a five-second p95 target and a separate ten-second per-event
+  reliability ceiling while preserving the established periodic request
+  envelope and avoiding synchronized join bursts.
 - Reused one finalize request ID across a PDF publication's committed retries,
   and persisted that ID through a same-tab reload, so recovery continues the
   same database activation lease instead of opening a conflicting operation.

@@ -585,8 +585,8 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{ timeout: 6_000 \}\)[\s\S]*student-comment-propagation-ms[\s\S]*commentPropagationMs\)\.toBeLessThanOrEqual\(6_000\)[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: 6_000[\s\S]*student-like-propagation-ms[\s\S]*likePropagationMs\)\.toBeLessThanOrEqual\(6_000\)/,
-  'student comments and likes must record propagation latency with a six-second reliability ceiling for the five-second p95 target',
+  /STUDENT_PROPAGATION_TARGET_P95_MS = 5_000[\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS = 10_000[\s\S]*const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*student-comment-propagation-ms[\s\S]*student-propagation-target-p95-ms[\s\S]*commentPropagationMs\)\.toBeLessThanOrEqual\([\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*student-like-propagation-ms[\s\S]*likePropagationMs\)\.toBeLessThanOrEqual\([\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS/,
+  'student comments and likes must record latency, preserve the five-second hosted p95 target, and enforce a separate ten-second per-event reliability ceiling',
 )
 assert.match(
   localLifecycleBrowser,

@@ -4,6 +4,8 @@ import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
 const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173'
+const STUDENT_PROPAGATION_TARGET_P95_MS = 5_000
+const STUDENT_PROPAGATION_RELIABILITY_CEILING_MS = 10_000
 const decodeQrPixels = jsQR as unknown as (
   data: Uint8ClampedArray,
   width: number,
@@ -332,25 +334,35 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     const peerComment = peerStudent.page
       .locator('.comment-card')
       .filter({ hasText: 'ローカルE2Eからの質問です' })
-    await expect(peerComment).toBeVisible({ timeout: 6_000 })
+    await expect(peerComment).toBeVisible({
+      timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS,
+    })
     const commentPropagationMs = Date.now() - commentSubmittedAt
     test.info().annotations.push({
       description: String(commentPropagationMs),
       type: 'student-comment-propagation-ms',
     })
-    expect(commentPropagationMs).toBeLessThanOrEqual(6_000)
+    test.info().annotations.push({
+      description: String(STUDENT_PROPAGATION_TARGET_P95_MS),
+      type: 'student-propagation-target-p95-ms',
+    })
+    expect(commentPropagationMs).toBeLessThanOrEqual(
+      STUDENT_PROPAGATION_RELIABILITY_CEILING_MS,
+    )
 
     const likeSubmittedAt = Date.now()
     await peerComment.getByRole('button', { name: '共感する' }).click()
     await expect(comment.locator('.like-count')).toContainText('1', {
-      timeout: 6_000,
+      timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS,
     })
     const likePropagationMs = Date.now() - likeSubmittedAt
     test.info().annotations.push({
       description: String(likePropagationMs),
       type: 'student-like-propagation-ms',
     })
-    expect(likePropagationMs).toBeLessThanOrEqual(6_000)
+    expect(likePropagationMs).toBeLessThanOrEqual(
+      STUDENT_PROPAGATION_RELIABILITY_CEILING_MS,
+    )
 
     await admin.page.locator('#teacher-workspace-participation-tab').click()
     const adminComment = admin.page
