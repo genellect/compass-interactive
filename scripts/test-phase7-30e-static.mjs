@@ -580,8 +580,13 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
-  'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*peerComment[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*peerComment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*peerComment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
+  'the live lifecycle must prove cross-student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+)
+assert.match(
+  localLifecycleBrowser,
+  /STUDENT_PROPAGATION_TARGET_P95_MS = 5_000[\s\S]*STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS = 10_000[\s\S]*test\.describe\.configure\(\{ retries: 0 \}\)[\s\S]*const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS[\s\S]*student-comment-propagation-ms[\s\S]*student-propagation-target-p95-ms[\s\S]*student-propagation-reliability-timeout-ms[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS[\s\S]*student-like-propagation-ms/,
+  'student comments and likes must record latency, preserve the five-second hosted p95 target, use a ten-second bounded wait, and disable invalid dirty-state retries',
 )
 assert.match(
   localLifecycleBrowser,
@@ -785,8 +790,13 @@ assert.match(
 )
 assert.match(
   browserSafety,
-  /error\.message === expectedMessage[\s\S]*error\.locationUrl === expected\.url[\s\S]*matchingErrors\(\)\.length[\s\S]*\.toBe\(1\)[\s\S]*matchingIndexes[\s\S]*\.toHaveLength\(1\)[\s\S]*browserErrors\.splice/,
-  'expected console errors must match one exact message and URL and consume only that entry',
+  /expectConsoleErrors[\s\S]*count: number[\s\S]*error\.message === expectedMessage[\s\S]*error\.locationUrl === expected\.url[\s\S]*matchingErrors\(\)\.length[\s\S]*\.toBe\(count\)[\s\S]*matchingIndexes[\s\S]*\.toHaveLength\(count\)[\s\S]*matchingIndexes\.reverse\(\)[\s\S]*browserErrors\.splice/,
+  'expected console errors must match one exact message, URL, and count before consuming only those entries',
+)
+assert.match(
+  browserSafety,
+  /expectConsoleErrorOnce\(expected\)[\s\S]*expectConsoleErrors\(expected, 1\)/,
+  'the one-shot expected console-error contract must remain an exact count-one wrapper',
 )
 assert.doesNotMatch(
   browserSafety,

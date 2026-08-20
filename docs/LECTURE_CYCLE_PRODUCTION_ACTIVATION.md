@@ -3,7 +3,7 @@
 Status: Implemented, verification pending
 
 Scope: Canonical Production lecture cycle for Educator, Student, Display, Review, PDF and browser AI paths
-Last verified: 2026-08-18
+Last verified: 2026-08-20
 
 ## Purpose
 
@@ -37,9 +37,11 @@ general availability are not implied by this lecture-cycle activation.
   and cost ceilings of USD 0.01–5 per lecture and no more than USD 20 per day.
   Policy creation consumes the existing request-bound, five-minute TOTP
   control grant; raw table writes are forbidden.
-- Personal AI PIN proves the instructor's lecture-wide AI intent. Every actual
-  provider dispatch still consumes a short-lived child grant and rechecks
-  lecture state, scope, budget, concurrency and idempotency.
+- The verified Google plus TOTP AAL2 app session, active AI-enabled membership,
+  exact lecture ownership and current policy prove one-click lecture-wide AI
+  intent. The ordinary CTA does not ask for an AI PIN or another TOTP. Every
+  actual provider dispatch still consumes a short-lived child grant and
+  rechecks lecture state, scope, budget, concurrency and idempotency.
 - Secrets, app-session tokens, OAuth material, lecture codes and personal data
   never enter Git, CI logs, evidence JSON or this runbook.
 
@@ -79,14 +81,25 @@ activation evidence.
    active AI-capable membership. Each change uses a fresh authenticator proof,
    exact intent digest and idempotent request ID. Verify full membership-policy
    coverage before enabling paid admission.
-7. Each testing instructor enrolls or verifies their personal AI PIN. Enable
-   database AI-master admission and child grants only after policy coverage,
-   provider secrets, current Edge revisions and stop paths all pass.
+7. Confirm each testing instructor has a current Google plus TOTP AAL2 app
+   session and an active AI-enabled membership. Enable database AI-master
+   admission and child grants only after policy coverage, provider secrets,
+   current Edge revisions and stop paths all pass. Retain the old PIN/browser
+   transports only for repair-forward rollback; do not expose them in the
+   ordinary lecture UI.
 8. Run one bounded canonical browser lecture. Use the UI, not direct API calls:
    PDF selection and publication, lecture start, Student join, Display claim,
-   page sync, Poll/comment paths, AI master unlock, captions, material analysis,
-   poll suggestions, summaries and academic answers, followed by every stop and
-   lecture close. Record only redacted stage/result/timing and bounded cost.
+   page sync, Poll/comment paths, one-click AI master admission, captions,
+   material analysis, poll suggestions, summaries and academic answers,
+   followed by every stop and lecture close. Record only redacted
+   stage/result/timing and bounded cost.
+   For cross-student comments and likes, record at least twenty UI-observed
+   samples for each path. The hosted p95 target is five seconds and no
+   individual sample may exceed the ten-second reliability ceiling. The local
+   lifecycle records each latency and uses a ten-second bounded UI wait; test
+   runner scheduling is not a substitute for the hosted wall-clock p95 sample.
+   The periodic snapshot count must remain at the established five-second
+   envelope.
 9. Confirm zero open lectures, zero running AI/provider work, no unexpected
    duplicate usage, no console/page errors, and no secret or personal-data
    exposure. Preserve the exact deployment and test evidence privately.

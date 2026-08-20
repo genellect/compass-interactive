@@ -1,6 +1,7 @@
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import {
   AdminAiUnlockError,
+  authorizeGoogleAiMasterWithAal2Session,
   authorizeGoogleAiMasterWithPin,
   beginRememberedBrowserAssertion,
   completeRememberedBrowserMasterAdmission,
@@ -121,6 +122,38 @@ function toAiMasterAuthorization(
   }
 }
 
+const AAL2_MASTER_REQUEST_NAME =
+  'admin-ai-unlock:authorizeMasterWithAal2Session'
+
+function aal2MasterRequestBody({
+  lectureSessionId,
+  policy,
+  requestedScope,
+}: {
+  lectureSessionId: string
+  policy: GoogleAiMasterPolicy
+  requestedScope: AiMasterAuthorizationScope
+}) {
+  return {
+    lectureSessionId,
+    policyId: policy.id,
+    policyVersion: policy.version,
+    requestedScope,
+  }
+}
+
+function completeReconciledAal2MasterRequest(
+  lectureSessionId: string,
+  policy: GoogleAiMasterPolicy,
+  requestedScope: AiMasterAuthorizationScope,
+) {
+  const completed = reserveAdminOperationRequestId(
+    AAL2_MASTER_REQUEST_NAME,
+    aal2MasterRequestBody({ lectureSessionId, policy, requestedScope }),
+  )
+  completeAdminOperationRequestId(completed.key, completed.requestId)
+}
+
 export const aiMasterAuthorizationRepository = {
   async getAiMasterAuthorization(request: {
     adminToken: AdminOperationCredentialInput
@@ -130,16 +163,129 @@ export const aiMasterAuthorizationRepository = {
       request.adminToken.appSessionToken,
       request.lectureSessionId,
     )
+    const authorization = toAiMasterAuthorization(status.authorization)
+    if (
+      authorization?.status === 'active' &&
+      authorization.ownedByRequester &&
+      status.policy
+    ) {
+      // A focus/visibility refresh can observe a committed admission whose
+      // HTTP response was lost. Close its pending ID before a later revoke.
+      completeReconciledAal2MasterRequest(
+        request.lectureSessionId,
+        status.policy,
+        authorization.scope,
+      )
+    }
     return {
       admissionBlockedReason: status.admissionBlockedReason,
       admissionEnabled: status.admissionEnabled,
       allowedScopes: status.allowedScopes,
-      authorization: toAiMasterAuthorization(status.authorization),
+      authorization,
       canUseAi: status.canUseAi,
       lectureOpen: status.lectureOpen,
       policy: status.policy,
       reason: status.reason,
       serverTime: status.serverTime,
+    }
+  },
+
+  async authorizeAiMasterWithAal2Session(request: {
+    adminToken: AdminOperationCredentialInput
+    lectureSessionId: string
+    masterScope: AiMasterAuthorizationScope
+  }): Promise<AiMasterAuthorizationStatus> {
+    const status = await getGoogleAiMasterStatus(
+      request.adminToken.appSessionToken,
+      request.lectureSessionId,
+    )
+    const currentAuthorization = toAiMasterAuthorization(status.authorization)
+    if (
+      currentAuthorization?.status === 'active' &&
+      currentAuthorization.ownedByRequester
+    ) {
+      if (status.policy) {
+        completeReconciledAal2MasterRequest(
+          request.lectureSessionId,
+          status.policy,
+          currentAuthorization.scope,
+        )
+      }
+      return {
+        admissionBlockedReason: status.admissionBlockedReason,
+        admissionEnabled: status.admissionEnabled,
+        allowedScopes: status.allowedScopes,
+        authorization: currentAuthorization,
+        canUseAi: status.canUseAi,
+        lectureOpen: status.lectureOpen,
+        policy: status.policy,
+        reason: status.reason,
+        serverTime: status.serverTime,
+      }
+    }
+    if (!status.policy) {
+      throw new Error('この講義で利用できるAIポリシーがありません。')
+    }
+    if (
+      !status.admissionEnabled ||
+      !status.allowedScopes.includes(request.masterScope)
+    ) {
+      throw new Error('この講義では選択したAI機能を新しく許可できません。')
+    }
+    const reserved = reserveAdminOperationRequestId(
+      AAL2_MASTER_REQUEST_NAME,
+      aal2MasterRequestBody({
+        lectureSessionId: request.lectureSessionId,
+        policy: status.policy,
+        requestedScope: request.masterScope,
+      }),
+    )
+    let data: Awaited<ReturnType<typeof authorizeGoogleAiMasterWithAal2Session>>
+    try {
+      data = await authorizeGoogleAiMasterWithAal2Session(
+        request.adminToken.appSessionToken,
+        {
+          lectureSessionId: request.lectureSessionId,
+          policyId: status.policy.id,
+          policyVersion: status.policy.version,
+          requestId: reserved.requestId,
+          requestedScope: request.masterScope,
+        },
+      )
+    } catch (error) {
+      // Keep the request ID only for a transport-ambiguous response so an
+      // already committed master can converge through exact replay.
+      if (
+        error instanceof AdminAiUnlockError &&
+        error.code !== 'request_failed'
+      ) {
+        completeAdminOperationRequestId(reserved.key, reserved.requestId)
+      }
+      throw error
+    }
+    const admittedAuthorization = toAiMasterAuthorization(
+      data.authorization as RawAiMasterAuthorization | null | undefined,
+    )
+    completeAdminOperationRequestId(reserved.key, reserved.requestId)
+    if (
+      admittedAuthorization?.status !== 'active' ||
+      !admittedAuthorization.ownedByRequester
+    ) {
+      throw new AdminAiUnlockError(
+        'master_admission_unavailable',
+        '講義中のAI機能を有効にできませんでした。もう一度お試しください。',
+      )
+    }
+    return {
+      admissionBlockedReason: status.admissionBlockedReason,
+      admissionEnabled: status.admissionEnabled,
+      allowedScopes: status.allowedScopes,
+      authorization: admittedAuthorization,
+      canUseAi: status.canUseAi,
+      lectureOpen: true,
+      policy: status.policy,
+      reason: status.reason,
+      serverTime: typeof data.serverTime === 'string' ? data.serverTime : null,
     }
   },
 

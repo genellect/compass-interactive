@@ -1141,6 +1141,13 @@ input:disabled {
   min-height: 36px;
 }
 
+.display-fullscreen-exit {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  z-index: 20;
+}
+
 .display-layout {
   align-items: start;
   display: grid;
@@ -1480,6 +1487,7 @@ input:disabled {
   max-width: none;
   overflow: auto;
   padding: 24px;
+  position: relative;
   width: 100vw;
 }
 

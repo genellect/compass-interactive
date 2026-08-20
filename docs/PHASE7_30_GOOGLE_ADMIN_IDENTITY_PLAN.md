@@ -5,7 +5,7 @@ Gate state: A-D exact-head database, Edge and browser evidence passes. E removes
 Implementation scope: A-D complete; E Google-only source, explicit ownership evidence and dormant identity-cutover authority implemented; F redacted evidence/schema/validator/read-only-preflight source candidate; E runtime freeze, billing compatibility retirement and every external F action pending
 Approval: requirements approved; Hosted/Human activation not authorized
 Scope: Google sign-in, mandatory step-up authentication, multi-Admin authorization and audit
-Last verified: 2026-08-12
+Last verified: 2026-08-20
 
 Implementation records:
 [`PHASE7_30A_B1_IMPLEMENTATION.md`](PHASE7_30A_B1_IMPLEMENTATION.md) and
@@ -17,6 +17,14 @@ Implementation records:
 [`PHASE7_30F_HOSTED_HUMAN_READINESS.md`](PHASE7_30F_HOSTED_HUMAN_READINESS.md).
 The narrow C1 ownership and atomic dormant-master integration record is
 [`PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md`](PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md).
+
+Current lecture admission decision: an active AI-enabled instructor or owner
+uses the already verified Google/TOTP AAL2 app session to enable the owned open
+lecture's AI master with one CTA. This `google_aal2_session` path does not ask
+for a four-digit PIN, remembered-browser credential or another TOTP. It does
+not weaken the live factor-set/session, membership, ownership, policy,
+lifecycle, budget, child-grant or provider checks. PIN and remembered-browser
+transports remain additive rollback compatibility only.
 
 ## Implementation checkpoint
 
@@ -85,9 +93,11 @@ No Google Cloud OAuth client, Supabase Hosted provider/database/Edge setting,
 callback allowlist, secret, or real account was created or changed. Real Google
 OAuth, Hosted and Human evidence is not executed and remains HOLD. B2.2b adds
 the default-OFF Edge raw-PIN/HMAC path, real non-extractable browser
-CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1 then
-adds private optional-row lecture ownership and atomic PIN/browser-proof to
-dormant-master admission without inferred backfill or child/provider authority.
+CryptoKey/signature flow, PIN/factor UI and approved factor transitions. C1
+first added private optional-row lecture ownership and atomic PIN/browser-proof
+to dormant-master admission without inferred backfill or child/provider
+authority. The 2026-08-20 additive path admits that same provider-free master
+from the verified Google AAL2 app session without a factor prompt.
 It does not by itself implement the all-Admin verifier, complete operational
 Edge/RPC migration or AI Passkey. C2 implements the all-Admin verifier and
 closed policy/facade matrix. D adds the owner-only invitation, membership,
@@ -118,19 +128,18 @@ Google/Supabase identity
   -> AAL2 plus server-recorded recent step-up where required
   -> tracked, individually revocable Admin session
   -> lecture ownership/lifecycle check
-  -> personal four-digit AI PIN, dedicated AI Passkey, or remembered-browser proof
+  -> one-click Google AAL2 app-session master admission
   -> two-scope lecture AI master authorization
   -> live policy/budget/concurrency/idempotency when each paid API starts
 ```
 
-Normal paid-AI UX no longer asks an owner for `BILLING_PIN` on every feature or
-lecture. Every AI-capable principal enrolls one easy, personal AI-unlock factor:
-a four-digit AI PIN in v1, or a purpose-bound AI Passkey after the dedicated
-WebAuthn gate. That factor is never sufficient on its own; it is accepted only
-inside a valid Google plus AAL2 Admin session, active membership, owned lecture
-and owner-managed AI policy. It unlocks the existing lecture-wide master once,
-after which each provider start uses the existing short-lived single-use child
-grant and repeats all live cost and lifecycle checks without another PIN prompt.
+Normal paid-AI UX no longer asks an owner for `BILLING_PIN`, an AI PIN or a new
+TOTP during lecture operation. The valid Google plus AAL2 Admin session, active
+AI membership, exact owned open lecture and owner-managed policy admit the
+lecture-wide master once. Each actual provider start still uses a short-lived,
+single-use child grant and repeats all live cost, scope and lifecycle checks.
+The older personal PIN/browser proof remains deployed only as a rollback-safe
+alternate transport.
 
 ### Cross-phase lecture UX acceptance
 
@@ -140,8 +149,8 @@ Phases C2 through F must prove the complete happy path as well as denial paths:
 - an eligible instructor signs in once with Google plus TOTP, opens an owned
   lecture, views its material and activates each permitted feature without a
   repeated TOTP challenge during the lecture;
-- personal AI proof is requested only for a new lecture master or explicit
-  scope expansion, then mock-provider/local evidence proves child activation,
+- lecture master admission uses the existing AAL2 app session without another
+  factor prompt, then mock-provider/local evidence proves child activation,
   status, stop and recovery without a paid external call;
 - students can join, follow and reopen authorized PDF material across Admin
   gate changes, while cross-lecture and revoked access remain denied;

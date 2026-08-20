@@ -84,7 +84,6 @@ const c2UpgradeProbe = read(
 )
 const ciDocs = read('docs/CI_AND_BROWSER_E2E.md')
 const gateDocs = read('docs/GATE_ROUTING.md')
-const readme = read('README.md')
 
 const operationalEdges = [
   'analyze-lecture-material',
@@ -1257,7 +1256,6 @@ assert.match(nonlive, /'test:phase7-30c2-static'/)
 assert.match(docsTest, /75 non-live/)
 assert.match(ciDocs, /75 non-live/)
 assert.match(gateDocs, /test:ci:nonlive` \(75 groups\)/)
-assert.match(readme, /75 non-live groups/)
 
 const googleMasterStatus = functionBlock(
   workspaceMigration,

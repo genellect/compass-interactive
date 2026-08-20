@@ -355,8 +355,9 @@ jobs:
           architecture: ${{ matrix.platform }}
       - name: Verify global.json .NET SDK feature band
         shell: pwsh
+        working-directory: presenter-bridge
         run: |
-          $sdkPolicy = Get-Content presenter-bridge/global.json -Raw | ConvertFrom-Json
+          $sdkPolicy = Get-Content global.json -Raw | ConvertFrom-Json
           if ($sdkPolicy.sdk.rollForward -ne 'latestPatch') {
             throw "Expected global.json rollForward latestPatch."
           }
@@ -377,11 +378,14 @@ jobs:
         if: matrix.platform == 'x64'
         run: node scripts/ci/test-manage-local-edge-pid.mjs
       - name: Restore native solution
-        run: dotnet restore presenter-bridge/Compass.PresenterBridge.slnx --locked-mode
+        working-directory: presenter-bridge
+        run: dotnet restore Compass.PresenterBridge.slnx --locked-mode
       - name: Build native solution without publishing an artifact
-        run: dotnet build presenter-bridge/Compass.PresenterBridge.slnx --configuration Release --no-restore -p:PlatformTarget=${{ matrix.platform }}
+        working-directory: presenter-bridge
+        run: dotnet build Compass.PresenterBridge.slnx --configuration Release --no-restore -p:PlatformTarget=${{ matrix.platform }}
       - name: Run deterministic Core and loopback tests
-        run: dotnet run --project presenter-bridge/tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj --configuration Release --no-build -p:PlatformTarget=${{ matrix.platform }}
+        working-directory: presenter-bridge
+        run: dotnet run --project tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj --configuration Release --no-build -p:PlatformTarget=${{ matrix.platform }}
       - run: git diff --check
 
   dependency-review:

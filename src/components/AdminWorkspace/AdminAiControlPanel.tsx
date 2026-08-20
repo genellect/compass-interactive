@@ -3,6 +3,7 @@ import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOpe
 import type { RememberedBrowserIdentityScope } from '../../lib/adminAuth/rememberedBrowserCredential'
 
 import { AppIcon } from '../AppIcon'
+import type { AiMasterReadiness } from '../AdminAiControl/AiMasterAuthorizationControl'
 import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
 import { MaterialAnalysisControl } from '../AdminAiControl/MaterialAnalysisControl'
 import { RealtimeCaptionControl } from '../AdminAiControl/RealtimeCaptionControl'
@@ -68,6 +69,8 @@ export function AdminAiControlPanel({
   const [academicRefreshVersion, setAcademicRefreshVersion] = useState(0)
   const [masterAuthorization, setMasterAuthorization] =
     useState<AiMasterAuthorization | null>(null)
+  const [masterReadiness, setMasterReadiness] =
+    useState<AiMasterReadiness>('checking')
   const handleAcademicAnswerChanged = useCallback(() => {
     setAcademicRefreshVersion((version) => version + 1)
   }, [])
@@ -89,8 +92,15 @@ export function AdminAiControlPanel({
   })
   useEffect(() => {
     setMasterAuthorization(null)
+    setMasterReadiness(activeLectureSessionId ? 'checking' : 'blocked')
     onMasterAuthorizationChange?.(false)
   }, [activeLectureSessionId, onMasterAuthorizationChange])
+  const supportReady = anyEnabled && masterReadiness === 'ready'
+  const supportLabel = supportReady
+    ? '利用可能'
+    : anyEnabled && masterReadiness === 'checking'
+      ? '確認中'
+      : '停止中'
   return (
     <section className="panel ai-readiness-panel">
       <div className="panel-heading">
@@ -103,8 +113,8 @@ export function AdminAiControlPanel({
             <h2>講義の理解サポート</h2>
           </div>
         </div>
-        <span className={`support-state ${anyEnabled ? 'is-ready' : ''}`}>
-          {anyEnabled ? '利用可能' : '停止中'}
+        <span className={`support-state ${supportReady ? 'is-ready' : ''}`}>
+          {supportLabel}
         </span>
       </div>
       {adminToken && activeLectureSessionId ? (
@@ -117,6 +127,7 @@ export function AdminAiControlPanel({
             lectureSessionId={activeLectureSessionId}
             lectureStatus={status}
             onAuthorizationChange={handleMasterAuthorizationChange}
+            onReadinessChange={setMasterReadiness}
           />
         </Suspense>
       ) : null}

@@ -1054,6 +1054,22 @@ SELECT is(
   'lost finalize authorization converges after admission is disabled'
 );
 SELECT is(
+  public.prepare_google_admin_pdf_publication_finalize_v1(
+    repeat('5', 64),
+    '00000000-0000-4000-8000-00000000d202'::uuid,
+    '00000000-0000-4000-8000-00000000d236'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1, false,
+    '00000000-0000-4000-8000-00000000d232'::uuid,
+    '00000000-0000-4000-8000-00000000d209'::uuid,
+    current_setting('test.c2_pdf_publication_id')::uuid,
+    '00000000-0000-4000-8000-00000000d233'::uuid,
+    '00000000-0000-4000-8000-00000000d234'::uuid,
+    1
+  ) ->> 'activationOperationId',
+  '00000000-0000-4000-8000-00000000d234',
+  'committed continuation replay preserves one activation operation binding'
+);
+SELECT is(
   public.abort_google_admin_pdf_publication_v1(
     repeat('5', 64),
     '00000000-0000-4000-8000-00000000d202'::uuid,

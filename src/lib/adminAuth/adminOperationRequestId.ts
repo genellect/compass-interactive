@@ -31,12 +31,13 @@ function trimPendingRequests() {
 export function reserveAdminOperationRequestId(
   functionName: string,
   body: JsonRecord,
+  preferredRequestId?: string,
 ) {
   const key = requestKey(functionName, body)
   const existing = pendingRequestIds.get(key)
   if (existing) return { key, requestId: existing }
 
-  const requestId = crypto.randomUUID()
+  const requestId = preferredRequestId ?? crypto.randomUUID()
   pendingRequestIds.set(key, requestId)
   trimPendingRequests()
   return { key, requestId }

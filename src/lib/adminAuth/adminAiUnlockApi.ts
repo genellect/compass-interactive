@@ -450,6 +450,22 @@ export async function authorizeGoogleAiMasterWithPin(
   })
 }
 
+export async function authorizeGoogleAiMasterWithAal2Session(
+  appSessionToken: string,
+  input: {
+    lectureSessionId: string
+    policyId: string
+    policyVersion: number
+    requestId: string
+    requestedScope: GoogleAiMasterScope
+  },
+) {
+  return invoke(appSessionToken, {
+    action: 'authorizeMasterWithAal2Session',
+    ...input,
+  })
+}
+
 export async function downgradeGoogleAiMaster(
   appSessionToken: string,
   lectureSessionId: string,

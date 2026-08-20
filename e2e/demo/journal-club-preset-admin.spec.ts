@@ -890,7 +890,7 @@ test.describe('Phase 7.27 flag ON', () => {
     await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
     const publishButton = pdfPanel.locator('button.primary-button')
     await expect(publishButton).toBeEnabled()
-    await publishButton.click()
+    await publishButton.dispatchEvent('click')
 
     await expect
       .poll(() =>

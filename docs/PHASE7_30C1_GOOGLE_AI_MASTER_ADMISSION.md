@@ -1,8 +1,8 @@
 # Phase 7.30C1 Google Admin lecture AI-master admission
 
-Date: 2026-08-10
-Status: source implemented; database, Local Edge, Hosted and Human evidence HOLD
-Activation: default OFF; no provider or child-grant authority
+Date: 2026-08-10; additive session admission updated 2026-08-20
+Status: source implemented; exact-head database, Local Edge, Hosted and Human evidence required for activation
+Activation: existing C1 gates; no provider or child-grant authority at master admission
 
 ## Scope
 
@@ -16,6 +16,23 @@ and lecture-scoped AI-master state. It adds:
 - gate-independent exact replay, status, free captions downgrade and revoke;
 - a dedicated default-OFF Edge/client transport which returns dormant master
   state and never calls a provider.
+
+The additive migration
+`20260820081453_google_aal2_session_ai_master.sql` adds the current lecture UI
+path: a verified Google/TOTP AAL2 app session can admit its own lecture master
+with one CTA and no AI PIN, remembered credential or new TOTP prompt. The
+original PIN and remembered-browser functions remain deployed for rollback
+compatibility but are no longer selected by the lecture workspace.
+
+The `google_aal2_session` method is not an authentication shortcut. Database
+admission still rechecks the live approved TOTP factor set, backing Supabase
+Auth session and eight-hour cap, active AI-enabled membership, exact private
+lecture ownership, open/hard-stop lifecycle and exact active policy/version.
+Its receipt stores null factor/browser proof fields and binds
+`unlock_verified_at` to the app session's recorded `step_up_verified_at`.
+Six new/elevating admissions per app-session/lecture/minute are permitted;
+exact replay and same-scope reuse do not consume that allowance. Accepted and
+rate-limited decisions write content-free Admin audit evidence.
 
 It deliberately performs no inferred backfill and does not infer an owner for
 an existing lecture. The public
@@ -104,3 +121,41 @@ types, documentation routing and the ordinary non-live quality suite. Docker
 from-zero/upgrade/pgTAP/concurrency, Local Edge, exact-head CI, Hosted Google
 OAuth/TOTP and Human teacher evidence remain HOLD. Source presence is not an
 activation decision and creates no hosted fixed cost.
+
+## Additive rollout checklist for `google_aal2_session`
+
+The order is strict and repair-forward. No new secret is required.
+
+1. Apply the additive database migration. Verify the new public facade is
+   `service_role`-only, the private rate table has RLS and no runtime-role
+   grants, and old PIN/browser facades still exist.
+2. Deploy `admin-ai-unlock` while keeping frontend exposure unchanged. The
+   existing `PHASE730_ADMIN_AI_UNLOCK_ENABLED` and
+   `PHASE730_C1_GOOGLE_AI_MASTER_ENABLED` source gates must both be `true` for
+   new admission. Status, exact replay, downgrade and revoke remain callable
+   while admission is disabled.
+3. Keep database `ai_unlock_enabled=true` and
+   `google_ai_master_admission_enabled=true`. `remembered_browser_enabled` may
+   remain `false`; this path does not depend on it. Identity session issuance,
+   Google operations and the existing child/provider gates remain independent
+   server-side decisions.
+4. Deploy the frontend with `VITE_PHASE7_30_ADMIN_IDENTITY`,
+   `VITE_PHASE7_30_ADMIN_AI_UNLOCK` and
+   `VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS` enabled. A failed or 503 status
+   request must leave the CTA disabled and the parent availability badge out
+   of its ready state; the browser never infers admission from its local
+   lecture state or frontend flags.
+5. In the bounded Production canary, confirm one enabled CTA sends exactly one
+   `authorizeMasterWithAal2Session` request with no PIN/credential field. The
+   resulting master and immutable receipt must use `google_aal2_session` with
+   null factor/browser columns. Immediately after master admission there must
+   be no new child grant, billing grant, usage row or provider request.
+6. Separately invoke each approved AI feature. Each real provider start must
+   create and consume exactly one bounded child and reach an observed terminal
+   provider result; master admission itself never satisfies this evidence.
+   Then stop all AI, close the lecture and verify pending descendants drain.
+7. Rollback first disables either C1 source admission or the database admission
+   gate, then restores the previous frontend/Edge revision if needed. Do not
+   drop the schema. Existing exact replay, status, free stop/revoke/downgrade,
+   session/membership/policy/lecture drains and the retained PIN/browser
+   transports provide repair-forward compatibility.

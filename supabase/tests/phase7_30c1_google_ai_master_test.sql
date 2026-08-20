@@ -19,6 +19,10 @@ SELECT has_table(
   'private', 'admin_ai_master_reuse_receipts',
   'C1 stores proof-free same-scope request observations'
 );
+SELECT has_table(
+  'private', 'admin_ai_master_session_rate_limits',
+  'Google AAL2 session admission has a private lecture-scoped rate bucket'
+);
 SELECT has_column(
   'private', 'admin_ai_unlock_runtime_gate',
   'google_ai_master_admission_enabled',
@@ -63,6 +67,14 @@ SELECT is(
   0,
   'migration fabricates no AI-master reuse receipt'
 );
+SELECT is(
+  (
+    SELECT count(*)::integer
+    FROM private.admin_ai_master_session_rate_limits
+  ),
+  0,
+  'migration fabricates no Google AAL2 session rate state'
+);
 
 SET ROLE service_role;
 SELECT is(
@@ -75,7 +87,7 @@ RESET ROLE;
 
 SELECT ok(
   (
-    SELECT count(*) = 4 AND bool_and(class.relrowsecurity)
+    SELECT count(*) = 5 AND bool_and(class.relrowsecurity)
     FROM pg_class AS class
     JOIN pg_namespace AS namespace ON namespace.oid = class.relnamespace
     WHERE namespace.nspname = 'private'
@@ -83,7 +95,8 @@ SELECT ok(
         'admin_lecture_ownerships',
         'admin_ai_master_admission_receipts',
         'admin_ai_master_control_receipts',
-        'admin_ai_master_reuse_receipts'
+        'admin_ai_master_reuse_receipts',
+        'admin_ai_master_session_rate_limits'
       )
   ),
   'all C1 evidence tables enable defense-in-depth RLS'
@@ -100,6 +113,9 @@ SELECT ok(
   )
   AND NOT has_table_privilege(
     'service_role', 'private.admin_ai_master_reuse_receipts', 'SELECT'
+  )
+  AND NOT has_table_privilege(
+    'service_role', 'private.admin_ai_master_session_rate_limits', 'SELECT'
   )
   AND NOT has_table_privilege(
     'anon', 'private.admin_lecture_ownerships', 'SELECT'
@@ -119,7 +135,8 @@ SELECT ok(
         'private.admin_lecture_ownerships'::regclass,
         'private.admin_ai_master_admission_receipts'::regclass,
         'private.admin_ai_master_control_receipts'::regclass,
-        'private.admin_ai_master_reuse_receipts'::regclass
+        'private.admin_ai_master_reuse_receipts'::regclass,
+        'private.admin_ai_master_session_rate_limits'::regclass
       )
       AND NOT EXISTS (
         SELECT 1
@@ -140,6 +157,7 @@ INSERT INTO c1_public_facades(signature) VALUES
   ('public.create_owned_admin_lecture_v1(text,uuid,uuid,text,text,text,timestamptz,timestamptz,uuid)'),
   ('public.replay_google_ai_master_admission_v1(text,uuid,uuid,uuid,text,uuid,bigint,text,uuid)'),
   ('public.authorize_google_ai_master_with_pin_v1(text,uuid,uuid,uuid,text,uuid,bigint,text,integer,text,uuid)'),
+  ('public.authorize_google_ai_master_with_session_v1(text,uuid,uuid,uuid,text,uuid,bigint,uuid)'),
   ('public.complete_google_ai_master_browser_admission_v1(text,uuid,uuid,uuid,text,uuid,bigint,text,text,text,text,boolean,uuid)'),
   ('public.get_google_ai_master_status_v1(text,uuid,uuid,uuid)'),
   ('public.downgrade_google_ai_master_v1(text,uuid,uuid,uuid,uuid)'),
@@ -155,8 +173,8 @@ SELECT is(
       ON procedure.oid = facade.signature::regprocedure
     WHERE pg_get_userbyid(procedure.proowner) = 'postgres'
   ),
-  9,
-  'all nine C1 public facades are owned by postgres'
+  10,
+  'all ten C1 public facades are owned by postgres'
 );
 SELECT is(
   (
@@ -167,8 +185,8 @@ SELECT is(
     WHERE procedure.prosecdef
       AND procedure.proconfig @> ARRAY['search_path=""']::text[]
   ),
-  9,
-  'all nine C1 public facades fix an empty search_path'
+  10,
+  'all ten C1 public facades fix an empty search_path'
 );
 SELECT ok(
   NOT EXISTS (
@@ -180,7 +198,7 @@ SELECT ok(
       OR has_function_privilege('anon', facade.signature, 'EXECUTE')
       OR has_function_privilege('authenticated', facade.signature, 'EXECUTE')
   ),
-  'only service_role can execute all nine C1 public facades'
+  'only service_role can execute all ten C1 public facades'
 );
 
 CREATE TEMP TABLE c1_private_function_names(name text PRIMARY KEY) ON COMMIT DROP;
@@ -189,7 +207,9 @@ INSERT INTO c1_private_function_names(name) VALUES
   ('authorize_ai_master'),
   ('authorize_ai_master_pre_c1'),
   ('authorize_google_ai_master_with_pin_v1'),
+  ('authorize_google_ai_master_with_session_v1'),
   ('complete_google_ai_master_browser_admission_v1'),
+  ('consume_google_ai_master_session_rate_v1'),
   ('create_owned_admin_lecture_v1'),
   ('downgrade_google_ai_master_v1'),
   ('drain_c1_google_ai_master_scope_v1'),
@@ -218,7 +238,7 @@ SELECT is(
       ON expected.name = procedure.proname
     WHERE namespace.nspname = 'private'
   ),
-  23,
+  25,
   'the complete private C1 function inventory is present'
 );
 SELECT ok(
@@ -278,6 +298,20 @@ SELECT alike(
   ),
   '%replay_or_reuse_google_ai_master_v1(%consume_admin_ai_pin_attempt_v1(%apply_google_ai_master_admission_v1(%',
   'PIN proof and master issuance remain one transaction with replay first'
+);
+SELECT alike(
+  pg_get_functiondef(
+    'private.authorize_google_ai_master_with_session_v1(text,uuid,uuid,uuid,text,uuid,bigint,uuid)'::regprocedure
+  ),
+  '%require_google_ai_master_context_v1(%replay_or_reuse_google_ai_master_v1(%google_ai_master_admission_enabled%consume_google_ai_master_session_rate_v1(%apply_google_ai_master_admission_v1(%',
+  'Google AAL2 session admission revalidates context, replays, gates, rates and atomically applies in order'
+);
+SELECT alike(
+  pg_get_functiondef(
+    'private.apply_google_ai_master_admission_v1(jsonb,uuid,uuid,text,uuid,bigint,text,uuid,bigint,uuid,uuid,uuid,timestamptz,uuid,text)'::regprocedure
+  ),
+  '%google_aal2_session%target_factor_id is not null%target_verified_at is distinct from%step_up_verified_at%google_aal2_session_verified%',
+  'session admission accepts no PIN/browser factor and audits the bound AAL2 step-up'
 );
 SELECT alike(
   pg_get_functiondef(

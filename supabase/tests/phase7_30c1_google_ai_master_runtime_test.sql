@@ -1040,20 +1040,185 @@ SELECT is(
 
 SET ROLE service_role;
 SELECT is(
-  public.authorize_google_ai_master_with_pin_v1(
+  public.authorize_google_ai_master_with_session_v1(
     repeat('1', 64),
     '00000000-0000-4000-8000-00000000c102'::uuid,
     '00000000-0000-4000-8000-00000000c103'::uuid,
     current_setting('compass.test.c1_lecture_id')::uuid,
     'all_except_captions',
     '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
-    repeat('b', 64), 1, repeat('e', 64),
     '00000000-0000-4000-8000-00000000c172'::uuid
   ) ->> 'accepted',
   'true',
-  'C1 master can be re-admitted before session drain'
+  'Google AAL2 app session admits the master without an AI PIN factor'
 );
 RESET ROLE;
+SELECT ok(
+  (
+    SELECT master.unlock_method = 'google_aal2_session'
+      AND master.unlock_factor_id IS NULL
+      AND master.unlock_factor_version IS NULL
+      AND master.browser_credential_id IS NULL
+      AND master.unlock_verified_at = master.step_up_verified_at
+      AND receipt.unlock_factor_id IS NULL
+      AND receipt.unlock_factor_version IS NULL
+      AND receipt.pin_attempt_request_id IS NULL
+      AND receipt.browser_assertion_challenge_id IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM private.admin_audit_events AS audit
+        WHERE audit.request_id = receipt.request_id
+          AND audit.result = 'accepted'
+          AND audit.reason_code = 'google_aal2_session_verified'
+      )
+    FROM private.admin_ai_master_admission_receipts AS receipt
+    JOIN public.lecture_ai_master_authorizations AS master
+      ON master.id = receipt.master_authorization_id
+    WHERE receipt.request_id =
+      '00000000-0000-4000-8000-00000000c172'::uuid
+  ),
+  'session admission persists factor-free AAL2 provenance and audit evidence'
+);
+
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_master_admission_enabled = false
+WHERE singleton;
+SET ROLE service_role;
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1', 64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c172'::uuid
+  ) ->> 'admission_replayed',
+  'true',
+  'exact Google AAL2 session replay survives admission gate OFF'
+);
+SELECT throws_ok(
+  format(
+    $$SELECT public.authorize_google_ai_master_with_session_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000c102'::uuid,
+      '00000000-0000-4000-8000-00000000c103'::uuid,
+      %L::uuid, 'all_including_captions',
+      '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+      '00000000-0000-4000-8000-00000000c172'::uuid
+    )$$,
+    current_setting('compass.test.c1_lecture_id')
+  ),
+  'P7335',
+  'AI master admission request binding mismatch',
+  'session admission request ID cannot be rebound to another scope'
+);
+RESET ROLE;
+UPDATE private.admin_ai_unlock_runtime_gate
+SET google_ai_master_admission_enabled = true
+WHERE singleton;
+
+SET ROLE service_role;
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_including_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c173'::uuid
+  ) ->> 'accepted', 'true', 'session admission rate attempt 2 succeeds'
+);
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c174'::uuid
+  ) ->> 'accepted', 'true', 'session admission rate attempt 3 succeeds'
+);
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_including_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c175'::uuid
+  ) ->> 'accepted', 'true', 'session admission rate attempt 4 succeeds'
+);
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c176'::uuid
+  ) ->> 'accepted', 'true', 'session admission rate attempt 5 succeeds'
+);
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_including_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c177'::uuid
+  ) ->> 'accepted', 'true', 'session admission rate attempt 6 succeeds'
+);
+SELECT is(
+  public.authorize_google_ai_master_with_session_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000c102'::uuid,
+    '00000000-0000-4000-8000-00000000c103'::uuid,
+    current_setting('compass.test.c1_lecture_id')::uuid,
+    'all_except_captions',
+    '00000000-0000-4000-8000-00000000c10a'::uuid, 1,
+    '00000000-0000-4000-8000-00000000c178'::uuid
+  ) ->> 'reason_code',
+  'rate_limited',
+  'seventh new session admission in one minute is denied without mutation'
+);
+RESET ROLE;
+SELECT ok(
+  (
+    SELECT limiter.admission_attempts = 6
+    FROM private.admin_ai_master_session_rate_limits AS limiter
+    WHERE limiter.admin_session_id =
+      '00000000-0000-4000-8000-00000000c108'::uuid
+      AND limiter.lecture_session_id =
+        current_setting('compass.test.c1_lecture_id')::uuid
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM private.admin_audit_events AS audit
+    WHERE audit.request_id =
+      '00000000-0000-4000-8000-00000000c178'::uuid
+      AND audit.result = 'denied'
+      AND audit.reason_code = 'session_admission_rate_limited'
+  ),
+  'session admission rate denial is bounded and audited'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM private.admin_google_ai_child_grant_receipts AS child
+    JOIN private.admin_ai_master_admission_receipts AS receipt
+      ON receipt.master_authorization_id = child.master_authorization_id
+    WHERE receipt.request_id =
+      '00000000-0000-4000-8000-00000000c172'::uuid
+  ),
+  'Google AAL2 master admission itself issues no child or provider authority'
+);
+
 UPDATE public.admin_sessions
 SET
   revoked_at = statement_timestamp(),
@@ -1069,7 +1234,7 @@ SELECT is(
     WHERE receipt.request_id = '00000000-0000-4000-8000-00000000c172'::uuid
   ),
   'admin_session_revoked',
-  'Admin session revocation drains the final C1 master'
+  'Admin session revocation drains the factor-free Google AAL2 master'
 );
 
 SELECT * FROM finish();

@@ -21,6 +21,7 @@ const operatorSnapshot = read(
 const pdfAccess = read('supabase/functions/issue-pdf-access-token/index.ts')
 const displayClient = read('src/display/displayRealtime.ts')
 const displayPage = read('src/pages/DisplayPage.tsx')
+const displayView = read('src/components/DisplayView/DisplayView.tsx')
 const displayLauncher = read('src/pages/admin/useAdminDisplayLauncher.ts')
 const lecturePage = read('src/pages/LecturePage.tsx')
 const lockOrderRegression = read('scripts/test-phase7-28b-lock-order.mjs')
@@ -350,6 +351,13 @@ test('Admin coalesces deltas, orders terminal messages and Display uses a privat
   assert.doesNotMatch(
     lecturePage,
     /subscribeClaimedDisplayRealtimeSession|displayRealtime/,
+  )
+})
+
+test('Display keeps an explicit exit control inside the fullscreen element', () => {
+  assert.match(
+    displayView,
+    /ref=\{presentationRef\}[\s\S]*isPresentationFullscreen[\s\S]*display-fullscreen-exit[\s\S]*全画面を終了/,
   )
 })
 

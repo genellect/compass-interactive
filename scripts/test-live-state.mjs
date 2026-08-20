@@ -11,6 +11,9 @@ import {
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
   normalizeLiveSyncPathname,
+  STUDENT_LIVE_SYNC_INITIAL_JITTER_MS,
+  STUDENT_LIVE_SYNC_INTERVAL_MS,
+  STUDENT_LIVE_SYNC_JITTER_MS,
 } from '../src/lib/liveSync.ts'
 import {
   createOptimisticComment,
@@ -90,6 +93,10 @@ assert.equal(getLiveSyncBackoffDelay({ failureCount: 3 }), 30_000)
 assert.equal(getLiveSyncBackoffDelay({ failureCount: 99 }), 30_000)
 assert.equal(getLiveSyncJitter(-1), 0)
 assert.equal(getLiveSyncJitter(1), 1_000)
+assert.equal(getLiveSyncJitter(1, 5_000), 5_000)
+assert.equal(STUDENT_LIVE_SYNC_INTERVAL_MS, 5_000)
+assert.equal(STUDENT_LIVE_SYNC_INITIAL_JITTER_MS, 5_000)
+assert.equal(STUDENT_LIVE_SYNC_JITTER_MS, 0)
 assert.equal(
   getHiddenLiveSyncDelay({ elapsedHiddenMs: 0, hiddenSyncCompleted: false }),
   30_000,
@@ -177,6 +184,36 @@ assert.equal(
   context.match(/useAdaptiveLiveSync\(/g)?.length,
   1,
   'Only one adaptive live-sync loop may be mounted.',
+)
+assert.match(
+  context,
+  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,120}STUDENT_LIVE_SYNC_INTERVAL_MS/,
+  'The student surface must keep the established five-second request envelope.',
+)
+assert.match(
+  context,
+  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
+  'Student phases must be spread across the five-second window without adding requests.',
+)
+assert.match(
+  context,
+  /runImmediately:\s*normalizedPathname\s*===\s*'\/lecture'/,
+  'The first student refresh must land inside the initial five-second phase window.',
+)
+assert.match(
+  context,
+  /visibilityJitterMs:[\s\S]{0,100}normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,100}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
+  'Visible student tabs must re-enter a distributed five-second phase window.',
+)
+assert.match(
+  adaptiveSyncHook,
+  /scheduleSync\(\s*getLiveSyncJitter\(Math\.random\(\), visibilityJitterMs\)/,
+)
+assert.match(adaptiveSyncHook, /Math\.max\(backoffDelay - completedRequestMs, 0\)/)
+assert.match(
+  adaptiveSyncHook,
+  /const syncStartedAt = Date\.now\(\)[\s\S]*scheduleForegroundSync\(syncStartedAt\)/,
+  'Successful foreground request time must be included inside the five-second cadence.',
 )
 assert.match(context, /liveSnapshotInFlightRef/)
 assert.match(context, /canShareInFlightRequest/)
