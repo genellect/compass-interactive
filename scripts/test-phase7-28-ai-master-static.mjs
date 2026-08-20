@@ -175,6 +175,14 @@ assert.match(localBrowser, /登録済みのこのブラウザで許可します/
 assert.match(localBrowser, /getByLabel\('個人AI PIN'\)\)\.toHaveCount\(0\)/)
 assert.match(
   localBrowser,
+  /const startResponsePromise = page\.waitForResponse[\s\S]*?\/functions\/v1\/manage-lectures[\s\S]*?body\.action === 'start'[\s\S]*?getByRole\('button', \{ name: '開始', exact: true \}\)\.click\(\)[\s\S]*?await startResponsePromise[\s\S]*?toContainText\('受付中'\)/,
+)
+assert.match(
+  localBrowser,
+  /select\('id,status'\)[\s\S]*?status\)\.toBe\('open'\)/,
+)
+assert.match(
+  localBrowser,
   /route\.fetch\(\)[\s\S]*?route\.fulfill\(\{[\s\S]*?status: 200[\s\S]*?ok: false[\s\S]*?code: 'request_failed'/,
 )
 assert.match(

@@ -61,17 +61,35 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   const lectureRow = page
     .locator('.lecture-admin-row')
     .filter({ hasText: title })
+  const startResponsePromise = page.waitForResponse((response) => {
+    const request = response.request()
+    if (
+      new URL(response.url()).pathname !== '/functions/v1/manage-lectures' ||
+      request.method() !== 'POST' ||
+      response.status() !== 200
+    ) {
+      return false
+    }
+    try {
+      const body = request.postDataJSON() as Record<string, unknown>
+      return body.action === 'start'
+    } catch {
+      return false
+    }
+  })
   await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
+  await startResponsePromise
   await expect(lectureRow).toContainText('受付中')
   await page.locator('#teacher-workspace-ai-tab').click()
 
   const { data: lecture, error: lectureError } = await service
     .from('lecture_sessions')
-    .select('id')
+    .select('id,status')
     .eq('title', title)
     .single()
   expect(lectureError).toBeNull()
   expect(lecture?.id).toBeTruthy()
+  expect(lecture?.status).toBe('open')
   const lectureId = lecture!.id
 
   const rememberedBeginRequestIds: string[] = []

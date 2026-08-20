@@ -92,12 +92,14 @@ assert.match(manageLectures, /target_action: action/)
 assert.match(manageLectures, /target_action: body\.action/)
 assert.doesNotMatch(manageLectures, /from\('lecture_sessions'\)\s*\.insert/)
 assert.doesNotMatch(manageLectures, /transition_at:\s*new Date/)
+assert.match(
+  adminRepository,
+  /let response = await invokeEdgeFunction<ManageLecturesResponse>[\s\S]*?request\.action !== 'list'[\s\S]*?providerAttemptIsAmbiguous\(response\.error\)[\s\S]*?response = await invokeEdgeFunction<ManageLecturesResponse>[\s\S]*?const \{ data, error \} = response/,
+  'ambiguous lecture mutations must retry exactly once with the reserved request ID while list and durable errors remain single-attempt',
+)
 assert.match(manageAiControl, /manage_google_admin_ai_control_v1/)
 assert.match(manageAiControl, /target_action: semanticAction/)
-assert.match(
-  manageAiControl,
-  /provider_specific_authority_required/,
-)
+assert.match(manageAiControl, /provider_specific_authority_required/)
 assert.doesNotMatch(
   manageAiControl,
   /admin_start_lecture_ai_operation|admin_stop_lecture_ai_control|admin_heartbeat_realtime_caption_operation/,
