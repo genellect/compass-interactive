@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 
-const aiPin = process.env.TEST_GOOGLE_ADMIN_AI_PIN?.trim() ?? ''
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 
@@ -26,7 +25,6 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   page,
 }) => {
   test.setTimeout(120_000)
-  expect(aiPin).toMatch(/^\d{4}$/)
   expect(supabaseUrl).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):/)
   expect(serviceRoleKey).not.toBe('')
 
@@ -40,16 +38,6 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   })
 
   await installGoogleAdminSession(page)
-  await page.goto('/admin/settings')
-  await expect(page.getByRole('heading', { name: '教員管理' })).toBeVisible()
-  const pinSettings = page.locator('details').filter({
-    has: page.locator('summary', { hasText: 'AI PINの設定' }),
-  })
-  await pinSettings.locator('summary').click()
-  await pinSettings.getByLabel('現在の4桁AI PIN').fill(aiPin)
-  await pinSettings.getByRole('button', { name: '現在のPINで登録' }).click()
-  await expect(pinSettings).toContainText('このブラウザを登録しました。')
-
   await page.goto('/admin')
   await expect(
     page.getByRole('heading', { name: '講義を準備する' }),
@@ -92,31 +80,15 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   expect(lecture?.status).toBe('open')
   const lectureId = lecture!.id
 
-  const rememberedBeginRequestIds: string[] = []
-  const rememberedCompletionRequestIds: string[] = []
+  const sessionAdmissionPayloads: Record<string, unknown>[] = []
   await page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
     const payload = route.request().postDataJSON() as Record<string, unknown>
-    if (payload.action === 'beginBrowserAssertion') {
-      rememberedBeginRequestIds.push(String(payload.requestId ?? ''))
-      if (rememberedBeginRequestIds.length === 1) {
-        // Let the server commit the challenge, then replace only its response
-        // with the same retryable envelope used for an ambiguous transport
-        // failure. This keeps the browser console clean on every engine while
-        // proving that the next CTA supersedes the committed challenge.
-        await route.fetch()
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            ok: false,
-            code: 'request_failed',
-            message: 'The browser assertion response could not be confirmed.',
-          }),
-        })
-        return
-      }
-    } else if (payload.action === 'completeBrowserMasterAdmission') {
-      rememberedCompletionRequestIds.push(String(payload.requestId ?? ''))
+    if (payload.action === 'authorizeMasterWithAal2Session') {
+      sessionAdmissionPayloads.push(payload)
     }
     await route.continue()
   })
@@ -134,27 +106,26 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
 
   const master = page.getByTestId('ai-master-auth')
   await expect(master).toContainText('許可だけではAPIは呼び出されません')
-  await expect(master).toContainText(
-    '登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。',
-  )
   await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
+  await expect(master).not.toContainText('認証アプリ')
   await expectNoSeriousAccessibilityViolations(page)
   const authorizeButton = master.getByRole('button', {
-    name: '字幕も含めて許可',
+    name: 'AI機能を有効にする',
   })
   await expect(authorizeButton).toBeEnabled()
   await authorizeButton.focus()
   await expect(authorizeButton).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(master).toContainText(
-    '通信結果を確認できませんでした。同じ許可ボタンでもう一度確認できます。',
-  )
-  await expect(master.getByLabel('個人AI PIN')).toHaveCount(0)
-  await authorizeButton.click()
   await expect(master).toContainText('許可済み')
-  expect(rememberedBeginRequestIds).toHaveLength(2)
-  expect(new Set(rememberedBeginRequestIds).size).toBe(2)
-  expect(rememberedCompletionRequestIds).toHaveLength(1)
+  expect(sessionAdmissionPayloads).toHaveLength(1)
+  expect(sessionAdmissionPayloads[0]).toMatchObject({
+    action: 'authorizeMasterWithAal2Session',
+    lectureSessionId: lectureId,
+    requestedScope: 'all_including_captions',
+  })
+  expect(sessionAdmissionPayloads[0]).not.toHaveProperty('pin')
+  expect(sessionAdmissionPayloads[0]).not.toHaveProperty('credentialToken')
+  expect(sessionAdmissionPayloads[0]).not.toHaveProperty('publicKeyJwk')
 
   await expect
     .poll(async () => {
@@ -166,6 +137,22 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
       return count
     })
     .toBe(1)
+  const { data: masterRows, error: masterRowsError } = await service
+    .from('lecture_ai_master_authorizations')
+    .select(
+      'unlock_method,unlock_factor_id,unlock_factor_version,browser_credential_id',
+    )
+    .eq('lecture_session_id', lectureId)
+    .eq('status', 'active')
+  expect(masterRowsError).toBeNull()
+  expect(masterRows).toEqual([
+    {
+      browser_credential_id: null,
+      unlock_factor_id: null,
+      unlock_factor_version: null,
+      unlock_method: 'google_aal2_session',
+    },
+  ])
   const { count: grantCountAfterAuthorization } = await service
     .from('ai_billing_grants')
     .select('id', { count: 'exact', head: true })
@@ -236,4 +223,173 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   expect(paidRequests).toEqual([])
 
   await safety.assertClean()
+})
+
+test('503 master status keeps AI readiness blocked and cannot reach authorization', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  expect(supabaseUrl).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):/)
+
+  const safety = await installBrowserSafetyMonitor(page)
+  let masterStatusRequests = 0
+  let sessionAdmissionRequests = 0
+  await page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>
+    if (payload.action === 'masterStatus') {
+      masterStatusRequests += 1
+      await route.fulfill({
+        contentType: 'application/json',
+        json: {
+          code: 'feature_disabled',
+          message: 'This Admin control is not enabled.',
+        },
+        status: 503,
+      })
+      return
+    }
+    if (payload.action === 'authorizeMasterWithAal2Session') {
+      sessionAdmissionRequests += 1
+    }
+    await route.continue()
+  })
+
+  await installGoogleAdminSession(page)
+  await page.goto('/admin')
+  await expect(
+    page.getByRole('heading', { name: '講義を準備する' }),
+  ).toBeVisible()
+
+  const title = `AI状態503 E2E ${Date.now()}`
+  await page.getByLabel('講義タイトル').fill(title)
+  await page.getByRole('button', { name: '新しい講義を作成' }).click()
+  const lectureRow = page
+    .locator('.lecture-admin-row')
+    .filter({ hasText: title })
+  await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
+  await expect(lectureRow).toContainText('受付中')
+  await page.locator('#teacher-workspace-ai-tab').click()
+
+  const aiPanel = page.locator('.ai-readiness-panel')
+  await expect.poll(() => masterStatusRequests).toBeGreaterThan(0)
+  await expect(aiPanel.locator('.panel-heading .support-state')).toHaveText(
+    '停止中',
+  )
+  await expect(
+    aiPanel.locator('.panel-heading .support-state'),
+  ).not.toHaveClass(/is-ready/)
+  const authorizeButton = page
+    .getByTestId('ai-master-auth')
+    .getByRole('button', { name: 'AI機能を有効にする' })
+  await expect(authorizeButton).toBeDisabled()
+  await authorizeButton.evaluate((button: HTMLButtonElement) => button.click())
+  expect(sessionAdmissionRequests).toBe(0)
+
+  await safety.assertClean()
+})
+
+test('lost AI admission response does not poison revoke and one-click re-enable', async ({
+  page,
+}) => {
+  test.setTimeout(180_000)
+  expect(supabaseUrl).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):/)
+  expect(serviceRoleKey).not.toBe('')
+  const service = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: false,
+    },
+  })
+
+  await installGoogleAdminSession(page)
+  await page.goto('/admin')
+  await expect(
+    page.getByRole('heading', { name: '講義を準備する' }),
+  ).toBeVisible()
+
+  const title = `AI応答喪失E2E ${Date.now()}`
+  await page.getByLabel('講義タイトル').fill(title)
+  await page.getByRole('button', { name: '新しい講義を作成' }).click()
+  const lectureRow = page
+    .locator('.lecture-admin-row')
+    .filter({ hasText: title })
+  await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
+  await expect(lectureRow).toContainText('受付中')
+  await page.locator('#teacher-workspace-ai-tab').click()
+
+  const { data: lecture, error: lectureError } = await service
+    .from('lecture_sessions')
+    .select('id')
+    .eq('title', title)
+    .single()
+  expect(lectureError).toBeNull()
+  expect(lecture?.id).toBeTruthy()
+
+  let dropFirstAdmissionResponse = true
+  const admissionRequestIds: string[] = []
+  await page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>
+    if (payload.action !== 'authorizeMasterWithAal2Session') {
+      await route.continue()
+      return
+    }
+    expect(payload.requestId).toEqual(expect.any(String))
+    admissionRequestIds.push(payload.requestId as string)
+    if (!dropFirstAdmissionResponse) {
+      await route.continue()
+      return
+    }
+    dropFirstAdmissionResponse = false
+    const committedResponse = await route.fetch()
+    expect(committedResponse.status()).toBe(200)
+    await route.abort('connectionfailed')
+  })
+
+  const master = page.getByTestId('ai-master-auth')
+  const enableButton = master.getByRole('button', {
+    name: 'AI機能を有効にする',
+  })
+  await expect(enableButton).toBeEnabled()
+  await enableButton.click()
+  await expect(master).toContainText('同じ許可ボタンでもう一度確認できます')
+  await expect
+    .poll(async () => {
+      const { count } = await service
+        .from('lecture_ai_master_authorizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('lecture_session_id', lecture!.id)
+        .eq('status', 'active')
+      return count
+    })
+    .toBe(1)
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(master).toContainText('許可済み')
+  expect(admissionRequestIds).toHaveLength(1)
+
+  await master.getByRole('button', { name: 'すべて停止' }).click()
+  await expect(master).toContainText('未許可')
+  await master.getByRole('button', { name: 'AI機能を有効にする' }).click()
+  await expect(master).toContainText('許可済み')
+  expect(admissionRequestIds).toHaveLength(2)
+  expect(admissionRequestIds[1]).not.toBe(admissionRequestIds[0])
+  await expect
+    .poll(async () => {
+      const { count } = await service
+        .from('lecture_ai_master_authorizations')
+        .select('id', { count: 'exact', head: true })
+        .eq('lecture_session_id', lecture!.id)
+        .eq('status', 'active')
+      return count
+    })
+    .toBe(1)
 })

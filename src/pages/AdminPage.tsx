@@ -44,6 +44,7 @@ import {
 } from './admin/adminPageViewModel'
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceSession'
+import { usePublicationDisplayReadback } from './admin/usePublicationDisplayReadback'
 import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
 import {
   PUBLISHER_SESSION_STORAGE_KEY,
@@ -126,10 +127,6 @@ export function AdminPage({
   const [pdfDisplayName, setPdfDisplayName] = useState('')
   const [pdfDownloadEnabled, setPdfDownloadEnabled] = useState(true)
   const [pdfPublishing, setPdfPublishing] = useState(false)
-  const [
-    pendingPublicationDisplayRefreshId,
-    setPendingPublicationDisplayRefreshId,
-  ] = useState<string | null>(null)
   const [workspaceView, setWorkspaceView] =
     useState<TeacherWorkspaceView>('setup')
   const [aiMasterActive, setAiMasterActive] = useState(false)
@@ -165,6 +162,14 @@ export function AdminPage({
       clearLocalWorkspace: clearLocalAdminSession,
       onAdminLogout,
     })
+  const { onPublicationActivated, refreshAdminWorkspace } =
+    usePublicationDisplayReadback({
+      activeLectureSessionId,
+      liveDisplayState,
+      refreshDisplayState,
+      refreshLectures,
+      setPublisherMessage,
+    })
   const {
     abortInterruptedPdfPublication,
     pdfInterruptedPublicationId,
@@ -182,7 +187,7 @@ export function AdminPage({
     pdfDisplayName,
     pdfDownloadEnabled,
     pdfFile,
-    onPublicationActivated: setPendingPublicationDisplayRefreshId,
+    onPublicationActivated,
     requiredDocumentId: activeJournalClubRun?.expectedDocumentId ?? null,
     refreshAdminPdfDocuments,
     setPdfDisplayName,
@@ -717,36 +722,6 @@ export function AdminPage({
     isAuthenticated,
     liveDisplayState,
     liveDisplayStateError,
-  ])
-
-  useEffect(() => {
-    if (
-      !pendingPublicationDisplayRefreshId ||
-      pendingPublicationDisplayRefreshId !== activeLectureSessionId
-    ) {
-      return
-    }
-
-    let active = true
-    void refreshDisplayState()
-      .then(() => {
-        if (active) setPendingPublicationDisplayRefreshId(null)
-      })
-      .catch(() => {
-        if (!active) return
-        setPendingPublicationDisplayRefreshId(null)
-        setPublisherMessage(
-          '資料は公開済みですが、最新の表示状態を読み込めませんでした。「再読み込み」を押してください。',
-        )
-      })
-
-    return () => {
-      active = false
-    }
-  }, [
-    activeLectureSessionId,
-    pendingPublicationDisplayRefreshId,
-    refreshDisplayState,
   ])
 
   async function updateDisplayState(
@@ -1319,7 +1294,7 @@ export function AdminPage({
               void duplicateLecture(lectureSessionId)
             }
             onEndsAtChange={setNewLectureEndsAt}
-            onRefresh={() => void refreshLectures()}
+            onRefresh={() => void refreshAdminWorkspace()}
             onSelect={selectAdminLecture}
             onStart={(lectureSessionId) =>
               void updateLectureStatus('start', lectureSessionId)

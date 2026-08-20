@@ -4,663 +4,187 @@
 
 ### LET EVERYTHING MOVE.
 
-**リアルタイム講義参加・資料同期・教育AI支援プラットフォーム**
-
-COMPASS Interactiveは、講義資料、コメント、投票、字幕、AI支援、教室ディスプレイを、単一の講義ライフサイクルへ統合する講義支援システムです。
-
-[![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%2B_Auth-3FCF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-[![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages_%2B_Workers_%2B_R2-F38020?logo=cloudflare&logoColor=white)](https://www.cloudflare.com/)
-[![Playwright](https://img.shields.io/badge/E2E-Playwright-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
-[![Open in Codespaces](https://img.shields.io/badge/Open_in-GitHub_Codespaces-24292F?logo=github)](https://codespaces.new/genellect/compass-interactive?quickstart=1)
-[![Dev Container Contract](https://github.com/genellect/compass-interactive/actions/workflows/devcontainer-contract.yml/badge.svg?branch=main)](https://github.com/genellect/compass-interactive/actions/workflows/devcontainer-contract.yml)
+**講義資料、参加、教室表示、教育AIを一つの講義状態で動かすリアルタイム講義基盤**
 
 [プロダクト紹介](https://compass-official.pages.dev/INTRO_Interactive/) ·
 [デモ](https://compass-interactive.pages.dev/demo) ·
-[開発者向け解説](https://compass-official.pages.dev/INTRO_Interactive/developers/) ·
-[Cloud-first Development](#cloud-first-development) ·
-[アーキテクチャ](#アーキテクチャ) ·
-[品質保証](#品質保証)
+[開発者向け解説](https://compass-official.pages.dev/INTRO_Interactive/developers/)
 
 </div>
 
 ---
 
-## 概要
+## COMPASS Interactiveとは
 
-講義中の情報は、スライド、PDF、口頭説明、質問、投票、字幕、生成AIといった複数の経路へ分散します。COMPASS Interactiveは、それらを共通の講義状態に接続し、教員・学生・教室ディスプレイ・講義後の復習までを、切れ目のない一つの体験として設計します。
+COMPASS Interactiveは、大学講義や研究会で扱うPDF資料、学生コメント、投票、字幕、要約、教室ディスプレイを、共通の講義ライフサイクルへ接続するWebアプリケーションです。
 
-学生は6桁の講義コードで参加し、教員が提示する資料ページを追いながら、コメント、投票、字幕、要点整理へアクセスできます。教員は、講義進行、参加機能、資料公開、AI処理を単一の管理画面から制御し、終了後の学習内容を読み取り専用のReviewへ引き継ぎます。
+教員は資料の公開から講義開始、スライド進行、参加機能、AI支援、終了までを一つのワークスペースで操作します。学生は講義コードで参加し、アカウントを作成せずに資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。教室ディスプレイと講義後のReviewも、同じ講義状態を参照します。
 
-既存の授業へ機能を積み重ねただけのツールではありません。**教員・学生・教室・講義後の学習を、共通のライフサイクルと明確な信頼境界の上で再設計したプロダクト**です。
-
-本リポジトリでは、次の実装・検証・運用資産を、一つの変更単位として一貫して管理します。
-
-- React / TypeScriptによるStudent・Admin・Display・Archiveの各Surface
-- Supabase Auth、PostgreSQL、RPC、Row Level Security
-- Supabase Edge Functionsによる管理操作と外部APIオーケストレーション
-- Cloudflare WorkersとPrivate R2による資料・Archive配信
-- OpenAI APIによる字幕、資料分析、要約、参考回答
-- ローカルPublisherによるPDF公開の互換・復旧経路
-- Database migration、CI、E2E、セキュリティ検証、運用ドキュメント
-
-COMPASS公式Webとは、デプロイ、データベース、秘密情報のいずれも共有しない、独立したプロダクトです。
-
-## Cloud-first Development
-
-> [!IMPORTANT]
-> **GitHubを正本とし、通常の開発はCodespacesまたはCodex Cloudで行います。** Windows、macOS、ブラウザ、VS Code、Codex、Claude Code、GitHub Copilotの入口が変わっても、同じDev Container、同じlockfile、同じdoctor、同じCIを使用します。ホストPC固有のNodeやDocker構成、平文の`.env.local`は開発品質の前提にしません。
-
-### 最短起動 — secrets不要の独立Demo
-
-1. **[Open in GitHub Codespaces](https://codespaces.new/genellect/compass-interactive?quickstart=1)** を開く。
-2. `postCreateCommand`の完了を待つ。Node、npm/pnpm CLI、Docker、Compose、GitHub CLI、Copilot CLI、Playwright、Supabase CLIが自動で揃います。
-3. ターミナルで次を実行する。
-
-```bash
-npm run dev:doctor
-npm run cloud:doctor
-npm run dev:cloud
+```text
+資料を公開 → 講義を開始 → 学生が参加 → 資料・コメント・投票・字幕を同期
+             → 教員がAI支援を選択 → 講義を終了 → 読み取り専用Review
 ```
-
-ポート`5173`が自動転送されます。`/demo`はSupabase、OpenAI、Cloudflareへ接続しないため、秘密情報なしでUI開発、ブラウザ実行、E2Eを開始できます。
-
-| Contract                    | Pinned / canonical value                   |
-| --------------------------- | ------------------------------------------ |
-| Node.js                     | `22.22.0`                                  |
-| Package manager             | **npm + `package-lock.json`**（正本）      |
-| Optional pnpm CLI           | `11.20.0`（lockfile移行はしない）          |
-| Docker / Compose            | `29.7.1` / `5.4.0`（リポジトリ専用daemon） |
-| GitHub CLI / Copilot CLI    | `2.97.0` / `1.0.78`                        |
-| Browser tooling             | Playwright + Chromium + WebKit             |
-| Local backend               | Supabase CLI + isolated Docker stack       |
-| Workspace validation        | `npm run dev:doctor`                       |
-| Non-Docker cloud validation | `npm run cloud:doctor`                     |
-| Repository gate             | `npm run cloud:check`                      |
-| Dependency security         | `npm run security:audit`（high以上をfail） |
-
-### 開発サーフェス
-
-| Entry point                 | 推奨用途                    | セットアップ                               |
-| --------------------------- | --------------------------- | ------------------------------------------ |
-| **GitHub Codespaces**       | ブラウザ、別PC、チーム参加  | リンクを開くだけ                           |
-| **Codex Cloud**             | Codexの主要実装・検証環境   | `.codex/setup.sh`をenvironment setupへ登録 |
-| **VS Code Dev Containers**  | Dockerを使うWindows / macOS | `Reopen in Container`                      |
-| **Dev Container CLI**       | 自動化、CI、他エージェント  | `./scripts/devcontainer.sh up`             |
-| **ChatGPT / GitHub mobile** | Codex進捗、PR、CIの監督     | Codex RemoteとGitHub通知を利用             |
-
-COMPASSとは別のDocker daemon、`node_modules`、npm cache、ユーザーcache、ローカルSupabase volumeを使用します。両リポジトリを同時に開いても、依存、データ、ポート、資格情報は共有しません。
-
-### Secrets and `.env.local`
-
-- 既存の秘密値は、GitHub Codespaces repository/user secretsまたはCodex Cloud environment secretsへ登録して注入します。新しい鍵を作ることは必須ではありません。
-- ローカルの`.env.local`をリポジトリ、Codespaceのファイル、PR、チャットへコピーしません。
-- `VITE_`はブラウザ公開可能な値だけに限定します。OpenAI API key、Supabase service-role key、PIN、R2 credential、signing secretはserver-side secretのまま扱います。
-- hosted Supabaseへの`link`、`db push`、Edge deployは通常開発では実行しません。完全なローカル統合環境は次の1コマンドで起動します。
-
-```bash
-bash .devcontainer/start-local-supabase.sh
-```
-
-完全な操作手順、Codex/Claude/Copilot共通運用、スマートフォン監督、secret登録、復旧手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。
-
-```mermaid
-flowchart LR
-    GitHub["Private GitHub repository\nsource of truth"] --> Workspace["Codespaces / Codex Cloud\nlocked Dev Container"]
-    Workspace --> Demo["Secret-free /demo"]
-    Workspace --> Local["Isolated local Supabase"]
-    Demo --> Gate["Type / lint / 75 non-live groups\nChromium + WebKit E2E"]
-    Local --> Gate
-    Gate --> PR["Commit / Pull Request / CI"]
-    PR --> Review["Browser / mobile review"]
-    Review --> GitHub
-```
-
----
-
-## 現在のリリース契約
-
-- Application version: `0.11.0`
-- Phase 0 through Phase 7.2を基礎契約とし、Phase 7.25〜7.28の追加機能をmainへexpand-firstで統合しています。Phase 7.29 PowerPoint連携はdefault-OFFの候補で、Native・Device・Human・activation Gateとは分離します。
-- Phase 6.7で、README、Architecture、Security、Data Policy、Roadmap、Runbookを正本文書として整備しました。
-- Phase 7.29Bのdormant配置は機能有効化や正式なProduction Gate合格を意味しません。次の正式な統合判定はPhase 7.33であり、Presenter有効化、Google Admin/AAL2、GitHub保護・公開監査、審査員用独立実環境、商用運用品質がすべて揃うまでHOLDです。
-- Phase 7.30A-B1は、個別Google Admin identity、Supabase TOTP AAL2、5分のdigest-only nonce、8時間絶対・30分無操作期限のopaque app sessionをsource/localへ実装しました。Google session発行の認可境界はDatabaseとEdgeの二重default-OFFで、Frontendの`VITE_PHASE7_30_ADMIN_IDENTITY=false`はUI露出のみを制御します。B1当時はlegacy Admin PINをdefault-ON compatibilityとして残していましたが、現在のE sourceからそのUI/flag/transportは削除されています。nonceは最初の成功で1 sessionだけを発行し、同一caller/session/JWTの完全一致retryだけが同じsessionを返します。8時間絶対・30分無操作期限もB1時点のhistorical implementation factです。
-- Phase 7.30B2のdefault-OFF database foundationとB2.2a identity/context hardeningはsource実装済みです。B2はAdmin sessionを`auth.sessions.created_at + 8時間`へ固定して30分idle失効を廃止し、personal AI PIN、AI policy、atomic rate/receipt、remembered-browser用nonce・public credential・one-time challenge、権限drain、lecture master provenanceのdatabase契約を追加しました。B2.2aはverified TOTP factor-setのlive hashに加え、Admin principalへapproved hash/version/countをtrust anchorとして保持し、approved/live/sessionの完全一致、completion RPCが書くpost-challenge JWT/AMR evidence、default-OFF session issue gateを新規Google session INSERTでも必須にします。変更時のreason付きsession/AI authority drain、action/request/session/factor-set/JWT/AMRとDB再計算するcanonical mutation-intentにboundしたsingle-use 5分control grant、PIN revoke/reset/profile RPCも追加しました。TOTP完了後に同じrequest IDでPIN/policy payloadを差し替えることはできません。移行前Google sessionや既存factor-setは推測backfillせず、sessionは`totp_factor_set_migration`で失効しprincipal approvalはunboundのままです。既存setの採用はEdge未配線・別gate default OFF・Google issuance OFF時だけのservice-role/operator RPCで、Hosted/Human HOLDです。private table、public wrapper、fixed-search-path helperはbrowserから直接利用できずservice-role-onlyです。全gateはdefault OFFで、runtime/Hosted/Human verificationはHOLDです。
-- Phase 7.30B2.2bは、専用`admin-ai-unlock` Edge、Admin専用client transport、personal AI PIN lifecycle、WebCrypto P-256のnon-extractable private keyをIndexedDBだけに保持するopt-in remembered-browser、approved TOTP factor add/removeのrare-control transitionをdefault-OFF sourceとして追加しました。raw 4桁PINはbounded TLS bodyでのみEdgeへ渡り、browser storage・log・audit・errorには残りません。factor変更は既存approved setのfresh proof、canonical intent、最大30分かつ8時間session cap内のhash-only recovery credential、expected post-setをboundし、完了時にanchor更新と旧session/AI authority drainを同一DB transactionで行います。factor UIはAI gateや`can_use_ai`から独立し、通常講義・通常PIN verifyにはfresh TOTPを追加しません。remembered-browser assertionはdormant proofまででlecture masterやpaid provider authorityを発行しません。`VITE_PHASE7_30_ADMIN_AI_UNLOCK=false`、`VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION=false`を含む全gateはdefault OFFです。Chromium/WebKitのlocal browser storage E2EはPASS、Docker/Local Edge/Hosted/Human/activationはHOLDです。
-- Phase 7.30Dは、owner専用の管理台帳をGoogle Admin workspaceへdefault-OFFで追加しました。招待、role/status、AI利用権、個別・全session失効は環境単位の直列化、5分のTOTP control grant、厳密なrequest binding、last-owner保護、append-only receipt/auditを同一transactionで処理します。招待tokenはEdgeだけがretry-stableに導出し、Database・audit・browser storageにはhash以外を残しません。状態確認、権限縮小、session失効はadmission flag OFFでも維持します。fresh migration、pgTAP、2接続競合、populated upgrade、Local Edge、desktop/mobile Chromium/WebKitとexact-head CIはPASS済みです。Hosted/Human activationは引き続きHOLDです。
-- Phase 7.30Eは、Admin application transportをGoogle app sessionだけへ収束し、共有Admin PINのUI、issuer、storage、flags、`verify-admin-pin`と`authorize-ai-start`をsourceから撤去します。残る19本の運用Admin Edgeはlegacy wire fieldを明示拒否し、Google verifierとclosed policy matrixだけを使います。既存講義ownershipは推測せず、operator-reviewed mappingからだけclaimできるappend-only evidenceと、SERIALIZABLE・NOWAIT・同一transaction再検証による不可逆Google-only database cutoverをdormant migrationとして追加します。migration適用だけではgate/session/ownershipを変更しません。Hosted旧Edgeの停止、deployment evidence digest、secret撤去、operator cutover実行、real-account evidenceはHOLDです。personal AI PINは維持し、`BILLING_PIN`互換RPCの最終撤去は別の後続境界です。
-- MFAはGoogle Authenticator等に対応するSupabase標準TOTPだけを使い、メールMFAや独自MFAを追加しません。Admin app sessionは講義中に周期的なTOTPを要求しません。5分fresh TOTPはowner/principal、role/status、TOTP factor、environment AI policy、global revokeと、AI PIN factorのenrollment/rotation/revoke/resetという稀なcontrol-plane変更だけに使います。login直後かつfactor履歴がない初回AI PIN enrollmentはlogin時TOTPが既にfreshなので追加promptを出しません。通常の講義操作、緊急停止、AI PIN verification、remembered-browser、AI master、scope/cost escalation、個別AI callではfresh TOTPを要求しません。
-- personal AI PINは講義masterごとに一度だけ確認し、個別API callごとには求めません。新しい講義または明示的なscope/cost拡張だけが新しいAI unlock proofを必要とし、AI PINのrotate/revoke/resetはAI authorityをdrainしてもAdmin sessionを維持します。TOTP factor-set fingerprintとrare-control identity EdgeはB2.2a、raw 4桁のEdge peppered-HMAC経路、実browser CryptoKey/ES256 dormant assertion、TOTP factor-set transitionはB2.2bでsource実装済みです。C1はprivate optional-row lecture ownershipとPIN/browser proofからdormant masterまでのatomic admissionを実装し、既存講義を推測backfillせずchild/provider authorityをC2へfenceします。C2は75 actionのclosed policy matrixとGoogle共通verifierを全Admin surfaceへ追加しました。Eでは削除した`authorize-ai-start`を除く19本の運用EdgeをGoogle-onlyへ収束します。Summary runはprovider呼出ししないscheduler controlとし、Summary window、資料分析、Academic answer、Realtime字幕は実際のdispatchごとにshort-lived single-use childを発行・consumeします。通常操作は一度のGoogle＋TOTPログインを継続し、personal AI PINは講義masterの許可時だけ使用します。AI Passkey、実Google OAuth、Hosted/Human evidence、database cutover実行とProduction activationはHOLDです。今回のsource実装に固定費は発生しません。
-- Phase 7.30E sourceは`ADMIN_PIN`の現行application経路を撤去します。database verifierとlegacy sessionを不可逆にfenceするoperator cutoverはHosted旧Edge停止の独立証拠後だけ実行し、失効済みhistorical rowはFK/audit用途に残せます。personal AI PIN E2E後は`BILLING_PIN`互換RPCも別境界でProduction前に撤去し、rollbackは共有PINではなくGoogle-only immutable revisionとoperator owner recoveryを使います。
-- Phase 7.30F source/local readiness candidateは、staging Hosted/Human evidenceのclosed schema、秘密値を拒否するpure-local validator、default `HOLD`、read-only database preflight、承認分離とGoogle-only rollback契約を追加します。判定語は`SOURCE_READY`、`HOLD`、`READY_FOR_SEPARATE_HOSTED_EXECUTION`だけで、repository CIはHosted実行やProduction合格を宣言しません。実OAuth/provider設定、real account/TOTP/recovery、E cutover、`ADMIN_PIN`削除、historical billing 6経路のretirement、`BILLING_PIN`削除、canary/activationはそれぞれ別承認までHOLDです。
-- コンテスト週の優先経路は、正式Phase 7.33とは別の**Lecture Cycle Production Candidate**です。GitHubはprivateのままexact-SHA source packageを非公開提出し、50 active hoursをCloud/source、staging identity、講義UX/AI、reliability/rollbackへ配分します。既存Admin・Student・Display・Review・PDF・AIを停止または縮小して合格させることは禁止し、Productionはstagingと別承認canaryが完了するまで現行immutable revisionを維持します。商用300人SLA、multi-tenant、Presenter実機、public-source、法務/DPA/GAと正式Phase 7.33は後段HOLDです。
-- 将来の審査員アクセスは、新しい特権ロールやモックではなく、独立した審査環境へ本人のGoogleアカウントを招待し、通常の`instructor + can_use_ai`として実講義UXを提供します。初期版はGoogle＋TOTP AAL2と本人専用4桁AI PINで講義単位のAI一括有効化CTAを使え、ownerの都度操作や旧API PIN入力は不要です。任意のブラウザ記憶では4桁自体を保存せず、取消可能なブラウザプロファイル証明だけを保持します。専用AI Passkeyは後続Gateで追加します。課金安全性はサーバー側の権限、講義状態、scope、予算、同時実行、冪等性で担保し、owner権限、他者データ、秘密値へのアクセスは与えません。
-- すべての追加機能はdefault-OFFを基本とし、Database、Edge、Worker、Frontend、Human E2Eを段階的に検証します。
-
-詳細なPhase履歴は[`docs/CHANGELOG.md`](docs/CHANGELOG.md)、現在の計画と合格基準は[`docs/ROADMAP.md`](docs/ROADMAP.md)を参照してください。
-
----
 
 ## 一つの講義、四つの体験
 
-| Surface              | 対象           | 体験と責務                                                                        |
-| -------------------- | -------------- | --------------------------------------------------------------------------------- |
-| **Student**          | 学生           | 講義コード参加、PDFページ同期、コメント、リアクション、投票、字幕、AI要点、Review |
-| **Admin**            | 教員           | 講義作成、進行制御、資料公開、コメント・投票・字幕管理、AI実行と承認、Archive管理 |
-| **Display**          | 教室           | PDF、講義タイトル、QRコード、字幕の全画面表示と低遅延同期                         |
-| **Archive / Review** | 講義後の参加者 | 終了済み講義の資料と学習情報を、安全な読み取り専用状態で再閲覧                    |
+| Surface      | 対象           | 主な体験                                                                    |
+| ------------ | -------------- | --------------------------------------------------------------------------- |
+| **Educator** | 教員           | 講義作成、PDF公開、スライド操作、コメント・投票管理、字幕・AI支援、講義終了 |
+| **Student**  | 学生           | 講義コード参加、資料追従、コメント・リアクション、投票、字幕、要点確認      |
+| **Display**  | 教室           | 資料、講義タイトル、参加QR、字幕の全画面表示と低遅延同期                    |
+| **Review**   | 講義後の参加者 | 終了済み講義の資料と公開済み学習情報の読み取り専用閲覧                      |
 
-四つのSurfaceは独立したアプリケーションではなく、同一の講義ライフサイクルと権限モデルを共有します。そのうえで、Admin、Student、Displayには個別の実行主体と資格情報を割り当て、UI上の役割分担をそのままセキュリティ境界として成立させています。
+各Surfaceは別々の状態を持たず、サーバーが管理する講義、表示ページ、公開範囲、終了時刻を共有します。一方、Educator、Student、Displayには異なる認証主体と権限を与え、UI上の役割分担をデータアクセス境界にも反映しています。
 
-### Student
+## 技術的な特徴
 
-- 6桁の講義コードによる参加
-- 教員が提示しているPDFページとの自動同期
-- 匿名または任意のニックネームによるコメント
-- コメントへのリアクション
-- ライブ投票への回答
-- 配信中のみ表示されるリアルタイム字幕
-- 資料ガイド、講義要点、重要ページ、重要語、理解を深める問い
-- 5分単位の要点とクラス全体の動き
-- 終了講義の読み取り専用Review
+### Server-authoritative lecture lifecycle
 
-### Admin
+講義の所有者、状態、終了期限、投稿可否、AI実行可否はPostgreSQLとEdge Functionsが判定します。ブラウザ時刻や画面上の表示だけを根拠に重要操作を許可しません。作成、開始、終了、緊急停止は冪等な状態遷移として扱い、終了後の投稿、投票、資料更新、AI開始をサーバー側で拒否します。
 
-- 個別Google identity＋Supabase TOTP AAL2＋追跡可能なGoogle Admin app session。共有Admin PINの現行UI／issuer／wire transportはPhase 7.30E sourceから撤去済み
-- 講義の作成、開始、終了、再利用
-- PDF公開と表示ページ制御
-- コメント管理とライブ投票の作成・進行
-- 字幕配信の明示的な開始・停止
-- 資料分析、投票案、講義要約、参考回答の生成
-- AI出力の承認、訂正、非表示
-- 参加状況と講義進行の概算指標
-- 講義終了後のArchive管理
+### Versioned snapshotと選択的Realtime
 
-### Classroom Display
+学生画面は、コメント、リアクション、投票、表示中の資料、字幕、要点をversioned snapshotから差分取得します。講義中のコメント伝播は5秒以内を目標とするforeground cadenceを用い、非表示タブでは周期を延長します。Displayと字幕など低遅延が必要な経路だけにprivate Realtimeを使用し、購読障害時はsnapshotへ戻ります。
 
-- Adminセッションから分離されたDisplay専用セッション
-- PDF、講義タイトル、参加用QRコード、字幕の全画面表示
-- 対象Displayだけに限定した低遅延更新
-- Realtime障害時のsnapshot復旧
-- 学生同期の負荷を増やさない独立した更新経路
+この構成により、機能ごと・学生ごとにRealtimeチャネルを増やさず、同期速度と参加人数に対する負荷の予測可能性を両立します。
 
-### Independent Demo
+### Private PDF publication
 
-`/demo`はSupabase、OpenAI、Cloudflare R2へ接続せず、主要な講義体験を再現します。外部サービスへの書き込みや有料API呼び出しを伴わずに、デザインレビュー、導入説明、ブラウザE2Eを実行できます。
+PDF本体はPrivate Cloudflare R2へ保存し、Supabaseには講義とのbinding、SHA-256、byte数、ページ数、publication state、access versionなどのメタデータを保持します。ブラウザ公開は、事前検証、短命署名ticket、immutable upload、DB上の表示状態更新を経て完了します。
 
----
+学生とDisplayは同じdocument versionとpage stateを参照します。未完了objectや失効したticketを公開せず、PDF本文と認証・講義状態の保存境界を分離しています。
+
+### Explicit and budgeted AI execution
+
+AI支援は、リアルタイム字幕、資料分析、投票案、講義要約、学術情報を参照した回答を対象とします。教員がGoogleアカウントとTOTPによるAAL2認証を完了した後、講義単位のAI利用を一つのCTAで許可できます。通常の講義操作でTOTPや個人PINを繰り返し要求しません。
+
+講義単位の許可だけでは有料APIを呼び出しません。各処理の開始時に、講義所有権、open状態、許可scope、policy version、call数、token量、費用、同時実行数、冪等request IDをサーバー側で再検証します。停止、講義終了、管理者session失効、権限変更は、実行中・待機中のauthorityを失効させます。
+
+### Identity and data boundaries
+
+- 学生はSupabase Anonymous Authを使用し、管理者sessionと分離
+- 教員はGoogle OAuth、TOTP AAL2、追跡可能なapplication sessionを使用
+- PostgreSQL RLSと最小GRANTで行単位・RPC単位の権限を制御
+- API key、service-role key、署名鍵をブラウザへ配布しない
+- 音声ファイル、PDF本文、認証secretをapplication databaseへ保存しない
+- 管理操作、AI operation、費用精算、失効理由を監査可能な形で記録
 
 ## アーキテクチャ
 
 ```mermaid
 flowchart TB
-    Admin["Admin Browser"]
+    Educator["Educator Browser"]
     Student["Student Browser"]
     Display["Classroom Display"]
 
     Pages["Cloudflare Pages\nReact / Vite"]
-    Core["Supabase\nAuth / PostgreSQL / RPC / RLS"]
-    Edge["Edge Functions\nDeno"]
+    Auth["Supabase Auth"]
+    DB["PostgreSQL\nRPC / RLS / Realtime"]
+    Edge["Supabase Edge Functions"]
     AI["OpenAI API"]
-    Asset["Cloudflare Asset Worker"]
+    Worker["Cloudflare Worker"]
     R2["Private R2\nPDF / Archive"]
 
-    Admin --> Pages
+    Educator --> Pages
     Student --> Pages
     Display --> Pages
-
-    Pages --> Core
+    Pages --> Auth
+    Pages --> DB
     Pages --> Edge
-    Edge --> Core
+    Edge --> DB
     Edge --> AI
-    Edge -. "short-lived ticket" .-> Asset
-    Pages --> Asset
-    Asset --> R2
+    Pages --> Worker
+    Edge -. short-lived ticket .-> Worker
+    Worker --> R2
 ```
 
-### 実行境界
+| Layer                     | Technology                                        | Responsibility                           |
+| ------------------------- | ------------------------------------------------- | ---------------------------------------- |
+| **Frontend**              | React 19 · TypeScript 6 · Vite 8 · React Router   | Educator、Student、Display、Review、Demo |
+| **Identity**              | Supabase Auth · Google OAuth · TOTP AAL2          | Surface別sessionと教員本人確認           |
+| **Data**                  | Supabase PostgreSQL · RPC · RLS · Realtime        | 講義状態、所有権、同期version、監査      |
+| **Server operations**     | Supabase Edge Functions · Deno                    | 管理操作、AI認可、外部API調整            |
+| **Documents**             | Cloudflare Workers · Private R2 · PDF.js          | PDF検証、公開、Range配信、Archive        |
+| **AI**                    | OpenAI Realtime API · text generation             | 字幕、分析、要約、学術回答               |
+| **Presenter integration** | Node.js Publisher · .NET/C# bridge                | PDF公開の復旧経路と任意のPowerPoint連携  |
+| **Quality**               | Playwright · axe-core · pgTAP · oxlint · Prettier | ブラウザ、DB、accessibility、静的品質    |
 
-| Boundary               | 主な責務                                    | 設計上の制約                               |
-| ---------------------- | ------------------------------------------- | ------------------------------------------ |
-| **React / Vite**       | UI、routing、楽観表示、ローカル状態         | ブラウザを認可主体にしない                 |
-| **Supabase Auth**      | Student・Admin・Displayの実行主体           | role名だけで操作を許可しない               |
-| **PostgreSQL / RPC**   | 所有権、講義状態、同期version、利用量、監査 | `auth.uid()`とサーバー時刻を正とする       |
-| **Row Level Security** | 行単位の読み書き境界                        | UI上の非表示を認可の代替にしない           |
-| **Edge Functions**     | Admin操作、AI認可、外部API調整              | PIN、API key、service roleを公開しない     |
-| **Asset Worker / R2**  | PDFとArchiveの保存・配信                    | protected objectをpublic bucketへ置かない  |
-| **OpenAI API**         | 字幕、分析、要約、参考回答                  | 明示操作、予算、同時実行、冪等性を検証する |
-| **Local Publisher**    | PDF公開の互換・復旧経路                     | ブラウザ公開経路との同時書き込みを避ける   |
-| **Demo**               | バックエンド不要のUX再現                    | 外部通信を行わない                         |
-
----
-
-## 設計上の核心
-
-### 1. 講義ライフサイクルをサーバーが統治する
-
-講義状態、終了期限、所有権、有料処理の可否は、ブラウザへ委ねません。PostgreSQLとEdge Functionsを正とし、すべてサーバー側で判定します。
+## リポジトリ構成
 
 ```text
-講義作成 → ライブ開始 → 終了確定 → Archive公開
+src/                    React application、状態管理、repository境界
+supabase/
+├─ migrations/         Additive PostgreSQL migrations
+├─ functions/          Supabase Edge Functions
+└─ tests/              pgTAP、RLS、権限、競合テスト
+cloudflare/            PDF / Archive Worker、Presenter Gateway
+publisher/             Local PDF Publisher
+presenter-bridge/       Windows PowerPoint integration source
+e2e/                   Demo / Local Supabase Playwright E2E
+scripts/               品質、負荷、セキュリティ、リリース検証
+docs/                  アーキテクチャ、セキュリティ、運用資料
 ```
 
-- 講義開始時にサーバー時刻を基準とするhard stopを設定
-- 規定時間への到達時に自動終了
-- 手動終了と自動終了は同じ冪等な状態遷移を使用
-- 終了済み講義への投稿、投票、資料更新、AI開始を拒否
-- 各mutationが期限を再検証し、scheduler障害時も期限切れ状態を継続させない
-- クライアントは終了検出後、polling、購読、送信待ち処理を停止
+本番の認証情報、API key、個人情報、講義データ、PDF、バックアップはリポジトリに含めません。COMPASS公式Webとは、アプリケーション、データベース、認証情報、デプロイ先を分離しています。
 
-クライアント時刻、画面上の表示状態、ブラウザ内のparticipant IDだけを根拠として、重要な操作を許可することはありません。
+## 開発を始める
 
-### 2. 数百人規模を想定したversioned snapshot
-
-学生画面の状態同期に、機能数と参加者数に比例してRealtime購読を増やす構成は採りません。コメント、投票、表示中の資料ページ、字幕、要点、参加指標は、原則として一つのversioned snapshot RPCから取得します。
-
-- 前景では約5秒間隔、backgroundでは周期を延長
-- 変更されたsectionだけをversionで識別
-- 一時障害には上限付きbackoffを適用
-- コメント履歴は専用画面を開いた場合のみcursor paginationで取得
-- 低遅延が必要なDisplayと字幕には、対象を限定したRealtime経路を使用
-- Realtimeが利用できない場合はsnapshotから復旧
-
-この構成により、参加者数に応じて購読チャネルが無制限に増えることを防ぎながら、講義中の操作感と障害時の復旧性を両立します。
-
-### 3. 教材をアプリケーションデータから分離する
-
-PDF本体はPrivate R2へ保存し、Supabaseにはdocument ID、講義とのbinding、SHA-256、byte数、ページ数、publication state、access version、保持・監査metadataだけを保持します。
-
-資料配信は単一レイヤーの判定に依存しません。Edge Function、PostgreSQL、Asset Workerが、それぞれ次の条件を検証します。
-
-- 講義とdocumentのbinding
-- 短寿命の署名付きticket
-- Originとrequest scope
-- PDF magic、実byte数、ページ数、SHA-256
-- 有効期限、nonce、ticket再利用
-- immutable uploadとpublication state
-
-commitされていないobjectは学生へ公開しません。PDF本文、PDF byte列、画像、OCR結果をSupabaseへ保存せず、認証・状態管理と大容量資料配信の責務を明確に分離します。
-
-### 4. AIを「機能」ではなく、統制された実行として扱う
-
-生成品質だけをAI機能の完成条件にはしません。**誰が、いつ、どの講義に対して、どの予算内で実行できるか**までを、システムの責務として設計しています。
-
-有料処理は、原則として次の条件をすべて満たした場合にのみ開始します。
-
-- 教員による明示操作
-- 有効なAdminセッション
-- 現行互換のAPI利用PIN、または許可されたlecture-wide authorization。Phase 7.30C以降の通常経路はpersonal AI PINによる講義master一回確認
-- openかつ期限内の講義
-- server-side feature flag
-- 利用回数と費用の上限
-- RealtimeまたはBatchの同時実行枠
-- 一意なoperation ID
-
-実行後は利用量を記録し、出力形式と出典を検証したうえで、未確認ラベルによる限定表示、または教員による承認・訂正・非表示を通して学生へ公開します。停止操作はPINなしで実行でき、音声ファイルは保存しません。
-
-OpenAI API keyはEdge secretからのみ参照し、ブラウザ、Gitリポジトリ、Asset Worker、application logのいずれにも出力しません。
-
-### 5. 教室運用を例外ではなく、設計対象にする
-
-講義システムは、ブラウザ上で正しく動くだけでは完成しません。教員端末、教室Display、学生のモバイル端末、ネットワーク障害、手動fallbackまでを、同じ運用境界の内側に置いて設計します。
-
-- Display資格情報をAdminから分離
-- 資料ページは常に手動で変更可能
-- Realtime障害時はsnapshotへfallback
-- 外部サービス障害時はAIや資料公開だけを局所的に停止
-- feature flag、kill switch、以前のapplication versionで段階的に復旧
-
----
-
-## セキュリティと信頼性
-
-| Principle                | Implementation                                                    |
-| ------------------------ | ----------------------------------------------------------------- |
-| **Server-authoritative** | 認証、所有権、期限、講義状態、予算をDBとEdgeで再検証              |
-| **Least privilege**      | RLS、最小GRANT、Surface別session、secret、実行主体                |
-| **Secret isolation**     | service role、PIN、API key、signing keyを公開clientから隔離       |
-| **Idempotency**          | 講義終了、PDF公開、AI、Archive、外部副作用の重複実行を抑止        |
-| **Fail-closed**          | flag、secret、binding、認証、署名が不完全な場合は処理を開始しない |
-| **Auditability**         | 講義状態、Admin操作、AI operation、利用量を追跡可能に記録         |
-| **Data minimization**    | PDF、音声、全文transcriptをSupabaseへ保存しない                   |
-| **Recovery**             | backoff、lease、snapshot復旧、manual fallback、kill switch        |
-| **Cost control**         | 予算、call上限、同時実行枠、明示的な有料開始をサーバー側で強制    |
-
-次の事象を検出した場合は、機能継続より安全な停止を優先します。
-
-- 他の参加者または他の講義へのデータ漏洩
-- Admin認証を経ない管理操作
-- 無認可または重複した有料API呼び出し
-- protected R2 objectの公開
-- 講義終了後の書き込み
-- secret、PIN、tokenのブラウザ、ログ、Gitへの露出
-
----
-
-## 技術構成
-
-| Layer                 | Technology                                                            |
-| --------------------- | --------------------------------------------------------------------- |
-| **Frontend**          | React 19 · TypeScript 6 · Vite 8 · React Router                       |
-| **Authentication**    | Supabase Auth · Anonymous Sign-In                                     |
-| **Database**          | Supabase PostgreSQL · RPC · Row Level Security · pgTAP                |
-| **Server Functions**  | Supabase Edge Functions · Deno                                        |
-| **PDF / Archive**     | Cloudflare Workers · Private Cloudflare R2                            |
-| **AI**                | OpenAI Realtime API · OpenAI text generation                          |
-| **Local Integration** | Node.js Publisher · optional .NET Windows Presenter Bridge            |
-| **Testing**           | Node test scripts · pgTAP · Playwright · axe-core                     |
-| **CI / Security**     | GitHub Actions · immutable Action refs · secret scan · SBOM           |
-| **Deployment**        | Cloudflare Pages · Cloudflare Workers · Supabase migrations/functions |
-
----
-
-## 品質保証
-
-READMEに記載する技術的な主張は、コードの存在だけでは成立しません。Database policy、ブラウザ、外部通信境界、運用Gateまで含めて検証します。
-
-| Gate                    | 検証対象                                                                      |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| **Static Quality**      | TypeScript、oxlint、build、repository整合性                                   |
-| **Database**            | migration、RPC、RLS、GRANT、所有権分離、競合、冪等性                          |
-| **Non-live Regression** | 外部サービスを使わないunit・integration回帰                                   |
-| **Demo E2E**            | Desktop / Mobile、Chromium / WebKit、主要UX、accessibility、visual regression |
-| **Local Supabase E2E**  | 実PostgreSQL、Auth、RPC、RLS、Edge Functionsを用いた講義workflow              |
-| **Security**            | secret、public-source boundary、依存関係、Action参照、権限設定                |
-| **Release**             | feature flag、migration順序、canary、rollback、human verification             |
-
-### 開発者向けGate
-
-```bash
-npm run security:secrets
-npm run cloud:doctor
-npm run typecheck
-npm run typecheck:phase3
-npm run typecheck:e2e
-npm run lint
-npm run test:phase6-7-docs
-npm run test:ci:nonlive
-npm run build
-git diff --check
-```
-
-### Demo E2E
-
-```bash
-npm run test:e2e:demo:triple
-```
-
-Demo E2Eでは外部HTTP通信を拒否し、Desktop / Mobile ChromiumとWebKitを対象に、主要UX、console error、page error、horizontal overflow、accessibility、visual regressionを検査します。
-
-### Local Supabase E2E
-
-```bash
-npm run test:e2e:local:triple
-```
-
-Local Supabase E2Eでは、ローカル環境上のPostgreSQL、Auth、RPC、RLS、Edge Functionsを実際に使用し、教員と学生の分離から、講義開始、参加、コメント、投票、講義終了までのworkflowを検証します。
-
-CIでは、OpenAIの有料呼び出し、実マイク入力、Hosted Supabaseへのmigration、R2への実file upload、Cloudflare deploy、本番secretの参照を行いません。**Automated、Hosted、Human、ProductionのPASSは、相互に代替できない別個の検証結果として扱います。**
-
----
-
-## クラウド開発（推奨）
-
-通常の開発はGitHub CodespacesまたはCodex Cloudで開始します。Docker Desktop、VS Code Dev Containers、Dev Container CLIも同じ`.devcontainer/devcontainer.json`を使用するため、PCやエージェントが変わってもNode.js、Docker、Supabase CLI、Playwright、検証手順は一致します。
-
-最短経路、Docker CLI経路、Codex／Claude Code／GitHub Copilotの共通運用、スマートフォンからの監督方法は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。Production環境変数を持ち込まず、独立DemoとDev Container内のlocal Supabaseを既定経路にします。
-
-初回作成と環境変更後は`npm run dev:doctor`でruntime、CLI、独立Docker、Playwright、Supabase CLI、Viteを検証します。必要packageはDev Container Featureまたは`package-lock.json`へ記録し、個人PCへの未記録global installで不足を回避しません。
-
----
-
-## ローカル開発
-
-### 必要環境
-
-| Runtime           | Version / Tooling                   |
-| ----------------- | ----------------------------------- |
-| Node.js           | `>=22.22.0`                         |
-| Package manager   | npm + committed `package-lock.json` |
-| Container runtime | Docker Desktop / WSL2 backend       |
-| Local backend     | Supabase CLI + Docker               |
-
-ローカル環境は特殊なデバイス検証や障害対応の補助経路です。日常開発ではクラウド環境を優先します。
-
-### Frontend
-
-依存関係をcommitted lockfileどおりに再現し、開発サーバーを起動します。
+Node.js `>=22.22.0` と、commit済みの`package-lock.json`を使用します。
 
 ```bash
 npm ci
 npm run dev
 ```
 
-主要なローカルrouteは次のとおりです。
+バックエンドやsecretを使わずに主要UXを確認する場合は、`http://127.0.0.1:5173/demo`を開きます。完全なローカルSupabase環境とCloud workspaceの手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)にまとめています。
 
-| Route                                    | 用途                         |
-| ---------------------------------------- | ---------------------------- |
-| `http://127.0.0.1:5173/join`             | 講義・Archiveへの参加        |
-| `http://127.0.0.1:5173/lecture`          | Student講義画面              |
-| `http://127.0.0.1:5173/lecture/comments` | コメント履歴                 |
-| `http://127.0.0.1:5173/lecture/archive`  | 終了講義の読み取り専用Review |
-| `http://127.0.0.1:5173/admin`            | Admin workspace              |
-| `http://127.0.0.1:5173/display`          | Classroom Display            |
-| `http://127.0.0.1:5173/demo`             | 外部通信を行わない独立Demo   |
+| Route               | Purpose                |
+| ------------------- | ---------------------- |
+| `/join`             | 講義コード入力         |
+| `/lecture`          | Student講義画面        |
+| `/lecture/comments` | コメント履歴           |
+| `/lecture/archive`  | 終了講義のReview       |
+| `/admin`            | Educator workspace     |
+| `/display`          | Classroom Display      |
+| `/demo`             | 外部サービス非依存Demo |
 
-Supabase環境変数が未設定でもFrontendは起動できます。バックエンドへ接続せずに体験を確認する場合は、`/demo`を使用してください。
+## 品質確認
 
-Windows PowerShellでは、必要に応じて`npm`を`npm.cmd`へ読み替えます。
-
-### 環境変数
-
-必要な実行経路に対応するexampleだけをコピーします。
-
-```text
-.env.local.example
-  → .env.local
-
-.env.publisher.example
-  → .env.publisher.local
-
-cloudflare/asset-worker/.dev.vars.example
-  → cloudflare/asset-worker/.dev.vars
-```
-
-`*.local`と`.dev.vars`の実値はcommitしません。`VITE_`prefixを許可するのは、ブラウザへ公開してよい値だけです。
-
-次の値には、`VITE_`prefixを付与してはいけません。
-
-- 現行互換のAdmin PIN、API利用PIN（Phase 7.30完了時にProductionから撤去）
-- OpenAI API key
-- Supabase service-role key
-- Turnstile secret
-- R2 credential
-- signing key
-- Archive ingest secret
-- Email provider key
-
-Feature flagはdefault-OFFかつfail-closedです。対応するmigration、Edge Function、Worker binding、secret、RLS、所有権テスト、rollback gateがすべて揃った後にのみ有効化します。
-
-<details>
-<summary>Frontend feature flag一覧</summary>
-
-- `VITE_PHASE1_SYNC_PROTOCOL`
-- `VITE_PHASE2_LECTURE_LIFECYCLE`
-- `VITE_PHASE3_PRIVATE_PDF`
-- `VITE_PHASE4_REALTIME_CAPTIONS`
-- `VITE_PHASE5_MATERIAL_ANALYSIS`
-- `VITE_PHASE6_SUMMARIES`
-- `VITE_PHASE6_5_COMMENT_NICKNAMES`
-- `VITE_PHASE6_6_UX_INTEGRATION`
-- `VITE_PHASE6_8_SECURITY`
-- `VITE_PHASE7_1_CLASSROOM_EXTENSIONS`
-- `VITE_PHASE7_2_ACADEMIC_ANSWERS`
-- `VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS`
-- `VITE_PHASE7_26_BROWSER_PDF_PUBLISHING`
-- `VITE_PHASE7_27_JOURNAL_CLUB`
-- `VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION`
-- `VITE_PHASE7_28_DISPLAY_REALTIME`
-- `VITE_PHASE7_29_POWERPOINT_SYNC`
-- `VITE_PHASE7_30_ADMIN_IDENTITY`
-- `VITE_PHASE7_30_ADMIN_AI_UNLOCK`
-- `VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION`
-- `VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS`
-- `VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER`
-
-</details>
-
-### Local Supabase
-
-Docker Desktopを起動し、すべてのmigrationをローカルstackへ適用します。
+基本的な変更確認は次のコマンドで実行できます。
 
 ```bash
-npx supabase start
-npx supabase db reset --local --no-seed
-npx supabase test db --local
-npx supabase db lint --local --fail-on error
-npm run db:types:check
+npm run typecheck
+npm run typecheck:e2e
+npm run lint
+npm run test:ci:nonlive
+npm run build
 ```
 
-ローカル検証の過程で、Hosted Projectへの`link`、`db push`、migration適用は行いません。Edge Functionsと実ブラウザE2Eの設定は、[`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md)を参照してください。
+主要なブラウザ体験はChromiumとWebKitで検証します。
 
----
-
-## データベース変更契約
-
-Database変更は、`supabase/migrations/`へadditive migrationとして導入します。
-
-1. 空Databaseへ全migrationを適用する
-2. 既存データを保持したupgrade pathを検証する
-3. pgTAP、DB lint、RLS、GRANT、所有権分離を再検証する
-4. 競合と冪等性を確認する
-5. TypeScriptのDatabase型を再生成する
-6. Frontend、Edge、Workerをfeature flag OFFで検証する
-7. 後方互換が不要になるまで破壊的変更を行わない
-
-公開RPCには、原則として`SECURITY INVOKER`を使用します。`SECURITY DEFINER`が不可避な処理では、非公開schema、固定`search_path`、明示的な主体検証、最小GRANT、`PUBLIC EXECUTE`の剥奪を必須要件とします。
-
----
-
-## ディレクトリ構成
-
-```text
-src/
-├─ pages/                  Join / Lecture / Admin / Display / Archive
-├─ components/             共通UIとAdmin workspace
-├─ context/                Application state
-├─ repositories/           Supabase・Demoのdata access boundary
-├─ services/               UIから呼び出すapplication action
-├─ lib/                    Auth、lifecycle、snapshot、feature flag
-├─ caption/                Realtime字幕と公開caption window
-├─ pdf/                    PDF検証・公開・配信client
-├─ display/                Display低遅延更新
-├─ demo/                   Supabase非依存Demo
-└─ types/                  Domain型・生成済みDatabase型
-
-supabase/
-├─ migrations/             Expand-first SQL migrations
-├─ functions/              Edge Functions
-├─ tests/                  pgTAP・RLS・所有権・競合テスト
-├─ validation/             Upgrade・migration検証
-└─ config.toml             Local Supabase構成
-
-cloudflare/
-├─ asset-worker/           Private PDF・Archive Worker
-└─ presenter-gateway/      Dormant PowerPoint machine gateway; no public route
-
-publisher/                 Local PDF Publisher / recovery path
-presenter-bridge/          Optional Windows PowerPoint integration source
-e2e/                       Playwright Demo / Local Supabase E2E
-scripts/                   CI・load・security・release検証
-docs/                      Architecture・Security・Runbook・Gate記録
-.github/workflows/ci.yml    GitHub Actions
+```bash
+npm run test:e2e:demo:triple
+npm run test:e2e:local:triple
 ```
 
----
-
-## デプロイメント
-
-| Component         | Deployment                           |
-| ----------------- | ------------------------------------ |
-| Frontend          | Cloudflare Pages                     |
-| Auth / Database   | Supabase Auth · PostgreSQL           |
-| Server Operations | Supabase Edge Functions              |
-| PDF / Archive     | Cloudflare Asset Worker · Private R2 |
-| AI                | OpenAI API via Edge Functions        |
-| Migration         | Supabase migration pipeline          |
-
-本番反映を、Database、Edge Functions、Worker、Frontendへ同時に不可逆変更を加える操作にはしません。expand-first migration、default-OFFのserver flag、application deploy、canary、段階的なflag activationの順に進めます。
-
-rollbackでは、まずruntimeまたはfeature flagを停止し、直前のapplication versionへ戻します。運用中のデータを失うschema dropを、rollback手段として使用することはありません。
-
----
+Local Supabase E2Eでは、PostgreSQL、Auth、RPC、RLS、Edge Functionsを使用し、講義作成、資料公開、学生参加、コメント、投票、Display、AI許可、停止、講義終了をブラウザから通して確認します。
 
 ## ドキュメント
 
-READMEは、現行システムの全体像と開発の入口を示します。詳細設計、運用手順、検証記録、変更履歴は、それぞれの正本文書で管理します。
-
-| Document                                                                                                                           | Responsibility                                                            |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                                                                                     | 現行アーキテクチャとservice boundary                                      |
-| [`docs/SECURITY.md`](docs/SECURITY.md)                                                                                             | 認証、認可、secret、停止条件                                              |
-| [`docs/data_policy.md`](docs/data_policy.md)                                                                                       | データ分類、保存、保持、削除                                              |
-| [`docs/database_schema.md`](docs/database_schema.md)                                                                               | DatabaseとRPCの責務                                                       |
-| [`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md)                                                                         | CI、browser E2E、local live test                                          |
-| [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md)                                                                                   | 運用・障害対応の入口                                                      |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                                                                                               | 今後の開発計画                                                            |
-| [`docs/CLOUD_CANONICALIZATION_GATE.md`](docs/CLOUD_CANONICALIZATION_GATE.md)                                                       | GitHub/Cloud正本化と復旧移植契約                                          |
-| [`docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)                         | PPT救出・dormant rollout・rollback                                        |
-| [`docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)                                 | Presenter Gateway・署名配布・activation HOLD契約                          |
-| [`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)                                     | Google Admin認証・AAL2・RBAC計画                                          |
-| [`docs/PHASE7_30A_B1_IMPLEMENTATION.md`](docs/PHASE7_30A_B1_IMPLEMENTATION.md)                                                     | Phase 7.30A-B1 source/local実装・dormant Gate・rollback記録               |
-| [`docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`](docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md)                                             | Phase 7.30B2 default-OFF database実装・検証待ち境界                       |
-| [`docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md`](docs/PHASE7_30B22A_ADMIN_CONTROL_HARDENING.md)                                   | Phase 7.30B2.2a factor-set・rare-control hardening                        |
-| [`docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md`](docs/PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER.md)                                     | Phase 7.30B2.2b Edge・browser・factor transition readiness                |
-| [`docs/PHASE7_30D_ADMIN_LEDGER.md`](docs/PHASE7_30D_ADMIN_LEDGER.md)                                                               | Phase 7.30D owner管理台帳・招待・session revoke契約                       |
-| [`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`](docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md)                                                 | Phase 7.30E Google-only transport・ownership・cutover契約                 |
-| [`docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md`](docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md)                                           | Phase 7.30F source/local evidence・承認分離・Hosted/Human HOLD契約        |
-| [`docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md) | GitHub公開監査・審査員用実環境・商用化・Phase 7.33 Gate計画               |
-| [`docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)                               | private source提出・講義UX/AI無回帰・50時間の限定Production Candidate計画 |
-| [`docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)                                         | 並列Cloud taskの担当境界・copy-ready指示文・handoff形式                   |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md)                                                                                           | release単位の変更履歴                                                     |
-| [`PROJECT_GUIDE.md`](PROJECT_GUIDE.md)                                                                                             | 原設計、product contract、意思決定の背景                                  |
-
-過去のPhase文書は、該当commit時点における設計判断と検証証跡です。現在の挙動を確認する際は、現行コード、migration、上記の正本文書、最新のGate記録を優先してください。
-
----
-
-## 開発原則
-
-1. **講義の正本を一つにする。** UI、Display、Archiveごとに別の状態を持たない。
-2. **ブラウザを認可主体にしない。** 所有権、期限、予算、権限は、必ずサーバー側で再検証する。
-3. **同期経路を機能数だけ増やさない。** versioned snapshotを基本とし、Realtimeは必要な経路に限定する。
-4. **有料AI処理を暗黙に開始しない。** 明示操作、認可、上限、冪等性、記録を開始条件とする。
-5. **教材と認証状態を分離する。** PDF、音声、全文transcriptをSupabaseへ保存しない。
-6. **変更を安全に展開する。** expand-first、default-OFF、後方互換、canary、rollbackを一つの契約として扱う。
-7. **検証範囲を明示する。** Automated、Local、Hosted、Human、ProductionのPASSを混同しない。
-8. **実装と運用を切り離さない。** Code、migration、test、runbookを同じ変更単位で更新する。
-9. **技術的主張を証拠で支える。** Architecture、test、Gate記録を伴わない完成宣言は行わない。
-10. **安全性と講義継続性を同時に守る。** 通常講義で反復認証を求めず、新規権限を止めても資料閲覧とclose、stop、revoke、downgradeを維持する。
-11. **公開UIをCOMPASSの製品品質へ統一する。** 開発中・実験中・内部gateを想起させる表現を排除し、色、配色、タイポグラフィ、余白、状態、文言をAdmin、Student、Display、Reviewで統一する。
-
----
+- [`docs/architecture.md`](docs/architecture.md) — システム構成とservice boundary
+- [`docs/SECURITY.md`](docs/SECURITY.md) — 認証、認可、secret、停止条件
+- [`docs/data_policy.md`](docs/data_policy.md) — データ分類、保存、保持、削除
+- [`docs/database_schema.md`](docs/database_schema.md) — DatabaseとRPCの責務
+- [`docs/CI_AND_BROWSER_E2E.md`](docs/CI_AND_BROWSER_E2E.md) — CIと実ブラウザ検証
+- [`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md) — Cloud / Dev Container setup
+- [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md) — 運用手順の索引
 
 ## COMPASSにおける位置づけ
 
-COMPASS Interactiveは、COMPASSが展開する教育・テクノロジープロダクトの一つです。COMPASS公式Webおよび未来戦略ライブラリとは、ソースコード、データ、認証情報、デプロイ境界を分離しています。
-
-COMPASSは、学生有志が運営する独立した教育活動です。北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
-
----
+COMPASS Interactiveは、[COMPASS](https://github.com/genellect/compass)が展開する教育・テクノロジープロダクトの一つです。COMPASSは学生有志による独立した教育活動であり、北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
 
 <div align="center">
 
 **すべてがつながると、講義は動き出す。**
-
-[プロダクト紹介](https://compass-official.pages.dev/INTRO_Interactive/) ·
-[デモを試す](https://compass-interactive.pages.dev/demo) ·
-[技術設計を読む](https://compass-official.pages.dev/INTRO_Interactive/developers/)
 
 </div>

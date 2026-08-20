@@ -580,8 +580,13 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
-  'the live lifecycle must prove student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+  /共有画面の確認が必要です[\s\S]*みんなに共有[\s\S]*peerComment[\s\S]*#teacher-workspace-participation-tab[\s\S]*adminComment[\s\S]*const displayComment = isolatedDisplayPage[\s\S]*非表示にする[\s\S]*comment\)\.toHaveCount\(0[\s\S]*peerComment\)\.toHaveCount\(0[\s\S]*displayComment\)\.toHaveCount\(0[\s\S]*表示に戻す[\s\S]*comment\)\.toContainText\('CI学生'[\s\S]*peerComment\)\.toContainText\('CI学生'[\s\S]*displayComment\)\.toBeVisible/,
+  'the live lifecycle must prove cross-student comment delivery, teacher moderation, and Student/Display restoration through UI controls',
+)
+assert.match(
+  localLifecycleBrowser,
+  /const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{ timeout: 6_000 \}\)[\s\S]*student-comment-propagation-ms[\s\S]*commentPropagationMs\)\.toBeLessThanOrEqual\(6_000\)[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: 6_000[\s\S]*student-like-propagation-ms[\s\S]*likePropagationMs\)\.toBeLessThanOrEqual\(6_000\)/,
+  'student comments and likes must record propagation latency with a six-second reliability ceiling for the five-second p95 target',
 )
 assert.match(
   localLifecycleBrowser,

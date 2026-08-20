@@ -26,6 +26,14 @@ const manageDocuments = read(
   'manage-pdf-documents',
   'index.ts',
 )
+const publicationClient = read('src', 'pdf', 'browserPdfPublicationClient.ts')
+const publicationHook = read('src', 'hooks', 'useBrowserPdfPublication.ts')
+const publicationReadback = read(
+  'src',
+  'pages',
+  'admin',
+  'usePublicationDisplayReadback.ts',
+)
 const coordinator = read(
   'supabase',
   'functions',
@@ -92,12 +100,26 @@ assert.match(manage, /readJsonBody<RequestBody>\(request, 32 \* 1024\)/)
 assert.match(manage, /prepare_google_admin_pdf_publication_finalize_v1/)
 assert.match(manage, /advance_google_admin_pdf_publication_v1/)
 assert.match(manage, /get_google_admin_pdf_publication_v1/)
+assert.match(
+  manage,
+  /documentVersion: row\.document_version[\s\S]*manifestVersion:[\s\S]*row\.activated_manifest_version \?\? row\.committed_manifest_version/,
+)
 assert.match(manage, /response\.body\?\.getReader\(\)/)
 assert.doesNotMatch(manage, /response\.arrayBuffer\(\)/)
 assert.match(manage, /typeof body\.downloadEnabled !== 'boolean'/)
 assert.doesNotMatch(
   manage,
   /VITE_.*SERVICE_ROLE|import\.meta\.env.*SERVICE_ROLE/i,
+)
+assert.match(publicationClient, /assertDocumentVersion/)
+assert.match(publicationClient, /assertManifestVersion/)
+assert.match(
+  publicationHook,
+  /onPublicationActivatedRef\.current\([\s\S]*documentVersion:[\s\S]*manifestVersion:/,
+)
+assert.match(
+  publicationReadback,
+  /display\.pdfDocumentId === pending\.documentId[\s\S]*display\.pdfDocumentVersion === pending\.documentVersion[\s\S]*display\.pdfManifestVersion === pending\.manifestVersion[\s\S]*display\.pdfVisible/,
 )
 
 assert.match(manageDocuments, /manage_google_admin_pdf_documents_v1/)

@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { AdminAiUnlockError } from '../../lib/adminAuth/adminAiUnlockApi'
-import {
-  listRememberedBrowserCredentials,
-  type RememberedBrowserIdentityScope,
-} from '../../lib/adminAuth/rememberedBrowserCredential'
+import type { RememberedBrowserIdentityScope } from '../../lib/adminAuth/rememberedBrowserCredential'
 
 import type {
   AiMasterAuthorization,
@@ -18,7 +15,10 @@ type Props = {
   lectureSessionId: string
   lectureStatus: string
   onAuthorizationChange: (authorization: AiMasterAuthorization | null) => void
+  onReadinessChange: (readiness: AiMasterReadiness) => void
 }
+
+export type AiMasterReadiness = 'checking' | 'ready' | 'blocked'
 
 function admissionBlockedMessage(reason: string | null) {
   if (reason === 'membership_ai_disabled') {
@@ -38,28 +38,21 @@ function admissionBlockedMessage(reason: string | null) {
 
 export function AiMasterAuthorizationControl({
   adminToken,
-  identityScope,
   lectureSessionId,
   lectureStatus,
   onAuthorizationChange,
+  onReadinessChange,
 }: Props) {
   const [authorization, setAuthorization] =
     useState<AiMasterAuthorization | null>(null)
-  const [aiPin, setAiPin] = useState('')
-  const [admissionEnabled, setAdmissionEnabled] = useState(true)
+  const [admissionEnabled, setAdmissionEnabled] = useState(false)
   const [allowedScopes, setAllowedScopes] = useState<
     AiMasterAuthorizationScope[]
-  >(['all_except_captions', 'all_including_captions'])
-  const [serverLectureOpen, setServerLectureOpen] = useState(
-    lectureStatus === 'open',
-  )
+  >([])
+  const [serverLectureOpen, setServerLectureOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [rememberedBrowserAvailable, setRememberedBrowserAvailable] =
-    useState(false)
-  const [rememberedBrowserFailed, setRememberedBrowserFailed] = useState(false)
   const [message, setMessage] = useState('')
   const statusRequestVersionRef = useRef(0)
-  const pinReady = /^\d{4}$/.test(aiPin)
 
   const applyAuthorization = useCallback(
     (next: AiMasterAuthorization | null) => {
@@ -71,30 +64,41 @@ export function AiMasterAuthorizationControl({
 
   const refresh = useCallback(async () => {
     const requestVersion = ++statusRequestVersionRef.current
+    onReadinessChange('checking')
     try {
-      const [status, rememberedBrowsers] = await Promise.all([
-        supabaseAdminRepository.getAiMasterAuthorization({
-          adminToken,
-          lectureSessionId,
-        }),
-        listRememberedBrowserCredentials(identityScope).catch(() => []),
-      ])
+      const status = await supabaseAdminRepository.getAiMasterAuthorization({
+        adminToken,
+        lectureSessionId,
+      })
       if (requestVersion === statusRequestVersionRef.current) {
         applyAuthorization(status.authorization)
-        setRememberedBrowserAvailable(rememberedBrowsers.length > 0)
         setAdmissionEnabled(status.admissionEnabled)
         setAllowedScopes(status.allowedScopes)
         setServerLectureOpen(status.lectureOpen)
+        const activeAuthorization = status.authorization?.status === 'active'
+        const admissionReady =
+          status.admissionEnabled &&
+          status.lectureOpen &&
+          status.allowedScopes.length > 0
+        onReadinessChange(
+          activeAuthorization || admissionReady ? 'ready' : 'blocked',
+        )
+        setMessage('')
         if (!status.authorization && !status.admissionEnabled) {
           setMessage(admissionBlockedMessage(status.admissionBlockedReason))
         } else if (status.reason === 'pre_c1_master_remediated') {
           setMessage(
-            '以前の共有許可を安全に停止しました。個人AI PINで許可し直してください。',
+            '以前の許可を安全に停止しました。AI機能を有効にし直してください。',
           )
         }
       }
     } catch (error) {
       if (requestVersion === statusRequestVersionRef.current) {
+        applyAuthorization(null)
+        setAdmissionEnabled(false)
+        setAllowedScopes([])
+        setServerLectureOpen(false)
+        onReadinessChange('blocked')
         setMessage(
           error instanceof Error
             ? error.message
@@ -102,20 +106,26 @@ export function AiMasterAuthorizationControl({
         )
       }
     }
-  }, [adminToken, applyAuthorization, identityScope, lectureSessionId])
+  }, [adminToken, applyAuthorization, lectureSessionId, onReadinessChange])
 
   useEffect(() => {
     applyAuthorization(null)
-    setAiPin('')
+    setAdmissionEnabled(false)
+    setAllowedScopes([])
+    setServerLectureOpen(false)
+    onReadinessChange('checking')
     setMessage('')
-    setRememberedBrowserFailed(false)
     void refresh()
-  }, [applyAuthorization, refresh])
+  }, [applyAuthorization, onReadinessChange, refresh])
 
   useEffect(() => {
-    if (lectureStatus === 'open') return
+    if (lectureStatus === 'open') {
+      void refresh()
+      return
+    }
     applyAuthorization(null)
-  }, [applyAuthorization, lectureStatus])
+    onReadinessChange('blocked')
+  }, [applyAuthorization, lectureStatus, onReadinessChange, refresh])
 
   useEffect(() => {
     if (lectureStatus !== 'open') return
@@ -132,11 +142,16 @@ export function AiMasterAuthorizationControl({
     }
   }, [lectureStatus, refresh])
 
-  async function authorize(scope: AiMasterAuthorizationScope) {
-    const useRememberedBrowser =
-      rememberedBrowserAvailable && !rememberedBrowserFailed
+  async function authorize() {
+    const scope: AiMasterAuthorizationScope | null = allowedScopes.includes(
+      'all_including_captions',
+    )
+      ? 'all_including_captions'
+      : allowedScopes.includes('all_except_captions')
+        ? 'all_except_captions'
+        : null
     if (
-      (!useRememberedBrowser && !pinReady) ||
+      !scope ||
       lectureStatus !== 'open' ||
       !serverLectureOpen ||
       !admissionEnabled ||
@@ -146,49 +161,33 @@ export function AiMasterAuthorizationControl({
       return
     statusRequestVersionRef.current += 1
     setBusy(true)
-    setMessage(
-      useRememberedBrowser
-        ? 'このブラウザの登録と講義状態を確認しています…'
-        : '個人AI PINと講義状態を確認しています…',
-    )
+    setMessage('講義状態とAI利用権限を確認しています…')
     try {
-      const status = useRememberedBrowser
-        ? await supabaseAdminRepository.authorizeAiMasterWithRememberedBrowser({
-            adminToken,
-            identityScope,
-            lectureSessionId,
-            masterScope: scope,
-          })
-        : await supabaseAdminRepository.authorizeAiMaster({
-            adminToken,
-            aiPin,
-            lectureSessionId,
-            masterScope: scope,
-          })
+      const status =
+        await supabaseAdminRepository.authorizeAiMasterWithAal2Session({
+          adminToken,
+          lectureSessionId,
+          masterScope: scope,
+        })
       statusRequestVersionRef.current += 1
       applyAuthorization(status.authorization)
+      onReadinessChange('ready')
       setMessage(
         scope === 'all_including_captions'
           ? 'すべてのAI機能を講義終了まで許可しました。字幕と各AI機能は個別に開始します。'
           : '字幕以外のAI機能を講義終了まで許可しました。各AI機能は個別に開始します。',
       )
     } catch (error) {
-      const rememberedBrowserRetryable =
-        useRememberedBrowser &&
-        error instanceof AdminAiUnlockError &&
-        error.code === 'request_failed'
-      if (useRememberedBrowser && !rememberedBrowserRetryable) {
-        setRememberedBrowserFailed(true)
-      }
+      const retryable =
+        error instanceof AdminAiUnlockError && error.code === 'request_failed'
       setMessage(
-        rememberedBrowserRetryable
+        retryable
           ? '通信結果を確認できませんでした。同じ許可ボタンでもう一度確認できます。'
           : error instanceof Error
-            ? `${error.message}${useRememberedBrowser ? ' AI PINでも続けられます。' : ''}`
+            ? error.message
             : '講義中のAI機能を許可できませんでした。',
       )
     } finally {
-      setAiPin('')
       setBusy(false)
     }
   }
@@ -206,7 +205,7 @@ export function AiMasterAuthorizationControl({
       })
       statusRequestVersionRef.current += 1
       applyAuthorization(null)
-      setMessage('AI機能を停止しました。停止に個人AI PINは不要です。')
+      setMessage('AI機能を停止しました。')
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -229,6 +228,8 @@ export function AiMasterAuthorizationControl({
   )
   const canAdmit =
     admissionEnabled && serverLectureOpen && lectureStatus === 'open'
+  const hasAllowedScope =
+    allExceptCaptionsAllowed || allIncludingCaptionsAllowed
 
   return (
     <section className="ai-master-authorization" data-testid="ai-master-auth">
@@ -244,53 +245,17 @@ export function AiMasterAuthorizationControl({
 
       {!authorizationActive ? (
         <div className="summary-control-actions">
-          {rememberedBrowserAvailable && !rememberedBrowserFailed ? (
-            <span className="note">
-              登録済みのこのブラウザで許可します。PINや認証アプリの再入力は不要です。
-            </span>
-          ) : (
-            <label className="field compact-field">
-              <span>個人AI PIN</span>
-              <input
-                autoComplete="off"
-                disabled={busy || !canAdmit}
-                inputMode="numeric"
-                maxLength={4}
-                onChange={(event) => setAiPin(event.target.value)}
-                type="password"
-                value={aiPin}
-              />
-            </label>
-          )}
-          <button
-            className="secondary-button"
-            disabled={
-              busy ||
-              (!rememberedBrowserAvailable && !pinReady) ||
-              (rememberedBrowserFailed && !pinReady) ||
-              !canAdmit ||
-              !allExceptCaptionsAllowed
-            }
-            onClick={() => void authorize('all_except_captions')}
-            type="button"
-          >
-            字幕以外を許可
-          </button>
           <button
             className="primary-button"
-            disabled={
-              busy ||
-              (!rememberedBrowserAvailable && !pinReady) ||
-              (rememberedBrowserFailed && !pinReady) ||
-              !canAdmit ||
-              !allIncludingCaptionsAllowed
-            }
-            onClick={() => void authorize('all_including_captions')}
+            disabled={busy || !canAdmit || !hasAllowedScope}
+            onClick={() => void authorize()}
             type="button"
           >
-            字幕も含めて許可
+            AI機能を有効にする
           </button>
-          {!allIncludingCaptionsAllowed ? (
+          {canAdmit &&
+          allExceptCaptionsAllowed &&
+          !allIncludingCaptionsAllowed ? (
             <span className="note">
               この講義では字幕を含む一括許可を利用できません。
             </span>

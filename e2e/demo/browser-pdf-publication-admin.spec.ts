@@ -27,6 +27,8 @@ type PublicationAction =
 
 type MockState = {
   active: boolean
+  displayMutationCount: number
+  finalizeRequestIds: string[]
   inflightDocumentId: string | null
   initiateIdempotencyKeys: string[]
   lectureCreateCount: number
@@ -34,6 +36,8 @@ type MockState = {
   lectureListIncludeHistory: boolean[]
   lectureTitle: string | null
   publicationActions: PublicationAction[]
+  postActivationSnapshotFailuresRemaining: number
+  postActivationSnapshotCount: number
   storedPublicationAtUpload: string | null
   uploadCount: number
   uploadedBytes: number
@@ -169,16 +173,22 @@ async function installAdminState(
 async function installNetworkMocks(
   page: Page,
   options: {
+    committedFinalizeResponses?: number
     conflictOnFirstInitiate?: boolean
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
+    finalizeStatus?: 'active' | 'committed'
     initialLectureStatus?: 'closed' | 'open'
+    postActivationSnapshotFailures?: number
+    postActivationStaleSnapshots?: number
     recoverPublication?: boolean
     startWithoutLecture?: boolean
   } = {},
 ) {
   const state: MockState = {
     active: false,
+    displayMutationCount: 0,
+    finalizeRequestIds: [],
     inflightDocumentId: null,
     initiateIdempotencyKeys: [],
     lectureCreateCount: 0,
@@ -186,6 +196,9 @@ async function installNetworkMocks(
     lectureListIncludeHistory: [],
     lectureTitle: null,
     publicationActions: [],
+    postActivationSnapshotFailuresRemaining:
+      options.postActivationSnapshotFailures ?? 0,
+    postActivationSnapshotCount: 0,
     storedPublicationAtUpload: null,
     uploadCount: 0,
     uploadedBytes: 0,
@@ -333,21 +346,40 @@ async function installNetworkMocks(
         return
       }
       if (action === 'status') {
+        const publicationStatus = state.active
+          ? 'active'
+          : state.finalizeRequestIds.length > 0
+            ? 'committed'
+            : options.recoverPublication
+              ? 'uploaded'
+              : 'pending'
         await fulfillJson(route, {
           documentId,
+          documentVersion: 'a'.repeat(64),
+          manifestVersion: 2,
           ok: true,
           publicationId,
-          status: options.recoverPublication ? 'uploaded' : 'pending',
+          status: publicationStatus,
         })
         return
       }
       if (action === 'finalize') {
-        state.active = true
+        state.finalizeRequestIds.push(String(body.requestId ?? ''))
+        const finalizeAttempt = state.publicationActions.filter(
+          (publicationAction) => publicationAction === 'finalize',
+        ).length
+        const finalizeStatus =
+          finalizeAttempt <= (options.committedFinalizeResponses ?? 0)
+            ? 'committed'
+            : (options.finalizeStatus ?? 'active')
+        state.active = finalizeStatus === 'active'
         await fulfillJson(route, {
           documentId: state.inflightDocumentId ?? documentId,
+          documentVersion: 'a'.repeat(64),
+          manifestVersion: 2,
           ok: true,
           publicationId,
-          status: 'active',
+          status: finalizeStatus,
         })
         return
       }
@@ -362,28 +394,56 @@ async function installNetworkMocks(
       }
     }
 
+    if (functionName === 'update-display-state') {
+      state.displayMutationCount += 1
+      await fulfillJson(route, { ok: true })
+      return
+    }
+
     if (functionName === 'operator-live-snapshot') {
+      if (state.active) {
+        state.postActivationSnapshotCount += 1
+        if (state.postActivationSnapshotFailuresRemaining > 0) {
+          state.postActivationSnapshotFailuresRemaining -= 1
+          await fulfillJson(
+            route,
+            { message: 'Temporary snapshot failure.', ok: false },
+            503,
+          )
+          return
+        }
+      }
+      const includeActivePdf =
+        state.active &&
+        state.postActivationSnapshotCount >
+          (options.postActivationStaleSnapshots ?? 0)
+      const includeStalePdf = state.active && !includeActivePdf
       const now = new Date().toISOString()
       await fulfillJson(route, {
         ok: true,
         result: {
           mode: 'live',
           snapshot: {
-            changed: state.active
-              ? {
-                  pdf: {
-                    current_pdf_page: 1,
-                    display_mode: 'normal',
-                    lecture_session_id: lectureSessionId,
-                    pdf_document_id: state.inflightDocumentId ?? documentId,
-                    pdf_document_version: 'a'.repeat(64),
-                    pdf_manifest_version: 2,
-                    pdf_page_count: 3,
-                    pdf_visible: true,
-                    updated_at: now,
-                  },
-                }
-              : {},
+            changed:
+              includeActivePdf || includeStalePdf
+                ? {
+                    pdf: {
+                      current_pdf_page: 1,
+                      display_mode: 'normal',
+                      lecture_session_id: lectureSessionId,
+                      pdf_document_id: includeActivePdf
+                        ? (state.inflightDocumentId ?? documentId)
+                        : '11111111-1111-4111-8111-111111111111',
+                      pdf_document_version: includeActivePdf
+                        ? 'a'.repeat(64)
+                        : 'b'.repeat(64),
+                      pdf_manifest_version: includeActivePdf ? 2 : 1,
+                      pdf_page_count: 3,
+                      pdf_visible: true,
+                      updated_at: now,
+                    },
+                  }
+                : {},
             contract_version: 2,
             server_time: now,
             versions: {
@@ -392,7 +452,7 @@ async function installNetworkMocks(
               lecture: 0,
               likes: 0,
               metrics: 0,
-              pdf: state.active ? 1 : 0,
+              pdf: includeActivePdf || includeStalePdf ? 1 : 0,
               polls: 0,
               summaries: 0,
             },
@@ -506,6 +566,187 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
     page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
   await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin retries the authoritative display read after PDF activation without a duplicate mutation', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    postActivationSnapshotFailures: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect
+    .poll(() => state.postActivationSnapshotCount)
+    .toBeGreaterThanOrEqual(2)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  expect(state.displayMutationCount).toBe(0)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+  ])
+  await expect(
+    pdfPanel.getByText(/最新の表示状態を読み込めませんでした/),
+  ).toHaveCount(0)
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin rejects a stale successful display snapshot after PDF activation', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    postActivationStaleSnapshots: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect
+    .poll(() => state.postActivationSnapshotCount)
+    .toBeGreaterThanOrEqual(2)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  expect(state.displayMutationCount).toBe(0)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+  ])
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin completes a committed PDF publication without another teacher action', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    committedFinalizeResponses: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+    'finalize',
+  ])
+  expect(state.uploadCount).toBe(1)
+  expect(state.finalizeRequestIds).toHaveLength(2)
+  expect(new Set(state.finalizeRequestIds).size).toBe(1)
+  expect(state.displayMutationCount).toBe(0)
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin reloads only the display read after bounded PDF activation readback failures', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    postActivationSnapshotFailures: 100,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(
+    pdfPanel.getByText(/表示状態の同期に時間がかかっています/),
+  ).toBeVisible()
+  state.postActivationSnapshotFailuresRemaining = 0
+  await page.getByRole('button', { name: '再読み込み' }).click()
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  await expect(pdfPanel).toContainText('資料の表示状態を再同期しました。')
+  expect(state.displayMutationCount).toBe(0)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+  ])
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin reloads a committed PDF publication with the same finalize request ID', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    committedFinalizeResponses: 3,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '資料の送信は完了しました。公開の最終確定を再開しています。',
+  )
+  await expect(page.locator('#teacher-workspace-slides-tab')).toHaveCount(0)
+  await expect(fileInput).toHaveValue(/m4-sample-v1\.pdf/)
+  expect(state.displayMutationCount).toBe(0)
+  expect(state.active).toBe(false)
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .not.toBeNull()
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+    'finalize',
+    'finalize',
+  ])
+  expect(state.finalizeRequestIds).toHaveLength(3)
+  expect(new Set(state.finalizeRequestIds).size).toBe(1)
+
+  const storedFinalizeRequestId = await page.evaluate((lectureId) => {
+    const raw = window.sessionStorage.getItem(
+      `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+    )
+    return raw
+      ? (JSON.parse(raw) as { finalizeRequestId?: string }).finalizeRequestId
+      : null
+  }, lectureSessionId)
+  expect(storedFinalizeRequestId).toBe(state.finalizeRequestIds[0])
+
+  await page.reload()
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  expect(state.finalizeRequestIds).toHaveLength(4)
+  expect(new Set(state.finalizeRequestIds).size).toBe(1)
   await expect
     .poll(() =>
       page.evaluate(

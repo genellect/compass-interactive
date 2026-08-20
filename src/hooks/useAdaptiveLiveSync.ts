@@ -5,22 +5,29 @@ import {
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
   LIVE_SYNC_INTERVAL_MS,
+  LIVE_SYNC_JITTER_MS,
 } from '../lib/liveSync'
 
 type UseAdaptiveLiveSyncOptions = {
   backgroundIntervalMs?: number
   enabled: boolean
   foregroundIntervalMs?: number
+  initialJitterMs?: number
+  jitterMs?: number
   onSync: () => Promise<void> | void
   runImmediately?: boolean
+  visibilityJitterMs?: number
 }
 
 export function useAdaptiveLiveSync({
   backgroundIntervalMs = BACKGROUND_LIVE_SYNC_INTERVAL_MS,
   enabled,
   foregroundIntervalMs = LIVE_SYNC_INTERVAL_MS,
+  jitterMs = LIVE_SYNC_JITTER_MS,
+  initialJitterMs = jitterMs,
   onSync,
   runImmediately = true,
+  visibilityJitterMs = 0,
 }: UseAdaptiveLiveSyncOptions) {
   useEffect(() => {
     if (!enabled) {
@@ -29,8 +36,7 @@ export function useAdaptiveLiveSync({
 
     let disposed = false
     let failureCount = 0
-    let hiddenSince =
-      document.visibilityState === 'hidden' ? Date.now() : null
+    let hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null
     let hiddenSyncCompleted = false
     let running = false
     let timeoutId: number | null = null
@@ -66,13 +72,19 @@ export function useAdaptiveLiveSync({
       }
     }
 
-    function scheduleForegroundSync() {
+    function scheduleForegroundSync(syncStartedAt?: number) {
+      const backoffDelay = getLiveSyncBackoffDelay({
+        backgroundIntervalMs,
+        failureCount,
+        foregroundIntervalMs,
+      })
+      const completedRequestMs =
+        failureCount === 0 && syncStartedAt
+          ? Math.max(Date.now() - syncStartedAt, 0)
+          : 0
       scheduleSync(
-        getLiveSyncBackoffDelay({
-          backgroundIntervalMs,
-          failureCount,
-          foregroundIntervalMs,
-        }) + getLiveSyncJitter(),
+        Math.max(backoffDelay - completedRequestMs, 0) +
+          getLiveSyncJitter(Math.random(), jitterMs),
         false,
       )
     }
@@ -83,6 +95,7 @@ export function useAdaptiveLiveSync({
       }
 
       running = true
+      const syncStartedAt = Date.now()
 
       try {
         await onSync()
@@ -98,7 +111,7 @@ export function useAdaptiveLiveSync({
           }
           scheduleHiddenSync()
         } else {
-          scheduleForegroundSync()
+          scheduleForegroundSync(syncStartedAt)
         }
       }
     }
@@ -109,7 +122,10 @@ export function useAdaptiveLiveSync({
       if (document.visibilityState === 'visible') {
         hiddenSince = null
         hiddenSyncCompleted = false
-        void runSync()
+        scheduleSync(
+          getLiveSyncJitter(Math.random(), visibilityJitterMs),
+          false,
+        )
         return
       }
 
@@ -121,9 +137,13 @@ export function useAdaptiveLiveSync({
     if (document.visibilityState === 'hidden') {
       scheduleHiddenSync()
     } else if (runImmediately) {
-      scheduleSync(getLiveSyncJitter(), false)
+      scheduleSync(getLiveSyncJitter(Math.random(), initialJitterMs), false)
     } else {
-      scheduleSync(foregroundIntervalMs + getLiveSyncJitter(), false)
+      scheduleSync(
+        foregroundIntervalMs +
+          getLiveSyncJitter(Math.random(), initialJitterMs),
+        false,
+      )
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
@@ -132,5 +152,14 @@ export function useAdaptiveLiveSync({
       clearScheduledSync()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [backgroundIntervalMs, enabled, foregroundIntervalMs, onSync, runImmediately])
+  }, [
+    backgroundIntervalMs,
+    enabled,
+    foregroundIntervalMs,
+    initialJitterMs,
+    jitterMs,
+    onSync,
+    runImmediately,
+    visibilityJitterMs,
+  ])
 }

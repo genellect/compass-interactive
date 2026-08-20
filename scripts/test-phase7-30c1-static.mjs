@@ -34,6 +34,9 @@ const directPrivateReadsAsServiceRole = (sql) => {
 const migration = read(
   'supabase/migrations/20260810160000_phase7_30c1_google_ai_master.sql',
 )
+const sessionMigration = read(
+  'supabase/migrations/20260820081453_google_aal2_session_ai_master.sql',
+)
 const pgTap = read('supabase/tests/phase7_30c1_google_ai_master_test.sql')
 const runtimePgTap = read(
   'supabase/tests/phase7_30c1_google_ai_master_runtime_test.sql',
@@ -42,6 +45,16 @@ const localEdge = read('scripts/test-phase7-30b1-local-edge.mjs')
 const workflow = read('.github/workflows/ci.yml')
 const edge = read('supabase/functions/admin-ai-unlock/index.ts')
 const client = read('src/lib/adminAuth/adminAiUnlockApi.ts')
+const masterControl = read(
+  'src/components/AdminAiControl/AiMasterAuthorizationControl.tsx',
+)
+const masterPanel = read(
+  'src/components/AdminWorkspace/AdminAiControlPanel.tsx',
+)
+const masterRepository = read(
+  'src/repositories/supabase/aiMasterAuthorizationRepository.ts',
+)
+const masterBrowserE2e = read('e2e/local/ai-master-authorization.spec.ts')
 const types = read('src/types/database.ts')
 const upgradeRunner = read('scripts/test-phase7-30-upgrade.mjs')
 const upgradeFixture = read(
@@ -52,7 +65,6 @@ const upgradeProbe = read(
 )
 const docs = read('docs/PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION.md')
 const identityPlan = read('docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md')
-const readme = read('README.md')
 const packageJson = JSON.parse(read('package.json'))
 const nonlive = read('scripts/ci/run-nonlive-suite.mjs')
 const migrationDdl = migration.slice(
@@ -65,9 +77,19 @@ const pinAdmissionEdge = edge.slice(
   edge.indexOf("if (action === 'authorizeMasterWithPin')"),
   edge.indexOf("if (action === 'completeBrowserMasterAdmission')"),
 )
+const sessionAdmissionEdge = edge.slice(
+  edge.indexOf("if (action === 'authorizeMasterWithAal2Session')"),
+  edge.indexOf("if (action === 'authorizeMasterWithPin')"),
+)
 const browserAdmissionEdge = edge.slice(
   edge.indexOf("if (action === 'completeBrowserMasterAdmission')"),
   edge.indexOf("if (action === 'preparePinMutation')"),
+)
+
+assert.match(
+  edge,
+  /!Object\.hasOwn\(ACTION_KEYS, body\.action\)[\s\S]*Object\.keys\(body\)\.some/,
+  'AI unlock rejects inherited action names through the closed action schema',
 )
 
 assert.match(
@@ -78,6 +100,22 @@ assert.match(migration, /create table private\.admin_lecture_ownerships/)
 assert.match(
   migration,
   /create table private\.admin_ai_master_admission_receipts/,
+)
+assert.match(
+  sessionMigration,
+  /create table private\.admin_ai_master_session_rate_limits/,
+)
+assert.match(
+  sessionMigration,
+  /unlock_method in \([\s\S]*'ai_pin'[\s\S]*'google_aal2_session'[\s\S]*'remembered_browser'/,
+)
+assert.match(
+  sessionMigration,
+  /unlock_method = 'google_aal2_session'[\s\S]*unlock_factor_id is null[\s\S]*unlock_factor_version is null[\s\S]*browser_credential_id is null[\s\S]*unlock_verified_at = step_up_verified_at/,
+)
+assert.match(
+  sessionMigration,
+  /admin_ai_master_session_rate_limits enable row level security[\s\S]*revoke all on private\.admin_ai_master_session_rate_limits[\s\S]*service_role/,
 )
 assert.match(
   migration,
@@ -91,6 +129,20 @@ assert.match(
 assert.match(
   edge,
   /async function requireC1AdmissionGate[\s\S]*get_admin_ai_unlock_runtime_gate_v1[\s\S]*typeof gate\.ai_unlock_enabled !== 'boolean'[\s\S]*typeof gate\.google_ai_master_admission_enabled !== 'boolean'[\s\S]*typeof gate\.remembered_browser_enabled !== 'boolean'[\s\S]*feature_disabled/,
+)
+assert.ok(
+  sessionAdmissionEdge.indexOf('replay_google_ai_master_admission_v1') <
+    sessionAdmissionEdge.indexOf('requireC1AdmissionGate(false)') &&
+    sessionAdmissionEdge.indexOf('requireC1AdmissionGate(false)') <
+      sessionAdmissionEdge.indexOf(
+        'authorize_google_ai_master_with_session_v1',
+      ),
+  'AAL2 session exact replay precedes source/runtime gates and DB admission',
+)
+assert.doesNotMatch(
+  sessionAdmissionEdge,
+  /ADMIN_AI_(?:NETWORK|PIN|BROWSER)|derivePepperedPinHmac|verifyP256|providerRequest/,
+  'AAL2 session admission must not read PIN/browser/provider secrets',
 )
 assert.ok(
   pinAdmissionEdge.indexOf('replay_google_ai_master_admission_v1') <
@@ -271,6 +323,35 @@ assert.ok(
   ) < applyAdmission.indexOf("'accepted', true"),
 )
 
+const sessionAdmission =
+  sessionMigration.match(
+    /create function private\.authorize_google_ai_master_with_session_v1[\s\S]*?\n\$\$;/,
+  )?.[0] ?? ''
+assert.ok(
+  sessionAdmission.indexOf('require_google_ai_master_context_v1') <
+    sessionAdmission.indexOf('replay_or_reuse_google_ai_master_v1') &&
+    sessionAdmission.indexOf('replay_or_reuse_google_ai_master_v1') <
+      sessionAdmission.indexOf('google_ai_master_admission_enabled') &&
+    sessionAdmission.indexOf('google_ai_master_admission_enabled') <
+      sessionAdmission.indexOf('consume_google_ai_master_session_rate_v1') &&
+    sessionAdmission.indexOf('consume_google_ai_master_session_rate_v1') <
+      sessionAdmission.indexOf('apply_google_ai_master_admission_v1'),
+  'AAL2 session admission validates context, replay, gate and rate before apply',
+)
+assert.doesNotMatch(
+  sessionAdmission,
+  /consume_admin_ai_pin_attempt|browser_assertion|issue_google_ai_child|ai_usage_ledger/,
+)
+assert.match(
+  sessionMigration,
+  /session_admission_rate_limited[\s\S]*google_aal2_session_verified/,
+  'AAL2 session admission audits bounded denial and accepted admission',
+)
+assert.match(
+  sessionMigration,
+  /create function public\.authorize_google_ai_master_with_session_v1[\s\S]*security definer[\s\S]*set search_path = ''[\s\S]*revoke all on function public\.authorize_google_ai_master_with_session_v1[\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.authorize_google_ai_master_with_session_v1[\s\S]*to service_role;/,
+)
+
 assert.match(
   migration,
   /admin_ai_master_control_receipts[\s\S]*Exact replay intentionally returns the current state of the recorded master row/,
@@ -377,9 +458,9 @@ for (const renamed of [
 ]) {
   assert.ok(revokedPrivateFunctions.includes(renamed))
 }
-assert.match(pgTap, /all nine C1 public facades are owned by postgres/)
-assert.match(pgTap, /all nine C1 public facades fix an empty search_path/)
-assert.match(pgTap, /only service_role can execute all nine C1 public facades/)
+assert.match(pgTap, /all ten C1 public facades are owned by postgres/)
+assert.match(pgTap, /all ten C1 public facades fix an empty search_path/)
+assert.match(pgTap, /only service_role can execute all ten C1 public facades/)
 assert.match(
   pgTap,
   /private C1 functions remain non-executable by service_role/,
@@ -464,10 +545,27 @@ assert.match(runtimePgTap, /B2 policy authority drain revokes a C1 master/)
 assert.match(runtimePgTap, /B2 factor authority drain revokes a C1 master/)
 assert.match(
   runtimePgTap,
-  /Admin session revocation drains the final C1 master/,
+  /Admin session revocation drains the factor-free Google AAL2 master/,
+)
+assert.match(
+  runtimePgTap,
+  /Google AAL2 app session admits the master without an AI PIN factor/,
+)
+assert.match(
+  runtimePgTap,
+  /exact Google AAL2 session replay survives admission gate OFF/,
+)
+assert.match(
+  runtimePgTap,
+  /seventh new session admission in one minute is denied without mutation/,
+)
+assert.match(
+  runtimePgTap,
+  /Google AAL2 master admission itself issues no child or provider authority/,
 )
 
 for (const action of [
+  'authorizeMasterWithAal2Session',
   'authorizeMasterWithPin',
   'completeBrowserMasterAdmission',
   'masterStatus',
@@ -510,8 +608,14 @@ assert.match(
   /action === 'downgradeMaster'[\s\S]*downgrade_google_ai_master_v1/,
 )
 assert.match(edge, /action === 'revokeMaster'[\s\S]*revoke_google_ai_master_v1/)
+assert.match(
+  edge,
+  /admissionEnabled:[\s\S]*value\.admission_enabled === true[\s\S]*c1AdmissionSourceEnabled[\s\S]*aiSourceEnabled/,
+  'master status must not expose an enabled CTA when either Edge source gate is OFF',
+)
 
 for (const symbol of [
+  'authorizeGoogleAiMasterWithAal2Session',
   'authorizeGoogleAiMasterWithPin',
   'completeRememberedBrowserMasterAdmission',
   'getGoogleAiMasterStatus',
@@ -522,6 +626,7 @@ for (const symbol of [
 }
 for (const rpc of [
   'authorize_google_ai_master_with_pin_v1',
+  'authorize_google_ai_master_with_session_v1',
   'complete_google_ai_master_browser_admission_v1',
   'create_owned_admin_lecture_v1',
   'downgrade_google_ai_master_v1',
@@ -553,6 +658,58 @@ assert.deepEqual(
 )
 
 assert.match(
+  masterRepository,
+  /authorizeAiMasterWithAal2Session[\s\S]*getGoogleAiMasterStatus[\s\S]*authorizeGoogleAiMasterWithAal2Session/,
+)
+assert.match(
+  masterRepository,
+  /getAiMasterAuthorization[\s\S]*authorization\?\.status === 'active'[\s\S]*authorization\.ownedByRequester[\s\S]*completeReconciledAal2MasterRequest[\s\S]*return \{/,
+  'an authoritative status refresh closes an ambiguous admission request before returning',
+)
+assert.match(
+  masterRepository,
+  /admittedAuthorization\?\.status !== 'active'[\s\S]*!admittedAuthorization\.ownedByRequester[\s\S]*master_admission_unavailable/,
+  'accepted terminal or unowned replay data cannot be presented as a successful admission',
+)
+assert.match(masterControl, /useState\(false\)/)
+assert.match(
+  masterControl,
+  /useState<\s*AiMasterAuthorizationScope\[\]\s*>\(\[\]\)/,
+)
+assert.match(
+  masterControl,
+  /catch \(error\)[\s\S]*applyAuthorization\(null\)[\s\S]*setAdmissionEnabled\(false\)[\s\S]*setAllowedScopes\(\[\]\)[\s\S]*setServerLectureOpen\(false\)/,
+  'status failure closes every client-side master admission prerequisite',
+)
+assert.match(
+  masterControl,
+  /export type AiMasterReadiness = 'checking' \| 'ready' \| 'blocked'[\s\S]*onReadinessChange\('checking'\)[\s\S]*activeAuthorization \|\| admissionReady \? 'ready' : 'blocked'[\s\S]*onReadinessChange\('blocked'\)/,
+  'child readiness stays checking until an authoritative status succeeds and blocks on failure',
+)
+assert.match(
+  masterPanel,
+  /useState<AiMasterReadiness>\('checking'\)[\s\S]*masterReadiness === 'ready'[\s\S]*supportReady \? 'is-ready' : ''[\s\S]*supportLabel[\s\S]*onReadinessChange=\{setMasterReadiness\}/,
+  'parent readiness badge cannot become ready from frontend feature flags alone',
+)
+assert.match(masterControl, />\s*AI機能を有効にする\s*</)
+assert.doesNotMatch(masterControl, /listRememberedBrowserCredentials|setAiPin/)
+assert.match(
+  masterBrowserE2e,
+  /authorizeMasterWithAal2Session[\s\S]*not\.toHaveProperty\('pin'\)[\s\S]*unlock_method: 'google_aal2_session'[\s\S]*grantCountAfterAuthorization[\s\S]*usageCountAfterAuthorization[\s\S]*paidRequests\)\.toEqual\(\[\]\)/,
+  'browser contract proves one factor-free CTA and no provider/billing work at master admission',
+)
+assert.match(
+  masterBrowserE2e,
+  /503 master status keeps AI readiness blocked and cannot reach authorization[\s\S]*payload\.action === 'masterStatus'[\s\S]*status: 503[\s\S]*toHaveText\([\s\S]*'停止中'[\s\S]*toBeDisabled\(\)[\s\S]*sessionAdmissionRequests\)\.toBe\(0\)/,
+  'browser contract proves a 503 status cannot expose ready state or reach authorization',
+)
+assert.match(
+  masterBrowserE2e,
+  /lost AI admission response does not poison revoke and one-click re-enable[\s\S]*route\.fetch\(\)[\s\S]*route\.abort\('connectionfailed'\)[\s\S]*dispatchEvent\(new Event\('focus'\)\)[\s\S]*admissionRequestIds\)\.toHaveLength\(2\)[\s\S]*not\.toBe\(admissionRequestIds\[0\]\)/,
+  'browser contract proves a committed lost response cannot poison a later revoke and re-enable',
+)
+
+assert.match(
   upgradeRunner,
   /--version'[\s\S]*20260810113000[\s\S]*phase7-30c1-b22b-head-upgrade-probe\.sql[\s\S]*phase7-30c1-b22b-head-upgrade-probe-test\.sql/,
 )
@@ -569,24 +726,24 @@ assert.match(docs, /C2 HOLD/)
 assert.match(docs, /no inferred backfill/i)
 assert.match(docs, /immutable request observation/i)
 assert.match(
+  docs,
+  /Additive rollout checklist for `google_aal2_session`[\s\S]*No new secret is required[\s\S]*failed or 503 status[\s\S]*no new child grant, billing grant, usage row or provider request/,
+)
+assert.match(
   identityPlan,
-  /C1 then\s+adds private optional-row lecture ownership and atomic PIN\/browser-proof to\s+dormant-master admission/,
+  /Current lecture admission decision:[\s\S]*google_aal2_session[\s\S]*does not ask[\s\S]*another TOTP/,
 )
 assert.doesNotMatch(
   identityPlan,
   /does not implement the all-Admin verifier, lecture ownership, atomic proof-to-master/,
 )
 assert.match(
-  readme,
-  /C1はprivate optional-row lecture ownershipとPIN\/browser proofからdormant masterまでのatomic admissionを実装/,
-)
-assert.doesNotMatch(
-  readme,
-  /lecture ownership、proofからmasterまでのatomic admission、AI Passkey、実Google OAuth、Hosted\/Human evidenceはC以降で未実装/,
+  localEdge,
+  /sourceOffC1Admission[\s\S]*authorizeMasterWithPin[\s\S]*503/,
 )
 assert.match(
   localEdge,
-  /sourceOffC1Admission[\s\S]*authorizeMasterWithPin[\s\S]*503/,
+  /sourceOffSessionAdmission[\s\S]*authorizeMasterWithAal2Session[\s\S]*503/,
 )
 assert.match(workflow, /gate-closed factor checks/)
 assert.equal(

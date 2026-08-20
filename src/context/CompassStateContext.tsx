@@ -28,7 +28,12 @@ import {
   removePendingComments,
   type ServerClockSample,
 } from '../lib/lectureLifecycle'
-import { normalizeLiveSyncPathname } from '../lib/liveSync'
+import {
+  normalizeLiveSyncPathname,
+  STUDENT_LIVE_SYNC_INITIAL_JITTER_MS,
+  STUDENT_LIVE_SYNC_INTERVAL_MS,
+  STUDENT_LIVE_SYNC_JITTER_MS,
+} from '../lib/liveSync'
 import {
   isPhase1SyncProtocolEnabled,
   isPhase2LectureLifecycleEnabled,
@@ -170,6 +175,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [pollResults, setPollResults] = useState<PollResultSummary[]>([])
   const [pollResponses, setPollResponses] = useState<PollResponse[]>([])
   const [displayState, setDisplayState] = useState<DisplayState | null>(null)
+  const latestDisplayStateRef = useRef<DisplayState | null>(null)
   const [caption, setCaption] = useState<PublicCaption | null>(null)
   const [summaries, setSummaries] = useState<PublicLectureSummary[]>([])
   const [academicAnswers, setAcademicAnswers] = useState<
@@ -275,6 +281,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setPolls(snapshot.polls)
       setPollResponses(snapshot.pollResponses)
       setPollResults(snapshot.pollResults)
+      latestDisplayStateRef.current = snapshot.displayState
       setDisplayState(snapshot.displayState)
       setCaption(null)
       setSummaries([])
@@ -606,6 +613,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
 
           if (snapshot.display) {
+            latestDisplayStateRef.current = snapshot.display
             setDisplayState(snapshot.display)
           }
 
@@ -716,12 +724,17 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   }, [hasActiveLectureSessionId, hydrateDemo, refreshLiveSnapshot, runtimeMode])
 
   const refreshDisplayState = useCallback(async () => {
-    if (!hasActiveLectureSessionId) return
+    if (!hasActiveLectureSessionId) {
+      latestDisplayStateRef.current = null
+      return null
+    }
     if (runtimeMode === 'demo') {
-      hydrateDemo()
-      return
+      const snapshot = hydrateDemo()
+      latestDisplayStateRef.current = snapshot.displayState
+      return snapshot.displayState
     }
     await refreshLiveSnapshot({ forceDisplay: true })
+    return latestDisplayStateRef.current
   }, [hasActiveLectureSessionId, hydrateDemo, refreshLiveSnapshot, runtimeMode])
 
   const loadOlderComments = useCallback(async () => {
@@ -930,7 +943,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
     sessionSyncPauseReason,
   ])
 
-  const runFiveSecondLiveSync = useCallback(async () => {
+  const runLiveSync = useCallback(async () => {
     if (!canRunLiveSync) {
       return
     }
@@ -940,8 +953,24 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   useAdaptiveLiveSync({
     enabled: canRunLiveSync,
-    onSync: runFiveSecondLiveSync,
-    runImmediately: false,
+    foregroundIntervalMs:
+      normalizedPathname === '/lecture'
+        ? STUDENT_LIVE_SYNC_INTERVAL_MS
+        : undefined,
+    initialJitterMs:
+      normalizedPathname === '/lecture'
+        ? STUDENT_LIVE_SYNC_INITIAL_JITTER_MS
+        : undefined,
+    jitterMs:
+      normalizedPathname === '/lecture'
+        ? STUDENT_LIVE_SYNC_JITTER_MS
+        : undefined,
+    onSync: runLiveSync,
+    runImmediately: normalizedPathname === '/lecture',
+    visibilityJitterMs:
+      normalizedPathname === '/lecture'
+        ? STUDENT_LIVE_SYNC_INITIAL_JITTER_MS
+        : undefined,
   })
 
   useEffect(() => {

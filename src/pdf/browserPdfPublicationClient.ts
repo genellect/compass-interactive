@@ -1,6 +1,8 @@
+import { type AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 import {
-  type AdminOperationCredentialInput,
-} from '../lib/adminAuth/adminOperationCredential'
+  completeAdminOperationRequestId,
+  reserveAdminOperationRequestId,
+} from '../lib/adminAuth/adminOperationRequestId'
 import {
   getFunctionErrorMessage,
   SUPABASE_REQUEST_TIMEOUT_MS,
@@ -34,10 +36,12 @@ export type BrowserPdfPublicationStatus =
 
 type PublicationResponse = {
   documentId?: string
+  documentVersion?: string
   expiresAt?: string
   found?: boolean
   idempotencyKey?: string
   message?: string
+  manifestVersion?: number
   ok?: boolean
   publicationId?: string
   status?: BrowserPdfPublicationStatus
@@ -45,9 +49,16 @@ type PublicationResponse = {
   uploadUrl?: string
 }
 
+export type BrowserPdfPublicationActivation = {
+  documentId: string
+  documentVersion: string
+  manifestVersion: number
+}
+
 export type BrowserPdfPublicationRecovery = {
   documentId: string
   expiresAt: string
+  finalizeRequestId?: string
   idempotencyKey: string
   lectureSessionId: string
   publicationId: string
@@ -101,6 +112,24 @@ function assertPublicationId(value: string | undefined) {
   return value
 }
 
+function assertDocumentVersion(value: string | undefined) {
+  if (!value || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new BrowserPdfPublicationError(
+      'PDF公開document versionのbindingを確認できません。',
+    )
+  }
+  return value
+}
+
+function assertManifestVersion(value: number | undefined) {
+  if (!Number.isSafeInteger(value) || (value ?? 0) < 1) {
+    throw new BrowserPdfPublicationError(
+      'PDF公開manifest versionのbindingを確認できません。',
+    )
+  }
+  return value!
+}
+
 function assertExpiry(value: string | undefined) {
   if (
     !value ||
@@ -129,6 +158,26 @@ function assertIdempotencyKey(value: string | undefined) {
     throw new BrowserPdfPublicationError('PDF公開の再開情報が不正です。')
   }
   return value
+}
+
+function assertFinalizeRequestId(value: string | undefined) {
+  if (
+    !value ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  ) {
+    throw new BrowserPdfPublicationError('PDF公開の再開IDが不正です。')
+  }
+  return value
+}
+
+function finalizeRequestBody(lectureSessionId: string, publicationId: string) {
+  return {
+    action: 'finalize',
+    lectureSessionId,
+    publicationId: assertPublicationId(publicationId),
+  }
 }
 
 function assertPublicationStatus(value: string | undefined) {
@@ -397,7 +446,14 @@ export const browserPdfPublicationClient = {
         'PDF公開状態のbindingを確認できません。',
       )
     }
-    return { ...response, status } as PublicationResponse & {
+    const activeBinding =
+      status === 'active'
+        ? {
+            documentVersion: assertDocumentVersion(response.documentVersion),
+            manifestVersion: assertManifestVersion(response.manifestVersion),
+          }
+        : {}
+    return { ...response, ...activeBinding, status } as PublicationResponse & {
       publicationId: string
       status: BrowserPdfPublicationStatus
     }
@@ -405,15 +461,24 @@ export const browserPdfPublicationClient = {
 
   async finalize(input: {
     adminToken: AdminOperationCredentialInput
+    finalizeRequestId: string
     lectureSessionId: string
     publicationId: string
   }) {
+    const requestBody = finalizeRequestBody(
+      input.lectureSessionId,
+      input.publicationId,
+    )
+    const reserved = reserveAdminOperationRequestId(
+      PUBLICATION_FUNCTION,
+      requestBody,
+      assertFinalizeRequestId(input.finalizeRequestId),
+    )
     const response = await invokePublicationAction(
       {
-        action: 'finalize',
         adminToken: input.adminToken,
-        lectureSessionId: input.lectureSessionId,
-        publicationId: assertPublicationId(input.publicationId),
+        ...requestBody,
+        requestId: reserved.requestId,
       },
       FINALIZE_TIMEOUT_MS,
     )
@@ -426,7 +491,17 @@ export const browserPdfPublicationClient = {
         'PDF公開完了状態のbindingを確認できません。',
       )
     }
-    return { ...response, status } as PublicationResponse & {
+    const activeBinding =
+      status === 'active'
+        ? {
+            documentVersion: assertDocumentVersion(response.documentVersion),
+            manifestVersion: assertManifestVersion(response.manifestVersion),
+          }
+        : {}
+    if (status === 'active') {
+      completeAdminOperationRequestId(reserved.key, reserved.requestId)
+    }
+    return { ...response, ...activeBinding, status } as PublicationResponse & {
       publicationId: string
       status: 'active' | 'committed'
     }
@@ -454,6 +529,9 @@ export function rememberBrowserPdfPublication(
   const stored: BrowserPdfPublicationRecovery = {
     documentId: handle.documentId,
     expiresAt: handle.expiresAt,
+    ...(handle.finalizeRequestId
+      ? { finalizeRequestId: assertFinalizeRequestId(handle.finalizeRequestId) }
+      : {}),
     idempotencyKey: handle.idempotencyKey,
     lectureSessionId: handle.lectureSessionId,
     publicationId: handle.publicationId,
@@ -480,11 +558,36 @@ export function restoreBrowserPdfPublication(lectureSessionId: string) {
     }
     assertIdempotencyKey(parsed.idempotencyKey)
     assertPublicationId(parsed.publicationId)
+    if (parsed.finalizeRequestId) {
+      assertFinalizeRequestId(parsed.finalizeRequestId)
+    }
     return parsed
   } catch {
     window.sessionStorage.removeItem(publicationStorageKey(lectureSessionId))
     return null
   }
+}
+
+export function prepareBrowserPdfPublicationFinalization(
+  recovery: BrowserPdfPublicationRecovery,
+) {
+  const requestBody = finalizeRequestBody(
+    recovery.lectureSessionId,
+    recovery.publicationId,
+  )
+  const reserved = reserveAdminOperationRequestId(
+    PUBLICATION_FUNCTION,
+    requestBody,
+    recovery.finalizeRequestId
+      ? assertFinalizeRequestId(recovery.finalizeRequestId)
+      : undefined,
+  )
+  const prepared = {
+    ...recovery,
+    finalizeRequestId: reserved.requestId,
+  }
+  rememberBrowserPdfPublication(prepared)
+  return prepared
 }
 
 export function forgetBrowserPdfPublication(lectureSessionId: string) {

@@ -76,6 +76,16 @@ assert.match(
   publicationClient,
   /action: 'finalize'[\s\S]*?FINALIZE_TIMEOUT_MS,\s*\)/,
 )
+assert.match(
+  publicationClient,
+  /const reserved = reserveAdminOperationRequestId\([\s\S]*PUBLICATION_FUNCTION[\s\S]*requestBody[\s\S]*requestId: reserved\.requestId[\s\S]*status === 'active'[\s\S]*completeAdminOperationRequestId\(reserved\.key, reserved\.requestId\)/,
+  'committed finalize retries must retain one logical operation ID until active',
+)
+assert.match(
+  publicationClient,
+  /finalizeRequestId\?: string[\s\S]*prepareBrowserPdfPublicationFinalization\([\s\S]*recovery\.finalizeRequestId[\s\S]*rememberBrowserPdfPublication\(prepared\)/,
+  'the finalize operation ID must survive a same-tab reload in recovery storage',
+)
 const uploadRequest =
   publicationClient.match(
     /fetch\(handle\.uploadUrl, \{[\s\S]*?\n\s*\}\)/,
@@ -116,12 +126,17 @@ assert.match(
 )
 assert.doesNotMatch(adminPdfExtraction, /response\.arrayBuffer\(\)/)
 assert.match(browserPublicationHook, /restoreBrowserPdfPublication/)
+assert.match(
+  browserPublicationHook,
+  /prepareBrowserPdfPublicationFinalization\(stored\)[\s\S]*finalizeRequestId: finalization\.finalizeRequestId/,
+  'reload recovery must reuse the stored finalize operation ID',
+)
 assert.match(browserPublicationHook, /browserPdfPublicationClient\.discover/)
 assert.match(browserPublicationHook, /abortInterruptedPdfPublication/)
 assert.match(browserPublicationHook, /browserPublishingEnabled/)
 assert.match(
   browserPublicationHook,
-  /refreshAdminPdfDocuments\(targetLectureSessionId, adminToken\)[\s\S]*onPublicationActivatedRef\.current\(targetLectureSessionId\)/,
+  /refreshAdminPdfDocuments\(targetLectureSessionId, adminToken\)[\s\S]*onPublicationActivatedRef\.current\(targetLectureSessionId, \{[\s\S]*documentId:[\s\S]*documentVersion:[\s\S]*manifestVersion:/,
 )
 assert.match(adminPdfControl, /中断した公開を破棄してやり直す/)
 assert.match(adminPdfControl, /講義を作成して資料を公開する/)

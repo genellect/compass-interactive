@@ -73,8 +73,10 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
   const adminContext = await browser.newContext()
   const studentContext = await browser.newContext()
+  const peerStudentContext = await browser.newContext()
   const admin = await openMonitoredPage(adminContext)
   const student = await openMonitoredPage(studentContext)
+  const peerStudent = await openMonitoredPage(peerStudentContext)
   let displayPage: Page | null = null
   let isolatedDisplayContext: BrowserContext | null = null
   let isolatedDisplayPage: Page | null = null
@@ -305,17 +307,50 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     })
     expect(student.page.url()).not.toContain(resumeEntries[0].token)
 
+    await peerStudent.page.goto('/join')
+    await peerStudent.page.getByLabel('講義コード').fill(lectureCode ?? '')
+    await peerStudent.page.getByRole('button', { name: '参加する' }).click()
+    await expect(
+      peerStudent.page.getByRole('heading', { name: lectureTitle }),
+    ).toBeVisible()
+    await expect(
+      peerStudent.page.getByText('いま講義とつながっています'),
+    ).toBeVisible({ timeout: 20_000 })
+
     const composer = student.page.locator('#lecture-question')
     await composer.getByLabel('ニックネームを表示する').check()
     await composer.getByLabel('ニックネーム（任意・10文字まで）').fill('CI学生')
     await composer
       .getByPlaceholder('感じたことや質問を、そのまま書いてみてください。')
       .fill('ローカルE2Eからの質問です')
+    const commentSubmittedAt = Date.now()
     await composer.getByRole('button', { name: 'みんなに共有' }).click()
     const comment = student.page
       .locator('.comment-card')
       .filter({ hasText: 'ローカルE2Eからの質問です' })
     await expect(comment).toContainText('CI学生')
+    const peerComment = peerStudent.page
+      .locator('.comment-card')
+      .filter({ hasText: 'ローカルE2Eからの質問です' })
+    await expect(peerComment).toBeVisible({ timeout: 6_000 })
+    const commentPropagationMs = Date.now() - commentSubmittedAt
+    test.info().annotations.push({
+      description: String(commentPropagationMs),
+      type: 'student-comment-propagation-ms',
+    })
+    expect(commentPropagationMs).toBeLessThanOrEqual(6_000)
+
+    const likeSubmittedAt = Date.now()
+    await peerComment.getByRole('button', { name: '共感する' }).click()
+    await expect(comment.locator('.like-count')).toContainText('1', {
+      timeout: 6_000,
+    })
+    const likePropagationMs = Date.now() - likeSubmittedAt
+    test.info().annotations.push({
+      description: String(likePropagationMs),
+      type: 'student-like-propagation-ms',
+    })
+    expect(likePropagationMs).toBeLessThanOrEqual(6_000)
 
     await admin.page.locator('#teacher-workspace-participation-tab').click()
     const adminComment = admin.page
@@ -336,6 +371,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       adminComment.getByRole('button', { name: '表示に戻す' }),
     ).toBeVisible()
     await expect(comment).toHaveCount(0, { timeout: 8_000 })
+    await expect(peerComment).toHaveCount(0, { timeout: 8_000 })
     await expect(displayComment).toHaveCount(0, { timeout: 8_000 })
 
     await adminComment.getByRole('button', { name: '表示に戻す' }).click()
@@ -344,6 +380,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       adminComment.getByRole('button', { name: '非表示にする' }),
     ).toBeVisible()
     await expect(comment).toContainText('CI学生', { timeout: 8_000 })
+    await expect(peerComment).toContainText('CI学生', { timeout: 8_000 })
     await expect(displayComment).toBeVisible({ timeout: 8_000 })
 
     const ownHistoryRequests: string[] = []
@@ -410,6 +447,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       student.page.getByRole('heading', { name: '講義は終了しました。' }),
     ).toBeVisible({ timeout: 25_000 })
     await expect(
+      peerStudent.page.getByRole('heading', { name: '講義は終了しました。' }),
+    ).toBeVisible({ timeout: 25_000 })
+    await expect(
       student.page.getByText(
         'コメント投稿と投票は終了しました。記録は講義コードから30日間確認できます。',
       ),
@@ -425,12 +465,14 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
     await admin.safety.assertClean()
     await student.safety.assertClean()
+    await peerStudent.safety.assertClean()
   } finally {
     if (isolatedDisplayPage && !isolatedDisplayPage.isClosed()) {
       await isolatedDisplayPage.close()
     }
     if (isolatedDisplayContext) await isolatedDisplayContext.close()
     if (displayPage && !displayPage.isClosed()) await displayPage.close()
+    await closeContext(peerStudentContext, peerStudent.page)
     await closeContext(studentContext, student.page)
     await closeContext(adminContext, admin.page)
   }

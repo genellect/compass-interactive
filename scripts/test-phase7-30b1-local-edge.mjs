@@ -1062,6 +1062,23 @@ try {
     )
     assert.equal(sourceOffC1Admission.code, 'feature_disabled')
 
+    const sourceOffSessionAdmission = await invoke(
+      status,
+      aal2,
+      'admin-ai-unlock',
+      {
+        action: 'authorizeMasterWithAal2Session',
+        appSessionToken: completed.appSessionToken,
+        lectureSessionId: randomUUID(),
+        policyId: randomUUID(),
+        policyVersion: 1,
+        requestId: randomUUID(),
+        requestedScope: 'all_including_captions',
+      },
+      503,
+    )
+    assert.equal(sourceOffSessionAdmission.code, 'feature_disabled')
+
     const policyValidFromMs = Date.now() - 60_000
     const policyRequest = {
       appSessionToken: completed.appSessionToken,

@@ -172,9 +172,12 @@ function safeWorkerBaseUrl() {
 function mapPublication(row: PublicationRow) {
   return {
     documentId: row.document_id,
+    documentVersion: row.document_version,
     expiresAt: row.operation_expires_at,
     idempotencyKey: row.client_request_id,
     lectureSessionId: row.lecture_session_id,
+    manifestVersion:
+      row.activated_manifest_version ?? row.committed_manifest_version,
     publicationId: row.publication_id,
     status: row.state,
   }
@@ -594,9 +597,7 @@ async function handleGooglePdfPublication(input: {
       }
 
       let cleanupPending = result.cleanupPending === true
-      if (
-        Number.isInteger(before.committed_manifest_access_version)
-      ) {
+      if (Number.isInteger(before.committed_manifest_access_version)) {
         try {
           const now = Math.floor(Date.now() / 1000)
           const rollbackTicket = await signPdfPublicationTicket({
@@ -677,10 +678,7 @@ async function handleGooglePdfPublication(input: {
       continuationExpiresAt?: unknown
       ok?: boolean
     } | null
-    if (
-      authorization.error ||
-      authorizationValue?.ok !== true
-    ) {
+    if (authorization.error || authorizationValue?.ok !== true) {
       return jsonResponse(
         {
           message:

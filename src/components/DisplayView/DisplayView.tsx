@@ -121,7 +121,11 @@ export function DisplayView({
           <p className="error-note">教室表示の更新に時間がかかっています。</p>
         ) : null}
         {isPhase71ClassroomExtensionsEnabled && !isLectureClosed ? (
-          <LectureJoinQr code={lectureCode} compact title="スマートフォンで参加" />
+          <LectureJoinQr
+            code={lectureCode}
+            compact
+            title="スマートフォンで参加"
+          />
         ) : null}
       </section>
 
@@ -148,6 +152,15 @@ export function DisplayView({
         className={`display-layout display-mode-${displayMode}`}
         ref={presentationRef}
       >
+        {isPresentationFullscreen ? (
+          <button
+            className="secondary-button display-fullscreen-exit"
+            onClick={() => void toggleFullscreen()}
+            type="button"
+          >
+            全画面を終了
+          </button>
+        ) : null}
         <section className="display-main-stage">
           <div className="display-placeholder slide-placeholder">
             <SyncedPdfViewer

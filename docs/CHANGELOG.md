@@ -3,6 +3,34 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-20 - One-click Google AAL2 lecture AI admission
+
+- Added the factor-free `google_aal2_session` lecture-master method. The
+  database revalidates the live Google/TOTP AAL2 app session, active AI
+  membership, exact lecture ownership, open lifecycle and exact policy before
+  atomically writing the master, immutable receipt and content-free audit.
+- Added a six-per-minute app-session/lecture admission limit while preserving
+  exact replay and same-scope reuse. Existing PIN and remembered-browser
+  transports remain available for repair-forward rollback.
+- Replaced the lecture AI PIN/browser choice with one `AI機能を有効にする`
+  CTA. Status starts and fails closed, so an unavailable/503 status response
+  never leaves the CTA usable or the parent availability badge marked ready.
+- Kept master admission provider-free. Database and browser contracts verify
+  that it creates no child grant, billing grant, usage row or provider request;
+  actual AI features retain their separate child/provider result gates.
+- Added the additive DB -> Edge -> frontend activation and rollback checklist.
+  No new secret, production mutation, deployment or paid provider call is part
+  of this source change.
+- Bound the student foreground snapshot cadence to five seconds and spread each
+  student's initial phase across the same five-second window. This restores the
+  five-second cross-student comment/like objective while preserving the
+  established periodic request envelope and avoiding synchronized join bursts.
+- Reused one finalize request ID across a PDF publication's committed retries,
+  and persisted that ID through a same-tab reload, so recovery continues the
+  same database activation lease instead of opening a conflicting operation.
+  Exact document/version/manifest readback remains required before the Slides
+  surface appears.
+
 ## 2026-08-18 - Direct Production lecture-cycle activation hardening
 
 - Fixed saved-browser Google Admin reauthentication at the backing Supabase

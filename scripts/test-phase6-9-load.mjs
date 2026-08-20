@@ -22,19 +22,57 @@ assert.match(
 )
 assert.match(adaptiveSync, /foregroundIntervalMs\s*=\s*LIVE_SYNC_INTERVAL_MS/)
 assert.match(liveSyncPolicy, /LIVE_SYNC_INTERVAL_MS\s*=\s*5_000/)
+assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_INTERVAL_MS\s*=\s*5_000/)
+assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_INITIAL_JITTER_MS\s*=\s*5_000/)
+assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_JITTER_MS\s*=\s*0/)
+assert.match(liveSyncPolicy, /LIVE_SYNC_JITTER_MS\s*=\s*1_000/)
+assert.match(
+  context,
+  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,120}STUDENT_LIVE_SYNC_INTERVAL_MS/,
+)
+assert.match(
+  context,
+  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_JITTER_MS/,
+)
+assert.match(
+  context,
+  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
+)
+assert.match(
+  context,
+  /runImmediately:\s*normalizedPathname\s*===\s*'\/lecture'/,
+)
+assert.match(
+  context,
+  /visibilityJitterMs:[\s\S]{0,100}normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,100}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
+)
+assert.match(
+  adaptiveSync,
+  /scheduleSync\(\s*getLiveSyncJitter\(Math\.random\(\), visibilityJitterMs\)/,
+)
+assert.match(adaptiveSync, /Math\.max\(backoffDelay - completedRequestMs, 0\)/)
+assert.match(
+  adaptiveSync,
+  /const syncStartedAt = Date\.now\(\)[\s\S]*scheduleForegroundSync\(syncStartedAt\)/,
+)
 
 const scenarios = [20, 300].map((students) => ({
   additionalPeriodicRequestsPerStudent: 0,
   additionalRealtimeSubscriptionsPerStudent: 0,
-  modeledSnapshotRequests: (students * 90 * 60) / 5,
+  modeledSnapshotRequests: students * Math.ceil((90 * 60 * 1_000) / 5_000),
+  modeledStartupRequests: students,
   students,
 }))
 assert.deepEqual(
   scenarios.map((scenario) => scenario.modeledSnapshotRequests),
   [21_600, 324_000],
 )
+assert.equal(
+  scenarios[1].modeledSnapshotRequests,
+  324_000,
+  'the 300-student periodic request envelope remains unchanged',
+)
+assert.equal(scenarios[1].modeledStartupRequests, 300)
 
 console.log(JSON.stringify({ scenarios }))
-console.log(
-  'Phase 6.9 preserves the 20/300 participant synchronization envelope.',
-)
+console.log('Phase 6.9 preserves the student five-second request envelope.')

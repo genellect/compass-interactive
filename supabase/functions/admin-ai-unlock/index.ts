@@ -33,6 +33,7 @@ import {
 import { createJsonResponse } from '../_shared/responses.ts'
 
 type AiUnlockAction =
+  | 'authorizeMasterWithAal2Session'
   | 'authorizeMasterWithPin'
   | 'authorizeTotpTransition'
   | 'beginBrowserAssertion'
@@ -158,11 +159,21 @@ const FACTOR_ENTRY_ACTIONS = new Set<AiUnlockAction>([
 ])
 
 const C1_ADMISSION_ACTIONS = new Set<AiUnlockAction>([
+  'authorizeMasterWithAal2Session',
   'authorizeMasterWithPin',
   'completeBrowserMasterAdmission',
 ])
 
 const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
+  authorizeMasterWithAal2Session: new Set([
+    'action',
+    'appSessionToken',
+    'lectureSessionId',
+    'policyId',
+    'policyVersion',
+    'requestId',
+    'requestedScope',
+  ]),
   authorizeMasterWithPin: new Set([
     'action',
     'appSessionToken',
@@ -595,7 +606,7 @@ async function handleRequest(request: Request) {
     typeof body !== 'object' ||
     Array.isArray(body) ||
     !body.action ||
-    !(body.action in ACTION_KEYS) ||
+    !Object.hasOwn(ACTION_KEYS, body.action) ||
     Object.keys(body).some((key) => !ACTION_KEYS[body.action!].has(key))
   ) {
     return errorResponse(
@@ -1017,7 +1028,10 @@ async function handleRequest(request: Request) {
     }
     return jsonResponse({
       admissionBlockedReason: value.admission_blocked_reason ?? null,
-      admissionEnabled: value.admission_enabled === true,
+      admissionEnabled:
+        value.admission_enabled === true &&
+        c1AdmissionSourceEnabled &&
+        aiSourceEnabled,
       allowedScopes: value.allowed_scopes ?? [],
       authorization: value.authorization ?? null,
       canUseAi: value.can_use_ai === true,
@@ -1081,6 +1095,92 @@ async function handleRequest(request: Request) {
     return masterResultResponse(
       jsonResponse,
       result.data as Record<string, unknown> | null,
+    )
+  }
+
+  if (action === 'authorizeMasterWithAal2Session') {
+    if (
+      !isUuid(body.lectureSessionId) ||
+      !isUuid(body.policyId) ||
+      !isPositiveInteger(body.policyVersion) ||
+      (body.requestedScope !== 'all_except_captions' &&
+        body.requestedScope !== 'all_including_captions') ||
+      !isUuid(body.requestId)
+    ) {
+      return errorResponse(
+        jsonResponse,
+        'request_invalid',
+        'Request is invalid.',
+        400,
+      )
+    }
+
+    const replay = await serviceClient.rpc(
+      'replay_google_ai_master_admission_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_lecture_session_id: body.lectureSessionId,
+        target_policy_id: body.policyId,
+        target_policy_version: body.policyVersion,
+        target_request_id: body.requestId,
+        target_scope: body.requestedScope,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+        target_unlock_method: 'google_aal2_session',
+      },
+    )
+    if (replay.error) return rpcErrorResponse(jsonResponse, replay.error.code)
+    if (replay.data) {
+      return masterResultResponse(
+        jsonResponse,
+        replay.data as Record<string, unknown>,
+      )
+    }
+    if (!c1AdmissionSourceAllowed || !aiSourceEnabled) {
+      return errorResponse(
+        jsonResponse,
+        'feature_disabled',
+        'Lecture AI authorization is not enabled.',
+        503,
+      )
+    }
+    const gateError = await requireC1AdmissionGate(false)
+    if (gateError) return gateError
+
+    const result = await serviceClient.rpc(
+      'authorize_google_ai_master_with_session_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_lecture_session_id: body.lectureSessionId,
+        target_policy_id: body.policyId,
+        target_policy_version: body.policyVersion,
+        target_request_id: body.requestId,
+        target_scope: body.requestedScope,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_token_hash: tokenHash,
+      },
+    )
+    if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
+    const value = result.data as Record<string, unknown> | null
+    if (value?.accepted === true) {
+      return masterResultResponse(jsonResponse, value)
+    }
+    const retryAfter = Number(value?.retry_after_seconds ?? 0)
+    if (value?.reason_code === 'rate_limited' && retryAfter > 0) {
+      const response = errorResponse(
+        jsonResponse,
+        'rate_limited',
+        'Lecture AI authorization is temporarily rate limited.',
+        429,
+      )
+      response.headers.set('Retry-After', String(Math.min(60, retryAfter)))
+      return response
+    }
+    return errorResponse(
+      jsonResponse,
+      'master_admission_unavailable',
+      'Lecture AI authorization is unavailable.',
+      409,
     )
   }
 

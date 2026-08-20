@@ -4713,6 +4713,19 @@ export type Database = {
         }
         Returns: Json
       }
+      authorize_google_ai_master_with_session_v1: {
+        Args: {
+          target_auth_user_id: string
+          target_lecture_session_id: string
+          target_policy_id: string
+          target_policy_version: number
+          target_request_id: string
+          target_scope: string
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+        }
+        Returns: Json
+      }
       begin_admin_ai_browser_assertion_v1: {
         Args: {
           target_auth_user_id: string

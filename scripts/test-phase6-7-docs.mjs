@@ -119,21 +119,14 @@ assert.match(
 assert.match(devContainerWorkflow, /- \.node-version\s+- \.nvmrc/)
 
 for (const requiredText of [
-  `Application version: \`${packageJson.version}\``,
-  'Phase 6.7',
-  'Phase 7.33',
-  'docs/ROADMAP.md',
-  'docs/RUNBOOK_INDEX.md',
-  'test:phase6-7-docs',
+  'docs/architecture.md',
+  'docs/SECURITY.md',
+  'docs/data_policy.md',
+  'docs/CI_AND_BROWSER_E2E.md',
+  'docs/CLOUD_DEVELOPMENT.md',
 ]) {
   assert.ok(readme.includes(requiredText), `README missing: ${requiredText}`)
 }
-
-assert.match(
-  readme,
-  /Phase 0 through Phase (?:6\.9|7\.1|7\.2)/,
-  'README must state the implemented Phase 0 baseline through the current release',
-)
 
 assert.doesNotMatch(
   readme,
@@ -341,7 +334,6 @@ assert.match(
   'Codex Cloud setup must route the final pushed branch through cloud:handoff without granting external authority',
 )
 for (const document of [
-  readme,
   roadmap,
   docsIndex,
   runbook,
@@ -531,7 +523,6 @@ assert.match(
 
 for (const [name, document] of [
   ['AGENTS', agentsContract],
-  ['README', readme],
   ['Roadmap', roadmap],
   ['Agent routing', agentRouting],
   ['Runbook', runbook],
@@ -571,7 +562,6 @@ for (const [requiredPattern, label] of [
 
 for (const [name, document] of [
   ['AGENTS', agentsContract],
-  ['README', readme],
   ['Roadmap', roadmap],
   ['Agent routing', agentRouting],
   ['Gate routing', gateRouting],
@@ -696,7 +686,6 @@ for (const table of [
 }
 
 for (const [name, document] of [
-  ['README', readme],
   ['CI contract', ciAndBrowser],
   ['Gate routing', gateRouting],
 ]) {
@@ -892,23 +881,12 @@ const featureFlags = [
 ]
 assert.ok(featureFlags.length >= 8, 'Feature flag inventory is incomplete')
 for (const featureFlag of featureFlags) {
-  assert.ok(readme.includes(featureFlag), `README missing flag: ${featureFlag}`)
   assert.ok(
     exampleEnvironment.includes(`${featureFlag}=`),
     `.env.local.example missing flag: ${featureFlag}`,
   )
 }
 
-assert.match(
-  readme,
-  /安全性と講義継続性を同時に守る/,
-  'README must make lecture continuity a shared development principle',
-)
-assert.match(
-  readme,
-  /公開UIをCOMPASSの製品品質へ統一する/,
-  'README must reject development-looking public UI',
-)
 assert.match(
   googleAdminPlan,
   /Cross-phase lecture UX acceptance[\s\S]*without\s+a\s+repeated TOTP challenge[\s\S]*students can join[\s\S]*COMPASS design system/,
