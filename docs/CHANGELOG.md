@@ -3,6 +3,27 @@
 This is a human-readable trajectory, not a replacement for Git history or Phase
 gate evidence. Commit IDs identify the main implementation landmarks.
 
+## 2026-08-21 - Production lecture-cycle activation reliability
+
+- Kept a newly created lecture selected while an older list request finishes,
+  so the material-first Educator flow can create the draft and publish the
+  selected PDF with one CTA. Publication readback remains bound to the exact
+  document, document version and manifest version.
+- Reconciled ambiguous material-analysis responses through the read-only
+  result endpoint instead of dispatching a second provider request. AI poll
+  proposals now lead directly to the participation workspace, and live poll
+  counts refresh in the background without interrupting teacher controls.
+- Aligned lecture-summary PDF context verification with the browser producer's
+  raw-text hash contract before prompt normalization. Valid empty PDF pages are
+  skipped without weakening tamper detection.
+- Added an exact, service-role-only Academic preflight lease renewal after
+  external evidence retrieval and before child authority is issued. Concurrent
+  replays return an in-progress result rather than starting another retrieval.
+- Made realtime-caption activation expose microphone permission and timeout
+  failures explicitly. Late media streams are stopped, invalidated attempts
+  cannot reach Edge, and provider request IDs are created only after a usable
+  microphone stream exists.
+
 ## 2026-08-20 - One-click Google AAL2 lecture AI admission
 
 - Added the factor-free `google_aal2_session` lecture-master method. The

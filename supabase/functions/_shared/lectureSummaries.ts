@@ -55,8 +55,7 @@ export type SummaryLanguageResolution = {
 
 function languageSignal(text: string) {
   const japanese = (
-    text.match(/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/gu) ??
-    []
+    text.match(/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/gu) ?? []
   ).length
   const english = (text.match(/[A-Za-z]/g) ?? []).length
   return { english, japanese, total: english + japanese }
@@ -308,17 +307,19 @@ export async function normalizePdfContext(context?: SummaryPdfContext | null) {
       400,
     )
   }
-  let characters = 0
   const pageNumbers = new Set<number>()
-  const pages: SummaryPdfPage[] = []
+  const validatedPages: Array<{
+    page: SummaryPdfPage
+    rawText: string
+  }> = []
   for (const page of context.pages) {
-    const text = normalizedText(page?.text, PHASE6_MAX_PDF_CHARACTERS)
+    const rawText = typeof page?.text === 'string' ? page.text : null
     if (
       !Number.isInteger(page?.pageNumber) ||
       page.pageNumber < 1 ||
       page.pageNumber > 75 ||
       pageNumbers.has(page.pageNumber) ||
-      !text
+      rawText === null
     ) {
       throw new LectureSummaryError(
         'invalid_pdf_context',
@@ -327,7 +328,7 @@ export async function normalizePdfContext(context?: SummaryPdfContext | null) {
       )
     }
     const excerptId = await sha256Hex(
-      `${context.documentVersion}:${page.pageNumber}:${text}`,
+      `${context.documentVersion}:${page.pageNumber}:${rawText}`,
     )
     if (excerptId !== page.excerptId) {
       throw new LectureSummaryError(
@@ -337,15 +338,22 @@ export async function normalizePdfContext(context?: SummaryPdfContext | null) {
       )
     }
     pageNumbers.add(page.pageNumber)
+    validatedPages.push({ page, rawText })
+  }
+
+  let characters = 0
+  const pages: SummaryPdfPage[] = []
+  for (const { page, rawText } of validatedPages) {
     const available = PHASE6_MAX_PDF_CHARACTERS - characters
     if (available <= 0) break
-    const boundedText = text.slice(0, available)
+    const boundedText = normalizedText(rawText, available)
+    if (!boundedText) continue
     characters += boundedText.length
     pages.push({ ...page, text: boundedText })
   }
   return {
     characters,
-    context: { ...context, pages },
+    context: pages.length ? { ...context, pages } : null,
   }
 }
 
@@ -424,7 +432,9 @@ export function buildSummaryOpenAiRequest(input: {
   previousSummary: unknown
   resolvedLanguage?: SummaryResolvedLanguage
   safetyIdentifier: string
-  transcript: Awaited<ReturnType<typeof normalizeTranscriptSegments>>['segments']
+  transcript: Awaited<
+    ReturnType<typeof normalizeTranscriptSegments>
+  >['segments']
   windowEnd: string
   windowStart: string
 }) {
@@ -493,8 +503,10 @@ function outputText(response: OpenAiSummaryResponse) {
   let refusal = ''
   for (const output of response.output ?? []) {
     for (const content of output.content ?? []) {
-      if (content.type === 'refusal' && content.refusal) refusal = content.refusal
-      if (content.type === 'output_text' && content.text) texts.push(content.text)
+      if (content.type === 'refusal' && content.refusal)
+        refusal = content.refusal
+      if (content.type === 'output_text' && content.text)
+        texts.push(content.text)
     }
   }
   if (refusal) {
@@ -566,7 +578,9 @@ export function applySummaryQualityGates(input: {
   pdfContext: Awaited<ReturnType<typeof normalizePdfContext>>['context']
   previousSummary: unknown
   result: SummaryModelResult
-  transcript: Awaited<ReturnType<typeof normalizeTranscriptSegments>>['segments']
+  transcript: Awaited<
+    ReturnType<typeof normalizeTranscriptSegments>
+  >['segments']
 }) {
   const result = input.result
   if (
@@ -659,8 +673,7 @@ export function applySummaryQualityGates(input: {
     result.academicQuestionCandidate = null
   }
 
-  const unsafe =
-    /(?:diagnose|prescribe|your symptoms|診断|処方|あなたの症状)/iu
+  const unsafe = /(?:diagnose|prescribe|your symptoms|診断|処方|あなたの症状)/iu
   const recapText = result.lectureRecap.join(' ')
   const previousText = previousRecapText(input.previousSummary)
   const commentEvidencePresent =
@@ -674,10 +687,10 @@ export function applySummaryQualityGates(input: {
   const duplicate = similarity(recapText, previousText) >= 0.82
   const publishRecommended = Boolean(
     result.displayRecommendation &&
-      result.lectureRecap.length >= 2 &&
-      evidencePresent &&
-      !duplicate &&
-      !unsafe.test(`${recapText} ${result.commentPulse.join(' ')}`),
+    result.lectureRecap.length >= 2 &&
+    evidencePresent &&
+    !duplicate &&
+    !unsafe.test(`${recapText} ${result.commentPulse.join(' ')}`),
   )
 
   return {
@@ -695,8 +708,7 @@ export function applySummaryQualityGates(input: {
     qualityResult: {
       academic_candidate_retained: Boolean(result.academicQuestionCandidate),
       comment_evidence_present: commentEvidencePresent,
-      comment_small_sample_suppressed:
-        !activeCommentContext,
+      comment_small_sample_suppressed: !activeCommentContext,
       duplicate_with_previous: duplicate,
       evidence_present: evidencePresent,
       publish_recommended: publishRecommended,
@@ -712,7 +724,12 @@ export function parseSummaryRunToken(value: string) {
   const match = value.match(
     /^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.([A-Za-z0-9_-]{32,200})$/i,
   )
-  if (!match) throw new LectureSummaryError('invalid_run_token', 'Invalid summary run token.', 401)
+  if (!match)
+    throw new LectureSummaryError(
+      'invalid_run_token',
+      'Invalid summary run token.',
+      401,
+    )
   return { nonce: match[2], runId: match[1] }
 }
 

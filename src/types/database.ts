@@ -6435,6 +6435,31 @@ export type Database = {
         }
         Returns: Json
       }
+      renew_google_admin_academic_answer_preflight_v1: {
+        Args: {
+          target_academic_request_id: string
+          target_auth_user_id: string
+          target_google_issuer: string
+          target_idempotency_key: string
+          target_lecture_session_id: string
+          target_preflight_context_digest: string
+          target_preflight_request_id: string
+          target_provider_subject_hmac: string
+          target_publication_mode: string
+          target_question_sha256: string
+          target_run_id: string
+          target_run_token_hash: string
+          target_search_query_sha256: string
+          target_source_kind: string
+          target_source_policy: string
+          target_source_summary_id: string
+          target_subject_pepper_version: number
+          target_supabase_auth_session_id: string
+          target_token_hash: string
+          target_transport_enabled: boolean
+        }
+        Returns: Json
+      }
       replay_google_ai_master_admission_v1: {
         Args: {
           target_auth_user_id: string

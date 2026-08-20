@@ -50,6 +50,10 @@ assert.match(preflightWorker, /MAX_PDF_PAGES = 75/)
 assert.match(preflightWorker, /MAX_PDF_TEXT_CHARACTERS = 20_000/)
 assert.match(preflightWorker, /crypto\.subtle\.digest\('SHA-256'/)
 assert.match(preflightWorker, /getTextContent/)
+assert.match(
+  preflightWorker,
+  /excerptId:\s*await sha256Hex\(\s*`\$\{pdfSha256\}:\$\{index \+ 1\}:\$\{text\}`,\s*\)/,
+)
 assert.match(preflightWorker, /isOffscreenCanvasSupported: false/)
 assert.match(preflightWorker, /useWasm: false/)
 assert.doesNotMatch(

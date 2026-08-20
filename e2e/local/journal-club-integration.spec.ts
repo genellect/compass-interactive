@@ -660,6 +660,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       await expect(firstChoice.getByRole('radio')).toBeChecked()
       await studentPoll.getByRole('button', { name: 'この回答を送る' }).click()
       await expect(studentPoll.getByText('回答しました。')).toBeVisible()
+      await expect(adminPollRow).toContainText(': 1件', { timeout: 8_000 })
 
       if (index === 0) {
         previousOpenPollRow = adminPollRow

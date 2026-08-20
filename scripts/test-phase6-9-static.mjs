@@ -7,6 +7,9 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8')
 const normalizedUtf8Bytes = (path) =>
   Buffer.byteLength(read(path).replaceAll('\r\n', '\n'), 'utf8')
 const adminPage = read('src/pages/AdminPage.tsx')
+const adminPollCoordinator = read(
+  'src/pages/admin/useAdminPollRefreshCoordinator.ts',
+)
 const context = read('src/context/CompassStateContext.tsx')
 const liveRepository = read('src/repositories/supabaseLiveStateRepository.ts')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
@@ -37,6 +40,26 @@ assert.match(
   adminPage,
   /TeacherWorkspaceNav[\s\S]*teacher-workspace-stage[\s\S]*view=\{workspaceView === 'slides' \? 'slides' : 'material'\}/,
   'the teacher workspace must expose only the stage selected from server-derived availability',
+)
+assert.match(
+  adminPollCoordinator,
+  /inFlightByKeyRef[\s\S]*refreshSequence !== refreshSequenceRef\.current[\s\S]*mutationEpoch !== mutationEpochRef\.current[\s\S]*lectureSessionId !== activeLectureIdRef\.current[\s\S]*applyPollList\(result, lectureSessionId\)/,
+  'a delayed poll-list response must not cross a lecture-selection boundary',
+)
+assert.match(
+  adminPage,
+  /adminPollsLectureSessionId === requestedAdminLectureSessionId[\s\S]*adminPolls: pollsBelongToRequestedLecture \? adminPolls : \[\][\s\S]*adminPollsHasMore: pollsBelongToRequestedLecture/,
+  'poll rows must remain hidden until their owner lecture matches the selected lecture',
+)
+assert.match(
+  adminPollCoordinator,
+  /epoch: \+\+mutationEpochRef\.current[\s\S]*mutation\.epoch === mutationEpochRef\.current[\s\S]*mutation\.lectureSessionId === activeLectureIdRef\.current/,
+  'a stale background poll response must not overwrite a newer poll mutation',
+)
+assert.match(
+  adminPollCoordinator,
+  /if \(!silent\) \{[\s\S]*setPollsLoading\(true\)[\s\S]*finally \{[\s\S]*!silent &&[\s\S]*setPollsLoading\(false\)/,
+  'background poll refresh must not interrupt teacher controls with loading state',
 )
 for (const responsibility of [
   'commentsAndPolls',

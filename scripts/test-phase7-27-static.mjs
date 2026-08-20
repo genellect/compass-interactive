@@ -30,6 +30,12 @@ const manageLectures = read(
 )
 const managePolls = read('supabase', 'functions', 'manage-polls', 'index.ts')
 const adminPage = read('src', 'pages', 'AdminPage.tsx')
+const adminPollCoordinator = read(
+  'src',
+  'pages',
+  'admin',
+  'useAdminPollRefreshCoordinator.ts',
+)
 const app = read('src', 'App.tsx')
 const adminPdfControl = read(
   'src',
@@ -208,8 +214,8 @@ assert.match(
 assert.doesNotMatch(managePolls, /\.from\('phase727_/)
 assert.match(preset, /createJournalClubRun/)
 assert.match(
-  adminPage,
-  /const effectiveIncludeHistory =[\s\S]*?includeHistory \|\| journalClubLectureIds\.has\(lectureSessionId\)[\s\S]*?includeHistory: effectiveIncludeHistory/,
+  adminPollCoordinator,
+  /const effectiveIncludeHistory =[\s\S]*?includeHistory \|\| input\.journalClubLectureIds\.has\(lectureSessionId\)[\s\S]*?includeHistory: effectiveIncludeHistory/,
 )
 assert.match(preset, /prepare\('rehearsal'\)/)
 assert.match(preset, /prepare\('production'\)/)

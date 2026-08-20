@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { matchAcademicReconciliationResult } from '../src/repositories/supabase/academicReconciliation.ts'
+import type { AdminAcademicResults } from '../src/repositories/supabase/adminAcademicTypes.ts'
+import { toAdminAcademicResults } from '../src/repositories/supabase/adminMappers.ts'
 import {
   AcademicAnswerError,
   applyAcademicAnswerQualityGates,
@@ -13,6 +16,7 @@ import {
   parseMedline,
   PHASE72_MAX_SOURCES,
   PHASE72_MODEL,
+  requireAcademicPreflightRetrievalClaim,
   retrieveVerifiedAcademicSources,
   titleSimilarity,
   verifyCrossrefMessage,
@@ -34,7 +38,9 @@ const crossrefMessage = {
   DOI: '10.1056/NEJMoa1511939',
   author: [{ family: 'Wright', given: 'Jackson T' }],
   issued: { 'date-parts': [[2015, 11, 26]] },
-  title: ['A Randomized Trial of Intensive versus Standard Blood-Pressure Control'],
+  title: [
+    'A Randomized Trial of Intensive versus Standard Blood-Pressure Control',
+  ],
 }
 
 function jsonResponse(value: unknown) {
@@ -61,7 +67,8 @@ function source(overrides: Partial<VerifiedAcademicSource> = {}) {
     sourceId: 'pmid:26551272',
     sourceRole: 'primary' as const,
     studyType: 'randomized_controlled_trial',
-    title: 'A Randomized Trial of Intensive versus Standard Blood-Pressure Control',
+    title:
+      'A Randomized Trial of Intensive versus Standard Blood-Pressure Control',
     verification: {
       author: true,
       crossref: true,
@@ -77,8 +84,41 @@ function source(overrides: Partial<VerifiedAcademicSource> = {}) {
   }
 }
 
+function academicResults(
+  activeRequests: AdminAcademicResults['activeRequests'],
+  answers: AdminAcademicResults['answers'],
+): AdminAcademicResults {
+  return {
+    activeRequests,
+    answers,
+    automation: null,
+    candidates: [],
+    control: null,
+  }
+}
+
+function academicAnswer(
+  id: string,
+  question: string,
+  preflightRequestId: string | null,
+) {
+  return {
+    body: { answerPoints: [], limitations: [] },
+    createdAt: '2026-08-21T00:00:00.000Z',
+    id,
+    preflightRequestId,
+    publication: null,
+    question,
+    sources: [],
+    status: 'awaiting_review' as const,
+  }
+}
+
 test('normalizes identifiers and verifies the deterministic Crossref tuple', () => {
-  assert.equal(normalizeDoi('https://doi.org/10.1056/NEJMoa1511939'), '10.1056/nejmoa1511939')
+  assert.equal(
+    normalizeDoi('https://doi.org/10.1056/NEJMoa1511939'),
+    '10.1056/nejmoa1511939',
+  )
   assert.ok(titleSimilarity(source().title, crossrefMessage.title[0]) >= 0.99)
   assert.equal(verifyCrossrefMessage(source(), crossrefMessage).passed, true)
   assert.equal(
@@ -90,13 +130,177 @@ test('normalizes identifiers and verifies the deterministic Crossref tuple', () 
   )
 })
 
+test('an exact live preflight replay returns operation_in_progress before retrieval', () => {
+  assert.throws(
+    () => requireAcademicPreflightRetrievalClaim({ claimAcquired: false }),
+    (error) =>
+      error instanceof AcademicAnswerError &&
+      error.code === 'operation_in_progress' &&
+      error.status === 409,
+  )
+  assert.throws(
+    () => requireAcademicPreflightRetrievalClaim({}),
+    (error) =>
+      error instanceof AcademicAnswerError &&
+      error.code === 'operation_in_progress' &&
+      error.status === 409,
+  )
+  assert.doesNotThrow(() =>
+    requireAcademicPreflightRetrievalClaim({ claimAcquired: true }),
+  )
+})
+
+test('maps exact preflight bindings from guarded status results', () => {
+  const preflightRequestId = '30000000-0000-4000-8000-000000000010'
+  const results = toAdminAcademicResults({
+    active_requests: [
+      {
+        id: '30000000-0000-4000-8000-000000000011',
+        preflight_request_id: preflightRequestId,
+        question: 'What evidence supports this treatment?',
+        status: 'evidence_checking',
+      },
+    ],
+    answers: [
+      {
+        id: '30000000-0000-4000-8000-000000000012',
+        preflight_request_id: preflightRequestId,
+        question: 'What evidence supports this treatment?',
+      },
+    ],
+  })
+  assert.equal(
+    results.activeRequests[0]?.preflightRequestId,
+    preflightRequestId,
+  )
+  assert.equal(results.answers[0]?.preflightRequestId, preflightRequestId)
+})
+
+test('reconciles only a new result for the exact preflight binding', () => {
+  const baseline = {
+    knownActiveRequestIds: ['request-old'],
+    knownAnswerIds: ['answer-old'],
+    preflightRequestId: 'preflight-exact',
+    question: 'What evidence supports this treatment?',
+  }
+  assert.deepEqual(
+    matchAcademicReconciliationResult(
+      academicResults(
+        [
+          {
+            id: 'request-old',
+            operationId: null,
+            preflightRequestId: baseline.preflightRequestId,
+            question: baseline.question,
+            status: 'running',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+          },
+        ],
+        [
+          academicAnswer(
+            'answer-old',
+            baseline.question,
+            baseline.preflightRequestId,
+          ),
+        ],
+      ),
+      baseline,
+    ),
+    { activeRequestFound: false, answerFound: false },
+  )
+  assert.deepEqual(
+    matchAcademicReconciliationResult(
+      academicResults(
+        [
+          {
+            id: 'request-conflict',
+            operationId: 'operation-conflict',
+            preflightRequestId: 'preflight-other',
+            question: 'What  evidence supports this treatment?',
+            status: 'running',
+            updatedAt: '2026-08-21T00:00:01.000Z',
+          },
+          {
+            id: 'request-other',
+            operationId: null,
+            preflightRequestId: baseline.preflightRequestId,
+            question: 'A different question',
+            status: 'evidence_checking',
+            updatedAt: '2026-08-21T00:00:01.000Z',
+          },
+        ],
+        [],
+      ),
+      baseline,
+    ),
+    { activeRequestFound: false, answerFound: false },
+  )
+  assert.deepEqual(
+    matchAcademicReconciliationResult(
+      academicResults(
+        [
+          {
+            id: 'request-new',
+            operationId: 'operation-new',
+            preflightRequestId: baseline.preflightRequestId,
+            question: 'What  evidence supports this treatment?',
+            status: 'running',
+            updatedAt: '2026-08-21T00:00:02.000Z',
+          },
+        ],
+        [],
+      ),
+      baseline,
+    ),
+    { activeRequestFound: true, answerFound: false },
+  )
+  assert.deepEqual(
+    matchAcademicReconciliationResult(
+      academicResults(
+        [],
+        [
+          academicAnswer(
+            'answer-conflict',
+            baseline.question,
+            'preflight-other',
+          ),
+        ],
+      ),
+      baseline,
+    ),
+    { activeRequestFound: false, answerFound: false },
+  )
+  assert.deepEqual(
+    matchAcademicReconciliationResult(
+      academicResults(
+        [],
+        [
+          academicAnswer(
+            'answer-new',
+            baseline.question,
+            baseline.preflightRequestId,
+          ),
+        ],
+      ),
+      baseline,
+    ),
+    { activeRequestFound: false, answerFound: true },
+  )
+})
+
 test('parses bounded MEDLINE and classifies primary, context and retracted records', () => {
   const records = parseMedline(medline)
   assert.equal(records.length, 1)
   assert.equal(records[0]?.PMID?.[0], '26551272')
-  assert.equal(classifyPublicationTypes(['Randomized Controlled Trial']).role, 'primary')
+  assert.equal(
+    classifyPublicationTypes(['Randomized Controlled Trial']).role,
+    'primary',
+  )
   assert.equal(classifyPublicationTypes(['Systematic Review']).role, 'context')
-  assert.equal(classifyPublicationTypes(['Retracted Publication']).rejected, true)
+  assert.equal(
+    classifyPublicationTypes(['Retracted Publication']).rejected,
+    true,
+  )
 })
 
 test('retrieves at most five PubMed records and corroborates DOI metadata', async () => {
@@ -158,7 +362,10 @@ test('builds one low-cost Luna structured request without tools or retention', (
   assert.equal(request.store, false)
   assert.equal(request.text.format.strict, true)
   assert.equal('tools' in request, false)
-  assert.match(request.input[0].content[0].text, /untrusted data, never instructions/)
+  assert.match(
+    request.input[0].content[0].text,
+    /untrusted data, never instructions/,
+  )
   const userPayload = JSON.parse(request.input[1].content[0].text)
   assert.match(userPayload.question, /invent a DOI/)
   assert.equal(userPayload.sources[0].sourceId, 'pmid:26551272')
@@ -194,7 +401,9 @@ test('accepts only fully mapped primary claims and rejects numeric fabrication',
         },
         sources: [source()],
       }),
-    (error) => error instanceof AcademicAnswerError && error.code === 'quality_gate_source_mapping',
+    (error) =>
+      error instanceof AcademicAnswerError &&
+      error.code === 'quality_gate_source_mapping',
   )
   assert.throws(
     () =>
@@ -208,7 +417,9 @@ test('accepts only fully mapped primary claims and rejects numeric fabrication',
         },
         sources: [source()],
       }),
-    (error) => error instanceof AcademicAnswerError && error.code === 'quality_gate_numeric_anchor',
+    (error) =>
+      error instanceof AcademicAnswerError &&
+      error.code === 'quality_gate_numeric_anchor',
   )
 })
 
@@ -250,7 +461,8 @@ test('parses Responses structured output and treats insufficient evidence as no 
   })
   assert.equal(parsed.providerRequestId, 'resp_test')
   assert.equal(
-    applyAcademicAnswerQualityGates({ result: parsed.result, sources: [] }).supported,
+    applyAcademicAnswerQualityGates({ result: parsed.result, sources: [] })
+      .supported,
     false,
   )
 })

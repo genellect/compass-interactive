@@ -108,6 +108,8 @@ export function LectureSummaryControl({
       string,
       {
         grantRequestId: string
+        knownActiveRequestIds: string[]
+        knownAnswerIds: string[]
         preflightRequestId: string
         startRequestId: string
       }
@@ -286,6 +288,10 @@ export function LectureSummaryControl({
             candidate.summaryId,
           ) ?? {
             grantRequestId: crypto.randomUUID(),
+            knownActiveRequestIds: academic.activeRequests.map(
+              (request) => request.id,
+            ),
+            knownAnswerIds: academic.answers.map((answer) => answer.id),
             preflightRequestId: crypto.randomUUID(),
             startRequestId: crypto.randomUUID(),
           }

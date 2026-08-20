@@ -358,7 +358,9 @@ SELECT ok(
     SELECT 1
     FROM unnest(ARRAY[
       'public.manage_google_admin_summary_run_v2(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+      'public.get_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,uuid)',
       'public.prepare_google_admin_academic_answer_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,uuid,text,text,text,text,uuid,boolean)',
+      'public.renew_google_admin_academic_answer_preflight_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid,text,text,text,uuid,text,text,text,uuid,text,boolean)',
       'public.mark_google_admin_academic_answer_insufficient_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,boolean)',
       'public.issue_google_academic_answer_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
       'public.start_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
@@ -373,7 +375,10 @@ SELECT ok(
     SELECT 1
     FROM unnest(ARRAY[
       'private.manage_google_admin_summary_run_v2(text,uuid,uuid,text,text,integer,uuid,text,text,boolean,text,text,uuid,boolean)',
+      'private.get_google_admin_academic_results_v1(text,uuid,uuid,text,text,integer,boolean,uuid)',
+      'private.google_academic_results_with_preflight_v1(uuid)',
       'private.prepare_google_admin_academic_answer_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,text,text,text,uuid,text,text,text,text,uuid,boolean)',
+      'private.renew_google_admin_academic_answer_preflight_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,uuid,text,text,text,uuid,text,text,text,uuid,text,boolean)',
       'private.mark_google_admin_academic_answer_insufficient_v1(text,uuid,uuid,text,text,integer,uuid,uuid,text,boolean)',
       'private.issue_google_academic_answer_ai_child_grant_v1(text,uuid,uuid,text,text,integer,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,text,integer,uuid,boolean)',
       'private.start_google_admin_academic_answer_operation_v1(text,uuid,uuid,text,text,integer,uuid,text,uuid,uuid,uuid,text,text,uuid,text,text,integer,integer,text,text,text,bigint,bigint,integer,bigint,bigint,bigint,uuid,text,boolean)',
@@ -1085,6 +1090,51 @@ LANGUAGE sql VOLATILE SET search_path = '' AS $$
       'hex'
     ),
     repeat('b',64), 'auto', preflight_request_id, transport_enabled
+  );
+$$;
+
+CREATE FUNCTION pg_temp.get_academic_results()
+RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.get_google_admin_academic_results_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1, true,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid
+  );
+$$;
+
+CREATE FUNCTION pg_temp.renew_academic_preflight(
+  preflight_request_id uuid,
+  academic_request_id uuid,
+  preflight_context_digest text,
+  publication_mode text,
+  run_id uuid,
+  run_token_hash text,
+  idempotency_key text,
+  source_kind text,
+  source_summary_id uuid,
+  transport_enabled boolean
+) RETURNS jsonb
+LANGUAGE sql VOLATILE SET search_path = '' AS $$
+  SELECT public.renew_google_admin_academic_answer_preflight_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    current_setting('compass.test.c2_provider_lecture_id')::uuid,
+    academic_request_id, publication_mode, run_id, run_token_hash,
+    idempotency_key, source_kind, source_summary_id,
+    encode(
+      extensions.digest(
+        convert_to('What evidence supports this treatment?', 'UTF8'),
+        'sha256'
+      ),
+      'hex'
+    ),
+    repeat('b',64), 'auto', preflight_request_id,
+    preflight_context_digest, transport_enabled
   );
 $$;
 
@@ -2996,6 +3046,23 @@ SELECT ok(
 );
 SELECT ok(
   (
+    SELECT active_request ->> 'preflight_request_id' =
+        '00000000-0000-4000-8000-00000000e2a0'
+      AND active_request ->> 'id' =
+        current_setting('compass.test.c2_academic_request_a')
+      AND NOT (active_request ? 'question_sha256')
+      AND NOT (active_request ? 'search_query_sha256')
+      AND NOT (active_request ? 'provider_context_digest')
+    FROM jsonb_array_elements(
+      pg_temp.get_academic_results() -> 'active_requests'
+    ) AS active_request
+    WHERE active_request ->> 'id' =
+      current_setting('compass.test.c2_academic_request_a')
+  ),
+  'guarded Academic status returns the exact preflight binding without private receipt hashes'
+);
+SELECT ok(
+  (
     SELECT result ->> 'academicRequestId' =
         current_setting('compass.test.c2_academic_request_a')
       AND result ->> 'claimAcquired' = 'false'
@@ -3010,6 +3077,62 @@ SELECT ok(
     ) AS replayed
   ),
   'Academic preflight exact replay returns receipt metadata without provider content'
+);
+RESET ROLE;
+UPDATE public.academic_answer_requests
+SET lease_until = statement_timestamp() + interval '10 seconds',
+    updated_at = statement_timestamp()
+WHERE id = current_setting('compass.test.c2_academic_request_a')::uuid;
+SET ROLE service_role;
+SELECT ok(
+  (
+    SELECT set_config(
+      'compass.test.c2_academic_renewed_lease_a',
+      result ->> 'leaseUntil', false
+    ) IS NOT NULL
+      AND result ->> 'accepted' = 'true'
+      AND result ->> 'academicRequestId' =
+        current_setting('compass.test.c2_academic_request_a')
+      AND result ->> 'preflightRequestId' =
+        '00000000-0000-4000-8000-00000000e2a0'
+      AND result ->> 'providerContextDigest' =
+        current_setting('compass.test.c2_academic_preflight_digest_a')
+      AND result ->> 'requestStatus' = 'evidence_checking'
+      AND (result ->> 'leaseUntil')::timestamptz >
+        statement_timestamp() + interval '1 minute'
+    FROM (
+      SELECT pg_temp.renew_academic_preflight(
+        '00000000-0000-4000-8000-00000000e2a0'::uuid,
+        current_setting('compass.test.c2_academic_request_a')::uuid,
+        current_setting('compass.test.c2_academic_preflight_digest_a'),
+        'manual_review', null::uuid, null::text,
+        'phase730c2-academic-manual-a', 'teacher_selected', null::uuid, true
+      ) AS result
+    ) AS renewed
+  ),
+  'the retrieval owner renews the exact live authority and lease before child issue'
+);
+SELECT throws_ok(
+  $$SELECT pg_temp.renew_academic_preflight(
+    '00000000-0000-4000-8000-00000000e2a0'::uuid,
+    current_setting('compass.test.c2_academic_request_a')::uuid,
+    current_setting('compass.test.c2_academic_preflight_digest_a'),
+    'manual_review', null::uuid, null::text,
+    'phase730c2-academic-binding-changed', 'teacher_selected', null::uuid, true
+  )$$,
+  'P7335',
+  'Google academic preflight renewal binding changed',
+  'a changed retrieval binding cannot renew another preflight lease'
+);
+SELECT ok(
+  (
+    SELECT request.lease_until =
+      current_setting('compass.test.c2_academic_renewed_lease_a')::timestamptz
+    FROM public.academic_answer_requests AS request
+    WHERE request.id =
+      current_setting('compass.test.c2_academic_request_a')::uuid
+  ),
+  'a rejected renewal leaves the owner lease unchanged'
 );
 RESET ROLE;
 UPDATE public.academic_answer_requests

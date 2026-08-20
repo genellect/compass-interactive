@@ -14,6 +14,7 @@ import {
   PHASE72_MODEL,
   PHASE72_OUTPUT_PRICE_MICROUSD_PER_MILLION,
   PHASE72_PROMPT_VERSION,
+  requireAcademicPreflightRetrievalClaim,
   retrieveVerifiedAcademicSources,
   type AcademicSourcePolicy,
   type OpenAiAcademicResponse,
@@ -74,6 +75,16 @@ type GooglePreflightResult = {
   claimAcquired?: boolean
   idempotentReplay?: boolean
   providerContextDigest?: string
+  requestStatus?: string
+}
+
+type GooglePreflightRenewalResult = {
+  accepted?: boolean
+  academicRequestId?: string
+  leaseUntil?: string
+  preflightRequestId?: string
+  providerContextDigest?: string
+  reason?: string
   requestStatus?: string
 }
 
@@ -594,6 +605,7 @@ Deno.serve(async (request) => {
     }
 
     const automatic = body.action === 'generateAuto'
+    const publicationMode = automatic ? 'auto_unreviewed' : 'manual_review'
     const question = boundedText(body.question, 10, 500)
     const searchQuery = boundedText(body.searchQuery, 3, 240)
     const selectedPolicy = sourcePolicy(body.sourcePolicy ?? 'auto')
@@ -650,6 +662,8 @@ Deno.serve(async (request) => {
     const runTokenHash = automatic
       ? await sha256Hex(runCredentials?.nonce ?? '')
       : null
+    const questionSha256 = await sha256Hex(question)
+    const searchQuerySha256 = await sha256Hex(searchQuery)
     let requestState: PreparedRequest
     let googlePreflightContextDigest: string | null = null
     if (googleContext && googleRpcIdentity) {
@@ -662,14 +676,12 @@ Deno.serve(async (request) => {
           target_idempotency_key: effectiveIdempotencyKey,
           target_lecture_session_id: body.lectureSessionId,
           target_preflight_request_id: body.preflightRequestId,
-          target_publication_mode: automatic
-            ? 'auto_unreviewed'
-            : 'manual_review',
+          target_publication_mode: publicationMode,
           target_question: question,
-          target_question_sha256: await sha256Hex(question),
+          target_question_sha256: questionSha256,
           target_run_id: automatic ? runCredentials?.runId : null,
           target_run_token_hash: runTokenHash,
-          target_search_query_sha256: await sha256Hex(searchQuery),
+          target_search_query_sha256: searchQuerySha256,
           target_source_kind: sourceKind,
           target_source_policy: selectedPolicy,
           target_source_summary_id: body.sourceSummaryId ?? null,
@@ -742,6 +754,14 @@ Deno.serve(async (request) => {
           409,
         )
       }
+      requireAcademicPreflightRetrievalClaim(prepared)
+    }
+    if (!googlePreflightContextDigest || !requestState.id) {
+      throw new AcademicAnswerError(
+        'request_prepare_failed',
+        'The academic answer request lost its authorization binding.',
+        409,
+      )
     }
 
     const retrieval = await retrieveVerifiedAcademicSources({
@@ -749,6 +769,81 @@ Deno.serve(async (request) => {
       searchQuery,
       sourcePolicy: selectedPolicy,
     })
+    if (googleContext && googleRpcIdentity) {
+      const transportEnabled =
+        googleContext.transportEnabled && academicTransportEnabled
+      const { data: renewalData, error: renewalError } = await supabase.rpc(
+        'renew_google_admin_academic_answer_preflight_v1',
+        {
+          ...googleRpcIdentity,
+          target_academic_request_id: requestState.id,
+          target_idempotency_key: effectiveIdempotencyKey,
+          target_lecture_session_id: body.lectureSessionId,
+          target_preflight_context_digest: googlePreflightContextDigest,
+          target_preflight_request_id: body.preflightRequestId,
+          target_publication_mode: publicationMode,
+          target_question_sha256: questionSha256,
+          target_run_id: automatic ? runCredentials?.runId : null,
+          target_run_token_hash: runTokenHash,
+          target_search_query_sha256: searchQuerySha256,
+          target_source_kind: sourceKind,
+          target_source_policy: selectedPolicy,
+          target_source_summary_id: body.sourceSummaryId ?? null,
+          target_transport_enabled: transportEnabled,
+        },
+      )
+      if (renewalError) {
+        const admissionDisabled = renewalError.code === 'P7338'
+        const authorityChanged = renewalError.code === 'P7335'
+        throw new AcademicAnswerError(
+          admissionDisabled
+            ? 'google_ai_admission_disabled'
+            : authorityChanged
+              ? 'academic_preflight_renewal_rejected'
+              : 'academic_preflight_renewal_failed',
+          admissionDisabled
+            ? 'AI use is not enabled for this Admin environment.'
+            : authorityChanged
+              ? 'AI authorization changed while evidence was being checked. Start a new explicit attempt.'
+              : 'The academic answer authorization could not be refreshed safely.',
+          admissionDisabled || !authorityChanged ? 503 : 409,
+        )
+      }
+      const renewed = renewalData as GooglePreflightRenewalResult | null
+      if (renewed?.accepted !== true) {
+        const operationInProgress =
+          renewed?.reason === 'request_not_renewable' &&
+          renewed.requestStatus === 'running'
+        throw new AcademicAnswerError(
+          operationInProgress
+            ? 'operation_in_progress'
+            : renewed?.reason === 'request_not_renewable'
+              ? 'operation_not_retryable'
+              : 'academic_preflight_renewal_failed',
+          operationInProgress
+            ? 'This reference answer is already being generated. Check its status before starting another attempt.'
+            : renewed?.reason === 'request_not_renewable'
+              ? 'This reference answer is no longer retryable. Start a new explicit attempt.'
+              : 'The academic answer authorization could not be refreshed safely.',
+          renewed?.reason === 'request_not_renewable' ? 409 : 503,
+        )
+      }
+      if (
+        renewed.academicRequestId !== requestState.id ||
+        renewed.preflightRequestId !== body.preflightRequestId ||
+        renewed.providerContextDigest !== googlePreflightContextDigest ||
+        renewed.requestStatus !== 'evidence_checking' ||
+        typeof renewed.leaseUntil !== 'string' ||
+        !Number.isFinite(Date.parse(renewed.leaseUntil))
+      ) {
+        throw new AcademicAnswerError(
+          'academic_preflight_renewal_failed',
+          'The academic answer authorization could not be refreshed safely.',
+          503,
+        )
+      }
+      requestState.status = renewed.requestStatus
+    }
     const sources = retrieval.sources
     if (!sources.some((source) => source.sourceRole === 'primary')) {
       if (googleContext && googleRpcIdentity) {
@@ -806,13 +901,6 @@ Deno.serve(async (request) => {
       buildAcademicAnswerOpenAiRequest({ question, safetyIdentifier, sources }),
     )
 
-    if (!googlePreflightContextDigest || !requestState.id) {
-      throw new AcademicAnswerError(
-        'request_prepare_failed',
-        'The academic answer request lost its authorization binding.',
-        409,
-      )
-    }
     {
       const transportEnabled =
         googleContext.transportEnabled && academicTransportEnabled
@@ -850,7 +938,6 @@ Deno.serve(async (request) => {
       const verifiedPrimaryCount = sources.filter(
         (source) => source.sourceRole === 'primary',
       ).length
-      const publicationMode = automatic ? 'auto_unreviewed' : 'manual_review'
       const { data: childData, error: childError } = await supabase.rpc(
         'issue_google_academic_answer_ai_child_grant_v1',
         {

@@ -106,6 +106,8 @@ const adminAiPolicyManagementFacadeMigrationName =
   '20260818070000_admin_ai_policy_management_facade.sql'
 const googleAal2SessionAiMasterMigrationName =
   '20260820081453_google_aal2_session_ai_master.sql'
+const googleAcademicPreflightLeaseRenewalMigrationName =
+  '20260820223220_phase7_30c2_google_academic_preflight_lease_renewal.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -170,6 +172,7 @@ assert.deepEqual(
     adminTotpStepUpAbsoluteCapMigrationName,
     adminAiPolicyManagementFacadeMigrationName,
     googleAal2SessionAiMasterMigrationName,
+    googleAcademicPreflightLeaseRenewalMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

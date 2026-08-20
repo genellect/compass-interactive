@@ -26,6 +26,11 @@ const summaryProviderMigration = read(
 const academicMigration = read(
   'supabase/migrations/20260811233000_phase7_30c2_google_academic_provider.sql',
 )
+const academicLeaseMigration = read(
+  'supabase/migrations/20260820223220_phase7_30c2_google_academic_preflight_lease_renewal.sql',
+)
+const academicAuthorityMigrations =
+  academicMigration + '\n' + academicLeaseMigration
 const realtimeControlMigration = read(
   'supabase/migrations/20260812011500_phase7_30c2_google_realtime_control.sql',
 )
@@ -46,6 +51,25 @@ const generateSummary = read(
 )
 const generateAcademicAnswer = read(
   'supabase/functions/generate-academic-answer/index.ts',
+)
+const academicReconciliation = read(
+  'src/repositories/supabase/academicReconciliation.ts',
+)
+const adminAcademicTypes = read(
+  'src/repositories/supabase/adminAcademicTypes.ts',
+)
+const adminMappers = read('src/repositories/supabase/adminMappers.ts')
+const adminContentAiRepository = read(
+  'src/repositories/supabase/adminContentAiRepository.ts',
+)
+const academicAnswerControl = read(
+  'src/components/AdminAiControl/AcademicAnswerControl.tsx',
+)
+const lectureSummaryControl = read(
+  'src/components/AdminAiControl/LectureSummaryControl.tsx',
+)
+const aiMasterAuthorizationE2e = read(
+  'e2e/local/ai-master-authorization.spec.ts',
 )
 const issueRealtimeClientSecret = read(
   'supabase/functions/issue-realtime-client-secret/index.ts',
@@ -1195,6 +1219,58 @@ assert.doesNotMatch(
   'Academic exact replay returns receipt state without answer or source content',
 )
 
+const academicPreflightRenewal = functionBlock(
+  academicLeaseMigration,
+  'private.renew_google_admin_academic_answer_preflight_v1',
+)
+const academicRenewalRequest = academicPreflightRenewal.indexOf(
+  'serialize_admin_ai_request_v1',
+)
+const academicRenewalContext = academicPreflightRenewal.indexOf(
+  'require_google_ai_provider_context_v1',
+)
+const academicRenewalReceipt = academicPreflightRenewal.indexOf(
+  'from private.admin_google_academic_answer_preflight_receipts as receipt',
+)
+const academicRenewalAuthority = academicPreflightRenewal.indexOf(
+  'require_google_academic_live_authority_v1',
+)
+const academicRenewalRequestRow = academicPreflightRenewal.indexOf(
+  'from public.academic_answer_requests as request',
+)
+const academicRenewalUpdate = academicPreflightRenewal.indexOf(
+  'update public.academic_answer_requests as request',
+)
+assert.ok(
+  academicRenewalRequest >= 0 &&
+    academicRenewalRequest < academicRenewalContext &&
+    academicRenewalContext < academicRenewalReceipt &&
+    academicRenewalReceipt < academicRenewalAuthority &&
+    academicRenewalAuthority < academicRenewalRequestRow &&
+    academicRenewalRequestRow < academicRenewalUpdate,
+  'Academic retrieval renewal preserves request advisory -> Google context -> exact receipt -> live authority -> request -> lease update order',
+)
+assert.match(
+  academicPreflightRenewal,
+  /receipt_row\.academic_request_id is distinct from[\s\S]*target_academic_request_id[\s\S]*receipt_row\.question_sha256 is distinct from target_question_sha256[\s\S]*receipt_row\.search_query_sha256 is distinct from[\s\S]*target_search_query_sha256[\s\S]*receipt_row\.provider_context_digest is distinct from[\s\S]*target_preflight_context_digest/,
+  'Academic retrieval renewal is bound to the exact request, context and hashed inputs',
+)
+assert.match(
+  academicPreflightRenewal,
+  /academic_authority_mode = 'google_per_call'[\s\S]*admin_google_summary_auto_receipts as marker[\s\S]*renewal_expires_at := least\(renewal_expires_at, run_row\.expires_at\)/,
+  'automatic Academic renewal requires the same live run and immutable Google start evidence',
+)
+assert.match(
+  academicPreflightRenewal,
+  /renewal_expires_at := least\([\s\S]*interval '2 minutes'[\s\S]*lecture_hard_stop_at[\s\S]*master_expires_at[\s\S]*policy_valid_until[\s\S]*status <> 'evidence_checking'[\s\S]*operation_id is not null[\s\S]*source_set_sha256 is not null[\s\S]*set[\s\S]*lease_until = renewal_expires_at/,
+  'Academic retrieval renewal extends only an unstarted evidence lease within every authority deadline',
+)
+assert.doesNotMatch(
+  academicPreflightRenewal,
+  /\btarget_question\b(?!_sha256)|\btarget_search_query\b(?!_sha256)|source_abstract|provider_payload/,
+  'Academic retrieval renewal carries hashes and bindings without raw question, query, source or provider content',
+)
+
 const academicChild = functionBlock(
   academicMigration,
   'private.issue_google_academic_answer_ai_child_grant_v1',
@@ -1358,6 +1434,7 @@ assert.match(
 for (const facade of [
   'manage_google_admin_summary_run_v2',
   'prepare_google_admin_academic_answer_v1',
+  'renew_google_admin_academic_answer_preflight_v1',
   'mark_google_admin_academic_answer_insufficient_v1',
   'issue_google_academic_answer_ai_child_grant_v1',
   'start_google_admin_academic_answer_operation_v1',
@@ -1365,7 +1442,7 @@ for (const facade of [
   'complete_google_admin_academic_answer_operation_v1',
 ]) {
   assert.match(
-    academicMigration,
+    academicAuthorityMigrations,
     new RegExp(
       `revoke all on function public\\.${facade}\\([\\s\\S]*` +
         `from public, anon, authenticated;[\\s\\S]*` +
@@ -1375,7 +1452,7 @@ for (const facade of [
     `${facade} is service-role-only`,
   )
   assert.match(
-    academicMigration,
+    academicAuthorityMigrations,
     new RegExp(
       `revoke all on function private\\.${facade}\\([\\s\\S]*` +
         `from public, anon, authenticated, service_role`,
@@ -1391,8 +1468,127 @@ assert.match(
 )
 assert.match(
   generateAcademicAnswer,
-  /prepare_google_admin_academic_answer_v1[\s\S]*issue_google_academic_answer_ai_child_grant_v1[\s\S]*start_google_admin_academic_answer_operation_v1[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*complete_google_admin_academic_answer_operation_v1/,
-  'Google Academic provider work uses only typed preflight, child, start, dispatch and completion facades',
+  /prepare_google_admin_academic_answer_v1[\s\S]*renew_google_admin_academic_answer_preflight_v1[\s\S]*issue_google_academic_answer_ai_child_grant_v1[\s\S]*start_google_admin_academic_answer_operation_v1[\s\S]*claim_google_ai_provider_dispatch_v1[\s\S]*complete_google_admin_academic_answer_operation_v1/,
+  'Google Academic provider work uses only typed preflight, renewal, child, start, dispatch and completion facades',
+)
+const academicEdgePrepare = generateAcademicAnswer.indexOf(
+  "'prepare_google_admin_academic_answer_v1'",
+)
+const academicEdgeClaim = generateAcademicAnswer.indexOf(
+  'requireAcademicPreflightRetrievalClaim(prepared)',
+  academicEdgePrepare,
+)
+const academicEdgeRetrieval = generateAcademicAnswer.indexOf(
+  'retrieveVerifiedAcademicSources({',
+  academicEdgeClaim,
+)
+const academicEdgeRenewal = generateAcademicAnswer.indexOf(
+  "'renew_google_admin_academic_answer_preflight_v1'",
+  academicEdgeRetrieval,
+)
+const academicEdgeChild = generateAcademicAnswer.indexOf(
+  "'issue_google_academic_answer_ai_child_grant_v1'",
+  academicEdgeRenewal,
+)
+assert.ok(
+  academicEdgePrepare >= 0 &&
+    academicEdgePrepare < academicEdgeClaim &&
+    academicEdgeClaim < academicEdgeRetrieval &&
+    academicEdgeRetrieval < academicEdgeRenewal &&
+    academicEdgeRenewal < academicEdgeChild,
+  'Academic Edge blocks non-owner replay before retrieval and renews the owner lease after retrieval before child issue',
+)
+const academicRepositoryMethod = adminContentAiRepository.slice(
+  adminContentAiRepository.indexOf('async manageAcademicAnswers('),
+  adminContentAiRepository.indexOf('async analyzeLectureMaterial('),
+)
+assert.equal(
+  (academicRepositoryMethod.match(/body: requestBody/g) ?? []).length,
+  1,
+  'an ambiguous Academic response never redispatches the provider action',
+)
+assert.match(
+  adminContentAiRepository,
+  /ACADEMIC_RECONCILIATION_TIMEOUT_MS = 90_000[\s\S]*waitForAcademicAnswerResult[\s\S]*'generate-academic-answer'[\s\S]*action: 'status'[\s\S]*matchAcademicReconciliationResult[\s\S]*if \(match\.answerFound\)[\s\S]*activeAtDeadline = match\.activeRequestFound/,
+  'Academic timeout recovery polls bounded status and returns only the matching completed answer',
+)
+assert.match(
+  academicRepositoryMethod,
+  /delete requestBody\.knownActiveRequestIds[\s\S]*delete requestBody\.knownAnswerIds[\s\S]*body: requestBody/,
+  'Academic reconciliation baselines stay client-local and never enter the Edge wire body',
+)
+assert.match(
+  academicRepositoryMethod,
+  /providerAttemptIsAmbiguous\(error\)[\s\S]*waitForAcademicAnswerResult\(generateRequest\)[\s\S]*if \(reconciled\.results\) return reconciled\.results[\s\S]*reconciled\.retainAttempt/,
+  'ambiguous Academic work reconciles by status and retains IDs only when still active at the deadline',
+)
+assert.match(
+  academicReconciliation,
+  /new Set\(baseline\.knownActiveRequestIds\)[\s\S]*new Set\(baseline\.knownAnswerIds\)[\s\S]*!knownAnswerIds\.has\(answer\.id\)[\s\S]*answer\.preflightRequestId === baseline\.preflightRequestId[\s\S]*canonicalQuestion\(answer\.question\) === question[\s\S]*!knownActiveRequestIds\.has\(request\.id\)[\s\S]*request\.preflightRequestId === baseline\.preflightRequestId[\s\S]*canonicalQuestion\(request\.question\) === question/,
+  'Academic reconciliation requires a new identifier, exact preflight binding and canonical question',
+)
+assert.match(
+  adminContentAiRepository,
+  /matchAcademicReconciliationResult\(results, \{[\s\S]*knownActiveRequestIds: request\.knownActiveRequestIds[\s\S]*knownAnswerIds: request\.knownAnswerIds[\s\S]*preflightRequestId: request\.preflightRequestId[\s\S]*question: request\.question/,
+  'Academic status reconciliation carries the exact client preflight binding',
+)
+assert.match(
+  adminMappers,
+  /activeRequests:[\s\S]*preflightRequestId:[\s\S]*item\.preflight_request_id[\s\S]*answers:[\s\S]*preflightRequestId:[\s\S]*item\.preflight_request_id/,
+  'Academic status mapper retains preflight bindings for active and terminal results',
+)
+assert.match(
+  adminAcademicTypes,
+  /AdminAcademicAnswer[\s\S]*preflightRequestId: string \| null[\s\S]*activeRequests:[\s\S]*preflightRequestId: string \| null/,
+  'Academic status DTO exposes only the non-secret preflight request identifier',
+)
+assert.match(
+  adminAcademicTypes,
+  /action: 'generate'[\s\S]*knownActiveRequestIds: string\[\][\s\S]*knownAnswerIds: string\[\][\s\S]*action: 'generateAuto'[\s\S]*knownActiveRequestIds: string\[\][\s\S]*knownAnswerIds: string\[\]/,
+  'manual and automatic Academic provider attempts both carry client-only baselines',
+)
+assert.match(
+  academicAnswerControl,
+  /knownActiveRequestIds: results\.activeRequests\.map\([\s\S]*knownAnswerIds: results\.answers\.map\([\s\S]*manageAcademicAnswers\(\{[\s\S]*action: 'generate'[\s\S]*\.\.\.googleAttempt/,
+  'manual Academic UX preserves the initial baseline with its stable provider IDs',
+)
+assert.match(
+  lectureSummaryControl,
+  /knownActiveRequestIds: academic\.activeRequests\.map\([\s\S]*knownAnswerIds: academic\.answers\.map\([\s\S]*action: 'generateAuto'[\s\S]*\.\.\.googleRequestIds/,
+  'automatic Academic UX preserves the initial baseline with its stable provider IDs',
+)
+const academicStatusProjection = functionBlock(
+  academicLeaseMigration,
+  'private.google_academic_results_with_preflight_v1',
+)
+assert.match(
+  academicStatusProjection,
+  /phase72_admin_results_json[\s\S]*active_requests[\s\S]*admin_google_academic_answer_preflight_receipts[\s\S]*academic_request_id[\s\S]*request_item\.value ->> 'id'[\s\S]*answers[\s\S]*admin_google_academic_answer_preflight_receipts[\s\S]*answer_item\.value ->> 'request_id'/,
+  'Academic status projects the exact private receipt onto active requests and answers',
+)
+assert.doesNotMatch(
+  academicStatusProjection,
+  /question_sha256|search_query_sha256|provider_context_digest|intent_digest|run_token_hash/,
+  'Academic status exposes no receipt hashes, provider evidence or run credentials',
+)
+assert.match(
+  academicLeaseMigration,
+  /revoke all on function private\.google_academic_results_with_preflight_v1\(uuid\)[\s\S]*from public, anon, authenticated, service_role/,
+  'the Academic receipt projection remains private to the guarded status function',
+)
+const academicGuardedStatus = functionBlock(
+  academicLeaseMigration,
+  'private.get_google_admin_academic_results_v1',
+)
+assert.match(
+  academicGuardedStatus,
+  /require_google_admin_operation_context_v1[\s\S]*generate-academic-answer\.status[\s\S]*assert_google_admin_operation_gate_v1[\s\S]*assert_google_admin_operation_lecture_state_v1[\s\S]*google_academic_results_with_preflight_v1/,
+  'the exact-binding projection stays behind the existing Google Admin status checks',
+)
+assert.match(
+  aiMasterAuthorizationE2e,
+  /academicGenerateRequests \+= 1[\s\S]*preflight_request_id: exactBinding[\s\S]*academicPreflightRequestId[\s\S]*30000000-0000-4000-8000-000000000099[\s\S]*Exact preflight result[\s\S]*academicGenerateRequests\)\.toBe\(1\)[\s\S]*academicStatusRequests\)\.toBeGreaterThanOrEqual\(2\)/,
+  'browser recovery ignores a same-question answer from another preflight and dispatches the provider action once',
 )
 assert.match(
   generateAcademicAnswer,
@@ -1413,6 +1609,7 @@ assert.match(
 for (const generatedRpc of [
   'manage_google_admin_summary_run_v2',
   'prepare_google_admin_academic_answer_v1',
+  'renew_google_admin_academic_answer_preflight_v1',
   'mark_google_admin_academic_answer_insufficient_v1',
   'issue_google_academic_answer_ai_child_grant_v1',
   'start_google_admin_academic_answer_operation_v1',
@@ -1465,6 +1662,10 @@ for (const contract of [
   'a recovered authorized retry saves its result without another MFA prompt',
   'the recovered happy path settles accounting and publishes one result',
   'default-OFF rejects Academic preflight before evidence or paid authority exists',
+  'guarded Academic status returns the exact preflight binding without private receipt hashes',
+  'the retrieval owner renews the exact live authority and lease before child issue',
+  'a changed retrieval binding cannot renew another preflight lease',
+  'a rejected renewal leaves the owner lease unchanged',
   'an expired unstarted Academic lease is recovered by the same exact request',
   'lost child response recovers the consumed child through immutable start evidence',
   'lost Academic start response converges on the same operation before dispatch',
