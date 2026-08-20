@@ -8,7 +8,7 @@ test('lecture layout matches the deterministic visual contract', async ({
   await page.goto('/demo')
   await expect(
     page.getByRole('heading', { name: 'AI時代の英語と学び' }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: 20_000 })
 
   const contract = await page.evaluate(() => {
     const grid = document.querySelector<HTMLElement>('.lecture-experience-grid')

@@ -8,6 +8,7 @@ const read = (path) =>
 const protocol = read('src/presenter/presenterBridgeProtocol.ts')
 const client = read('src/presenter/presenterBridgeClient.ts')
 const repository = read('src/repositories/supabasePresenterBridgeRepository.ts')
+const ciWorkflow = read('.github/workflows/ci.yml')
 
 test('browser bridge is fixed to loopback port 43124 with bounded timeouts', () => {
   assert.match(
@@ -70,4 +71,23 @@ test('both localhost and Edge response paths use exact-key validation', () => {
   assert.match(repository, /function hasExactKeys/)
   assert.match(protocol, /new Set\(value\.issues\)\.size/)
   assert.match(repository, /Date\.parse\(value\.ticketExpiresAt\)/)
+})
+
+test('native CI resolves the pinned SDK from the Presenter global.json directory', () => {
+  assert.match(
+    ciWorkflow,
+    /name: Verify global\.json \.NET SDK feature band[\s\S]{0,160}working-directory: presenter-bridge[\s\S]{0,160}Get-Content global\.json/,
+  )
+  for (const stepName of [
+    'Restore native solution',
+    'Build native solution without publishing an artifact',
+    'Run deterministic Core and loopback tests',
+  ]) {
+    assert.match(
+      ciWorkflow,
+      new RegExp(
+        `name: ${stepName}[\\s\\S]{0,120}working-directory: presenter-bridge`,
+      ),
+    )
+  }
 })
