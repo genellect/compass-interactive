@@ -288,6 +288,15 @@ test('503 master status keeps AI readiness blocked and cannot reach authorizatio
   await authorizeButton.evaluate((button: HTMLButtonElement) => button.click())
   expect(sessionAdmissionRequests).toBe(0)
 
+  await safety.expectConsoleErrors(
+    {
+      message:
+        'Failed to load resource: the server responded with a status of 503 (Service Unavailable)',
+      url: `${supabaseUrl}/functions/v1/admin-ai-unlock`,
+    },
+    masterStatusRequests,
+  )
+
   await safety.assertClean()
 })
 

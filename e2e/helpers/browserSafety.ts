@@ -2,6 +2,13 @@ import { expect, type Page } from '@playwright/test'
 
 type BrowserSafetyMonitor = {
   assertClean: () => Promise<void>
+  expectConsoleErrors: (
+    expected: {
+      message: string
+      url: string
+    },
+    count: number,
+  ) => Promise<void>
   expectConsoleErrorOnce: (expected: {
     message: string
     url: string
@@ -48,6 +55,35 @@ export async function installBrowserSafetyMonitor(
     await route.continue()
   })
 
+  async function expectConsoleErrors(
+    expected: { message: string; url: string },
+    count: number,
+  ) {
+    const expectedMessage = `console: ${expected.message}`
+    const matchingErrors = () =>
+      browserErrors.filter(
+        (error) =>
+          error.message === expectedMessage &&
+          error.locationUrl === expected.url,
+      )
+
+    await expect
+      .poll(() => matchingErrors().length, {
+        message: `Expected ${count} browser console error(s) from ${expected.url}.`,
+      })
+      .toBe(count)
+
+    const matchingIndexes = browserErrors.flatMap((error, index) =>
+      error.message === expectedMessage && error.locationUrl === expected.url
+        ? [index]
+        : [],
+    )
+    expect(matchingIndexes).toHaveLength(count)
+    for (const index of matchingIndexes.reverse()) {
+      browserErrors.splice(index, 1)
+    }
+  }
+
   return {
     async assertClean() {
       expect(
@@ -72,28 +108,9 @@ export async function installBrowserSafetyMonitor(
         )
         .toBe(true)
     },
+    expectConsoleErrors,
     async expectConsoleErrorOnce(expected) {
-      const expectedMessage = `console: ${expected.message}`
-      const matchingErrors = () =>
-        browserErrors.filter(
-          (error) =>
-            error.message === expectedMessage &&
-            error.locationUrl === expected.url,
-        )
-
-      await expect
-        .poll(() => matchingErrors().length, {
-          message: `Expected one browser console error from ${expected.url}.`,
-        })
-        .toBe(1)
-
-      const matchingIndexes = browserErrors.flatMap((error, index) =>
-        error.message === expectedMessage && error.locationUrl === expected.url
-          ? [index]
-          : [],
-      )
-      expect(matchingIndexes).toHaveLength(1)
-      browserErrors.splice(matchingIndexes[0], 1)
+      await expectConsoleErrors(expected, 1)
     },
   }
 }

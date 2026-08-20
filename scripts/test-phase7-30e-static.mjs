@@ -790,8 +790,13 @@ assert.match(
 )
 assert.match(
   browserSafety,
-  /error\.message === expectedMessage[\s\S]*error\.locationUrl === expected\.url[\s\S]*matchingErrors\(\)\.length[\s\S]*\.toBe\(1\)[\s\S]*matchingIndexes[\s\S]*\.toHaveLength\(1\)[\s\S]*browserErrors\.splice/,
-  'expected console errors must match one exact message and URL and consume only that entry',
+  /expectConsoleErrors[\s\S]*count: number[\s\S]*error\.message === expectedMessage[\s\S]*error\.locationUrl === expected\.url[\s\S]*matchingErrors\(\)\.length[\s\S]*\.toBe\(count\)[\s\S]*matchingIndexes[\s\S]*\.toHaveLength\(count\)[\s\S]*matchingIndexes\.reverse\(\)[\s\S]*browserErrors\.splice/,
+  'expected console errors must match one exact message, URL, and count before consuming only those entries',
+)
+assert.match(
+  browserSafety,
+  /expectConsoleErrorOnce\(expected\)[\s\S]*expectConsoleErrors\(expected, 1\)/,
+  'the one-shot expected console-error contract must remain an exact count-one wrapper',
 )
 assert.doesNotMatch(
   browserSafety,
