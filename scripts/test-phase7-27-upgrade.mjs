@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { runSupabaseCommand } from './lib/run-supabase-command.mjs'
 
 const npmCli = process.env.npm_execpath
 if (!npmCli) {
@@ -6,15 +6,7 @@ if (!npmCli) {
 }
 
 function runSupabase(args) {
-  const result = spawnSync(
-    process.execPath,
-    [npmCli, 'exec', '--', 'supabase', ...args],
-    { cwd: process.cwd(), stdio: 'inherit' },
-  )
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`supabase ${args.join(' ')} exited with ${result.status}`)
-  }
+  runSupabaseCommand({ npmCli, args })
 }
 
 let failure

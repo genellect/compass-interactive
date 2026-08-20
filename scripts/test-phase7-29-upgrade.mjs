@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { runSupabaseCommand } from './lib/run-supabase-command.mjs'
 
 const npmCli = process.env.npm_execpath
 if (!npmCli) {
@@ -9,15 +10,7 @@ const container =
   process.env.SUPABASE_DB_CONTAINER ?? 'supabase_db_compass-interactive'
 
 function runSupabase(args) {
-  const result = spawnSync(
-    process.execPath,
-    [npmCli, 'exec', '--', 'supabase', ...args],
-    { cwd: process.cwd(), env: process.env, stdio: 'inherit' },
-  )
-  if (result.error) throw result.error
-  if (result.status !== 0) {
-    throw new Error(`supabase ${args.join(' ')} exited with ${result.status}`)
-  }
+  runSupabaseCommand({ npmCli, args })
 }
 
 function runSql(sql) {
