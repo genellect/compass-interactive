@@ -770,9 +770,11 @@ test('moves an expired automatic ticket to the five-minute recovery path without
   })
 
   const review = await startAutomaticPresenterReview(page)
-  await review
-    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-    .click()
+  await dispatchEnabledClick(
+    review.getByRole('button', {
+      name: 'このPowerPointと講義資料を同期',
+    }),
+  )
 
   const recoveryCode = page.locator('.admin-presenter-recovery-code')
   await expect(recoveryCode).toHaveText('ABCD2345')
