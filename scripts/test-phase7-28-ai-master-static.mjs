@@ -173,7 +173,14 @@ assert.match(localBrowser, /個人AI PIN/)
 assert.match(localBrowser, /現在のPINで登録/)
 assert.match(localBrowser, /登録済みのこのブラウザで許可します/)
 assert.match(localBrowser, /getByLabel\('個人AI PIN'\)\)\.toHaveCount\(0\)/)
-assert.match(localBrowser, /route\.fetch\(\)[\s\S]*?connectionreset/)
+assert.match(
+  localBrowser,
+  /route\.fetch\(\)[\s\S]*?route\.fulfill\(\{[\s\S]*?status: 200[\s\S]*?ok: false[\s\S]*?code: 'request_failed'/,
+)
+assert.match(
+  localBrowser,
+  /expect\(authorizeButton\)\.toBeEnabled\(\)[\s\S]*?authorizeButton\.focus\(\)[\s\S]*?expect\(authorizeButton\)\.toBeFocused\(\)/,
+)
 assert.match(
   localBrowser,
   /new Set\(rememberedBeginRequestIds\)\.size\)\.toBe\(2\)/,

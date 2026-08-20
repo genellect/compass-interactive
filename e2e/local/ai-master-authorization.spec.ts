@@ -81,10 +81,20 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
     if (payload.action === 'beginBrowserAssertion') {
       rememberedBeginRequestIds.push(String(payload.requestId ?? ''))
       if (rememberedBeginRequestIds.length === 1) {
-        // Let the server commit the challenge, then lose only its response.
-        // The next CTA attempt must supersede it with a new begin request.
+        // Let the server commit the challenge, then replace only its response
+        // with the same retryable envelope used for an ambiguous transport
+        // failure. This keeps the browser console clean on every engine while
+        // proving that the next CTA supersedes the committed challenge.
         await route.fetch()
-        await route.abort('connectionreset')
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            ok: false,
+            code: 'request_failed',
+            message: 'The browser assertion response could not be confirmed.',
+          }),
+        })
         return
       }
     } else if (payload.action === 'completeBrowserMasterAdmission') {
@@ -114,6 +124,7 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   const authorizeButton = master.getByRole('button', {
     name: '字幕も含めて許可',
   })
+  await expect(authorizeButton).toBeEnabled()
   await authorizeButton.focus()
   await expect(authorizeButton).toBeFocused()
   await page.keyboard.press('Enter')
