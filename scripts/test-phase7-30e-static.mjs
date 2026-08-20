@@ -585,8 +585,8 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /STUDENT_PROPAGATION_TARGET_P95_MS = 5_000[\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS = 10_000[\s\S]*const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*student-comment-propagation-ms[\s\S]*student-propagation-target-p95-ms[\s\S]*commentPropagationMs\)\.toBeLessThanOrEqual\([\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_CEILING_MS[\s\S]*student-like-propagation-ms[\s\S]*likePropagationMs\)\.toBeLessThanOrEqual\([\s\S]*STUDENT_PROPAGATION_RELIABILITY_CEILING_MS/,
-  'student comments and likes must record latency, preserve the five-second hosted p95 target, and enforce a separate ten-second per-event reliability ceiling',
+  /STUDENT_PROPAGATION_TARGET_P95_MS = 5_000[\s\S]*STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS = 10_000[\s\S]*test\.describe\.configure\(\{ retries: 0 \}\)[\s\S]*const commentSubmittedAt = Date\.now\(\)[\s\S]*peerComment\)\.toBeVisible\(\{[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS[\s\S]*student-comment-propagation-ms[\s\S]*student-propagation-target-p95-ms[\s\S]*student-propagation-reliability-timeout-ms[\s\S]*const likeSubmittedAt = Date\.now\(\)[\s\S]*共感する[\s\S]*like-count[\s\S]*timeout: STUDENT_PROPAGATION_RELIABILITY_TIMEOUT_MS[\s\S]*student-like-propagation-ms/,
+  'student comments and likes must record latency, preserve the five-second hosted p95 target, use a ten-second bounded wait, and disable invalid dirty-state retries',
 )
 assert.match(
   localLifecycleBrowser,

@@ -96,9 +96,10 @@ activation evidence.
    For cross-student comments and likes, record at least twenty UI-observed
    samples for each path. The hosted p95 target is five seconds and no
    individual sample may exceed the ten-second reliability ceiling. The local
-   lifecycle records each latency and enforces the reliability ceiling; it is
-   not a substitute for the hosted p95 sample. The periodic snapshot count must
-   remain at the established five-second envelope.
+   lifecycle records each latency and uses a ten-second bounded UI wait; test
+   runner scheduling is not a substitute for the hosted wall-clock p95 sample.
+   The periodic snapshot count must remain at the established five-second
+   envelope.
 9. Confirm zero open lectures, zero running AI/provider work, no unexpected
    duplicate usage, no console/page errors, and no secret or personal-data
    exposure. Preserve the exact deployment and test evidence privately.
