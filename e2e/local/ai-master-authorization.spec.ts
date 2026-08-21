@@ -95,9 +95,16 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
 
   const paidRequests: string[] = []
   page.on('request', (request) => {
+    if (request.method() !== 'POST') return
+    const requestUrl = new URL(request.url())
+    if (requestUrl.pathname.endsWith('/generate-academic-answer')) {
+      const payload = request.postDataJSON() as Record<string, unknown>
+      // Status reconciliation is read-only and may continue while the panel is mounted.
+      if (payload.action === 'status') return
+    }
     if (
       /\/(analyze-lecture-material|generate-academic-answer|generate-lecture-summary|issue-realtime-client-secret)$/.test(
-        new URL(request.url()).pathname,
+        requestUrl.pathname,
       )
     ) {
       paidRequests.push(request.url())
@@ -279,7 +286,6 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
       'Failed to load resource: the server responded with a status of 409 (Conflict)',
     url: academicEndpoint,
   })
-  await page.unroute('**/functions/v1/generate-academic-answer')
   paidRequests.length = 0
 
   const summary = page.locator('.lecture-summary-control')
@@ -338,6 +344,7 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   expect(postStopSummaryRequests).toBe(0)
   page.off('request', countPostStopSummaryRequests)
   expect(paidRequests).toEqual([])
+  expect(academicGenerateRequests).toBe(1)
 
   await safety.assertClean()
 })
