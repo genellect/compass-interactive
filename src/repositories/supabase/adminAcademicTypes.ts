@@ -37,6 +37,7 @@ export type AdminAcademicAnswer = {
   }
   createdAt: string
   id: string
+  preflightRequestId: string | null
   publication: null | {
     reviewState: 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed'
     visibility: 'hidden' | 'public'
@@ -50,6 +51,7 @@ export type AdminAcademicResults = {
   activeRequests: Array<{
     id: string
     operationId: string | null
+    preflightRequestId: string | null
     question: string
     status: 'evidence_checking' | 'running'
     updatedAt: string
@@ -94,6 +96,8 @@ export type ManageAcademicAnswersRequest =
       action: 'generate'
       adminToken: AdminOperationCredentialInput
       grantRequestId: string
+      knownActiveRequestIds: string[]
+      knownAnswerIds: string[]
       lectureSessionId: string
       preflightRequestId: string
       question: string
@@ -107,6 +111,8 @@ export type ManageAcademicAnswersRequest =
       action: 'generateAuto'
       adminToken: AdminOperationCredentialInput
       grantRequestId: string
+      knownActiveRequestIds: string[]
+      knownAnswerIds: string[]
       lectureSessionId: string
       preflightRequestId: string
       question: string

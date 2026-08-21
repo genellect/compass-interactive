@@ -45,6 +45,9 @@ const browserPdfPublication = read(
 )
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminPageViewModel = read('src/pages/admin/adminPageViewModel.ts')
+const adminLectureSelectionGuard = read(
+  'src/pages/admin/useAdminLectureSelectionGuard.ts',
+)
 const adminLectureControl = read(
   'src/components/AdminWorkspace/AdminLectureControl.tsx',
 )
@@ -594,8 +597,8 @@ assert.match(
   'the non-PDF local lifecycle must return to neutral lecture creation while its dedicated PDF profile proves file publication',
 )
 assert.match(
-  adminPage,
-  /lecturesLoaded[\s\S]*?requestedAdminLectureSessionId[\s\S]*?activeAdminLecture\.status === 'closed'[\s\S]*?clearSelectedLectureSession\(\)/,
+  adminLectureSelectionGuard,
+  /input\.lecturesLoaded[\s\S]*?input\.requestedLectureSessionId[\s\S]*?input\.activeLecture\.status === 'closed'[\s\S]*?input\.clearSelection\(\)/,
   'a restored closed lecture must be cleared before the next preparation flow',
 )
 assert.match(

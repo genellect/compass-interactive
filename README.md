@@ -4,7 +4,7 @@
 
 ### LET EVERYTHING MOVE.
 
-**講義資料、参加、教室表示、教育AIを一つの講義状態で動かすリアルタイム講義基盤**
+**講義資料を軸に、参加・同期・AI支援をつなぐリアルタイム講義基盤**
 
 [プロダクト紹介](https://compass-official.pages.dev/INTRO_Interactive/) ·
 [デモ](https://compass-interactive.pages.dev/demo) ·
@@ -14,15 +14,15 @@
 
 ---
 
-## COMPASS Interactiveとは
+## 概要
 
-COMPASS Interactiveは、大学講義や研究会で扱うPDF資料、学生コメント、投票、字幕、要約、教室ディスプレイを、共通の講義ライフサイクルへ接続するWebアプリケーションです。
+COMPASS Interactiveは、大学講義や研究会の資料、学生コメント、投票、字幕、要約、教室表示を、一つの講義状態へ接続するWebアプリケーションです。
 
-教員は資料の公開から講義開始、スライド進行、参加機能、AI支援、終了までを一つのワークスペースで操作します。学生は講義コードで参加し、アカウントを作成せずに資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。教室ディスプレイと講義後のReviewも、同じ講義状態を参照します。
+教員はPDFの公開から講義開始、スライド進行、参加機能、AI支援、講義終了までを一つのワークスペースで操作します。学生はアカウント登録をせずに講義コードで参加し、資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。教室ディスプレイと講義後のReviewも、同じ講義状態を参照します。
 
 ```text
 資料を公開 → 講義を開始 → 学生が参加 → 資料・コメント・投票・字幕を同期
-             → 教員がAI支援を選択 → 講義を終了 → 読み取り専用Review
+             → AI支援を選択 → 講義を終了 → 読み取り専用Review
 ```
 
 ## 一つの講義、四つの体験
@@ -34,38 +34,34 @@ COMPASS Interactiveは、大学講義や研究会で扱うPDF資料、学生コ�
 | **Display**  | 教室           | 資料、講義タイトル、参加QR、字幕の全画面表示と低遅延同期                    |
 | **Review**   | 講義後の参加者 | 終了済み講義の資料と公開済み学習情報の読み取り専用閲覧                      |
 
-各Surfaceは別々の状態を持たず、サーバーが管理する講義、表示ページ、公開範囲、終了時刻を共有します。一方、Educator、Student、Displayには異なる認証主体と権限を与え、UI上の役割分担をデータアクセス境界にも反映しています。
+各Surfaceは講義、表示ページ、公開範囲、終了時刻を共有します。Educator、Student、Displayには別々の認証主体と権限を与え、画面上の役割分担をデータアクセス境界にも反映しています。
 
-## 技術的な特徴
+## 設計
 
 ### Server-authoritative lecture lifecycle
 
-講義の所有者、状態、終了期限、投稿可否、AI実行可否はPostgreSQLとEdge Functionsが判定します。ブラウザ時刻や画面上の表示だけを根拠に重要操作を許可しません。作成、開始、終了、緊急停止は冪等な状態遷移として扱い、終了後の投稿、投票、資料更新、AI開始をサーバー側で拒否します。
+講義の所有者、状態、終了期限、投稿可否、AI実行可否はPostgreSQLとEdge Functionsが判定します。作成、開始、終了、緊急停止は冪等な状態遷移として扱い、終了後の投稿、投票、資料更新、AI開始をデータ層で制限します。
 
-### Versioned snapshotと選択的Realtime
+### Versioned snapshot and selective Realtime
 
-学生画面は、コメント、リアクション、投票、表示中の資料、字幕、要点をversioned snapshotから差分取得します。講義中のコメント伝播は5秒以内を目標とするforeground cadenceを用い、非表示タブでは周期を延長します。Displayと字幕など低遅延が必要な経路だけにprivate Realtimeを使用し、購読障害時はsnapshotへ戻ります。
-
-この構成により、機能ごと・学生ごとにRealtimeチャネルを増やさず、同期速度と参加人数に対する負荷の予測可能性を両立します。
+学生画面はコメント、リアクション、投票、表示中の資料、字幕、要点をversioned snapshotから差分取得します。講義中は短いforeground cadenceを用い、非表示タブでは周期を延長します。Displayと字幕など低遅延が必要な経路にはprivate Realtimeを併用し、購読障害時はsnapshotへ戻ります。
 
 ### Private PDF publication
 
-PDF本体はPrivate Cloudflare R2へ保存し、Supabaseには講義とのbinding、SHA-256、byte数、ページ数、publication state、access versionなどのメタデータを保持します。ブラウザ公開は、事前検証、短命署名ticket、immutable upload、DB上の表示状態更新を経て完了します。
+PDF本体はPrivate Cloudflare R2へ保存し、Supabaseには講義とのbinding、SHA-256、byte数、ページ数、publication state、access versionを保持します。公開処理はブラウザでの事前検証、短命署名ticket、immutable upload、表示状態の更新を経て完了します。学生とDisplayは同じdocument versionとpage stateを参照します。
 
-学生とDisplayは同じdocument versionとpage stateを参照します。未完了objectや失効したticketを公開せず、PDF本文と認証・講義状態の保存境界を分離しています。
+### Explicit, budgeted AI execution
 
-### Explicit and budgeted AI execution
+AI支援は、リアルタイム字幕、資料分析、投票案、講義要約、学術情報に基づく回答を対象とします。Google OAuthとTOTP AAL2で認証した教員は、講義単位のAI利用を一つの操作で許可できます。通常の講義操作でTOTPや個人PINを繰り返し要求しません。
 
-AI支援は、リアルタイム字幕、資料分析、投票案、講義要約、学術情報を参照した回答を対象とします。教員がGoogleアカウントとTOTPによるAAL2認証を完了した後、講義単位のAI利用を一つのCTAで許可できます。通常の講義操作でTOTPや個人PINを繰り返し要求しません。
+各処理の開始時には、講義所有権、open状態、許可scope、policy version、呼び出し数、token量、費用、同時実行数、冪等request IDをサーバー側で検証します。停止、講義終了、管理者session失効、権限変更は実行権限を失効させます。
 
-講義単位の許可だけでは有料APIを呼び出しません。各処理の開始時に、講義所有権、open状態、許可scope、policy version、call数、token量、費用、同時実行数、冪等request IDをサーバー側で再検証します。停止、講義終了、管理者session失効、権限変更は、実行中・待機中のauthorityを失効させます。
+### Segregated identity and data
 
-### Identity and data boundaries
-
-- 学生はSupabase Anonymous Authを使用し、管理者sessionと分離
+- 学生はSupabase Anonymous Authを使用し、教員sessionと分離
 - 教員はGoogle OAuth、TOTP AAL2、追跡可能なapplication sessionを使用
 - PostgreSQL RLSと最小GRANTで行単位・RPC単位の権限を制御
-- API key、service-role key、署名鍵をブラウザへ配布しない
+- service-role key、API key、署名鍵をブラウザへ配布しない
 - 音声ファイル、PDF本文、認証secretをapplication databaseへ保存しない
 - 管理操作、AI operation、費用精算、失効理由を監査可能な形で記録
 
@@ -73,15 +69,15 @@ AI支援は、リアルタイム字幕、資料分析、投票案、講義要約
 
 ```mermaid
 flowchart TB
-    Educator["Educator Browser"]
-    Student["Student Browser"]
+    Educator["Educator"]
+    Student["Student"]
     Display["Classroom Display"]
 
     Pages["Cloudflare Pages\nReact / Vite"]
     Auth["Supabase Auth"]
     DB["PostgreSQL\nRPC / RLS / Realtime"]
     Edge["Supabase Edge Functions"]
-    AI["OpenAI API"]
+    AI["OpenAI API\nScholarly metadata"]
     Worker["Cloudflare Worker"]
     R2["Private R2\nPDF / Archive"]
 
@@ -98,16 +94,16 @@ flowchart TB
     Worker --> R2
 ```
 
-| Layer                     | Technology                                        | Responsibility                           |
-| ------------------------- | ------------------------------------------------- | ---------------------------------------- |
-| **Frontend**              | React 19 · TypeScript 6 · Vite 8 · React Router   | Educator、Student、Display、Review、Demo |
-| **Identity**              | Supabase Auth · Google OAuth · TOTP AAL2          | Surface別sessionと教員本人確認           |
-| **Data**                  | Supabase PostgreSQL · RPC · RLS · Realtime        | 講義状態、所有権、同期version、監査      |
-| **Server operations**     | Supabase Edge Functions · Deno                    | 管理操作、AI認可、外部API調整            |
-| **Documents**             | Cloudflare Workers · Private R2 · PDF.js          | PDF検証、公開、Range配信、Archive        |
-| **AI**                    | OpenAI Realtime API · text generation             | 字幕、分析、要約、学術回答               |
-| **Presenter integration** | Node.js Publisher · .NET/C# bridge                | PDF公開の復旧経路と任意のPowerPoint連携  |
-| **Quality**               | Playwright · axe-core · pgTAP · oxlint · Prettier | ブラウザ、DB、accessibility、静的品質    |
+| Layer                 | Technology                                                       | Responsibility                           |
+| --------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
+| **Frontend**          | React 19 · TypeScript 6 · Vite 8 · React Router 8                | Educator、Student、Display、Review、Demo |
+| **Identity**          | Supabase Auth · Google OAuth · TOTP AAL2                         | Surface別sessionと教員本人確認           |
+| **Data**              | Supabase PostgreSQL · RPC · RLS · Realtime                       | 講義状態、所有権、同期version、監査      |
+| **Server operations** | Supabase Edge Functions · Deno                                   | 管理操作、AI認可、外部API調整            |
+| **Documents**         | Cloudflare Workers · Private R2 · PDF.js                         | PDF検証、公開、Range配信、Archive        |
+| **AI**                | OpenAI Realtime / text generation · PubMed · Crossref · OpenAlex | 字幕、分析、要約、根拠付き回答           |
+| **Presenter**         | Node.js Publisher · .NET/C# bridge                               | PDF公開の復旧経路とPowerPoint連携        |
+| **Quality**           | Playwright · axe-core · pgTAP · oxlint · Prettier                | ブラウザ、DB、accessibility、静的品質    |
 
 ## リポジトリ構成
 
@@ -125,9 +121,9 @@ scripts/               品質、負荷、セキュリティ、リリース検証
 docs/                  アーキテクチャ、セキュリティ、運用資料
 ```
 
-本番の認証情報、API key、個人情報、講義データ、PDF、バックアップはリポジトリに含めません。COMPASS公式Webとは、アプリケーション、データベース、認証情報、デプロイ先を分離しています。
+COMPASS公式Webとは、アプリケーション、データベース、認証情報、デプロイ先を分離しています。
 
-## 開発を始める
+## ローカル実行
 
 Node.js `>=22.22.0` と、commit済みの`package-lock.json`を使用します。
 
@@ -136,21 +132,19 @@ npm ci
 npm run dev
 ```
 
-バックエンドやsecretを使わずに主要UXを確認する場合は、`http://127.0.0.1:5173/demo`を開きます。完全なローカルSupabase環境とCloud workspaceの手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)にまとめています。
+バックエンドやsecretを使わずに主要UXを確認する場合は、`http://127.0.0.1:5173/demo`を開きます。Local SupabaseとCloud workspaceの構築手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。
 
-| Route               | Purpose                |
-| ------------------- | ---------------------- |
-| `/join`             | 講義コード入力         |
-| `/lecture`          | Student講義画面        |
-| `/lecture/comments` | コメント履歴           |
-| `/lecture/archive`  | 終了講義のReview       |
-| `/admin`            | Educator workspace     |
-| `/display`          | Classroom Display      |
-| `/demo`             | 外部サービス非依存Demo |
+| Route               | Purpose            |
+| ------------------- | ------------------ |
+| `/join`             | 講義コード入力     |
+| `/lecture`          | Student講義画面    |
+| `/lecture/comments` | コメント履歴       |
+| `/lecture/archive`  | 終了講義のReview   |
+| `/admin`            | Educator workspace |
+| `/display`          | Classroom Display  |
+| `/demo`             | 外部サービス非依存 |
 
 ## 品質確認
-
-基本的な変更確認は次のコマンドで実行できます。
 
 ```bash
 npm run typecheck
@@ -167,7 +161,7 @@ npm run test:e2e:demo:triple
 npm run test:e2e:local:triple
 ```
 
-Local Supabase E2Eでは、PostgreSQL、Auth、RPC、RLS、Edge Functionsを使用し、講義作成、資料公開、学生参加、コメント、投票、Display、AI許可、停止、講義終了をブラウザから通して確認します。
+Local Supabase E2EはPostgreSQL、Auth、RPC、RLS、Edge Functionsを起動し、講義作成、資料公開、学生参加、コメント、投票、Display、AI許可、停止、講義終了をブラウザから確認します。
 
 ## ドキュメント
 
@@ -179,12 +173,8 @@ Local Supabase E2Eでは、PostgreSQL、Auth、RPC、RLS、Edge Functionsを使�
 - [`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md) — Cloud / Dev Container setup
 - [`docs/RUNBOOK_INDEX.md`](docs/RUNBOOK_INDEX.md) — 運用手順の索引
 
-## COMPASSにおける位置づけ
+## プロジェクトと権利
 
 COMPASS Interactiveは、[COMPASS](https://github.com/genellect/compass)が展開する教育・テクノロジープロダクトの一つです。COMPASSは学生有志による独立した教育活動であり、北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
 
-<div align="center">
-
-**すべてがつながると、講義は動き出す。**
-
-</div>
+本リポジトリは非公開で、ソースコードは権利者が独占的に管理しています。リポジトリへのアクセスは、明示的な許諾のない利用、複製、改変、再配布を認めるものではありません。本番の認証情報、API key、個人情報、講義データ、PDF、バックアップはリポジトリに含めません。

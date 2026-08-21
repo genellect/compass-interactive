@@ -73,6 +73,8 @@ export function AcademicAnswerControl({
       string,
       {
         grantRequestId: string
+        knownActiveRequestIds: string[]
+        knownAnswerIds: string[]
         preflightRequestId: string
         startRequestId: string
       }
@@ -202,6 +204,10 @@ export function AcademicAnswerControl({
       if (googleAttemptKey && !googleAttempt) {
         googleAttempt = {
           grantRequestId: crypto.randomUUID(),
+          knownActiveRequestIds: results.activeRequests.map(
+            (request) => request.id,
+          ),
+          knownAnswerIds: results.answers.map((answer) => answer.id),
           preflightRequestId: crypto.randomUUID(),
           startRequestId: crypto.randomUUID(),
         }

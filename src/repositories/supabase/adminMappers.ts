@@ -164,12 +164,14 @@ export function toAdminAcademicResults(
   return {
     activeRequests: (raw?.active_requests ?? []).map((item) => ({
       id: String(item.id ?? ''),
-      operationId:
-        item.operation_id == null ? null : String(item.operation_id),
+      operationId: item.operation_id == null ? null : String(item.operation_id),
+      preflightRequestId:
+        item.preflight_request_id == null
+          ? null
+          : String(item.preflight_request_id),
       question: String(item.question ?? ''),
       status: String(item.status ?? 'evidence_checking') as
-        | 'evidence_checking'
-        | 'running',
+        'evidence_checking' | 'running',
       updatedAt: String(item.updated_at ?? ''),
     })),
     answers: (raw?.answers ?? []).map((item) => {
@@ -195,41 +197,41 @@ export function toAdminAcademicResults(
         },
         createdAt: String(item.created_at ?? ''),
         id: String(item.id ?? ''),
+        preflightRequestId:
+          item.preflight_request_id == null
+            ? null
+            : String(item.preflight_request_id),
         publication: publication
           ? {
               reviewState: String(
                 publication.review_state ?? 'ai_unreviewed',
               ) as 'admin_confirmed' | 'admin_revised' | 'ai_unreviewed',
               visibility: String(publication.visibility ?? 'hidden') as
-                | 'hidden'
-                | 'public',
+                'hidden' | 'public',
             }
           : null,
         question: String(item.question ?? ''),
-        sources: (
-          (item.sources ?? []) as Array<Record<string, unknown>>
-        ).map((source) => ({
-          authors: toStringArray(source.authors),
-          doi: source.doi == null ? null : String(source.doi),
-          journal: String(source.journal ?? ''),
-          pmid: source.pmid == null ? null : String(source.pmid),
-          publicationTypes: toStringArray(source.publication_types),
-          publicationYear: Number(source.publication_year ?? 0),
-          sourceId: String(source.source_id ?? ''),
-          sourceProvider:
-            source.source_provider === 'crossref_openalex'
-              ? 'crossref_openalex'
-              : 'pubmed',
-          sourceRole:
-            source.source_role === 'context' ? 'context' : 'primary',
-          studyType: String(source.study_type ?? ''),
-          title: String(source.title ?? ''),
-        })),
+        sources: ((item.sources ?? []) as Array<Record<string, unknown>>).map(
+          (source) => ({
+            authors: toStringArray(source.authors),
+            doi: source.doi == null ? null : String(source.doi),
+            journal: String(source.journal ?? ''),
+            pmid: source.pmid == null ? null : String(source.pmid),
+            publicationTypes: toStringArray(source.publication_types),
+            publicationYear: Number(source.publication_year ?? 0),
+            sourceId: String(source.source_id ?? ''),
+            sourceProvider:
+              source.source_provider === 'crossref_openalex'
+                ? 'crossref_openalex'
+                : 'pubmed',
+            sourceRole:
+              source.source_role === 'context' ? 'context' : 'primary',
+            studyType: String(source.study_type ?? ''),
+            title: String(source.title ?? ''),
+          }),
+        ),
         status: String(item.status ?? 'awaiting_review') as
-          | 'awaiting_review'
-          | 'hidden'
-          | 'published'
-          | 'rejected',
+          'awaiting_review' | 'hidden' | 'published' | 'rejected',
       }
     }),
     candidates: (raw?.candidates ?? []).map((item) => ({
@@ -259,9 +261,7 @@ export function toAdminAcademicResults(
             'multidisciplinary_doi',
           ].includes(String(raw.automation.source_policy ?? ''))
             ? (String(raw.automation.source_policy) as
-                | 'auto'
-                | 'biomedical_pubmed'
-                | 'multidisciplinary_doi')
+                'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi')
             : 'auto',
           status: String(raw.automation.status ?? 'stopped'),
         }
@@ -313,9 +313,7 @@ export function toAdminSummaryResults(
             'multidisciplinary_doi',
           ].includes(String(run.academic_source_policy ?? ''))
             ? (String(run.academic_source_policy) as
-                | 'auto'
-                | 'biomedical_pubmed'
-                | 'multidisciplinary_doi')
+                'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi')
             : 'auto',
           autoAcademicAnswersEnabled: Boolean(
             run.auto_academic_answers_enabled,

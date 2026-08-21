@@ -234,9 +234,11 @@ export function MaterialAnalysisControl({
         documentId: selectedDocument.documentId,
         documentVersion: selectedDocument.documentVersion,
         extraction,
+        knownProposalIds: results.proposals.map((proposal) => proposal.id),
         lectureSessionId,
         pageEnd: action === 'poll_suggestions' ? end : null,
         pageStart: action === 'poll_suggestions' ? start : null,
+        previousAnalysisId: results.analysis?.id ?? null,
       })
       if (googleAttemptKey) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
@@ -254,13 +256,18 @@ export function MaterialAnalysisControl({
           : '追加候補を作成しました。採用前に根拠と選択肢を確認してください。',
       )
     } catch (error) {
-      if (googleAttemptKey && !shouldRetainAdminProviderAttempt(error)) {
+      const retainAttempt = shouldRetainAdminProviderAttempt(error)
+      if (googleAttemptKey && !retainAttempt) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
       }
       setMessage(
-        error instanceof Error
-          ? `AI処理を完了できませんでした: ${error.message}`
-          : 'AI処理を完了できませんでした。',
+        retainAttempt
+          ? error instanceof Error
+            ? error.message
+            : 'AI処理はサーバーで継続しています。しばらくしてから同じ操作で再確認してください。'
+          : error instanceof Error
+            ? `AI処理を完了できませんでした: ${error.message}`
+            : 'AI処理を完了できませんでした。',
       )
     } finally {
       setBusy(false)
@@ -302,7 +309,7 @@ export function MaterialAnalysisControl({
       setEditingId(null)
       await onPollDraftCreated()
       setMessage(
-        '通常の投票下書きへ追加しました。学生にはまだ配信されていません。',
+        '投票下書きに追加しました。参加タブで内容を確認して開始できます。',
       )
     } catch (error) {
       setMessage(
@@ -724,9 +731,7 @@ export function MaterialAnalysisControl({
           <button
             className="secondary-button"
             disabled={
-              generationDisabled ||
-              masterHeldByOther ||
-              !masterAuthorized
+              generationDisabled || masterHeldByOther || !masterAuthorized
             }
             onClick={() => void runAnalysis('poll_suggestions')}
             type="button"
@@ -814,7 +819,7 @@ export function MaterialAnalysisControl({
                       onClick={() => void adoptProposal(proposal.id)}
                       type="button"
                     >
-                      通常の投票下書きへ追加
+                      投票下書きに追加
                     </button>
                     <button
                       className="secondary-button"
@@ -833,7 +838,7 @@ export function MaterialAnalysisControl({
                     onClick={() => beginEditing(proposal)}
                     type="button"
                   >
-                    確認・編集して下書きへ
+                    内容を確認する
                   </button>
                   <button
                     className="secondary-button"

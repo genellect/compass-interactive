@@ -177,6 +177,7 @@ async function installNetworkMocks(
     conflictOnFirstInitiate?: boolean
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
+    delayInitialLectureListUntilCreate?: boolean
     finalizeStatus?: 'active' | 'committed'
     initialLectureStatus?: 'closed' | 'open'
     postActivationSnapshotFailures?: number
@@ -203,6 +204,10 @@ async function installNetworkMocks(
     uploadCount: 0,
     uploadedBytes: 0,
   }
+  let releaseInitialLectureList: (() => void) | null = null
+  const initialLectureListRelease = new Promise<void>((resolve) => {
+    releaseInitialLectureList = resolve
+  })
 
   await page.route('https://pdf.example/**', async (route) => {
     const request = route.request()
@@ -251,8 +256,15 @@ async function installNetworkMocks(
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
     expectMockGoogleAdminCredential(body, googleAdmin)
     if (functionName === 'manage-lectures') {
+      const lectureCreatedWhenRequestStarted = state.lectureCreated
       if (body.action === 'list') {
         state.lectureListIncludeHistory.push(body.includeHistory === true)
+        if (
+          options.delayInitialLectureListUntilCreate &&
+          !lectureCreatedWhenRequestStarted
+        ) {
+          await initialLectureListRelease
+        }
       }
       if (body.action === 'create') {
         state.lectureCreateCount += 1
@@ -260,18 +272,22 @@ async function installNetworkMocks(
         state.lectureTitle = String(body.title ?? '')
       }
       await fulfillJson(route, {
-        lectures: state.lectureCreated
-          ? [
-              lectureResponse({
-                status: options.startWithoutLecture
-                  ? 'scheduled'
-                  : (options.initialLectureStatus ?? 'open'),
-                title: state.lectureTitle ?? undefined,
-              }),
-            ]
-          : [],
+        lectures:
+          body.action === 'list' && !lectureCreatedWhenRequestStarted
+            ? []
+            : state.lectureCreated
+              ? [
+                  lectureResponse({
+                    status: options.startWithoutLecture
+                      ? 'scheduled'
+                      : (options.initialLectureStatus ?? 'open'),
+                    title: state.lectureTitle ?? undefined,
+                  }),
+                ]
+              : [],
         ok: true,
       })
+      if (body.action === 'create') releaseInitialLectureList?.()
       return
     }
     if (functionName === 'manage-polls') {
@@ -765,7 +781,10 @@ test('Admin creates a draft and publishes a preselected PDF with one CTA', async
   page,
 }) => {
   await installAdminState(page, false, false)
-  const state = await installNetworkMocks(page, { startWithoutLecture: true })
+  const state = await installNetworkMocks(page, {
+    delayInitialLectureListUntilCreate: true,
+    startWithoutLecture: true,
+  })
 
   await page.goto('/admin')
   await openTeacherSetup(page)

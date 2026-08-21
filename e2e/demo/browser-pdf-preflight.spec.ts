@@ -18,24 +18,42 @@ test('browser PDF preflight keeps verified extraction available only in memory',
   page,
 }) => {
   await page.goto('/demo')
-  const { expectedPdfSha256, result } = await page.evaluate(async (moduleUrl) => {
-    const module = (await import(moduleUrl)) as {
-      preflightBrowserPdf(file: File): Promise<PreflightResult>
-    }
-    const response = await fetch('/lecture-assets/m4-sample-v1.pdf')
-    const bytes = await response.arrayBuffer()
-    const file = new File([bytes], 'm4-sample-v1.pdf', {
-      type: 'application/pdf',
-    })
-    const digest = await crypto.subtle.digest('SHA-256', bytes.slice(0))
-    const expectedPdfSha256 = Array.from(new Uint8Array(digest), (byte) =>
-      byte.toString(16).padStart(2, '0'),
-    ).join('')
-    return {
-      expectedPdfSha256,
-      result: await module.preflightBrowserPdf(file),
-    }
-  }, '/src/pdf/browserPdfPreflight.ts')
+  const { expectedExcerptIds, expectedPdfSha256, result } = await page.evaluate(
+    async (moduleUrl) => {
+      const module = (await import(moduleUrl)) as {
+        preflightBrowserPdf(file: File): Promise<PreflightResult>
+      }
+      const response = await fetch('/lecture-assets/m4-sample-v1.pdf')
+      const bytes = await response.arrayBuffer()
+      const file = new File([bytes], 'm4-sample-v1.pdf', {
+        type: 'application/pdf',
+      })
+      const digest = await crypto.subtle.digest('SHA-256', bytes.slice(0))
+      const expectedPdfSha256 = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('')
+      const result = await module.preflightBrowserPdf(file)
+      const expectedExcerptIds = await Promise.all(
+        result.pages.map(async (pdfPage) => {
+          const digest = await crypto.subtle.digest(
+            'SHA-256',
+            new TextEncoder().encode(
+              `${result.pdfSha256}:${pdfPage.pageNumber}:${pdfPage.text}`,
+            ),
+          )
+          return Array.from(new Uint8Array(digest), (byte) =>
+            byte.toString(16).padStart(2, '0'),
+          ).join('')
+        }),
+      )
+      return {
+        expectedExcerptIds,
+        expectedPdfSha256,
+        result,
+      }
+    },
+    '/src/pdf/browserPdfPreflight.ts',
+  )
 
   expect(result.byteSize).toBeGreaterThan(5)
   expect(result.pageCount).toBe(3)
@@ -46,6 +64,9 @@ test('browser PDF preflight keeps verified extraction available only in memory',
   expect(result.pages).toHaveLength(3)
   expect(result.pages[0]).toMatchObject({ pageNumber: 1 })
   expect(result.pages[0]?.excerptId).toMatch(/^[0-9a-f]{64}$/)
+  expect(result.pages.map((pdfPage) => pdfPage.excerptId)).toEqual(
+    expectedExcerptIds,
+  )
   expect(result).not.toHaveProperty('text')
 })
 

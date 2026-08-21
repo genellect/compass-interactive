@@ -10,6 +10,7 @@ import {
   LectureSummaryError,
   normalizePdfContext,
   normalizeTranscriptSegments,
+  PHASE6_MAX_PDF_CHARACTERS,
   parseSummaryOpenAiResponse,
   PHASE6_MODEL,
 } from '../supabase/functions/_shared/lectureSummaries.ts'
@@ -191,6 +192,103 @@ test('normalizes source, validates PDF hash and keeps source injection as data',
     (error: unknown) =>
       error instanceof LectureSummaryError &&
       error.code === 'invalid_pdf_context',
+  )
+})
+
+test('validates raw PDF excerpts before prompt normalization and bounding', async () => {
+  const documentVersion = 'a'.repeat(64)
+  const multilineText = 'Title\nBody   text'
+  const multilineExcerptId = await sha256Hex(
+    `${documentVersion}:1:${multilineText}`,
+  )
+  const emptyExcerptId = await sha256Hex(`${documentVersion}:2:`)
+  const normalized = await normalizePdfContext({
+    documentId: 'doc-whitespace',
+    documentVersion,
+    pages: [
+      {
+        excerptId: multilineExcerptId,
+        pageNumber: 1,
+        text: multilineText,
+      },
+      { excerptId: emptyExcerptId, pageNumber: 2, text: '' },
+    ],
+  })
+
+  assert.equal(normalized.characters, 'Title Body text'.length)
+  assert.deepEqual(normalized.context?.pages, [
+    {
+      excerptId: multilineExcerptId,
+      pageNumber: 1,
+      text: 'Title Body text',
+    },
+  ])
+
+  const longText = 'x'.repeat(PHASE6_MAX_PDF_CHARACTERS + 20)
+  const bounded = await normalizePdfContext({
+    documentId: 'doc-long',
+    documentVersion,
+    pages: [
+      {
+        excerptId: await sha256Hex(`${documentVersion}:1:${longText}`),
+        pageNumber: 1,
+        text: longText,
+      },
+    ],
+  })
+  assert.equal(bounded.characters, PHASE6_MAX_PDF_CHARACTERS)
+  assert.equal(
+    bounded.context?.pages[0]?.text.length,
+    PHASE6_MAX_PDF_CHARACTERS,
+  )
+
+  const laterPageText = 'Later page'
+  await assert.rejects(
+    normalizePdfContext({
+      documentId: 'doc-later-tamper',
+      documentVersion,
+      pages: [
+        {
+          excerptId: await sha256Hex(`${documentVersion}:1:${longText}`),
+          pageNumber: 1,
+          text: longText,
+        },
+        {
+          excerptId: await sha256Hex(`${documentVersion}:2:${laterPageText}`),
+          pageNumber: 2,
+          text: `${laterPageText}!`,
+        },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof LectureSummaryError &&
+      error.code === 'invalid_pdf_context' &&
+      error.status === 409,
+  )
+
+  const emptyOnly = await normalizePdfContext({
+    documentId: 'doc-empty',
+    documentVersion,
+    pages: [{ excerptId: emptyExcerptId, pageNumber: 2, text: '' }],
+  })
+  assert.deepEqual(emptyOnly, { characters: 0, context: null })
+
+  await assert.rejects(
+    normalizePdfContext({
+      documentId: 'doc-tampered',
+      documentVersion,
+      pages: [
+        {
+          excerptId: multilineExcerptId,
+          pageNumber: 1,
+          text: `${multilineText}!`,
+        },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof LectureSummaryError &&
+      error.code === 'invalid_pdf_context' &&
+      error.status === 409,
   )
 })
 

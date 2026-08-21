@@ -47,6 +47,15 @@ import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceS
 import { usePublicationDisplayReadback } from './admin/usePublicationDisplayReadback'
 import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
 import {
+  ADMIN_SESSION_EXPIRED_MESSAGE,
+  PUBLISHER_PAIRING_REQUIRED_MESSAGE,
+  PUBLISHER_SESSION_EXPIRED_MESSAGE,
+  PUBLISHER_UNAVAILABLE_MESSAGE,
+} from './admin/adminMessages'
+import { useAdminLectureSelectionGuard } from './admin/useAdminLectureSelectionGuard'
+import { useAdminPollAutoRefresh } from './admin/useAdminPollAutoRefresh'
+import { useAdminPollRefreshCoordinator } from './admin/useAdminPollRefreshCoordinator'
+import {
   PUBLISHER_SESSION_STORAGE_KEY,
   purgeLegacyAdminSessionStorage,
   restorePublisherSessionToken,
@@ -100,6 +109,9 @@ export function AdminPage({
   const [newLectureEndsAt, setNewLectureEndsAt] = useState('')
   const [adminPolls, setAdminPolls] = useState<AdminPoll[]>([])
   const [adminPollsHasMore, setAdminPollsHasMore] = useState(false)
+  const [adminPollsLectureSessionId, setAdminPollsLectureSessionId] = useState<
+    string | null
+  >(null)
   const [showPollHistory, setShowPollHistory] = useState(false)
   const [adminPollsError, setAdminPollsError] = useState<string | null>(null)
   const [adminPollsLoading, setAdminPollsLoading] = useState(false)
@@ -133,11 +145,15 @@ export function AdminPage({
   const initialRestoredLectureSessionIdRef = useRef(
     runtimeMode === 'live' ? restoredActiveLectureSessionId : null,
   )
+  const lectureMutationEpochRef = useRef(0)
+  const lectureRefreshSequenceRef = useRef(0)
   const lastWorkspaceLectureIdRef = useRef<string | null>(null)
   const publicationFlowInFlightRef = useRef(false)
   const workspaceSelectionTouchedRef = useRef(false)
   const requestedAdminLectureSessionId =
     runtimeMode === 'live' ? restoredActiveLectureSessionId : null
+  const pollsBelongToRequestedLecture =
+    adminPollsLectureSessionId === requestedAdminLectureSessionId
   const {
     activeAdminLecture,
     activeJournalClubRun,
@@ -148,8 +164,10 @@ export function AdminPage({
     visibleLectures,
   } = buildAdminPageView({
     activeLectureSessionId: requestedAdminLectureSessionId,
-    adminPolls,
-    adminPollsHasMore,
+    adminPolls: pollsBelongToRequestedLecture ? adminPolls : [],
+    adminPollsHasMore: pollsBelongToRequestedLecture
+      ? adminPollsHasMore
+      : false,
     lectures,
     showLectureHistory,
     showPollHistory,
@@ -162,6 +180,28 @@ export function AdminPage({
       clearLocalWorkspace: clearLocalAdminSession,
       onAdminLogout,
     })
+  const {
+    beginPollMutation,
+    finishPollMutation,
+    invalidatePollMutations,
+    pollMutationIsCurrent,
+    refreshAdminPolls,
+  } = useAdminPollRefreshCoordinator({
+    activeLectureSessionId,
+    adminToken,
+    applyPollList: applyAdminPollList,
+    clearPollList: () => {
+      setAdminPolls([])
+      setAdminPollsHasMore(false)
+      setAdminPollsLectureSessionId(null)
+      setAdminPollsError(null)
+    },
+    handleInvalidAdminSession,
+    journalClubLectureIds,
+    setPollsError: setAdminPollsError,
+    setPollsLoading: setAdminPollsLoading,
+    showPollHistory,
+  })
   const { onPublicationActivated, refreshAdminWorkspace } =
     usePublicationDisplayReadback({
       activeLectureSessionId,
@@ -242,21 +282,13 @@ export function AdminPage({
     hasPublishedMaterial,
   })
   const activeLectureStatus = activeAdminLecture?.status ?? 'draft'
-
-  useEffect(() => {
-    if (
-      lecturesLoaded &&
-      requestedAdminLectureSessionId &&
-      (!activeAdminLecture || activeAdminLecture.status === 'closed')
-    ) {
-      clearSelectedLectureSession()
-    }
-  }, [
-    activeAdminLecture,
-    clearSelectedLectureSession,
-    lecturesLoaded,
-    requestedAdminLectureSessionId,
-  ])
+  const { clearPendingSelection, markPendingSelection } =
+    useAdminLectureSelectionGuard({
+      activeLecture: activeAdminLecture,
+      clearSelection: clearSelectedLectureSession,
+      lecturesLoaded,
+      requestedLectureSessionId: requestedAdminLectureSessionId,
+    })
 
   useEffect(() => {
     const selectedViewIsAvailable =
@@ -296,6 +328,7 @@ export function AdminPage({
 
   function selectAdminLecture(lectureRow: AdminLecture) {
     if (lectureRow.status === 'closed') {
+      clearPendingSelection()
       clearSelectedLectureSession()
       workspaceSelectionTouchedRef.current = false
       setWorkspaceView('setup')
@@ -304,6 +337,7 @@ export function AdminPage({
     const switchedLecture = Boolean(
       activeLectureSessionId && activeLectureSessionId !== lectureRow.id,
     )
+    markPendingSelection(lectureRow.id)
     workspaceSelectionTouchedRef.current = false
     selectLectureSession(makeJoinedLecture(lectureRow))
     setWorkspaceView('setup')
@@ -332,6 +366,8 @@ export function AdminPage({
 
     setLecturesLoading(true)
     setLecturesError(null)
+    const mutationEpoch = lectureMutationEpochRef.current
+    const refreshSequence = ++lectureRefreshSequenceRef.current
 
     try {
       const nextLectures = await supabaseAdminRepository.manageLectures({
@@ -339,6 +375,12 @@ export function AdminPage({
         adminToken: token,
         includeHistory,
       })
+      if (
+        mutationEpoch !== lectureMutationEpochRef.current ||
+        refreshSequence !== lectureRefreshSequenceRef.current
+      ) {
+        return
+      }
       setLectures(nextLectures)
       setLecturesLoaded(true)
     } catch (error) {
@@ -349,52 +391,41 @@ export function AdminPage({
           : '講義一覧の取得に失敗しました。',
       )
     } finally {
-      setLecturesLoading(false)
+      if (
+        mutationEpoch === lectureMutationEpochRef.current &&
+        refreshSequence === lectureRefreshSequenceRef.current
+      ) {
+        setLecturesLoading(false)
+      }
     }
   }
 
-  async function refreshAdminPolls(
+  useAdminPollAutoRefresh({
+    enabled: Boolean(
+      isAuthenticated &&
+      adminToken &&
+      !adminPollsLoading &&
+      activeLectureSessionId &&
+      activeLectureStatus === 'open' &&
+      workspaceView === 'participation',
+    ),
+    refresh: () =>
+      refreshAdminPolls(
+        activeLectureSessionId,
+        adminToken,
+        showPollHistory,
+        true,
+      ),
+    refreshKey: `${activeLectureSessionId ?? 'none'}:${showPollHistory}`,
+  })
+
+  function applyAdminPollList(
+    result: AdminPollList,
     lectureSessionId = activeLectureSessionId,
-    token = adminToken,
-    includeHistory = showPollHistory,
   ) {
-    if (!lectureSessionId || !token) {
-      setAdminPolls([])
-      setAdminPollsHasMore(false)
-      setAdminPollsError(null)
-      return false
-    }
-
-    setAdminPollsLoading(true)
-    setAdminPollsError(null)
-
-    try {
-      const effectiveIncludeHistory =
-        includeHistory || journalClubLectureIds.has(lectureSessionId)
-      const result = await supabaseAdminRepository.managePolls({
-        action: 'list',
-        adminToken: token,
-        includeHistory: effectiveIncludeHistory,
-        lectureSessionId,
-      })
-      applyAdminPollList(result)
-      return true
-    } catch (error) {
-      if (handleInvalidAdminSession(error)) return false
-      setAdminPollsError(
-        error instanceof Error
-          ? `投票一覧の取得に失敗しました: ${error.message}`
-          : '投票一覧の取得に失敗しました。',
-      )
-      return false
-    } finally {
-      setAdminPollsLoading(false)
-    }
-  }
-
-  function applyAdminPollList(result: AdminPollList) {
     setAdminPolls(result.polls)
     setAdminPollsHasMore(result.hasMore)
+    setAdminPollsLectureSessionId(lectureSessionId)
   }
 
   async function refreshAdminPdfDocuments(
@@ -435,9 +466,7 @@ export function AdminPage({
             window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
             setPublisherSessionToken('')
             setPublisherStatus('connected')
-            setPublisherMessage(
-              '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
-            )
+            setPublisherMessage(PUBLISHER_SESSION_EXPIRED_MESSAGE)
             return
           }
           throw error
@@ -447,13 +476,11 @@ export function AdminPage({
       setPublisherMessage(
         publisherSessionToken
           ? '講義資料を公開できます。'
-          : '初回接続の確認が必要です。教員PCに表示された8桁コードを入力してください。',
+          : PUBLISHER_PAIRING_REQUIRED_MESSAGE,
       )
     } catch {
       setPublisherStatus('disconnected')
-      setPublisherMessage(
-        '講義資料の公開機能を確認できません。教員PCで資料公開アプリを起動してください。',
-      )
+      setPublisherMessage(PUBLISHER_UNAVAILABLE_MESSAGE)
     }
   }
 
@@ -556,9 +583,7 @@ export function AdminPage({
         window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
         setPublisherSessionToken('')
         setPublisherStatus('connected')
-        setPublisherMessage(
-          '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
-        )
+        setPublisherMessage(PUBLISHER_SESSION_EXPIRED_MESSAGE)
         return
       }
       setPublisherMessage(
@@ -614,6 +639,7 @@ export function AdminPage({
     if (!isAuthenticated || !adminToken || !activeLectureSessionId) {
       setAdminPolls([])
       setAdminPollsHasMore(false)
+      setAdminPollsLectureSessionId(null)
       setAdminPollsError(null)
       setAdminPdfDocuments([])
       return
@@ -652,9 +678,7 @@ export function AdminPage({
               window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
               setPublisherSessionToken('')
               setPublisherStatus('connected')
-              setPublisherMessage(
-                '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
-              )
+              setPublisherMessage(PUBLISHER_SESSION_EXPIRED_MESSAGE)
               return
             }
             throw error
@@ -665,7 +689,7 @@ export function AdminPage({
         setPublisherMessage(
           publisherSessionToken
             ? '講義資料を公開できます。'
-            : '初回接続の確認が必要です。教員PCに表示された8桁コードを入力してください。',
+            : PUBLISHER_PAIRING_REQUIRED_MESSAGE,
         )
       })
       .catch((error) => {
@@ -674,15 +698,11 @@ export function AdminPage({
           window.sessionStorage.removeItem(PUBLISHER_SESSION_STORAGE_KEY)
           setPublisherSessionToken('')
           setPublisherStatus('connected')
-          setPublisherMessage(
-            '接続の有効期限が切れました。資料公開アプリを再起動し、新しい8桁コードを入力してください。',
-          )
+          setPublisherMessage(PUBLISHER_SESSION_EXPIRED_MESSAGE)
           return
         }
         setPublisherStatus('disconnected')
-        setPublisherMessage(
-          '講義資料の公開機能を確認できません。教員PCで資料公開アプリを起動してください。',
-        )
+        setPublisherMessage(PUBLISHER_UNAVAILABLE_MESSAGE)
       })
     return () => {
       active = false
@@ -695,6 +715,7 @@ export function AdminPage({
     purgeLegacyAdminSessionStorage()
     setAdminPolls([])
     setAdminPollsHasMore(false)
+    setAdminPollsLectureSessionId(null)
     setAdminPollsError(null)
     setAdminPdfDocuments([])
     setPublisherStatus(publisherSessionToken ? 'paired' : 'disconnected')
@@ -738,9 +759,7 @@ export function AdminPage({
     }
 
     if (!adminToken) {
-      setDisplayStateError(
-        '管理者認証の有効期限が切れました。再度ログインしてください。',
-      )
+      setDisplayStateError(ADMIN_SESSION_EXPIRED_MESSAGE)
       return false
     }
 
@@ -787,7 +806,7 @@ export function AdminPage({
 
       setDisplayStateError(
         message === 'Invalid Admin session.'
-          ? '管理者認証の有効期限が切れました。再度ログインしてください。'
+          ? ADMIN_SESSION_EXPIRED_MESSAGE
           : message.includes('PowerPoint synchronization is active')
             ? 'PowerPoint同期中です。先に手動操作へ切り替えてください。'
             : '表示画面の更新に失敗しました。少し時間をおいて再度お試しください。',
@@ -800,14 +819,13 @@ export function AdminPage({
 
   async function createDraftLecture(): Promise<AdminLecture | null> {
     if (!adminToken) {
-      setLecturesError(
-        '管理者認証の有効期限が切れました。再度ログインしてください。',
-      )
+      setLecturesError(ADMIN_SESSION_EXPIRED_MESSAGE)
       return null
     }
 
     setLecturesLoading(true)
     setLecturesError(null)
+    const mutationEpoch = ++lectureMutationEpochRef.current
 
     try {
       const nextLectures = await supabaseAdminRepository.manageLectures({
@@ -817,6 +835,7 @@ export function AdminPage({
         startsAt: fromDatetimeLocalValue(newLectureStartsAt),
         title: newLectureTitle,
       })
+      if (mutationEpoch !== lectureMutationEpochRef.current) return null
       setLectures(nextLectures)
       const createdLecture = nextLectures[0]
       if (createdLecture) {
@@ -858,14 +877,13 @@ export function AdminPage({
     }
 
     if (!adminToken) {
-      setLecturesError(
-        '管理者認証の有効期限が切れました。再度ログインしてください。',
-      )
+      setLecturesError(ADMIN_SESSION_EXPIRED_MESSAGE)
       return
     }
 
     setLecturesLoading(true)
     setLecturesError(null)
+    const mutationEpoch = ++lectureMutationEpochRef.current
 
     try {
       const nextLectures = await supabaseAdminRepository.manageLectures({
@@ -873,12 +891,14 @@ export function AdminPage({
         adminToken,
         lectureSessionId,
       })
+      if (mutationEpoch !== lectureMutationEpochRef.current) return
       setLectures(nextLectures)
       const updatedLecture = nextLectures.find(
         (item) => item.id === lectureSessionId,
       )
       if (action === 'close') {
         if (activeLectureSessionId === lectureSessionId) {
+          clearPendingSelection()
           clearSelectedLectureSession()
           workspaceSelectionTouchedRef.current = false
           setWorkspaceView('setup')
@@ -928,14 +948,13 @@ export function AdminPage({
 
   async function duplicateLecture(lectureSessionId: string) {
     if (!adminToken) {
-      setLecturesError(
-        '管理者認証の有効期限が切れました。再度ログインしてください。',
-      )
+      setLecturesError(ADMIN_SESSION_EXPIRED_MESSAGE)
       return
     }
 
     setLecturesLoading(true)
     setLecturesError(null)
+    const mutationEpoch = ++lectureMutationEpochRef.current
     const existingIds = new Set(lectures.map((item) => item.id))
 
     try {
@@ -944,6 +963,7 @@ export function AdminPage({
         adminToken,
         lectureSessionId,
       })
+      if (mutationEpoch !== lectureMutationEpochRef.current) return
       setLectures(nextLectures)
       const duplicatedLecture = nextLectures.find(
         (item) => !existingIds.has(item.id),
@@ -982,30 +1002,32 @@ export function AdminPage({
       return
     }
 
-    setAdminPollsLoading(true)
-    setAdminPollsError(null)
+    const lectureSessionId = activeLectureSessionId
+    const pollMutation = beginPollMutation(lectureSessionId)
     try {
-      applyAdminPollList(
-        await supabaseAdminRepository.managePolls({
-          action: 'create',
-          adminToken,
-          includeHistory: showPollHistory || Boolean(activeJournalClubRun),
-          lectureSessionId: activeLectureSessionId,
-          optionLabels,
-          question: newPollQuestion.trim(),
-          type: newPollType,
-        }),
-      )
+      const result = await supabaseAdminRepository.managePolls({
+        action: 'create',
+        adminToken,
+        includeHistory: showPollHistory || Boolean(activeJournalClubRun),
+        lectureSessionId,
+        optionLabels,
+        question: newPollQuestion.trim(),
+        type: newPollType,
+      })
+      if (!pollMutationIsCurrent(pollMutation)) return
+      applyAdminPollList(result, lectureSessionId)
       setNewPollQuestion('')
       setNewPollOptions('賛成\n反対')
     } catch (error) {
-      setAdminPollsError(
-        error instanceof Error
-          ? `投票の作成に失敗しました: ${error.message}`
-          : '投票の作成に失敗しました。',
-      )
+      if (pollMutationIsCurrent(pollMutation)) {
+        setAdminPollsError(
+          error instanceof Error
+            ? `投票の作成に失敗しました: ${error.message}`
+            : '投票の作成に失敗しました。',
+        )
+      }
     } finally {
-      setAdminPollsLoading(false)
+      finishPollMutation(pollMutation)
     }
   }
 
@@ -1015,26 +1037,28 @@ export function AdminPage({
     }
 
     const action = poll.status === 'open' ? 'close' : 'open'
-    setAdminPollsLoading(true)
-    setAdminPollsError(null)
+    const lectureSessionId = activeLectureSessionId
+    const pollMutation = beginPollMutation(lectureSessionId)
     try {
-      applyAdminPollList(
-        await supabaseAdminRepository.managePolls({
-          action,
-          adminToken,
-          includeHistory: showPollHistory || Boolean(activeJournalClubRun),
-          lectureSessionId: activeLectureSessionId,
-          pollId: poll.id,
-        }),
-      )
+      const result = await supabaseAdminRepository.managePolls({
+        action,
+        adminToken,
+        includeHistory: showPollHistory || Boolean(activeJournalClubRun),
+        lectureSessionId,
+        pollId: poll.id,
+      })
+      if (!pollMutationIsCurrent(pollMutation)) return
+      applyAdminPollList(result, lectureSessionId)
     } catch (error) {
-      setAdminPollsError(
-        error instanceof Error
-          ? `投票状態の更新に失敗しました: ${error.message}`
-          : '投票状態の更新に失敗しました。',
-      )
+      if (pollMutationIsCurrent(pollMutation)) {
+        setAdminPollsError(
+          error instanceof Error
+            ? `投票状態の更新に失敗しました: ${error.message}`
+            : '投票状態の更新に失敗しました。',
+        )
+      }
     } finally {
-      setAdminPollsLoading(false)
+      finishPollMutation(pollMutation)
     }
   }
 
@@ -1272,6 +1296,7 @@ export function AdminPage({
                   lectures={lectures}
                   onLoadingChange={setLecturesLoading}
                   onPrepared={(preparedLecture, nextLectures) => {
+                    lectureMutationEpochRef.current += 1
                     setLectures(nextLectures)
                     selectAdminLecture(preparedLecture)
                     setShowLectureHistory(false)
@@ -1399,7 +1424,10 @@ export function AdminPage({
           materialEnabled={isPhase5MaterialAnalysisEnabled}
           onMasterAuthorizationChange={setAiMasterActive}
           onPollDraftCreated={async () => {
+            invalidatePollMutations()
             await refreshAdminPolls()
+            workspaceSelectionTouchedRef.current = true
+            setWorkspaceView('participation')
           }}
           publisherSessionToken={publisherSessionToken}
           realtimeEnabled={isPhase4RealtimeCaptionsEnabled}

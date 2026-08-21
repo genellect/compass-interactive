@@ -25,9 +25,7 @@ const MAX_TRANSIENT_SOURCE_CHARACTERS = 1_500
 
 export type AcademicSourceRole = 'context' | 'primary'
 export type AcademicSourcePolicy =
-  | 'auto'
-  | 'biomedical_pubmed'
-  | 'multidisciplinary_doi'
+  'auto' | 'biomedical_pubmed' | 'multidisciplinary_doi'
 export type AcademicSourceRoute = Exclude<AcademicSourcePolicy, 'auto'>
 
 export type VerifiedAcademicSource = {
@@ -87,6 +85,18 @@ export class AcademicAnswerError extends Error {
     this.name = 'AcademicAnswerError'
     this.code = code
     this.status = status
+  }
+}
+
+export function requireAcademicPreflightRetrievalClaim(preflight: {
+  claimAcquired?: boolean
+}) {
+  if (preflight.claimAcquired !== true) {
+    throw new AcademicAnswerError(
+      'operation_in_progress',
+      'This reference answer is already being prepared. Check its status before starting another attempt.',
+      409,
+    )
   }
 }
 
@@ -242,7 +252,12 @@ function pubmedSearchTerm(query: string) {
 }
 
 function crossrefYear(message: Record<string, unknown>) {
-  for (const key of ['published-print', 'published-online', 'issued', 'created']) {
+  for (const key of [
+    'published-print',
+    'published-online',
+    'issued',
+    'created',
+  ]) {
     const value = message[key] as { 'date-parts'?: number[][] } | undefined
     const year = value?.['date-parts']?.[0]?.[0]
     if (Number.isInteger(year)) return Number(year)
@@ -278,8 +293,13 @@ export function verifyCrossrefMessage(
 function medlineSource(record: MedlineRecord): VerifiedAcademicSource | null {
   const pmid = record.PMID?.[0]?.trim() ?? ''
   const title = normalizeText((record.TI ?? []).join(' '))
-  const authors = (record.FAU ?? []).map(normalizeText).filter(Boolean).slice(0, 20)
-  const year = Number((record.DP?.[0] ?? '').match(/\b(18|19|20)\d{2}\b/)?.[0] ?? 0)
+  const authors = (record.FAU ?? [])
+    .map(normalizeText)
+    .filter(Boolean)
+    .slice(0, 20)
+  const year = Number(
+    (record.DP?.[0] ?? '').match(/\b(18|19|20)\d{2}\b/)?.[0] ?? 0,
+  )
   const doiEntry = (record.AID ?? []).find((value) => /\[doi\]/i.test(value))
   const doi = doiEntry
     ? normalizeDoi(doiEntry.replace(/\s*\[doi\]\s*$/i, ''))
@@ -372,15 +392,19 @@ export async function retrievePubmedVerifiedSources(input: {
     }
     pmids = Array.isArray(payload.esearchresult?.idlist)
       ? payload.esearchresult.idlist
-          .filter((value): value is string =>
-            typeof value === 'string' && /^\d{1,9}$/.test(value),
+          .filter(
+            (value): value is string =>
+              typeof value === 'string' && /^\d{1,9}$/.test(value),
           )
           .slice(0, PHASE72_MAX_SOURCES)
       : []
   }
   pmids = [...new Set(pmids)].slice(0, PHASE72_MAX_SOURCES)
   if (!pmids.length) {
-    return { calls: { crossref: 0, efetch: 0, esearch: esearchCalls }, sources: [] }
+    return {
+      calls: { crossref: 0, efetch: 0, esearch: esearchCalls },
+      sources: [],
+    }
   }
 
   const efetchUrl = new URL(PUBMED_EFETCH_URL)
@@ -520,12 +544,14 @@ function classifyMultidisciplinaryArticle(title: string, abstract: string) {
       studyType: contextual.replace(/\s+/g, '_'),
     }
   }
-  const methodSignal = /\b(?:participants?|sample|dataset|data were|survey|experiment|randomi[sz]ed|interviews?|regression|corpus|we (?:analysed|analyzed|examined|investigated|tested|evaluated|conducted|collected)|this (?:empirical )?study|study (?:of|examining|investigating))\b|(?:参加者|標本|データ|調査|実験|無作為|面接|回帰|コーパス|本研究)/iu.test(
-    evidence,
-  )
-  const resultSignal = /\b(?:results?|findings?|we found|showed|demonstrated|associat(?:e|ed|ion|ions)|correlat(?:e|ed|ion|ions)|significant|increased|decreased|predicted|effects?)\b|(?:結果|知見|示した|関連|相関|有意|増加|減少|効果)/iu.test(
-    evidence,
-  )
+  const methodSignal =
+    /\b(?:participants?|sample|dataset|data were|survey|experiment|randomi[sz]ed|interviews?|regression|corpus|we (?:analysed|analyzed|examined|investigated|tested|evaluated|conducted|collected)|this (?:empirical )?study|study (?:of|examining|investigating))\b|(?:参加者|標本|データ|調査|実験|無作為|面接|回帰|コーパス|本研究)/iu.test(
+      evidence,
+    )
+  const resultSignal =
+    /\b(?:results?|findings?|we found|showed|demonstrated|associat(?:e|ed|ion|ions)|correlat(?:e|ed|ion|ions)|significant|increased|decreased|predicted|effects?)\b|(?:結果|知見|示した|関連|相関|有意|増加|減少|効果)/iu.test(
+      evidence,
+    )
   if (!methodSignal || !resultSignal) {
     return {
       rejected: false,
@@ -633,19 +659,18 @@ export function verifyOpenAlexWork(
     ? work.authorships
         .map((entry) =>
           String(
-            ((entry as Record<string, unknown>).author as
-              | Record<string, unknown>
-              | undefined)?.display_name ?? '',
+            (
+              (entry as Record<string, unknown>).author as
+                Record<string, unknown> | undefined
+            )?.display_name ?? '',
           ),
         )
         .filter(Boolean)
     : []
   const primaryLocation = work.primary_location as
-    | Record<string, unknown>
-    | undefined
+    Record<string, unknown> | undefined
   const sourceMetadata = primaryLocation?.source as
-    | Record<string, unknown>
-    | undefined
+    Record<string, unknown> | undefined
   const checks = {
     author:
       Boolean(source.authors[0]) &&
@@ -954,7 +979,8 @@ function responseText(response: OpenAiAcademicResponse) {
           'The model declined this reference answer.',
         )
       }
-      if (content.type === 'output_text' && content.text) texts.push(content.text)
+      if (content.type === 'output_text' && content.text)
+        texts.push(content.text)
     }
   }
   if (response.status === 'incomplete') {
@@ -1039,8 +1065,11 @@ export function applyAcademicAnswerQualityGates(input: {
       502,
     )
   }
-  const sourceMap = new Map(input.sources.map((source) => [source.sourceId, source]))
-  const unsafe = /(?:diagnos|prescri|your symptoms|you should take|診断|処方|服用してください|あなたの症状)/iu
+  const sourceMap = new Map(
+    input.sources.map((source) => [source.sourceId, source]),
+  )
+  const unsafe =
+    /(?:diagnos|prescri|your symptoms|you should take|診断|処方|服用してください|あなたの症状)/iu
   const answerPoints = result.answerPoints.map((point) => {
     if (
       !point ||
@@ -1071,7 +1100,9 @@ export function applyAcademicAnswerQualityGates(input: {
       )
     }
     const evidence = sources.map((source) => source?.abstract ?? '').join(' ')
-    if (numericAnchors(point.text).some((anchor) => !evidence.includes(anchor))) {
+    if (
+      numericAnchors(point.text).some((anchor) => !evidence.includes(anchor))
+    ) {
       throw new AcademicAnswerError(
         'quality_gate_numeric_anchor',
         'A numeric claim was not anchored in its evidence.',

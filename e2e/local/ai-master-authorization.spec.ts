@@ -165,6 +165,123 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   expect(usageCountAfterAuthorization).toBe(0)
   expect(paidRequests).toEqual([])
 
+  const academic = page.locator('.academic-answer-control')
+  const academicQuestion =
+    'What evidence supports combining retrieval practice with feedback?'
+  const academicEndpoint = `${supabaseUrl}/functions/v1/generate-academic-answer`
+  let academicGenerateRequests = 0
+  let academicStatusRequests = 0
+  let academicPreflightRequestId = ''
+  await page.route(
+    '**/functions/v1/generate-academic-answer',
+    async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      if (body.action === 'generate') {
+        academicGenerateRequests += 1
+        academicPreflightRequestId = String(body.preflightRequestId ?? '')
+        await route.fulfill({
+          contentType: 'application/json',
+          json: {
+            code: 'operation_in_progress',
+            message: 'This Academic answer is already running.',
+            ok: false,
+          },
+          status: 409,
+        })
+        return
+      }
+      if (body.action !== 'status' || !academicPreflightRequestId) {
+        await route.continue()
+        return
+      }
+
+      academicStatusRequests += 1
+      const exactBinding = academicStatusRequests > 1
+      const answerText = exactBinding
+        ? 'Exact preflight result'
+        : 'Same-question result from another preflight'
+      await route.fulfill({
+        contentType: 'application/json',
+        json: {
+          ok: true,
+          results: {
+            active_requests: exactBinding
+              ? []
+              : [
+                  {
+                    id: '30000000-0000-4000-8000-000000000001',
+                    operation_id: null,
+                    preflight_request_id: academicPreflightRequestId,
+                    question: academicQuestion,
+                    status: 'evidence_checking',
+                    updated_at: '2026-08-21T00:00:00.000Z',
+                  },
+                ],
+            answers: [
+              {
+                created_at: '2026-08-21T00:00:01.000Z',
+                id: exactBinding
+                  ? '30000000-0000-4000-8000-000000000003'
+                  : '30000000-0000-4000-8000-000000000002',
+                preflight_request_id: exactBinding
+                  ? academicPreflightRequestId
+                  : '30000000-0000-4000-8000-000000000099',
+                publication: null,
+                question: academicQuestion,
+                revisions: [
+                  {
+                    body: {
+                      answer_points: [{ source_ids: [], text: answerText }],
+                      limitations: [],
+                    },
+                    id: exactBinding
+                      ? '30000000-0000-4000-8000-000000000005'
+                      : '30000000-0000-4000-8000-000000000004',
+                  },
+                ],
+                sources: [],
+                status: 'awaiting_review',
+              },
+            ],
+            automation: null,
+            candidates: [],
+            control: {
+              academic_answer_calls_used: 1,
+              academic_answer_limit: 3,
+              budget_limit_microusd: 120000,
+              status: 'active',
+              used_microusd: 1000,
+            },
+          },
+        },
+      })
+    },
+  )
+  await academic.getByLabel('学生へ補足したい質問').fill(academicQuestion)
+  await academic
+    .getByLabel('文献検索語')
+    .fill('retrieval practice feedback learning evidence')
+  const generateAcademicAnswer = academic.getByRole('button', {
+    name: '一次文献を確認して下書きを作る',
+  })
+  await expect(generateAcademicAnswer).toBeEnabled()
+  await generateAcademicAnswer.click()
+  await expect(academic.getByText('Exact preflight result')).toBeVisible({
+    timeout: 15_000,
+  })
+  expect(academicGenerateRequests).toBe(1)
+  expect(academicStatusRequests).toBeGreaterThanOrEqual(2)
+  expect(academicPreflightRequestId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  )
+  await safety.expectConsoleErrorOnce({
+    message:
+      'Failed to load resource: the server responded with a status of 409 (Conflict)',
+    url: academicEndpoint,
+  })
+  await page.unroute('**/functions/v1/generate-academic-answer')
+  paidRequests.length = 0
+
   const summary = page.locator('.lecture-summary-control')
   await expect(summary).toContainText('AI利用を許可済み／5分要約は未開始')
   await expect(summary.getByLabel(/PIN/)).toHaveCount(0)

@@ -6,7 +6,6 @@ import { AppIcon } from '../AppIcon'
 import type { AiMasterReadiness } from '../AdminAiControl/AiMasterAuthorizationControl'
 import { LectureSummaryControl } from '../AdminAiControl/LectureSummaryControl'
 import { MaterialAnalysisControl } from '../AdminAiControl/MaterialAnalysisControl'
-import { RealtimeCaptionControl } from '../AdminAiControl/RealtimeCaptionControl'
 import type {
   AiMasterAuthorization,
   AdminLecture,
@@ -24,6 +23,12 @@ const AcademicAnswerControl = lazy(() =>
 const AiMasterAuthorizationControl = lazy(() =>
   import('../AdminAiControl/AiMasterAuthorizationControl').then((module) => ({
     default: module.AiMasterAuthorizationControl,
+  })),
+)
+
+const RealtimeCaptionControl = lazy(() =>
+  import('../AdminAiControl/RealtimeCaptionControl').then((module) => ({
+    default: module.RealtimeCaptionControl,
   })),
 )
 
@@ -132,16 +137,18 @@ export function AdminAiControlPanel({
         </Suspense>
       ) : null}
       {adminToken && activeLectureSessionId ? (
-        <RealtimeCaptionControl
-          admissionEnabled={realtimeEnabled}
-          adminToken={adminToken}
-          hardStopAt={
-            activeLecture?.hardStopAt ?? fallbackHardStopAt ?? undefined
-          }
-          lectureSessionId={activeLectureSessionId}
-          lectureStatus={status}
-          masterAuthorization={masterAuthorization}
-        />
+        <Suspense fallback={<p className="note">字幕機能を準備しています…</p>}>
+          <RealtimeCaptionControl
+            admissionEnabled={realtimeEnabled}
+            adminToken={adminToken}
+            hardStopAt={
+              activeLecture?.hardStopAt ?? fallbackHardStopAt ?? undefined
+            }
+            lectureSessionId={activeLectureSessionId}
+            lectureStatus={status}
+            masterAuthorization={masterAuthorization}
+          />
+        </Suspense>
       ) : null}
       {adminToken && activeLectureSessionId ? (
         <LectureSummaryControl

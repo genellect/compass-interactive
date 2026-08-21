@@ -32,7 +32,13 @@ import {
 import './RealtimeCaptionControl.css'
 
 type CaptionControlStatus =
-  'idle' | 'authorizing' | 'connecting' | 'running' | 'stopping' | 'error'
+  | 'idle'
+  | 'requesting_microphone'
+  | 'authorizing'
+  | 'connecting'
+  | 'running'
+  | 'stopping'
+  | 'error'
 
 type RealtimeDuration = '600' | '1800' | 'remaining'
 
@@ -43,6 +49,98 @@ type RealtimeCaptionControlProps = {
   lectureSessionId: string
   lectureStatus: string
   masterAuthorization: AiMasterAuthorization | null
+}
+
+const MICROPHONE_REQUEST_TIMEOUT_MS = 15_000
+
+class MicrophoneRequestError extends Error {
+  readonly reason:
+    'denied' | 'not_found' | 'not_readable' | 'timeout' | 'unsupported'
+
+  constructor(
+    reason: 'denied' | 'not_found' | 'not_readable' | 'timeout' | 'unsupported',
+  ) {
+    super(reason)
+    this.name = 'MicrophoneRequestError'
+    this.reason = reason
+  }
+}
+
+function classifyMicrophoneError(error: unknown) {
+  if (error instanceof MicrophoneRequestError) return error
+  const name =
+    error && typeof error === 'object' && 'name' in error
+      ? String(error.name)
+      : ''
+  if (
+    ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)
+  ) {
+    return new MicrophoneRequestError('denied')
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return new MicrophoneRequestError('not_found')
+  }
+  if (['AbortError', 'NotReadableError', 'TrackStartError'].includes(name)) {
+    return new MicrophoneRequestError('not_readable')
+  }
+  return new MicrophoneRequestError('not_readable')
+}
+
+function microphoneErrorMessage(error: unknown) {
+  const requestError = classifyMicrophoneError(error)
+  switch (requestError.reason) {
+    case 'denied':
+      return 'マイクの使用が許可されていません。ブラウザのサイト設定でマイクを許可してから、もう一度お試しください。'
+    case 'not_found':
+      return '利用できるマイクが見つかりません。マイクを接続してから、もう一度お試しください。'
+    case 'not_readable':
+      return 'マイクを開始できません。他のアプリが使用していないか確認して、もう一度お試しください。'
+    case 'timeout':
+      return 'マイクの確認が15秒以内に完了しませんでした。ブラウザのマイク許可を確認して、もう一度お試しください。'
+    case 'unsupported':
+      return 'このブラウザではマイクを利用できません。対応ブラウザで開いてください。'
+  }
+}
+
+async function requestMicrophoneStream() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new MicrophoneRequestError('unsupported')
+  }
+
+  let requestExpired = false
+  let timeoutId: number | null = null
+  const mediaRequest = navigator.mediaDevices.getUserMedia({
+    audio: {
+      autoGainControl: true,
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
+    video: false,
+  })
+  void mediaRequest
+    .then((lateStream) => {
+      if (requestExpired) {
+        lateStream.getTracks().forEach((track) => track.stop())
+      }
+    })
+    .catch(() => undefined)
+
+  try {
+    return await Promise.race([
+      mediaRequest,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          requestExpired = true
+          reject(new MicrophoneRequestError('timeout'))
+        }, MICROPHONE_REQUEST_TIMEOUT_MS)
+      }),
+    ])
+  } catch (error) {
+    throw classifyMicrophoneError(error)
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId)
+  }
 }
 
 function findRunningCaptionOperation(recentOperations?: unknown[]) {
@@ -92,6 +190,7 @@ export function RealtimeCaptionControl({
   const [pricingRateMicrousdPerMinute, setPricingRateMicrousdPerMinute] =
     useState<number | null>(null)
   const sessionRef = useRef<RealtimeCaptionSession | null>(null)
+  const startAttemptGenerationRef = useRef(0)
   const operationIdRef = useRef<string | null>(null)
   const startRequestIdRef = useRef<string | null>(null)
   const unresolvedGoogleStartRef = useRef<{
@@ -234,7 +333,12 @@ export function RealtimeCaptionControl({
     if (
       previouslyAuthorized &&
       !masterAuthorized &&
-      ['authorizing', 'connecting', 'running'].includes(statusRef.current)
+      [
+        'requesting_microphone',
+        'authorizing',
+        'connecting',
+        'running',
+      ].includes(statusRef.current)
     ) {
       void failClosedRef.current('字幕の講義中AI許可が解除されました。')
       return
@@ -373,8 +477,12 @@ export function RealtimeCaptionControl({
 
   async function handleStart() {
     if (
-      status === 'running' ||
-      status === 'connecting' ||
+      [
+        'requesting_microphone',
+        'authorizing',
+        'connecting',
+        'running',
+      ].includes(status) ||
       masterHeldByOther ||
       !admissionEnabled ||
       !masterAuthorized
@@ -418,23 +526,23 @@ export function RealtimeCaptionControl({
 
     transportSequenceRef.current = 0
     transportStreamIdRef.current = crypto.randomUUID()
+    const startAttemptGeneration = ++startAttemptGenerationRef.current
 
-    updateStatus('authorizing')
-    setMessage('講義のAI許可、選択時間、利用上限を確認しています。')
+    updateStatus('requesting_microphone')
+    setMessage('ブラウザのマイク使用を確認しています。')
     let stream: MediaStream | null = null
     let providerStartAttempted = false
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: true,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-        video: false,
-      })
-      updateStatus('connecting')
-      setMessage('OpenAI Realtimeへ短寿命接続を準備しています。')
+      stream = await requestMicrophoneStream()
+      if (
+        startAttemptGenerationRef.current !== startAttemptGeneration ||
+        statusRef.current !== 'requesting_microphone'
+      ) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      updateStatus('authorizing')
+      setMessage('講義のAI許可、選択時間、利用上限を確認しています。')
       const session = new RealtimeCaptionSession({
         mediaStream: stream,
         onEvent: handleRealtimeEvent,
@@ -461,6 +569,8 @@ export function RealtimeCaptionControl({
       operationIdRef.current = providerCall.operationId
       startRequestIdRef.current = startRequestId ?? null
       unresolvedGoogleStartRef.current = null
+      updateStatus('connecting')
+      setMessage('OpenAI Realtimeへ短寿命接続を準備しています。')
       await session.connect(providerCall.sdpAnswer)
       updateStatus('running')
       setMessage(
@@ -493,7 +603,11 @@ export function RealtimeCaptionControl({
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop())
       await failClosed(
-        error instanceof Error ? error.message : '字幕を開始できませんでした。',
+        statusRef.current === 'requesting_microphone'
+          ? microphoneErrorMessage(error)
+          : error instanceof Error
+            ? error.message
+            : '字幕を開始できませんでした。',
       )
       if (providerStartAttempted) {
         try {
@@ -649,6 +763,7 @@ export function RealtimeCaptionControl({
       })
     return () => {
       const operationId = operationIdRef.current
+      startAttemptGenerationRef.current += 1
       broadcastRef.current?.close()
       broadcastRef.current = null
       clearTimers()
@@ -687,7 +802,10 @@ export function RealtimeCaptionControl({
     return () => window.clearTimeout(timer)
   }, [hardStopAt, status])
 
-  const isStarting = status === 'authorizing' || status === 'connecting'
+  const isStarting =
+    status === 'requesting_microphone' ||
+    status === 'authorizing' ||
+    status === 'connecting'
   const hardStopMs = Date.parse(hardStopAt ?? '')
   const remainingAudioSeconds = Number.isFinite(hardStopMs)
     ? Math.max(
@@ -719,7 +837,15 @@ export function RealtimeCaptionControl({
             ? '配信中'
             : status === 'idle'
               ? '停止中'
-              : '確認中'}
+              : status === 'requesting_microphone'
+                ? 'マイク確認中'
+                : status === 'authorizing'
+                  ? '利用確認中'
+                  : status === 'connecting'
+                    ? '接続中'
+                    : status === 'error'
+                      ? 'エラー'
+                      : '停止中'}
         </span>
       </div>
 

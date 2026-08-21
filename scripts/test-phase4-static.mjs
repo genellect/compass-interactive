@@ -114,6 +114,45 @@ assert.doesNotMatch(control, /billingPin|API利用PIN/)
 assert.doesNotMatch(control, /localStorage|sessionStorage/)
 assert.match(control, /5_000/)
 assert.match(control, /15_000/)
+assert.match(control, /'requesting_microphone'/)
+assert.match(control, /MICROPHONE_REQUEST_TIMEOUT_MS = 15_000/)
+assert.match(control, /Promise\.race\(\[/)
+assert.match(control, /const startAttemptGenerationRef = useRef\(0\)/)
+assert.match(
+  control,
+  /const startAttemptGeneration = \+\+startAttemptGenerationRef\.current[\s\S]*?stream = await requestMicrophoneStream\(\)[\s\S]*?startAttemptGenerationRef\.current !== startAttemptGeneration[\s\S]*?stream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)[\s\S]*?return/,
+  'a late microphone result from an invalidated start attempt must stop before provider IDs or Edge dispatch',
+)
+assert.match(
+  control,
+  /return \(\) => \{[\s\S]*?startAttemptGenerationRef\.current \+= 1[\s\S]*?sessionRef\.current\?\.stop\(\)/,
+  'lecture change and unmount must invalidate an in-flight microphone request',
+)
+assert.match(
+  control,
+  /requestExpired[\s\S]*?lateStream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/,
+  'a microphone stream that resolves after timeout must have every track stopped',
+)
+assert.match(control, /マイクの使用が許可されていません/)
+assert.match(control, /このブラウザではマイクを利用できません/)
+assert.match(control, /マイクの確認が15秒以内に完了しませんでした/)
+assert.match(control, /status === 'error'[\s\S]*?'エラー'/)
+const microphoneRequestIndex = control.indexOf(
+  'stream = await requestMicrophoneStream()',
+)
+const grantRequestIdIndex = control.indexOf(
+  'const grantRequestId = crypto.randomUUID()',
+)
+const startRequestIdIndex = control.indexOf(
+  'const startRequestId = crypto.randomUUID()',
+)
+const providerCallIndex = control.indexOf(
+  'supabaseAdminRepository.createRealtimeCaptionCall',
+)
+assert.ok(microphoneRequestIndex >= 0)
+assert.ok(grantRequestIdIndex > microphoneRequestIndex)
+assert.ok(startRequestIdIndex > microphoneRequestIndex)
+assert.ok(providerCallIndex > startRequestIdIndex)
 assert.match(control, /client_unmount/)
 assert.match(control, /publishInFlightRef/)
 assert.match(control, /createRealtimeCaptionCall/)

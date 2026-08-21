@@ -46,6 +46,13 @@ const files = {
     new URL('../supabase/functions/_shared/requestBody.ts', import.meta.url),
     'utf8',
   ),
+  repository: await readFile(
+    new URL(
+      '../src/repositories/supabase/adminContentAiRepository.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
   retryMigration: await readFile(
     new URL(
       '../supabase/migrations/20260722213000_phase7_27_material_analysis_recovery.sql',
@@ -122,8 +129,61 @@ assert.ok(
 assert.match(files.publisher, /verifyLectureAccessToken/)
 assert.doesNotMatch(files.ui, /API利用PIN/)
 assert.match(files.ui, /AI生成・未検証/)
-assert.match(files.ui, /通常の投票下書きへ追加/)
+assert.match(files.ui, /内容を確認する/)
+assert.match(files.ui, /投票下書きに追加/)
 assert.doesNotMatch(files.ui, /localStorage/)
 assert.doesNotMatch(files.ui, /sessionStorage/)
+assert.equal(
+  files.repository.match(/'analyze-lecture-material'/g)?.length,
+  1,
+  'all material provider attempts use one closed dispatch helper',
+)
+assert.match(
+  files.repository,
+  /waitForMaterialAnalysisResult[\s\S]*?'manage-material-analysis'[\s\S]*?action: 'list'/,
+)
+assert.match(
+  files.repository,
+  /sourceDocumentId ===[\s\S]*?request\.request\.documentId[\s\S]*?sourceDocumentVersion ===[\s\S]*?request\.request\.documentVersion/,
+)
+const materialWait = files.repository.slice(
+  files.repository.indexOf('async function waitForMaterialAnalysisResult('),
+  files.repository.indexOf('function toMaterialProviderWireRequest('),
+)
+const materialCandidate = materialWait.indexOf('const candidateFound')
+const materialExactReplay = materialWait.indexOf(
+  'dispatchMaterialProviderRequest(',
+  materialCandidate,
+)
+const materialExactResult = materialWait.indexOf(
+  'results: toAdminMaterialResults(confirmation.data.results)',
+  materialExactReplay,
+)
+assert.ok(
+  materialCandidate >= 0 &&
+    materialCandidate < materialExactReplay &&
+    materialExactReplay < materialExactResult,
+  'a read-only material candidate is returned only after exact same-wire receipt reconciliation',
+)
+assert.match(
+  materialWait,
+  /confirmation\.error[\s\S]*providerAttemptIsAmbiguous\(confirmation\.error\)[\s\S]*return \{ error: confirmation\.error, results: null \}/,
+  'operation_in_progress and ambiguous exact replays keep polling while definitive errors stop',
+)
+const materialWire = files.repository.slice(
+  files.repository.indexOf('function toMaterialProviderWireRequest('),
+  files.repository.indexOf('function dispatchMaterialProviderRequest('),
+)
+assert.match(
+  materialWire,
+  /grantRequestId: request\.grantRequestId[\s\S]*startRequestId: request\.startRequestId/,
+)
+assert.doesNotMatch(materialWire, /knownProposalIds|previousAnalysisId/)
+assert.match(
+  files.repository,
+  /const wireRequest = toMaterialProviderWireRequest\(request\)[\s\S]*dispatchMaterialProviderRequest\(wireRequest\)[\s\S]*waitForMaterialAnalysisResult\(\{[\s\S]*request,[\s\S]*wireRequest/,
+  'initial material dispatch and confirmation replay share the exact closed wire body',
+)
+assert.match(files.ui, /shouldRetainAdminProviderAttempt[\s\S]*?retainAttempt/)
 
 console.log('Phase 5 static security and default-OFF checks passed.')
