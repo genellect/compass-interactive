@@ -27,7 +27,7 @@ rights.
 | ------------------------------------------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `public/favicon.svg`                             | `0fa4a5cf0c59d3fc64977feecb969dd785a8c83d0a2e2f7162fc6cb760ae5943` | New Phase 7.31B repository-native replacement                                                         | Simple geometric COMPASS `C` mark made only from SVG primitives; referenced by `index.html`; no copied artwork or external font                                         | **Cleared.** Created specifically for this repository under the owner's approved publication-preparation work; no third-party material identified.                                                                                  |
 | `public/lecture-assets/m4-sample-v1.pdf`         | `c2b33586ab59ff1825ee0dc07f0a6151124955746b956905d40c27619e84d8cb` | Commit `da8d13e` by Yuto Matsui; ReportLab metadata; title `COMPASS Interactive Milestone 4 PDF Sync` | Three-page synthetic COMPASS Interactive PDF Sync sample with no images, annotations, embedded files, JavaScript, or forms                                              | **Cleared.** Project-authored synthetic test material with no third-party imagery or active content identified.                                                                                                                     |
-| `public/lecture-assets/why-learn-english-v1.pdf` | `177b642ae3368d0fa3953e2558a744433af445c7d6c26cf8491ea978050cb683` | Commit `e3c29a9` by Yuto Matsui; visible author attribution to Yuto Matsui                            | Fifteen-page English-learning presentation with thirteen embedded images and product screenshots; no annotations, embedded files, JavaScript, forms, or extracted email | **Rights confirmation required.** Retain evidence for the text, screenshots, illustrations, stock or generated imagery, fonts, and any depicted third-party material, or remove/replace the unresolved material before publication. |
+| `public/lecture-assets/why-learn-english-v1.pdf` | `177b642ae3368d0fa3953e2558a744433af445c7d6c26cf8491ea978050cb683` | Commit `e3c29a9` by Yuto Matsui; visible author attribution to Yuto Matsui                            | Fifteen-page English-learning presentation with thirteen embedded images and product screenshots; no annotations, embedded files, JavaScript, forms, or extracted email | **Cleared by owner attestation.** The owner confirmed sufficient rights for public redistribution and future commercial SaaS use of the text, images, screenshots, and fonts. Supporting source records remain private.          |
 
 ## Removed from the current tree but retained in Git history
 
@@ -87,7 +87,14 @@ For every asset retained in public refs, the owner must record:
 | Historical social-platform icon sprite | Removed; MIT/marks recorded  | `THIRD_PARTY_NOTICES.md`             | Yuto Matsui | 2026-08-23 |
 | Historical `hero.png`                  | Removed; MIT notice retained | `THIRD_PARTY_NOTICES.md`             | Yuto Matsui | 2026-08-23 |
 | `m4-sample-v1.pdf`                     | Retain; cleared              | This ledger                          | Yuto Matsui | 2026-08-23 |
-| `why-learn-english-v1.pdf`             | Pending                      | Pending                              | Yuto Matsui | Pending    |
+| `why-learn-english-v1.pdf`             | Retain; cleared              | Owner attestation; private records   | Yuto Matsui | 2026-08-23 |
+
+On 2026-08-23, the owner attested that they hold or control sufficient rights
+to publicly redistribute and use in a future commercial SaaS offering all
+text, images, screenshots, and fonts retained in
+`public/lecture-assets/why-learn-english-v1.pdf`. The supporting acquisition,
+creation, or license records are intentionally retained outside the public
+repository.
 
 ## Owner-accepted privacy residual
 
@@ -97,5 +104,5 @@ address. That acceptance is limited to the address itself: it does not permit a
 credential, authenticated session, private lecture content, production trace,
 or any other RED publication item.
 
-Any unresolved asset is excluded from publication clearance even when the
-source code, security scan, and repository history otherwise pass.
+Any future unresolved asset is excluded from publication clearance even when
+the source code, security scan, and repository history otherwise pass.

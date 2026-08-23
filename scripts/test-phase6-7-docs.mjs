@@ -23,6 +23,7 @@ const requiredDocuments = [
   'THIRD_PARTY_NOTICES.md',
   '.github/SECURITY.md',
   'PROJECT_GUIDE.md',
+  'docs/ASSET_PROVENANCE.md',
   'docs/architecture.md',
   'docs/SECURITY.md',
   'docs/data_policy.md',
@@ -70,6 +71,8 @@ for (const document of requiredDocuments) {
 
 const packageJson = JSON.parse(read('package.json'))
 const packageLock = JSON.parse(read('package-lock.json'))
+const devContainer = JSON.parse(read('.devcontainer/devcontainer.json'))
+const toolchainEnvironment = read('.devcontainer/toolchain.env')
 assert.match(packageJson.version, /^\d+\.\d+\.\d+$/)
 assert.equal(packageLock.version, packageJson.version)
 assert.equal(packageLock.packages?.['']?.version, packageJson.version)
@@ -82,6 +85,7 @@ const contributing = read('CONTRIBUTING.md')
 const codeOfConduct = read('CODE_OF_CONDUCT.md')
 const trademarks = read('TRADEMARKS.md')
 const thirdPartyNotices = read('THIRD_PARTY_NOTICES.md')
+const assetProvenance = read('docs/ASSET_PROVENANCE.md')
 const publicSecurityPolicy = read('.github/SECURITY.md')
 const codeowners = read('.github/CODEOWNERS')
 const issueTemplateConfig = read('.github/ISSUE_TEMPLATE/config.yml')
@@ -130,6 +134,10 @@ assert.match(contributing, /COMPASS Interactive CLA 1\.0/)
 assert.match(codeOfConduct, /private maintainer contact/i)
 assert.match(trademarks, /No\s+trademark[\s\S]*right is\s+granted/i)
 assert.match(thirdPartyNotices, /docs\/ASSET_PROVENANCE\.md/)
+assert.match(
+  assetProvenance,
+  /why-learn-english-v1\.pdf[^\n]*Cleared by owner attestation/,
+)
 assert.match(publicSecurityPolicy, /Report a vulnerability/)
 assert.match(codeowners, /^\* @genellect$/m)
 assert.match(issueTemplateConfig, /blank_issues_enabled:\s*false/)
@@ -138,6 +146,16 @@ assert.match(issueTemplateConfig, /security\/advisories\/new/)
 assert.match(nodeVersionPin, /^\d+\.\d+\.\d+$/)
 assert.equal(nvmrcPin, nodeVersionPin)
 assert.equal(packageJson.engines?.node, `>=${nodeVersionPin}`)
+const dockerComposeVersion = toolchainEnvironment.match(
+  /^DOCKER_COMPOSE_VERSION=(\d+\.\d+\.\d+)$/m,
+)?.[1]
+assert.ok(dockerComposeVersion, 'Docker Compose toolchain pin is missing')
+assert.equal(
+  devContainer.features?.['ghcr.io/devcontainers/features/docker-in-docker:4']
+    ?.dockerDashComposeVersion,
+  dockerComposeVersion,
+  'Dev Container Docker Compose option must match the doctor toolchain pin',
+)
 assert.match(cloudWorkspaceDoctor, /'\.node-version',[\s\S]*'\.nvmrc'/)
 assert.match(
   cloudWorkspaceDoctor,
