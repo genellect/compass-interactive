@@ -177,4 +177,6 @@ Local Supabase E2EはPostgreSQL、Auth、RPC、RLS、Edge Functionsを起動し�
 
 COMPASS Interactiveは、[COMPASS](https://github.com/genellect/compass)が展開する教育・テクノロジープロダクトの一つです。COMPASSは学生有志による独立した教育活動であり、北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
 
-本リポジトリは非公開で、ソースコードは権利者が独占的に管理しています。リポジトリへのアクセスは、明示的な許諾のない利用、複製、改変、再配布を認めるものではありません。本番の認証情報、API key、個人情報、講義データ、PDF、バックアップはリポジトリに含めません。
+本リポジトリの可視性変更は別途の明示承認を要します。ソースコードは公開後もsource-availableであり、open sourceではありません。閲覧、評価、修正提案、商用利用、SaaS運用、再配布などの条件は[`LICENSE`](LICENSE)と[`NOTICE`](NOTICE)に従います。外部Contributionには[`CLA.md`](CLA.md)への同意が必要です。
+
+善意の脆弱性報告は[`.github/SECURITY.md`](.github/SECURITY.md)の非公開窓口で受け付けます。追跡済み画像、PDF、ロゴ等の公開可否と第三者権利は[`docs/ASSET_PROVENANCE.md`](docs/ASSET_PROVENANCE.md)で管理します。本番の認証情報、API key、個人情報、講義データ、非公開PDF、バックアップはリポジトリに含めません。

@@ -117,6 +117,12 @@ List every gate that did not run and why. This section is not optional — if it
 
 External asset reuse: <!-- none, or source repository + non-secret asset + review result -->
 
+# Contribution rights
+
+- [ ] If I am submitting an external Contribution, the PR records: `I have read and agree to the COMPASS Interactive CLA 1.0.`
+- [ ] I have disclosed third-party, generated, or materially AI-assisted content and have the right to submit it
+- [ ] New or changed media is recorded in `docs/ASSET_PROVENANCE.md`
+
 # Feature admission and rollback
 
 - [ ] New browser, Edge and DB gates are independently default OFF
