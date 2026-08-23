@@ -1,0 +1,76 @@
+name: Product defect
+description: Report a reproducible, non-security defect using disclosure-safe evidence.
+title: '[Bug]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, personal data, private lecture content, authenticated traces, or vulnerability details. Suspected vulnerabilities belong in a [private security report](https://github.com/genellect/compass-interactive/security/advisories/new).
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Disclosure boundary
+      options:
+        - label: This is not a security vulnerability, and the report contains no secret, personal data, private lecture content, or authenticated material.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit SHA, release, or public deployment version. Do not paste a tokenized URL.
+      placeholder: Commit SHA or release
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Educator
+        - Student
+        - Display
+        - Review / Archive
+        - Demo
+        - Local development
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: State what happened and the visible result.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data and a demo or local environment. Redact all identifiers and URLs that carry access.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+      placeholder: Chromium 000 on Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional disclosure-safe evidence
+      description: Optional redacted console output or screenshots. Do not upload traces or logs containing session state or private content.
+    validations:
+      required: false

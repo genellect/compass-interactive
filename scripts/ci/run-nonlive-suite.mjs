@@ -84,6 +84,7 @@ const safeTestScripts = [
   'test:admin-lifecycle',
   'test:pdf-sync',
   'test:supabase:static',
+  'test:publication-history-scanner',
 ]
 
 const workflow = readFileSync(

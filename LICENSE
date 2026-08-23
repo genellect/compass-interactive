@@ -1,0 +1,183 @@
+COMPASS INTERACTIVE SOURCE EVALUATION LICENSE 1.0
+
+Copyright (c) 2026 Yuto Matsui. All rights reserved.
+
+This license is a source-available license. It is not an open-source license.
+
+1. Definitions
+
+"Licensor" means Yuto Matsui and any successor or assignee identified in the
+NOTICE file distributed with the Software.
+
+"You" means the individual or legal entity exercising permissions under this
+license.
+
+"Software" means the COMPASS Interactive source code, documentation, visual
+materials, and other files distributed with this license, excluding Third-Party
+Materials.
+
+"Contribution" means material intentionally submitted to Licensor for inclusion
+in the Software under the contribution process described in CLA.md.
+
+"Production Use" means use of the Software to provide, support, administer, or
+operate a service for students, educators, institutions, customers, or other
+third parties, whether paid or unpaid. Private local evaluation with synthetic
+data is not Production Use.
+
+"Third-Party Materials" means software, fonts, icons, media, documents, and
+other material identified as third-party material in the repository, its lock
+files, notices, or asset ledger.
+
+2. Acceptance and GitHub functionality
+
+You accept this license by exercising any permission granted below. You do not
+need this license for rights that applicable law gives you without permission.
+
+Nothing in this license limits rights granted directly by GitHub's Terms of
+Service for public repository functionality, including viewing and forking on
+GitHub. Those rights do not create any additional permission to use the
+Software outside that functionality.
+
+3. Limited evaluation license
+
+Subject to continuous compliance with this license, Licensor grants you a
+limited, non-exclusive, worldwide, royalty-free, non-transferable, and
+non-sublicensable license to:
+
+a. view, download, and fork the Software through GitHub;
+b. reproduce, build, and run the Software in a private, non-production
+   environment solely for technical evaluation, testing, or study, including
+   evaluation by an organization deciding whether to seek a commercial license;
+c. make temporary modifications solely for that evaluation or to prepare a
+   Contribution; and
+d. conduct good-faith security research and submit vulnerability reports only
+   as permitted by .github/SECURITY.md.
+
+Commercial security researchers may exercise subsection 3.d solely to report a
+vulnerability under .github/SECURITY.md. No permission to operate the Software
+as a commercial product or service is implied.
+
+4. Conditions
+
+Every permitted copy or GitHub fork must retain this license, NOTICE, copyright
+notices, attribution, and the repository's source-available designation.
+
+Evaluation must use synthetic or lawfully controlled data. This license does
+not authorize access to any hosted COMPASS Interactive environment, production
+data, user data, credential, paid provider, or third-party system.
+
+You may submit a Contribution only through a channel designated by Licensor and
+only after accepting CLA.md in the required form.
+
+5. Prohibited uses
+
+Except under a separate written agreement with Licensor, you may not:
+
+a. use the Software for Production Use;
+b. use the Software to generate revenue, support commercial operations, or
+   deliver a commercial service, other than security reporting expressly
+   permitted by Section 3;
+c. offer, host, operate, or provide the Software or a substantial part of its
+   functionality as software-as-a-service, a managed service, or a hosted
+   service;
+d. create, market, or operate a competing or substantially similar product or
+   service using the Software;
+e. publish or deploy a running copy of the Software outside a private local
+   evaluation environment;
+f. sell, rent, lease, sublicense, or redistribute the Software, except for a
+   GitHub fork or Contribution that is necessary to use GitHub's collaboration
+   functionality and remains subject to this license;
+g. remove, obscure, or alter licensing, copyright, provenance, or attribution
+   notices;
+h. bypass or help others bypass authentication, authorization, rate, usage,
+   safety, billing, or access controls, except for research conducted strictly
+   within .github/SECURITY.md;
+i. use COMPASS, COMPASS Interactive, their logos, or their visual identity to
+   imply affiliation, endorsement, origin, or sponsorship;
+j. use the Software or a substantial extraction of it as a dataset to train,
+   fine-tune, or improve a machine-learning or generative model, except for
+   transient private assistance used solely to evaluate the Software, prepare a
+   Contribution, or report a vulnerability under .github/SECURITY.md; or
+k. use the Software in violation of law or third-party rights.
+
+Section 5.j does not limit rights separately granted to GitHub or its affiliates
+under GitHub's Terms of Service.
+
+6. Commercial licenses
+
+Licensor may offer separate commercial, production, hosting, redistribution, or
+OEM rights under a written agreement. No such rights arise from public access,
+a GitHub fork, a Contribution, or this license.
+
+7. Security research
+
+Security research is permitted only within the scope, methods, and safe-harbor
+conditions in .github/SECURITY.md. That policy does not authorize testing of
+GitHub, Supabase, Cloudflare, OpenAI, Google, or any other third-party service.
+If the policy and this license conflict on security research, the narrower
+permission controls.
+
+8. Contributions
+
+No Contribution changes ownership of the pre-existing Software. Contributions
+are governed by CLA.md in addition to this license. Licensor may accept, reject,
+modify, commercially use, or relicense Contributions as permitted by the CLA.
+
+9. Third-Party Materials
+
+This license does not relicense Third-Party Materials. Their respective license
+terms, notices, and brand policies continue to apply. The repository asset
+ledger records the current publication review status of tracked media and brand
+assets. If a file cannot lawfully be distributed under its applicable terms,
+this license grants no permission for that file.
+
+10. Reservation of rights
+
+Licensor retains all copyright and other rights not expressly granted. No
+patent, trademark, trade name, service mark, publicity, privacy, or other right
+is granted by implication, estoppel, exhaustion, or otherwise.
+
+11. Termination
+
+This license terminates automatically if you breach Sections 4 or 5. For any
+other breach, it terminates if you do not cure the breach within fourteen days
+after written notice. On termination, you must stop exercising the permissions
+in Section 3 and delete copies under your control, except evidence that law
+requires you to preserve. Sections 5 through 16 survive termination to the
+extent necessary to give them effect.
+
+12. No warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, SECURITY, OR ERROR-FREE
+OPERATION.
+
+13. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR WILL NOT BE LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES,
+OR FOR LOSS OF DATA, REVENUE, PROFITS, GOODWILL, OR BUSINESS OPPORTUNITY,
+ARISING FROM THE SOFTWARE OR THIS LICENSE. LICENSOR'S TOTAL LIABILITY ARISING
+FROM THE SOFTWARE OR THIS LICENSE WILL NOT EXCEED THE AMOUNT YOU PAID LICENSOR
+FOR THE SOFTWARE DURING THE TWELVE MONTHS BEFORE THE EVENT GIVING RISE TO THE
+CLAIM.
+
+14. No affiliation or endorsement
+
+The Software is an independent project. Public availability does not make any
+university, faculty, laboratory, service provider, contributor, or referenced
+organization an operator, sponsor, or endorser of COMPASS Interactive.
+
+15. Severability and waiver
+
+If a provision is unenforceable, it will be limited to the minimum extent
+necessary and the remaining provisions will continue in effect. A failure to
+enforce a provision is not a waiver.
+
+16. Governing law and forum
+
+This license is governed by the laws of Japan, excluding conflict-of-laws
+rules. The Tokyo District Court has exclusive jurisdiction as the court of
+first instance for disputes arising from this license, unless mandatory law
+requires otherwise.

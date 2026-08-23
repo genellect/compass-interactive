@@ -4,11 +4,11 @@
 
 ### LET EVERYTHING MOVE.
 
-**講義資料を軸に、参加・同期・AI支援をつなぐリアルタイム講義基盤**
+****リアルタイム×AIが、講義を次の次元へ。****
 
 [プロダクト紹介](https://compass-official.pages.dev/INTRO_Interactive/) ·
 [デモ](https://compass-interactive.pages.dev/demo) ·
-[開発者向け解説](https://compass-official.pages.dev/INTRO_Interactive/developers/)
+[開発者向けポートフォリオ](https://compass-official.pages.dev/INTRO_Interactive/developers/)
 
 </div>
 
@@ -16,13 +16,9 @@
 
 ## 概要
 
-COMPASS Interactiveは、大学講義や研究会の資料、学生コメント、投票、字幕、要約、教室表示を、一つの講義状態へ接続するWebアプリケーションです。
+COMPASS Interactiveは、大学講義や学会、研究室セミナー、企業研修において、全参加者のインタラクティブな講義・議論参加を促進するため、参加者コメント、ライブ投票、リアルタイム字幕、AI要約、スクリーン表示を、一つの講義状態へ接続するWebアプリケーションです。
 
-教員はPDFの公開から講義開始、スライド進行、参加機能、AI支援、講義終了までを一つのワークスペースで操作します。学生はアカウント登録をせずに講義コードで参加し、資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。教室ディスプレイと講義後のReviewも、同じ講義状態を参照します。
-
-```text
-資料を公開 → 講義を開始 → 学生が参加 → 資料・コメント・投票・字幕を同期
-             → AI支援を選択 → 講義を終了 → 読み取り専用Review
+教員/講演者はPDFの公開から講義開始、スライド進行、投票機能、コメント機能、AI支援、パワーポイント連携、講義終了までを一つのワークスペースで操作できます。学生はアカウント登録をせずに講義コードまたはQRコードから参加し、資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。講義終了後でも一定期間の間講義アーカイブを参照することができます。
 ```
 
 ## 一つの講義、四つの体験
@@ -175,6 +171,8 @@ Local Supabase E2EはPostgreSQL、Auth、RPC、RLS、Edge Functionsを起動し�
 
 ## プロジェクトと権利
 
-COMPASS Interactiveは、[COMPASS](https://github.com/genellect/compass)が展開する教育・テクノロジープロダクトの一つです。COMPASSは学生有志による独立した教育活動であり、北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
+COMPASS Interactiveは、学生支援団体[COMPASS](https://github.com/genellect/compass)が展開する大学講義支援システムです。。COMPASSは学生有志による独立した教育活動であり、北里大学、北里大学薬学部、各研究室、その他の関連機関が運営する公式サービスではありません。
 
-本リポジトリは非公開で、ソースコードは権利者が独占的に管理しています。リポジトリへのアクセスは、明示的な許諾のない利用、複製、改変、再配布を認めるものではありません。本番の認証情報、API key、個人情報、講義データ、PDF、バックアップはリポジトリに含めません。
+本リポジトリの変更にはプロダクトオーナー（Yuto Matsui）明示承認が必要です。ソースコードは公開後もsource-availableであり、open sourceではありません。閲覧、評価、修正提案、商用利用、SaaS運用、再配布などの条件は[`LICENSE`](LICENSE)と[`NOTICE`](NOTICE)に従います。外部Contributionには[`CLA.md`](CLA.md)への同意が必要です。
+
+善意の脆弱性報告は[`.github/SECURITY.md`](.github/SECURITY.md)の非公開窓口で受け付けます。追跡済み画像、PDF、ロゴ等の公開可否と第三者権利は[`docs/ASSET_PROVENANCE.md`](docs/ASSET_PROVENANCE.md)で管理します。本番の認証情報、API key、個人情報、講義データ、非公開PDF、バックアップはリポジトリに含めません。

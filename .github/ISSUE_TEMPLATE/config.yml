@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/genellect/compass-interactive/security/advisories/new
+    about: Report a suspected vulnerability privately. Never include security details in a public issue.
+  - name: Security policy and safe harbor
+    url: https://github.com/genellect/compass-interactive/blob/main/.github/SECURITY.md
+    about: Review the permitted testing scope and the fallback contact process before testing.

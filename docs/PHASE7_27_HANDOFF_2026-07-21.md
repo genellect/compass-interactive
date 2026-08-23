@@ -22,7 +22,7 @@ This is a safe implementation checkpoint, not a Local Gate or Production Gate PA
 
 The user accepted the corrected source without further edits. The singular heading and changed page numbering are intentional and must not be “fixed”.
 
-- Source outside repository: `C:\Users\emers\OneDrive\Desktop\University\5_研究室\7_Presentation\Journal Club\260723 JournalClub Presentation.pdf`
+- Source outside repository: `<private-source-directory>\260723 JournalClub Presentation.pdf`
 - Bytes: `5,816,208`
 - SHA-256: `8c6903527b050c1db5f6b13b24bcf9108950bf8248a80205b10be6a9c63d7842`
 - Pages: `34`
@@ -110,7 +110,7 @@ The PDF has not been copied into Git or uploaded to production. Phase 7.27 binds
 
 ## Last interrupted check
 
-`npm.cmd run test:e2e:local` did not reach application tests. Supabase CLI attempted to write telemetry under `C:\Users\emers\.supabase`, which the current workspace sandbox denied with `EPERM`. This is an execution-environment restriction, not an application assertion failure.
+`npm.cmd run test:e2e:local` did not reach application tests. Supabase CLI attempted to write telemetry under the user's private home directory, which the current workspace sandbox denied with `EPERM`. This is an execution-environment restriction, not an application assertion failure.
 
 At resume, rerun it with an isolated writable home under the worktree, or with an approved execution context. Do not weaken the test to bypass Supabase behavior.
 

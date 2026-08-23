@@ -1,0 +1,27 @@
+# Default owner for every repository path.
+* @genellect
+
+# Governance, public-source, and repository automation.
+/.github/ @genellect
+/AGENTS.md @genellect
+/CLA.md @genellect
+/CODE_OF_CONDUCT.md @genellect
+/CONTRIBUTING.md @genellect
+/LICENSE @genellect
+/NOTICE @genellect
+/THIRD_PARTY_NOTICES.md @genellect
+/TRADEMARKS.md @genellect
+/docs/ @genellect
+
+# Identity, authorization, data, and paid-operation boundaries.
+/supabase/migrations/ @genellect
+/supabase/functions/ @genellect
+/supabase/tests/ @genellect
+/src/context/ @genellect
+/src/repositories/ @genellect
+/src/services/ @genellect
+
+# Document delivery, deployment-adjacent code, and native integration.
+/cloudflare/ @genellect
+/publisher/ @genellect
+/presenter-bridge/ @genellect

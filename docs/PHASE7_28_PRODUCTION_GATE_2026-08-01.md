@@ -24,7 +24,7 @@ for a later final, non-provisional Production Gate decision.
 - Previous immutable Pages deployment:
   `https://55a55828.compass-interactive.pages.dev`
 - Pre-change DB backup directory (outside Git):
-  `C:\Users\emers\Documents\Codex\production-backups\compass-interactive\phase7-28-20260801-003857`
+  `<private-backup-directory>\compass-interactive\phase7-28-20260801-003857`
 - Backup SHA-256:
   - `schema.sql`: `8970f1b73803c96e7b939f4a51d08e3545440631cce9747b1f67cb371f339178`
   - `roles.sql`: `25873cec56a2cc6514e204f420231777f85c03da818caa7090cdcdfa89776ecd`
@@ -71,11 +71,11 @@ The hourly cleanup job `compass-display-realtime-cleanup` is active at
 
 ## Hosted rollout sequence
 
-| Stage | State | Immutable Pages deployment |
-| --- | --- | --- |
-| Additive DB/Edge/frontend, A/B/C OFF | PASS | `https://57f0cc5d.compass-interactive.pages.dev` |
-| 7.28B DB runtime -> Edge -> frontend | PASS | `https://f034bdc9.compass-interactive.pages.dev` |
-| 7.28C server admission -> frontend | PASS | `https://f8d3d323.compass-interactive.pages.dev` |
+| Stage                                | State | Immutable Pages deployment                       |
+| ------------------------------------ | ----- | ------------------------------------------------ |
+| Additive DB/Edge/frontend, A/B/C OFF | PASS  | `https://57f0cc5d.compass-interactive.pages.dev` |
+| 7.28B DB runtime -> Edge -> frontend | PASS  | `https://f034bdc9.compass-interactive.pages.dev` |
+| 7.28C server admission -> frontend   | PASS  | `https://f8d3d323.compass-interactive.pages.dev` |
 
 The canonical site `https://compass-interactive.pages.dev` resolved to the
 final `index-CnYz1M75.js` release asset after propagation. `/join/`, `/admin/`,

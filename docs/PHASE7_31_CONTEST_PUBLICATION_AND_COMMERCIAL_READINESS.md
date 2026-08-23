@@ -1,9 +1,9 @@
 # Phase 7.31–7.33 コンテスト公開・審査員実環境・商用化準備計画
 
-Status: Planned
-Approval: requirements approved; implementation not started
+Status: Phase 7.31B governance documents prepared; remaining publication gates pending
+Approval: LICENSE / NOTICE / SECURITY / CLA / asset-ledger preparation approved; public visibility not authorized
 Scope: GitHub ガバナンス、公開リポジトリ化、審査員向け実環境、商用 EdTech 品質、統合 Production Gate
-Last verified: 2026-08-10
+Last verified: 2026-08-23
 
 > [!NOTE]
 > The 2026-08-14 contest-week path keeps GitHub private and uses the exact-SHA
@@ -116,11 +116,20 @@ GitHub Education の必要機能が利用可能になった後、`main` を技�
 visibility 変更直前に、対象 SHA、公開物、既知リスクを提示し、ユーザーから明示的な
 最終承認を得る。
 
+公開方式は、canonicalな現行`genellect/compass-interactive`リポジトリの直接公開を
+前提とする。docs-onlyまたはsanitized mirrorへ置き換えない。公開前監査は、実credential、
+認証済みsession、PII、非公開講義内容、Production traceなどのRED項目を停止条件とする。
+ローカル／合成JWT、test用6桁値、synthetic dataだけを含む画像・動画・Playwright trace・
+Edge logは、所有者が残余リスクを明示受容した場合に一律削除を要求しない。未解決
+Critical / Highは常に停止条件とし、Medium以下はowner、判断日、理由、再評価triggerを
+記録して受容できる。既知脆弱性の悪用手順や機微な運用詳細をpublic artifactへ記録しない。
+
 ### 実装内容
 
 - 全 branch、tag、Git history、LFS、release、artifact、issue / PR 添付を対象に、
-  secret、API key、token、PIN、OAuth client secret、service-role、個人メール、学生情報、
-  講義コメント、内部 URL / path、端末名、組織内限定資料を検査する。
+  secret、API key、token、PIN、OAuth client secret、service-role、認証済みsession、PII、
+  非公開講義内容、Production traceを検査する。local pathやsynthetic test evidenceは
+  RED項目を含まないことを確認した上で、所有者の受容対象として区別する。
 - 過去に含まれた可能性がある資格情報は、削除だけに依存せず公開前に失効・
   ローテーションする。新しい値を履歴書換えツールや監査ログへ出力しない。
 - 実講義データ、私有 PDF、R2 object、データベース dump、`.env*`、crash log、生成物、
