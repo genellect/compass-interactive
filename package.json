@@ -128,6 +128,8 @@
     "db:types:generate": "node scripts/ci/database-types.mjs --write",
     "db:types:check": "node scripts/ci/database-types.mjs",
     "security:secrets": "node scripts/ci/scan-secrets.mjs",
+    "security:publication-history": "node scripts/ci/scan-publication-history.mjs",
+    "test:publication-history-scanner": "node scripts/ci/test-scan-publication-history.mjs",
     "security:audit": "npm audit --audit-level=high",
     "test:admin-lifecycle": "node --experimental-strip-types scripts/test-admin-lifecycle.mjs",
     "test:pdf-sync": "node scripts/test-pdf-sync.mjs",

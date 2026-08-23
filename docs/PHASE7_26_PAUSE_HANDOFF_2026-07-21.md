@@ -154,7 +154,7 @@ The attempted patch for items 4 and 5 did not apply and therefore was not partia
 ## Fast resume commands
 
 ```powershell
-Set-Location 'C:\Users\emers\Documents\Codex\2026-07-13\c-users-emers-onedrive-desktop-compass\work\phase7-25-implementation'
+Set-Location '<workspace>\work\phase7-25-implementation'
 git branch --show-current
 git status --short
 git log -3 --oneline

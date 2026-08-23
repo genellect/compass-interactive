@@ -14,6 +14,14 @@ const read = (relativePath) => readFileSync(resolve(root, relativePath), 'utf8')
 
 const requiredDocuments = [
   'README.md',
+  'LICENSE',
+  'NOTICE',
+  'CLA.md',
+  'CONTRIBUTING.md',
+  'CODE_OF_CONDUCT.md',
+  'TRADEMARKS.md',
+  'THIRD_PARTY_NOTICES.md',
+  '.github/SECURITY.md',
   'PROJECT_GUIDE.md',
   'docs/architecture.md',
   'docs/SECURITY.md',
@@ -67,6 +75,16 @@ assert.equal(packageLock.version, packageJson.version)
 assert.equal(packageLock.packages?.['']?.version, packageJson.version)
 
 const readme = read('README.md')
+const license = read('LICENSE')
+const notice = read('NOTICE')
+const cla = read('CLA.md')
+const contributing = read('CONTRIBUTING.md')
+const codeOfConduct = read('CODE_OF_CONDUCT.md')
+const trademarks = read('TRADEMARKS.md')
+const thirdPartyNotices = read('THIRD_PARTY_NOTICES.md')
+const publicSecurityPolicy = read('.github/SECURITY.md')
+const codeowners = read('.github/CODEOWNERS')
+const issueTemplateConfig = read('.github/ISSUE_TEMPLATE/config.yml')
 const roadmap = read('docs/ROADMAP.md')
 const architecture = read('docs/architecture.md')
 const security = read('docs/SECURITY.md')
@@ -103,6 +121,19 @@ const devContainerWorkflow = read('.github/workflows/devcontainer-contract.yml')
 const ciWorkflow = read('.github/workflows/ci.yml')
 const nodeVersionPin = read('.node-version').trim()
 const nvmrcPin = read('.nvmrc').trim()
+
+assert.match(license, /not an open-source license/i)
+assert.match(license, /Commercial licenses/)
+assert.match(notice, /All rights reserved/)
+assert.match(cla, /commercially operate, license, and\s+relicense/)
+assert.match(contributing, /COMPASS Interactive CLA 1\.0/)
+assert.match(codeOfConduct, /private maintainer contact/i)
+assert.match(trademarks, /No\s+trademark[\s\S]*right is\s+granted/i)
+assert.match(thirdPartyNotices, /docs\/ASSET_PROVENANCE\.md/)
+assert.match(publicSecurityPolicy, /Report a vulnerability/)
+assert.match(codeowners, /^\* @genellect$/m)
+assert.match(issueTemplateConfig, /blank_issues_enabled:\s*false/)
+assert.match(issueTemplateConfig, /security\/advisories\/new/)
 
 assert.match(nodeVersionPin, /^\d+\.\d+\.\d+$/)
 assert.equal(nvmrcPin, nodeVersionPin)

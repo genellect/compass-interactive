@@ -112,6 +112,57 @@ for (const required of [
     new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
   )
 }
+
+const internalSourceCondition =
+  "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
+const workflowSteps = workflow.split(/\n(?=      - )/)
+const artifactUploadSteps = workflowSteps.filter((step) =>
+  step.includes('uses: actions/upload-artifact@'),
+)
+assert.equal(
+  artifactUploadSteps.length,
+  3,
+  'Every artifact upload must be reviewed by the public-fork safety gate',
+)
+for (const step of artifactUploadSteps) {
+  assert.ok(
+    step.includes(internalSourceCondition),
+    'External fork pull requests must not upload SBOM, browser, trace, or Edge-log artifacts',
+  )
+}
+
+const codeqlJob = workflow.slice(workflow.indexOf('\n  codeql:'))
+assert.ok(codeqlJob.length > 0, 'The CodeQL job must remain defined')
+assert.ok(
+  codeqlJob.includes("vars.CODEQL_ENABLED == 'true'"),
+  'CodeQL must remain explicitly enabled by repository configuration',
+)
+assert.ok(
+  codeqlJob.includes(internalSourceCondition),
+  'CodeQL security-events write authority must not be requested for external fork pull requests',
+)
+assert.doesNotMatch(
+  workflow,
+  /(^|\n)\s*pull_request_target\s*:/,
+  'CI must not execute untrusted pull request code through pull_request_target',
+)
+
+for (const requiredCheckName of [
+  'Quality and non-live regression',
+  'Demo browser E2E',
+  'Local Supabase, pgTAP and live browser E2E',
+  'Presenter Bridge Windows ${{ matrix.platform }} build and tests',
+]) {
+  assert.ok(
+    workflow.includes(`name: ${requiredCheckName}`),
+    `Required check name changed or disappeared: ${requiredCheckName}`,
+  )
+}
+assert.match(
+  workflow,
+  /platform:\s*\[x64,\s*x86\]/,
+  'The Presenter matrix must continue to produce the x64 and x86 required checks',
+)
 for (const script of ['test:e2e:demo:triple', 'test:e2e:local:triple']) {
   assert.match(packageJson.scripts[script], /--repeat-each=3/)
   assert.match(workflow, new RegExp(`npm run ${script.replace(':', '\\:')}`))

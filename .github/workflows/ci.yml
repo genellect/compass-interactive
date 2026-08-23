@@ -73,6 +73,7 @@ jobs:
         shell: bash
         run: npm sbom --sbom-format cyclonedx > "$RUNNER_TEMP/compass-sbom.cdx.json"
       - name: Upload SBOM evidence
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: compass-sbom-${{ github.run_attempt }}
@@ -108,7 +109,7 @@ jobs:
       - run: npm run test:e2e:phase7-30b22b-browser
       - run: npm run test:e2e:phase7-30d-browser
       - name: Upload demo E2E evidence
-        if: failure()
+        if: ${{ failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: demo-e2e-evidence-${{ github.run_attempt }}
@@ -316,7 +317,7 @@ jobs:
         run: npm run test:e2e:local:triple
 
       - name: Upload local integration evidence
-        if: failure()
+        if: ${{ failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: local-integration-evidence-${{ github.run_attempt }}
@@ -411,7 +412,7 @@ jobs:
     name: CodeQL JavaScript and TypeScript
     # Private repositories require GitHub Code Scanning/Advanced Security.
     # Keep the pinned job ready without turning a billing-controlled feature on.
-    if: ${{ vars.CODEQL_ENABLED == 'true' }}
+    if: ${{ vars.CODEQL_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       actions: read
       contents: read

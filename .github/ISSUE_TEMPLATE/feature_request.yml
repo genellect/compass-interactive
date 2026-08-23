@@ -1,0 +1,51 @@
+name: Focused enhancement
+description: Propose a bounded improvement to the product or developer experience.
+title: '[Enhancement]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the user outcome, not private implementation or operational details. A proposal does not authorize access to hosted systems, paid providers, production data, or deployment.
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Disclosure and rights
+      options:
+        - label: This proposal contains no secret, personal data, private lecture content, confidential material, or vulnerability details.
+          required: true
+        - label: I have identified any third-party or generated material included in the proposal.
+          required: true
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Primary audience
+      options:
+        - Educator
+        - Student
+        - Classroom display audience
+        - Post-lecture reviewer
+        - Maintainer / contributor
+        - Multiple audiences
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: Explain the concrete user need and current friction.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the smallest useful result and how it could be evaluated.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Relevant constraints
+      description: Note accessibility, privacy, security, cost, compatibility, or lecture-continuity requirements.
+    validations:
+      required: false
