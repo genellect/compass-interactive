@@ -1235,11 +1235,11 @@ export type Database = {
           hard_stop_at: string
           id: string
           issued_at: string
+          last_applied_display_version: number | null
           last_caption_delta_relay_at: string | null
           last_caption_relay_at: string | null
           last_caption_sequence: number | null
           last_caption_stream_id: string | null
-          last_applied_display_version: number | null
           last_heartbeat_at: string | null
           last_rendered_page: number | null
           lecture_session_id: string
@@ -1262,11 +1262,11 @@ export type Database = {
           hard_stop_at: string
           id: string
           issued_at?: string
+          last_applied_display_version?: number | null
           last_caption_delta_relay_at?: string | null
           last_caption_relay_at?: string | null
           last_caption_sequence?: number | null
           last_caption_stream_id?: string | null
-          last_applied_display_version?: number | null
           last_heartbeat_at?: string | null
           last_rendered_page?: number | null
           lecture_session_id: string
@@ -1289,11 +1289,11 @@ export type Database = {
           hard_stop_at?: string
           id?: string
           issued_at?: string
+          last_applied_display_version?: number | null
           last_caption_delta_relay_at?: string | null
           last_caption_relay_at?: string | null
           last_caption_sequence?: number | null
           last_caption_stream_id?: string | null
-          last_applied_display_version?: number | null
           last_heartbeat_at?: string | null
           last_rendered_page?: number | null
           lecture_session_id?: string
@@ -3625,9 +3625,9 @@ export type Database = {
           target_action: string
           target_connection_generation: number
           target_display_auth_user_id: string
-          target_display_updated_at?: string | null
+          target_display_updated_at?: string
           target_lecture_session_id: string
-          target_rendered_page?: number | null
+          target_rendered_page?: number
           target_session_id: string
           target_token_jti_hash: string
         }
@@ -4897,8 +4897,8 @@ export type Database = {
           target_provider_subject_hmac: string
           target_sequence: number
           target_source: string
-          target_stream_id: string
           target_start_request_id: string
+          target_stream_id: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
@@ -5041,14 +5041,14 @@ export type Database = {
           target_auth_user_id: string
           target_current_jwt_hash: string
           target_current_jwt_iat: string
-          target_network_hash: string | null
+          target_network_hash: string
           target_nonce_hash: string
           target_request_id: string
           target_supabase_auth_session_id: string
           target_token_hash: string
           target_totp_amr_at: string
           target_totp_amr_method: string
-          target_user_agent_hash: string | null
+          target_user_agent_hash: string
         }
         Returns: Json
       }
@@ -6093,11 +6093,11 @@ export type Database = {
         Args: {
           target_action: string
           target_auth_user_id: string
-          target_enabled: boolean | null
+          target_enabled: boolean
           target_google_issuer: string
           target_lecture_session_id: string
           target_provider_subject_hmac: string
-          target_request_id: string | null
+          target_request_id: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
           target_token_hash: string
@@ -6597,11 +6597,11 @@ export type Database = {
           target_auth_user_id: string
           target_google_issuer: string
           target_network_hash: string
-          target_token_hash: string
           target_provider_subject_hmac: string
           target_request_id: string
           target_subject_pepper_version: number
           target_supabase_auth_session_id: string
+          target_token_hash: string
           target_user_agent_hash: string
         }
         Returns: Json

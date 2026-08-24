@@ -219,7 +219,7 @@ assert.match(
 )
 assert.match(
   databaseTypes,
-  /manage_google_admin_ai_activation_intent_v1: \{[\s\S]*target_action: string[\s\S]*target_enabled: boolean \| null[\s\S]*target_lecture_session_id: string[\s\S]*target_request_id: string \| null[\s\S]*Returns: Json/,
+  /manage_google_admin_ai_activation_intent_v1: \{[\s\S]*target_action: string[\s\S]*target_enabled: boolean[\s\S]*target_lecture_session_id: string[\s\S]*target_request_id: string[\s\S]*Returns: Json/,
 )
 assert.match(
   databaseTypes,
