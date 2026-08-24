@@ -410,6 +410,58 @@ for (const path of [
 }
 assert.match(
   devContainerWorkflow,
+  /on:\s+pull_request:\s+push:/,
+  'Dev Container workflow must report its required context on every pull request',
+)
+assert.doesNotMatch(
+  devContainerWorkflow,
+  /pull_request:\s+paths:/,
+  'A pull-request path filter can leave the required Dev Container context pending',
+)
+assert.match(
+  devContainerWorkflow,
+  /git diff --no-renames --name-only -z[^\n]*> "\$changed_paths"[\s\S]*run_contract=false/,
+  'Dev Container workflow must fail before enabling the fast path when the pull-request diff cannot be read',
+)
+assert.match(
+  devContainerWorkflow,
+  /if: steps\.scope\.outputs\.run_contract == 'true'/,
+  'Dev Container construction must be conditional on its contract surface',
+)
+assert.match(
+  ciWorkflow,
+  /name: Classify change scope[\s\S]*README\.md\|PROJECT_GUIDE\.md[\s\S]*docs\/\*\.md[\s\S]*presenter-bridge\/README\.md\|supabase\/manual\/README\.md/,
+  'CI must restrict the documentation-only fast path to approved documentation surfaces',
+)
+assert.match(
+  ciWorkflow,
+  /git diff --no-renames --name-only -z[^\n]*> "\$changed_path_file"[\s\S]*git diff --check "\$BASE_SHA\.\.\.\$HEAD_SHA"/,
+  'CI scope classification must fail closed and inspect committed whitespace',
+)
+assert.match(
+  ciWorkflow,
+  /name: Quality and non-live regression[\s\S]*needs: classify[\s\S]*npm run test:phase6-7-docs/,
+  'Documentation-only CI must retain the required quality context and documentation contract',
+)
+for (const job of [
+  'demo-e2e',
+  'local-supabase',
+  'dependency-review',
+  'codeql',
+]) {
+  assert.match(
+    ciWorkflow,
+    new RegExp(`${job}:[\\s\\S]*?docs_only != 'true'`),
+    `${job} must skip expensive work for documentation-only pull requests`,
+  )
+}
+assert.match(
+  ciWorkflow,
+  /presenter-native:[\s\S]*if: \$\{\{ always\(\) \}\}[\s\S]*RUN_NATIVE:[\s\S]*Record the documentation-only fast path/,
+  'Presenter matrix must preserve both required contexts without running native work for documentation-only pull requests',
+)
+assert.match(
+  devContainerWorkflow,
   /bash -n \.codex\/setup\.sh \.codex\/maintenance\.sh/,
   'Dev Container CI must syntax-check the Codex Cloud scripts',
 )
