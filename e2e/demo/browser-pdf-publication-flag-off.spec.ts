@@ -213,7 +213,8 @@ test('flag OFF keeps Google Admin and manual Publisher controls without browser 
     pdfPanel.getByRole('button', { name: '学生に講義資料を公開する' }),
   ).toBeDisabled()
   await expect(page.locator('#admin-live .pdf-document-control')).toBeVisible()
-  await expect(page.getByRole('tab', { name: /スライド/ })).toHaveCount(0)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeDisabled()
   await page.waitForTimeout(250)
   expect(publicationCalls).toEqual([])
   expect(pageErrors).toEqual([])

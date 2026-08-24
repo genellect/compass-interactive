@@ -52,12 +52,14 @@ type Lecture = {
 }
 
 type MockState = {
+  aiActivationIntentRequests: Array<Record<string, unknown>>
   aiFunctionCalls: string[]
   anonymousSignupHandlerSettled: number
   anonymousSignupRequestFailures: number
   anonymousSignupRequests: number
   lectures: Lecture[]
   lectureRequests: Array<Record<string, unknown>>
+  liveJoinRequestedAt: number | null
   liveJoinRequests: number
   pdfPublicationActions: string[]
   pdfPublicationRequests: Array<Record<string, unknown>>
@@ -300,12 +302,14 @@ async function installNetworkMocks(
   }: NetworkMockOptions = {},
 ) {
   const state: MockState = {
+    aiActivationIntentRequests: [],
     aiFunctionCalls: [],
     anonymousSignupHandlerSettled: 0,
     anonymousSignupRequestFailures: 0,
     anonymousSignupRequests: 0,
     lectures: [],
     lectureRequests: [],
+    liveJoinRequestedAt: null,
     liveJoinRequests: 0,
     pdfPublicationActions: [],
     pdfPublicationRequests: [],
@@ -366,6 +370,7 @@ async function installNetworkMocks(
       url.pathname === '/rest/v1/rpc/join_lecture_by_code_v2'
     ) {
       state.liveJoinRequests += 1
+      state.liveJoinRequestedAt = Date.now()
       await fulfillJson(route, [liveJoinLecture])
       return
     }
@@ -392,6 +397,7 @@ async function installNetworkMocks(
     if (
       [
         'generate-academic-answer',
+        'manage-ai-activation-intent',
         'manage-ai-control',
         'manage-lecture-summaries',
         'manage-lectures',
@@ -494,6 +500,24 @@ async function installNetworkMocks(
       })
       return
     }
+    if (
+      functionName === 'manage-ai-activation-intent' &&
+      body.action === 'status'
+    ) {
+      state.aiActivationIntentRequests.push(body)
+      await fulfillJson(route, {
+        activationExpiresAt: null,
+        armed: false,
+        armedAt: null,
+        consumedAt: null,
+        idempotentReplay: false,
+        ok: true,
+        serverTime: new Date().toISOString(),
+        state: 'none',
+        version: 0,
+      })
+      return
+    }
     const safeAiStatusRead =
       (functionName === 'admin-ai-unlock' && body.action === 'masterStatus') ||
       (functionName === 'manage-material-analysis' && body.action === 'list') ||
@@ -540,10 +564,12 @@ test.describe('Phase 7.27 flag ON', () => {
       resumeIssueDelayMs: 8_000,
     })
     let archiveResolveRequests = 0
+    let archiveResolveStartedAt: number | null = null
     await page.route(
       'https://pdf.example/v1/archives/resolve',
       async (route) => {
         archiveResolveRequests += 1
+        archiveResolveStartedAt = Date.now()
         await new Promise((resolve) => setTimeout(resolve, 15_000))
         await route
           .fulfill({
@@ -557,13 +583,19 @@ test.describe('Phase 7.27 flag ON', () => {
 
     await page.goto('/join')
     await page.getByLabel('講義コード').fill(lectureCode)
-    const startedAt = Date.now()
     await page.getByRole('button', { name: '参加する' }).click()
+    await expect
+      .poll(() => state.liveJoinRequestedAt, { timeout: 8_000 })
+      .not.toBeNull()
+    expect(archiveResolveStartedAt).not.toBeNull()
+    const archivePreflightDurationMs =
+      Number(state.liveJoinRequestedAt) - Number(archiveResolveStartedAt)
+    expect(archivePreflightDurationMs).toBeGreaterThanOrEqual(0)
+    expect(archivePreflightDurationMs).toBeLessThan(6_000)
     await expect(page.getByRole('heading', { name: lectureTitle })).toBeVisible(
       { timeout: 12_000 },
     )
 
-    expect(Date.now() - startedAt).toBeLessThan(12_000)
     expect(archiveResolveRequests).toBe(1)
     expect(state.liveJoinRequests).toBe(1)
     expect(state.resumeIssueResolvedAt).toBeNull()
@@ -571,6 +603,9 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect
       .poll(() => state.resumeIssueResolvedAt, { timeout: 12_000 })
       .not.toBeNull()
+    expect(Number(state.liveJoinRequestedAt)).toBeLessThan(
+      Number(state.resumeIssueResolvedAt),
+    )
     await expect
       .poll(
         () =>
@@ -844,6 +879,16 @@ test.describe('Phase 7.27 flag ON', () => {
       state.pdfPublicationActions.every((action) => action === 'discover'),
     ).toBe(true)
     expect(state.uploadRequests).toBe(0)
+    expect(state.aiActivationIntentRequests).toHaveLength(3)
+    expect(
+      state.aiActivationIntentRequests.every(
+        (request) =>
+          request.action === 'status' &&
+          [rehearsalLectureId, productionLectureId].includes(
+            String(request.lectureSessionId),
+          ),
+      ),
+    ).toBe(true)
     expect(state.aiFunctionCalls).toEqual([])
 
     await page.setViewportSize({ height: 844, width: 390 })
@@ -939,7 +984,13 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect(
       page.getByRole('heading', { name: '講義を準備する', exact: true }),
     ).toBeVisible()
-    await expect(page.getByRole('tab')).toHaveCount(1)
+    const workspaceTabs = page.getByRole('tab')
+    await expect(workspaceTabs).toHaveCount(4)
+    await expect(workspaceTabs.nth(0)).toBeEnabled()
+    await expect(workspaceTabs.nth(0)).toHaveAttribute('aria-selected', 'true')
+    await expect(workspaceTabs.nth(1)).toBeDisabled()
+    await expect(workspaceTabs.nth(2)).toBeDisabled()
+    await expect(workspaceTabs.nth(3)).toBeDisabled()
     await expect(page.locator('#teacher-workspace-material')).toBeVisible()
     await expect(page.locator('main')).not.toContainText(
       'Deleted local lecture',
@@ -986,7 +1037,7 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect(page.locator('#admin-live')).toHaveCount(0)
     await expect(
       page.getByText(
-        '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
+        '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
       ),
     ).toBeVisible()
     await expect
@@ -1057,6 +1108,7 @@ test.describe('Phase 7.27 flag ON', () => {
           archiveRequests.push(`${request.method()} ${request.url()}`)
         }
       })
+      await installTurnstileMock(page)
       await page.addInitScript(() => {
         window.sessionStorage.setItem(
           'compass-interactive-lecture-archive-resume-code-v1',

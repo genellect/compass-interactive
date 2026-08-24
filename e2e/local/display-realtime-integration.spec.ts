@@ -353,8 +353,10 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       new RegExp(`^display:${lecture.id}:[0-9a-f-]{36}$`, 'i'),
     )
     await expect(
-      adminPage.getByRole('button', { name: 'URLをコピーしました' }),
-    ).toBeVisible()
+      adminPage
+        .locator('.display-launch-instructions')
+        .getByRole('status'),
+    ).toContainText('コピーしました。')
     const displayUrl = await copiedDisplayUrl(adminPage)
     expect(displayUrl).toContain(`/display#`)
     expect(displayUrl).toContain(encodeURIComponent(issued.displayToken))
