@@ -79,8 +79,8 @@ assert.match(
 )
 assert.match(
   displayRealtimeE2e,
-  /const startedAt = performance\.now\(\)[\s\S]*new MutationObserver[\s\S]*displayPageProbeElapsedMs = String\([\s\S]*performance\.now\(\) - startedAt[\s\S]*expect\(pageAccelerationMs\)\.toBeLessThan\(2_000\)/,
-  'Display acceleration records the browser DOM mutation time without Playwright polling delay',
+  /const startedAt = performance\.now\(\)[\s\S]*event\.detail\?\.page !== 2[\s\S]*displayPageProbeElapsedMs = String\([\s\S]*performance\.now\(\) - startedAt[\s\S]*addEventListener\(\s*'compass:display-pdf-rendered',[\s\S]*expect\(pageAccelerationMs\)\.toBeLessThan\(2_000\)/,
+  'Display acceleration records the completed canvas render event without Playwright polling delay',
 )
 
 for (const catalog of [edgeCatalog, frontendCatalog]) {
