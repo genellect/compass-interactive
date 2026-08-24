@@ -29,6 +29,17 @@ a new locally validated head. The approved repository Actions ceiling is $15
 and the account Actions ceiling is $35; the lower remaining headroom is the
 operative limit, and exceeding either ceiling requires a new explicit approval.
 
+For a Pull Request whose complete diff stays within the approved documentation
+surfaces (the known root documents, `docs/**/*.md`, `.github/**/*.md`,
+`.claude/**/*.md`, the Presenter and Supabase manual READMEs, `LICENSE` and
+`NOTICE`), CI runs only `security:secrets`, `test:phase6-7-docs` and the
+committed-diff whitespace check. The remaining required contexts are reported
+without starting browser, database, native build, Dependency Review or CodeQL
+work. The Dev Container is also skipped unless one of its narrower contract
+paths changed. Push and manual-dispatch runs remain full, and any source,
+workflow, configuration, lockfile, asset or unknown Markdown path fails closed
+to the full matrix.
+
 ## GitHub Actions jobs
 
 `.github/workflows/ci.yml` contains five mandatory gates plus conditional

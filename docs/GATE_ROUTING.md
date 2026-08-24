@@ -47,7 +47,7 @@ Both browser jobs (`demo-e2e`, `local-supabase`) declare `needs: quality`, so a 
 | `e2e/local/`                                                                  | `npm run typecheck:e2e`, then the matching local spec on the local stack                                                                                                                                                                                                         | **No**                                                                                                                                                                                                                        |
 | `scripts/` test or CI scripts                                                 | `cloud:check`. If you touched the allowlist or a forbidden-command list, `test:ci:nonlive` and `test:production-gate:static` are the ones that answer                                                                                                                            | Yes                                                                                                                                                                                                                           |
 | `.github/workflows/`                                                          | `cloud:check` — `run-nonlive-suite.mjs` asserts that `ci.yml` contains no live or hosted command                                                                                                                                                                                 | Yes                                                                                                                                                                                                                           |
-| `docs/` only                                                                  | `cloud:check` — `test:phase6-7-docs` asserts the required document set exists and that `package.json` and `package-lock.json` versions agree                                                                                                                                     | Yes                                                                                                                                                                                                                           |
+| Approved documentation surfaces only                                          | `security:secrets`, `test:phase6-7-docs` and the committed-diff whitespace check; CI reports the remaining required contexts without starting browser, database, native, CodeQL or Dev Container work                                                                            | Yes                                                                                                                                                                                                                           |
 | `package.json` / `package-lock.json`                                          | `cloud:check` **plus** `npm run security:audit`, plus the Dev Container Contract workflow (§4)                                                                                                                                                                                   | Yes                                                                                                                                                                                                                           |
 | `.devcontainer/`, `.node-version`, `.gitattributes`, `scripts/devcontainer.*` | `npm run dev:doctor` inside the container, plus the Dev Container Contract workflow                                                                                                                                                                                              | **No** — needs the Dev Container                                                                                                                                                                                              |
 | `.codex/`, `AGENTS.md`, `CLAUDE.md`, Cloud/Gate docs                          | `npm run cloud:doctor`, `cloud:check`, then the Dev Container Contract workflow because these paths define agent admission                                                                                                                                                       | Yes for cloud doctor; Dev Container job remains separate                                                                                                                                                                      |
@@ -115,7 +115,7 @@ A migration change is not cleared by `cloud:check`. `supabase/migrations/` is on
 
 ## 4. Dev Container Contract
 
-`.github/workflows/devcontainer-contract.yml` builds the locked Dev Container and runs `npm run dev:doctor` inside it. It triggers only on these paths:
+`.github/workflows/devcontainer-contract.yml` starts on every Pull Request so its required context is always reported. It builds the locked Dev Container and runs `npm run dev:doctor` inside it only when at least one of these paths changed:
 
 ```
 .devcontainer/**
@@ -138,6 +138,18 @@ docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md
 ```
 
 Note that `package.json` and `package-lock.json` are in that list. A dependency change fires both the CI workflow and this one.
+
+The `main` push trigger remains restricted to the same paths, and a manual
+dispatch always runs the complete contract. A Pull Request confined to the
+explicitly approved root, `docs/`, `.github/`, `.claude/` and nested README
+documentation surfaces still receives the required context. It avoids Dev
+Container construction only when none of the contract paths listed above
+changed; changes to Cloud/Gate or Lecture Cycle contract documents deliberately
+run the complete container gate. The main CI workflow uses the broader approved
+documentation classification and limits its quality job to the secret,
+documentation and committed-diff whitespace checks; browser, local Supabase,
+Dependency Review and CodeQL jobs are skipped successfully, while the two
+Presenter contexts complete as lightweight Ubuntu jobs without native work.
 
 ## 5. What the 116 `test:*` scripts actually divide into
 

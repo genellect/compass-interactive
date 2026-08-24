@@ -2,27 +2,6 @@ name: Dev Container Contract
 
 on:
   pull_request:
-    paths:
-      - .devcontainer/**
-      - .codex/**
-      - .claude/**
-      - AGENTS.md
-      - CLAUDE.md
-      - .github/copilot-instructions.md
-      - .gitattributes
-      - .node-version
-      - .nvmrc
-      - package.json
-      - package-lock.json
-      - scripts/devcontainer.*
-      - scripts/cloud-workspace-doctor.mjs
-      - scripts/cloud-handoff-policy.mjs
-      - scripts/cloud-handoff-doctor.mjs
-      - docs/CLOUD_DEVELOPMENT.md
-      - docs/GATE_ROUTING.md
-      - docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md
-      - docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md
-      - .github/workflows/devcontainer-contract.yml
   push:
     branches: [main]
     paths:
@@ -64,12 +43,44 @@ jobs:
       - name: Checkout without persisted credentials
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Classify the pull request scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          run_contract=true
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            changed_paths="$RUNNER_TEMP/devcontainer-changed-paths"
+            git diff --no-renames --name-only -z "$BASE_SHA...$HEAD_SHA" > "$changed_paths"
+            run_contract=false
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                .devcontainer/*|.codex/*|.claude/*|AGENTS.md|CLAUDE.md|.github/copilot-instructions.md|.gitattributes|.node-version|.nvmrc|package.json|package-lock.json|scripts/devcontainer.*|scripts/cloud-workspace-doctor.mjs|scripts/cloud-handoff-policy.mjs|scripts/cloud-handoff-doctor.mjs|docs/CLOUD_DEVELOPMENT.md|docs/GATE_ROUTING.md|docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md|docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md|.github/workflows/devcontainer-contract.yml)
+                  run_contract=true
+                  break
+                  ;;
+              esac
+            done < "$changed_paths"
+          fi
+          printf 'run_contract=%s\n' "$run_contract" >> "$GITHUB_OUTPUT"
+      - name: Record the documentation-only fast path
+        if: steps.scope.outputs.run_contract != 'true'
+        run: echo "No Dev Container contract surface changed."
       - name: Verify Codex Cloud setup script syntax
+        if: steps.scope.outputs.run_contract == 'true'
         run: bash -n .codex/setup.sh .codex/maintenance.sh
       - name: Create the locked Dev Container
+        if: steps.scope.outputs.run_contract == 'true'
         run: npx --yes @devcontainers/cli@0.88.0 up --workspace-folder .
       - name: Verify the complete toolchain contract
+        if: steps.scope.outputs.run_contract == 'true'
         run: npx --yes @devcontainers/cli@0.88.0 exec --workspace-folder . npm run dev:doctor
       - name: Verify the disconnected handoff contract
+        if: steps.scope.outputs.run_contract == 'true'
         run: npx --yes @devcontainers/cli@0.88.0 exec --workspace-folder . node scripts/cloud-handoff-doctor.mjs --contract-only

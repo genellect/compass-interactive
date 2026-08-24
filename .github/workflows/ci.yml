@@ -17,11 +17,55 @@ env:
   FORCE_COLOR: '1'
 
 jobs:
+  classify:
+    name: Classify change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect a documentation-only pull request
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            changed_path_file="$RUNNER_TEMP/ci-changed-paths"
+            git diff --no-renames --name-only -z "$BASE_SHA...$HEAD_SHA" > "$changed_path_file"
+            git diff --check "$BASE_SHA...$HEAD_SHA"
+            mapfile -d '' changed_paths < "$changed_path_file"
+            if (( ${#changed_paths[@]} > 0 )); then
+              docs_only=true
+              for path in "${changed_paths[@]}"; do
+                case "$path" in
+                  README.md|PROJECT_GUIDE.md|MVP_REQUIREMENTS.md|AGENTS.md|CLAUDE.md|CLA.md|CONTRIBUTING.md|CODE_OF_CONDUCT.md|TRADEMARKS.md|THIRD_PARTY_NOTICES.md|LICENSE|NOTICE|docs/*.md|.github/*.md|.claude/*.md|presenter-bridge/README.md|supabase/manual/README.md) ;;
+                  *) docs_only=false; break ;;
+                esac
+              done
+            fi
+          fi
+          printf 'docs_only=%s\n' "$docs_only" >> "$GITHUB_OUTPUT"
+
   quality:
     name: Quality and non-live regression
+    needs: classify
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Require successful scope classification
+        if: needs.classify.result != 'success'
+        run: exit 1
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
@@ -29,17 +73,30 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci
-      - run: npm run cloud:doctor
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm ci
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run cloud:doctor
       - run: npm run security:secrets
-      - run: node scripts/cloud-handoff-doctor.mjs --contract-only
-      - run: npm run security:audit
-      - run: npm run typecheck
-      - run: npm run typecheck:phase3
-      - run: npm run typecheck:e2e
-      - run: npm run lint
-      - run: npm run test:ci:nonlive
+      - name: Verify the documentation contract
+        if: needs.classify.outputs.docs_only == 'true'
+        run: npm run test:phase6-7-docs
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: node scripts/cloud-handoff-doctor.mjs --contract-only
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run security:audit
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run typecheck
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run typecheck:phase3
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run typecheck:e2e
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run lint
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run test:ci:nonlive
       - name: Build production feature topology
+        if: needs.classify.outputs.docs_only != 'true'
         env:
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_build_only
@@ -68,12 +125,14 @@ jobs:
           VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS: 'false'
           VITE_PHASE7_30_GOOGLE_ADMIN_LEDGER: 'false'
         run: npm run build
-      - run: npm run test:phase6-9-bundle
+      - if: needs.classify.outputs.docs_only != 'true'
+        run: npm run test:phase6-9-bundle
       - name: Generate CycloneDX SBOM
+        if: needs.classify.outputs.docs_only != 'true'
         shell: bash
         run: npm sbom --sbom-format cyclonedx > "$RUNNER_TEMP/compass-sbom.cdx.json"
       - name: Upload SBOM evidence
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ needs.classify.outputs.docs_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: compass-sbom-${{ github.run_attempt }}
@@ -84,7 +143,8 @@ jobs:
 
   demo-e2e:
     name: Demo browser E2E
-    needs: quality
+    needs: [classify, quality]
+    if: ${{ needs.classify.outputs.docs_only != 'true' && needs.quality.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -121,7 +181,8 @@ jobs:
 
   local-supabase:
     name: Local Supabase, pgTAP and live browser E2E
-    needs: quality
+    needs: [classify, quality]
+    if: ${{ needs.classify.outputs.docs_only != 'true' && needs.quality.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
@@ -338,23 +399,36 @@ jobs:
 
   presenter-native:
     name: Presenter Bridge Windows ${{ matrix.platform }} build and tests
-    runs-on: windows-latest
+    needs: classify
+    if: ${{ always() }}
+    runs-on: ${{ needs.classify.outputs.docs_only == 'true' && 'ubuntu-latest' || 'windows-latest' }}
     timeout-minutes: 20
+    env:
+      RUN_NATIVE: ${{ needs.classify.result == 'success' && needs.classify.outputs.docs_only != 'true' }}
     strategy:
       fail-fast: false
       matrix:
         platform: [x64, x86]
     steps:
+      - name: Require successful scope classification
+        if: needs.classify.result != 'success'
+        run: exit 1
+      - name: Record the documentation-only fast path
+        if: needs.classify.result == 'success' && needs.classify.outputs.docs_only == 'true'
+        run: echo "No Presenter Bridge source changed."
       - name: Checkout without persisted credentials
+        if: env.RUN_NATIVE == 'true'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Install pinned .NET SDK
+        if: env.RUN_NATIVE == 'true'
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           global-json-file: presenter-bridge/global.json
           architecture: ${{ matrix.platform }}
       - name: Verify global.json .NET SDK feature band
+        if: env.RUN_NATIVE == 'true'
         shell: pwsh
         working-directory: presenter-bridge
         run: |
@@ -376,25 +450,30 @@ jobs:
             throw "Expected .NET SDK $($sdkPolicy.sdk.version) latestPatch feature band but found $actualVersionText."
           }
       - name: Reject stale local Edge PID reuse
-        if: matrix.platform == 'x64'
+        if: env.RUN_NATIVE == 'true' && matrix.platform == 'x64'
         run: node scripts/ci/test-manage-local-edge-pid.mjs
       - name: Restore native solution
+        if: env.RUN_NATIVE == 'true'
         working-directory: presenter-bridge
         run: dotnet restore Compass.PresenterBridge.slnx --locked-mode
       - name: Build native solution without publishing an artifact
+        if: env.RUN_NATIVE == 'true'
         working-directory: presenter-bridge
         run: dotnet build Compass.PresenterBridge.slnx --configuration Release --no-restore -p:PlatformTarget=${{ matrix.platform }}
       - name: Run deterministic Core and loopback tests
+        if: env.RUN_NATIVE == 'true'
         working-directory: presenter-bridge
         run: dotnet run --project tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj --configuration Release --no-build -p:PlatformTarget=${{ matrix.platform }}
-      - run: git diff --check
+      - if: env.RUN_NATIVE == 'true'
+        run: git diff --check
 
   dependency-review:
     name: Dependency review
     # GitHub Dependency Review requires the dependency graph and GitHub
     # Advanced Security for private repositories. npm audit remains the
     # fail-closed dependency gate unless this repository becomes public.
-    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+    needs: classify
+    if: ${{ needs.classify.outputs.docs_only != 'true' && github.event_name == 'pull_request' && github.event.repository.visibility == 'public' }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -412,7 +491,8 @@ jobs:
     name: CodeQL JavaScript and TypeScript
     # Private repositories require GitHub Code Scanning/Advanced Security.
     # Keep the pinned job ready without turning a billing-controlled feature on.
-    if: ${{ vars.CODEQL_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: classify
+    if: ${{ needs.classify.outputs.docs_only != 'true' && vars.CODEQL_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       actions: read
       contents: read
