@@ -131,12 +131,29 @@ function redactRealtimeFrame(payload: string) {
 
 async function invokeDisplaySnapshot(
   page: Page,
-  input: { displayToken: string; lectureSessionId: string },
+  input: {
+    authClient?: 'display' | 'student'
+    displayToken: string
+    lectureSessionId: string
+  },
 ) {
   return page.evaluate(
-    async ({ displayToken, endpoint, lectureSessionId, publicKey }) => {
-      // @ts-expect-error Vite resolves this browser-only source module.
-      const { supabase } = await import('/src/lib/supabaseClient.ts')
+    async ({
+      authClient,
+      displayToken,
+      endpoint,
+      lectureSessionId,
+      publicKey,
+    }) => {
+      const clientPath =
+        authClient === 'student'
+          ? '/src/lib/supabaseClient.ts'
+          : '/src/lib/displaySupabaseClient.ts'
+      const clientModule = await import(/* @vite-ignore */ clientPath)
+      const supabase =
+        authClient === 'student'
+          ? clientModule.supabase
+          : clientModule.displaySupabase
       const { data } = await supabase.auth.getSession()
       const accessToken = data.session?.access_token ?? ''
       const response = await fetch(endpoint, {
@@ -155,6 +172,7 @@ async function invokeDisplaySnapshot(
       return { body: await response.json(), status: response.status }
     },
     {
+      authClient: input.authClient ?? 'display',
       displayToken: input.displayToken,
       endpoint: `${supabaseUrl}/functions/v1/operator-live-snapshot`,
       lectureSessionId: input.lectureSessionId,
@@ -169,9 +187,11 @@ async function invokeDisplayPdf(
 ) {
   return page.evaluate(
     async ({ displayToken, endpoint, lectureSessionId, publicKey }) => {
-      // @ts-expect-error Vite resolves this browser-only source module.
-      const { supabase } = await import('/src/lib/supabaseClient.ts')
-      const { data } = await supabase.auth.getSession()
+      const displayClientPath = '/src/lib/displaySupabaseClient.ts'
+      const { displaySupabase } = await import(
+        /* @vite-ignore */ displayClientPath
+      )
+      const { data } = await displaySupabase.auth.getSession()
       const accessToken = data.session?.access_token ?? ''
       const response = await fetch(endpoint, {
         body: JSON.stringify({
@@ -659,6 +679,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(sameUserPdfFallback.status).toBe(200)
       expect(sameUserPdfFallback.body).toMatchObject({ ok: true })
       const crossUserFallback = await invokeDisplaySnapshot(studentPage, {
+        authClient: 'student',
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
