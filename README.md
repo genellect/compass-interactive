@@ -19,7 +19,6 @@
 COMPASS Interactiveは、大学講義や学会、研究室セミナー、企業研修において、全参加者のインタラクティブな講義・議論参加を促進するため、参加者コメント、ライブ投票、リアルタイム字幕、AI要約、スクリーン表示を、一つの講義状態へ接続するWebアプリケーションです。
 
 教員/講演者はPDFの公開から講義開始、スライド進行、投票機能、コメント機能、AI支援、パワーポイント連携、講義終了までを一つのワークスペースで操作できます。学生はアカウント登録をせずに講義コードまたはQRコードから参加し、資料、コメント、投票、字幕、教員が公開した学習支援情報へアクセスできます。講義終了後でも一定期間の間講義アーカイブを参照することができます。
-```
 
 ## 一つの講義、四つの体験
 
@@ -104,17 +103,18 @@ flowchart TB
 ## リポジトリ構成
 
 ```text
-src/                    React application、状態管理、repository境界
-supabase/
-├─ migrations/         Additive PostgreSQL migrations
-├─ functions/          Supabase Edge Functions
-└─ tests/              pgTAP、RLS、権限、競合テスト
-cloudflare/            PDF / Archive Worker、Presenter Gateway
-publisher/             Local PDF Publisher
-presenter-bridge/       Windows PowerPoint integration source
-e2e/                   Demo / Local Supabase Playwright E2E
-scripts/               品質、負荷、セキュリティ、リリース検証
-docs/                  アーキテクチャ、セキュリティ、運用資料
+.
+├─ src/                  React application、状態管理、repository境界
+├─ supabase/
+│  ├─ migrations/       Additive PostgreSQL migrations
+│  ├─ functions/        Supabase Edge Functions
+│  └─ tests/            pgTAP、RLS、権限、競合テスト
+├─ cloudflare/           PDF / Archive Worker、Presenter Gateway
+├─ publisher/            Local PDF Publisher
+├─ presenter-bridge/     Windows PowerPoint integration source
+├─ e2e/                  Demo / Local Supabase Playwright E2E
+├─ scripts/              品質、負荷、セキュリティ、リリース検証
+└─ docs/                 アーキテクチャ、セキュリティ、運用資料
 ```
 
 COMPASS公式Webとは、アプリケーション、データベース、認証情報、デプロイ先を分離しています。
