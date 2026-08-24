@@ -479,6 +479,7 @@ try {
   `)
 
   const aal1 = accessToken(status, { aal: 'aal1' })
+  const loginRequestId = randomUUID()
   const malformed = await invoke(
     status,
     aal1,
@@ -492,10 +493,28 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'admit' },
+    { action: 'admit', loginRequestId },
     200,
   )
   assert.equal(admitted.eligible, true)
+  const replayedAdmission = await invoke(
+    status,
+    aal1,
+    'admin-identity-session',
+    { action: 'admit', loginRequestId },
+    200,
+  )
+  assert.equal(replayedAdmission.eligible, true)
+  const logicalAdmissionCount = Number(
+    await runSql(`
+      select count(*)
+      from private.admin_audit_events
+      where request_id = ${sqlLiteral(loginRequestId)}::uuid
+        and action = 'admin_identity.admit'
+        and result = 'accepted';
+    `),
+  )
+  assert.equal(logicalAdmissionCount, 1)
 
   await runSql(`
     update auth.sessions
@@ -508,7 +527,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'beginStepUp', challengedFactorId: enrolled.id },
+    {
+      action: 'beginStepUp',
+      challengedFactorId: enrolled.id,
+      loginRequestId,
+    },
     401,
   )
   assert.equal(expiredSessionBegin.code, 'reauthentication_required')
@@ -533,7 +556,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'beginStepUp', challengedFactorId: enrolled.id },
+    {
+      action: 'beginStepUp',
+      challengedFactorId: enrolled.id,
+      loginRequestId,
+    },
     200,
   )
   assert.match(begun.stepUpNonce, /^[A-Za-z0-9_-]{43}$/)
@@ -542,7 +569,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+    {
+      action: 'completeStepUp',
+      loginRequestId,
+      stepUpNonce: begun.stepUpNonce,
+    },
     401,
   )
   assert.equal(rejectedAal1.code, 'aal2_required')
@@ -573,7 +604,11 @@ try {
     status,
     aal2,
     'admin-identity-session',
-    { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+    {
+      action: 'completeStepUp',
+      loginRequestId,
+      stepUpNonce: begun.stepUpNonce,
+    },
     200,
   )
   assert.match(completed.appSessionToken, /^g1\.[A-Za-z0-9_-]{43}$/)
@@ -984,7 +1019,11 @@ try {
       status,
       aal2,
       'admin-identity-session',
-      { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+      {
+        action: 'completeStepUp',
+        loginRequestId,
+        stepUpNonce: begun.stepUpNonce,
+      },
       200,
     )
     assert.equal(replayed.appSessionToken, completed.appSessionToken)
@@ -1283,11 +1322,30 @@ try {
     )
     assert.equal(legacyEndpoint.status, 404)
 
+    const restoredSession = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'restore', restoreSeed: begun.stepUpNonce },
+      200,
+    )
+    assert.equal(restoredSession.appSessionToken, completed.appSessionToken)
+    assert.equal(restoredSession.session?.id, completed.session.id)
+
+    const restoredTokenStatus = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'status', appSessionToken: completed.appSessionToken },
+      200,
+    )
+    assert.equal(restoredTokenStatus.session?.id, completed.session.id)
+
     const loggedOut = await invoke(
       status,
       refreshedAal2,
       'admin-identity-session',
-      { action: 'logout', appSessionToken: completed.appSessionToken },
+      { action: 'logout', appSessionToken: restoredSession.appSessionToken },
       200,
     )
     assert.equal(loggedOut.ok, true)
@@ -1296,7 +1354,7 @@ try {
       status,
       refreshedAal2,
       'admin-identity-session',
-      { action: 'status', appSessionToken: completed.appSessionToken },
+      { action: 'status', appSessionToken: restoredSession.appSessionToken },
       401,
     )
     assert.equal(revokedStatus.code, 'app_session_invalid')
@@ -1327,7 +1385,11 @@ try {
       status,
       aal1,
       'admin-identity-session',
-      { action: 'beginStepUp', challengedFactorId: enrolled.id },
+      {
+        action: 'beginStepUp',
+        challengedFactorId: enrolled.id,
+        loginRequestId,
+      },
       401,
     )
     assert.equal(missingSessionBegin.code, 'reauthentication_required')

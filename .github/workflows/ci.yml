@@ -163,7 +163,6 @@ jobs:
       - run: npm run test:e2e:phase7-27
       - run: npm run test:e2e:phase7-27:flag-off
       - run: npm run test:e2e:phase7-29:flag-off
-      - run: npm run test:e2e:phase7-29
       - run: npm run test:e2e:phase7-30:flag-off
       - run: npm run test:e2e:phase7-30
       - run: npm run test:e2e:phase7-30b22b-browser

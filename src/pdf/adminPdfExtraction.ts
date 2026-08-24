@@ -40,9 +40,32 @@ function toExtraction(input: {
     lecturePublicId: input.lecturePublicId,
     pageCount: input.preflight.pageCount,
     pages: input.preflight.pages,
+    textAvailable: input.preflight.textAvailable,
     textCharCount: input.preflight.textCharCount,
     textSha256: input.preflight.textSha256,
+    textTruncated: input.preflight.textTruncated,
   }
+}
+
+function isCompatibleTextCount(
+  preflight: BrowserPdfPreflightResult,
+  documentTextCharCount: number,
+) {
+  return (
+    preflight.textCharCount === documentTextCharCount ||
+    (!preflight.textAvailable &&
+      preflight.textCharCount === 0 &&
+      documentTextCharCount === 1)
+  )
+}
+
+function requireAiText(extraction: PublisherExtraction) {
+  if (extraction.textAvailable === false || extraction.textCharCount < 1) {
+    throw new Error(
+      'このPDFには読み取れる文字情報がないため、AI分析は利用できません。資料の配信とスライド操作は利用できます。',
+    )
+  }
+  return extraction
 }
 
 function assertPreflightMatchesDocument(
@@ -52,7 +75,7 @@ function assertPreflightMatchesDocument(
   if (
     preflight.pdfSha256 !== document.documentVersion ||
     preflight.pageCount !== document.pageCount ||
-    preflight.textCharCount !== document.textCharCount ||
+    !isCompatibleTextCount(preflight, document.textCharCount) ||
     preflight.textSha256 !== document.textSha256
   ) {
     throw new Error('PDF extraction does not match the published document.')
@@ -196,12 +219,12 @@ export async function getAdminPdfExtraction(input: {
       adminToken: input.adminToken,
       lectureSessionId: input.lectureSessionId,
     })
-    return cached
+    return requireAiText(cached)
   }
 
   if (isPhase726BrowserPdfPublishingEnabled) {
     try {
-      return await downloadAndExtract(input)
+      return requireAiText(await downloadAndExtract(input))
     } catch (error) {
       if (!input.publisherSessionToken) throw error
     }
@@ -213,11 +236,13 @@ export async function getAdminPdfExtraction(input: {
     adminToken: input.adminToken,
     lectureSessionId: input.lectureSessionId,
   })
-  return publisherClient.getExtraction({
-    accessToken: access.accessToken,
-    documentId: input.document.documentId,
-    documentVersion: input.document.documentVersion,
-    lecturePublicId: access.lecturePublicId,
-    publisherSessionToken: input.publisherSessionToken,
-  })
+  return requireAiText(
+    await publisherClient.getExtraction({
+      accessToken: access.accessToken,
+      documentId: input.document.documentId,
+      documentVersion: input.document.documentVersion,
+      lecturePublicId: access.lecturePublicId,
+      publisherSessionToken: input.publisherSessionToken,
+    }),
+  )
 }

@@ -11,8 +11,10 @@ export type BrowserPdfPreflightResult = {
     text: string
   }>
   pdfSha256: string
+  textAvailable: boolean
   textCharCount: number
   textSha256: string
+  textTruncated: boolean
 }
 
 type WorkerResponse =
@@ -44,7 +46,8 @@ function validateFileEnvelope(file: File) {
       'ファイル名の拡張子が.pdfではありません。',
     )
   }
-  if (file.type.toLowerCase().split(';', 1)[0]?.trim() !== 'application/pdf') {
+  const mimeType = file.type.toLowerCase().split(';', 1)[0]?.trim()
+  if (mimeType && mimeType !== 'application/pdf') {
     throw new BrowserPdfPreflightError(
       'invalid_mime',
       'PDFファイル（application/pdf）を選択してください。',
@@ -102,10 +105,9 @@ export async function preflightBrowserPdf(
           ),
         )
       }
-      worker.postMessage(
-        { bytes, fileName: file.name, mimeType: file.type },
-        [bytes],
-      )
+      worker.postMessage({ bytes, fileName: file.name, mimeType: file.type }, [
+        bytes,
+      ])
     })
   } finally {
     worker.terminate()

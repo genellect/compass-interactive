@@ -10,6 +10,7 @@ import {
   AdminModerationPanel,
   AdminPdfControl,
   AdminPollControl,
+  LectureTransportBar,
   TeacherWorkspaceNav,
 } from '../components/AdminWorkspace'
 import {
@@ -28,7 +29,6 @@ import {
   isPhase6SummariesEnabled,
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
-  isPhase728DisplayRealtimeEnabled,
   isPhase728JournalClubPresetCreationEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
@@ -45,7 +45,10 @@ import {
 import { useAdminDisplayLauncher } from './admin/useAdminDisplayLauncher'
 import { useGoogleAdminWorkspaceSession } from './admin/useGoogleAdminWorkspaceSession'
 import { usePublicationDisplayReadback } from './admin/usePublicationDisplayReadback'
-import { AdminDisplayLinkCopyButton } from './admin/AdminDisplayLinkCopyButton'
+import {
+  AdminDisplayLaunchButton,
+  AdminDisplayLaunchInstructions,
+} from './admin/AdminDisplayLaunchControls'
 import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   PUBLISHER_PAIRING_REQUIRED_MESSAGE,
@@ -55,6 +58,8 @@ import {
 import { useAdminLectureSelectionGuard } from './admin/useAdminLectureSelectionGuard'
 import { useAdminPollAutoRefresh } from './admin/useAdminPollAutoRefresh'
 import { useAdminPollRefreshCoordinator } from './admin/useAdminPollRefreshCoordinator'
+import { useAdminDisplayMutation } from './admin/useAdminDisplayMutation'
+import { useAdminDisplayStatus } from './admin/useAdminDisplayStatus'
 import {
   PUBLISHER_SESSION_STORAGE_KEY,
   purgeLegacyAdminSessionStorage,
@@ -96,8 +101,6 @@ export function AdminPage({
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
   )
-  const [displayStateLoading, setDisplayStateLoading] = useState(false)
-  const [displayPageInput, setDisplayPageInput] = useState('1')
   const [pdfDocumentInput, setPdfDocumentInput] = useState('')
   const [lectures, setLectures] = useState<AdminLecture[]>([])
   const [lecturesLoaded, setLecturesLoaded] = useState(false)
@@ -180,6 +183,15 @@ export function AdminPage({
       clearLocalWorkspace: clearLocalAdminSession,
       onAdminLogout,
     })
+  const { isSending: displayStateLoading, updateDisplayState } =
+    useAdminDisplayMutation({
+      activeLectureSessionId,
+      adminToken,
+      handleInvalidAdminSession,
+      setDisplayState,
+      setDisplayStateError,
+      setPdfDocumentInput,
+    })
   const {
     beginPollMutation,
     finishPollMutation,
@@ -258,13 +270,22 @@ export function AdminPage({
   const activePdfPageCount = displayState?.pdfDocumentId
     ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
     : null
+  const canNavigateSlides = Boolean(
+    activeLectureSessionId &&
+    displayState?.pdfDocumentId &&
+    displayState.pdfVisible &&
+    activePdfPageCount &&
+    activeAdminLecture?.status !== 'closed',
+  )
   const {
     copied: displayLinkCopied,
     copyLink: copyClassroomDisplayLink,
     error: displayLaunchError,
+    instructionsVisible: displayInstructionsVisible,
     isCopying: isCopyingDisplayLink,
     isOpening: isOpeningDisplay,
     open: openClassroomDisplay,
+    replaceLink: replaceClassroomDisplayLink,
   } = useAdminDisplayLauncher({
     activeAdminLecture,
     activeLectureSessionId,
@@ -272,6 +293,12 @@ export function AdminPage({
   })
   const displayIsAvailable =
     Boolean(activeLectureSessionId) && activeAdminLecture?.status === 'open'
+  const displayDelivery = useAdminDisplayStatus({
+    active: displayIsAvailable,
+    adminToken,
+    displayStateUpdatedAt: displayState?.updatedAt,
+    lectureSessionId: activeLectureSessionId,
+  })
   const hasPublishedMaterial = Boolean(
     activeLectureSessionId &&
     displayState?.pdfDocumentId &&
@@ -434,7 +461,7 @@ export function AdminPage({
   ) {
     if (!isPhase3PrivatePdfEnabled || !lectureSessionId || !token) {
       setAdminPdfDocuments([])
-      return
+      return true
     }
     try {
       setAdminPdfDocuments(
@@ -444,12 +471,14 @@ export function AdminPage({
           lectureSessionId,
         }),
       )
+      return true
     } catch (error) {
       setPublisherMessage(
         error instanceof Error
           ? `資料一覧を取得できませんでした: ${error.message}`
           : '資料一覧を取得できませんでした。',
       )
+      return false
     }
   }
 
@@ -735,7 +764,6 @@ export function AdminPage({
     setDisplayState(liveDisplayState)
     setDisplayStateError(liveDisplayStateError)
     if (liveDisplayState) {
-      setDisplayPageInput(String(liveDisplayState.currentPdfPage))
       setPdfDocumentInput(liveDisplayState.pdfDocumentId ?? '')
     }
   }, [
@@ -744,78 +772,6 @@ export function AdminPage({
     liveDisplayState,
     liveDisplayStateError,
   ])
-
-  async function updateDisplayState(
-    action: 'next' | 'previous' | 'goToPage' | 'setDocument',
-    options: {
-      currentPdfPage?: number
-      pdfDocumentId?: string | null
-    } = {},
-    targetLectureSessionId = activeLectureSessionId,
-  ) {
-    if (!targetLectureSessionId) {
-      setDisplayStateError('先に講義へ参加してください。')
-      return false
-    }
-
-    if (!adminToken) {
-      setDisplayStateError(ADMIN_SESSION_EXPIRED_MESSAGE)
-      return false
-    }
-
-    setDisplayStateLoading(true)
-    setDisplayStateError(null)
-
-    try {
-      let nextDisplayState: Awaited<
-        ReturnType<typeof supabaseAdminRepository.updateDisplayState>
-      >
-      if (action === 'goToPage') {
-        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
-          action,
-          adminToken,
-          currentPdfPage: options.currentPdfPage ?? 1,
-          lectureSessionId: targetLectureSessionId,
-        })
-      } else if (action === 'setDocument') {
-        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
-          action,
-          adminToken,
-          lectureSessionId: targetLectureSessionId,
-          pdfDocumentId: options.pdfDocumentId ?? null,
-        })
-      } else {
-        nextDisplayState = await supabaseAdminRepository.updateDisplayState({
-          action,
-          adminToken,
-          lectureSessionId: targetLectureSessionId,
-        })
-      }
-
-      setDisplayState(nextDisplayState)
-      setDisplayPageInput(String(nextDisplayState.currentPdfPage))
-      setPdfDocumentInput(nextDisplayState.pdfDocumentId ?? '')
-      return true
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : '表示画面の更新に失敗しました。'
-
-      handleInvalidAdminSession(error)
-
-      setDisplayStateError(
-        message === 'Invalid Admin session.'
-          ? ADMIN_SESSION_EXPIRED_MESSAGE
-          : message.includes('PowerPoint synchronization is active')
-            ? 'PowerPoint同期中です。先に手動操作へ切り替えてください。'
-            : '表示画面の更新に失敗しました。少し時間をおいて再度お試しください。',
-      )
-      return false
-    } finally {
-      setDisplayStateLoading(false)
-    }
-  }
 
   async function createDraftLecture(): Promise<AdminLecture | null> {
     if (!adminToken) {
@@ -1104,29 +1060,16 @@ export function AdminPage({
     }
   }
 
-  function handleGoToPage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const nextPage = Number(displayPageInput)
-
-    if (
-      !Number.isInteger(nextPage) ||
-      nextPage < 1 ||
-      !activePdfPageCount ||
-      nextPage > activePdfPageCount
-    ) {
-      setDisplayStateError(
-        activePdfPageCount
-          ? `ページ番号は1〜${activePdfPageCount}で入力してください。`
-          : '先にPDF資料を選択してください。',
-      )
-      return
-    }
-
-    void updateDisplayState('goToPage', { currentPdfPage: nextPage })
-  }
-
   return (
-    <main className="page-shell">
+    <main
+      className={`page-shell admin-page-shell ${
+        activeLectureSessionId &&
+        displayState?.pdfDocumentId &&
+        activePdfPageCount
+          ? 'has-lecture-transport'
+          : ''
+      }`}
+    >
       <section className="page-header">
         <div>
           <h1>{workspacePresentation.headerTitle}</h1>
@@ -1147,27 +1090,11 @@ export function AdminPage({
               講義を終了
             </button>
           ) : null}
-          {displayIsAvailable ? (
-            <>
-              <button
-                className="secondary-button"
-                disabled={isOpeningDisplay}
-                onClick={() => void openClassroomDisplay()}
-                type="button"
-              >
-                {isOpeningDisplay ? '共有画面を準備中…' : '共有画面を開く'}
-              </button>
-              {isPhase728DisplayRealtimeEnabled ? (
-                <AdminDisplayLinkCopyButton
-                  copied={displayLinkCopied}
-                  isCopying={isCopyingDisplayLink}
-                  isOpening={isOpeningDisplay}
-                  lectureIsOpen
-                  onCopy={() => void copyClassroomDisplayLink()}
-                />
-              ) : null}
-            </>
-          ) : null}
+          <AdminDisplayLaunchButton
+            isPreparing={isOpeningDisplay}
+            lectureIsOpen={displayIsAvailable}
+            onPrepare={() => void openClassroomDisplay()}
+          />
           <button
             className="secondary-button"
             onClick={() => void handleLogout()}
@@ -1189,9 +1116,16 @@ export function AdminPage({
           </a>
         </div>
       </section>
-      {displayLaunchError ? (
-        <p className="error-note">{displayLaunchError}</p>
-      ) : null}
+      <AdminDisplayLaunchInstructions
+        copied={displayLinkCopied}
+        error={displayLaunchError}
+        instructionsVisible={displayInstructionsVisible}
+        isCopying={isCopyingDisplayLink}
+        isPreparing={isOpeningDisplay}
+        lectureIsOpen={displayIsAvailable}
+        onCopy={() => void copyClassroomDisplayLink()}
+        onReplace={() => void replaceClassroomDisplayLink()}
+      />
       <TeacherWorkspaceNav
         activeView={workspaceView}
         aiActive={aiMasterActive}
@@ -1203,6 +1137,27 @@ export function AdminPage({
           setWorkspaceView(view)
         }}
       />
+
+      {activeLectureSessionId &&
+      displayState?.pdfDocumentId &&
+      activePdfPageCount ? (
+        <LectureTransportBar
+          canNavigate={canNavigateSlides}
+          currentPage={displayState.currentPdfPage}
+          displayPage={displayDelivery.session?.lastRenderedPage ?? null}
+          displayStatus={displayDelivery.label}
+          displayVersion={
+            displayDelivery.session?.lastAppliedDisplayVersion ?? null
+          }
+          isSending={displayStateLoading}
+          onGoToPage={(page) =>
+            void updateDisplayState('goToPage', { currentPdfPage: page })
+          }
+          onNext={() => void updateDisplayState('next')}
+          onPrevious={() => void updateDisplayState('previous')}
+          pageCount={activePdfPageCount}
+        />
+      ) : null}
 
       <section
         aria-labelledby={`teacher-workspace-${
@@ -1219,7 +1174,6 @@ export function AdminPage({
           availableAssets={availablePdfAssets}
           browserPublishingEnabled={isPhase726BrowserPdfPublishingEnabled}
           canCreateLectureForPublication={Boolean(newLectureTitle.trim())}
-          displayPageInput={displayPageInput}
           displayState={displayState}
           displayStateError={displayStateError}
           displayStateLoading={displayStateLoading}
@@ -1229,7 +1183,6 @@ export function AdminPage({
           }
           onCheckPublisher={() => void checkPublisher()}
           onDisplayNameChange={setPdfDisplayName}
-          onDisplayStateRefresh={refreshDisplayState}
           onDownloadEnabledChange={setPdfDownloadEnabled}
           onFileChange={(file) => {
             setPdfFile(file)
@@ -1245,11 +1198,7 @@ export function AdminPage({
               setNewLectureTitle(file.name.replace(/\.pdf$/i, ''))
             }
           }}
-          onGoToPage={handleGoToPage}
-          onNext={() => void updateDisplayState('next')}
-          onPageInputChange={setDisplayPageInput}
           onPairingCodeChange={setPublisherPairingCode}
-          onPrevious={() => void updateDisplayState('previous')}
           onPublish={() => void publishPdfDocument()}
           onSelectDocument={setPdfDocumentInput}
           onSetDocument={() =>
@@ -1278,7 +1227,6 @@ export function AdminPage({
                 }
               : null
           }
-          selectedAsset={selectedPdfAsset}
           view={workspaceView === 'slides' ? 'slides' : 'material'}
         />
 
@@ -1386,20 +1334,24 @@ export function AdminPage({
           visiblePolls={visibleAdminPolls}
         />
 
-        <AdminModerationPanel
-          comments={activeLectureSessionId ? comments : []}
-          error={commentModerationError}
-          hasOlderComments={Boolean(activeLectureSessionId && hasOlderComments)}
-          isLoadingOlderComments={isLoadingOlderComments}
-          onLoadOlderComments={loadOlderComments}
-          onTogglePinned={(commentId) =>
-            void moderateComment(commentId, 'togglePin')
-          }
-          onToggleVisibility={(commentId) =>
-            void moderateComment(commentId, 'toggleVisibility')
-          }
-          pendingCommentId={commentModerationPendingId}
-        />
+        {activeLectureStatus === 'open' ? (
+          <AdminModerationPanel
+            comments={activeLectureSessionId ? comments : []}
+            error={commentModerationError}
+            hasOlderComments={Boolean(
+              activeLectureSessionId && hasOlderComments,
+            )}
+            isLoadingOlderComments={isLoadingOlderComments}
+            onLoadOlderComments={loadOlderComments}
+            onTogglePinned={(commentId) =>
+              void moderateComment(commentId, 'togglePin')
+            }
+            onToggleVisibility={(commentId) =>
+              void moderateComment(commentId, 'toggleVisibility')
+            }
+            pendingCommentId={commentModerationPendingId}
+          />
+        ) : null}
       </section>
 
       <section

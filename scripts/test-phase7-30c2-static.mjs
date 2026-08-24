@@ -1196,14 +1196,15 @@ assert.match(
   /target_transport_enabled: verification\.transportEnabled/,
 )
 assert.match(issuePdfAccessToken, /requestId is required/)
-for (const preserved of [
-  /getDisplayTokenClaims/,
-  /getDisplayTerminalTokenClaims/,
-  /verify_google_display_terminal_session_v1/,
-  /get_pdf_access_claims_v1/,
-]) {
+for (const preserved of [/getDisplayTokenClaims/, /get_pdf_access_claims_v1/]) {
   assert.match(issuePdfAccessToken, preserved)
 }
+assert.doesNotMatch(issuePdfAccessToken, /getDisplayTerminalTokenClaims/)
+assert.doesNotMatch(
+  issuePdfAccessToken,
+  /verify_google_display_terminal_session_v1/,
+)
+assert.doesNotMatch(issuePdfAccessToken, /admin_get_lecture_operator_access_v1/)
 assert.doesNotMatch(
   issuePdfAccessToken,
   /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1|getAdminTokenClaims|verifyAdminToken/,
@@ -1220,12 +1221,19 @@ assert.match(
 )
 for (const preserved of [
   /getDisplayTokenClaims/,
-  /getDisplayTerminalTokenClaims/,
-  /verify_google_display_terminal_session_v1/,
   /admin_get_lecture_operator_snapshot_v2/,
 ]) {
   assert.match(operatorLiveSnapshot, preserved)
 }
+assert.doesNotMatch(operatorLiveSnapshot, /getDisplayTerminalTokenClaims/)
+assert.doesNotMatch(
+  operatorLiveSnapshot,
+  /verify_google_display_terminal_session_v1/,
+)
+assert.doesNotMatch(
+  operatorLiveSnapshot,
+  /admin_get_lecture_operator_access_v1/,
+)
 assert.doesNotMatch(
   operatorLiveSnapshot,
   /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1|getAdminTokenClaims|verifyAdminToken/,

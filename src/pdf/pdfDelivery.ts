@@ -22,6 +22,10 @@ export type RuntimePdfDocument = {
   visible: boolean
 }
 
+export type PdfAccessUrlOptions = {
+  forceRefresh?: boolean
+}
+
 type AccessTokenResponse = {
   accessToken?: string
   expiresAt?: string
@@ -54,6 +58,55 @@ type PublicManifestResponse = {
 
 const memberSessionCache = new Map<string, PdfAccessSession>()
 const pendingAdminSessions = new Map<string, Promise<PdfAccessSession>>()
+const PDF_WORKER_REQUEST_TIMEOUT_MS = 10_000
+const PDF_WORKER_REQUEST_ATTEMPTS = 3
+const PDF_WORKER_RETRY_BASE_MS = 250
+const PDF_WORKER_RETRY_MAX_MS = 1_500
+
+function isRefreshablePdfAuthorizationError(error: unknown) {
+  const status = (error as { status?: number }).status
+  return status === 401 || status === 403
+}
+
+function isRetryablePdfWorkerStatus(status: number | undefined) {
+  return (
+    status === 408 ||
+    status === 429 ||
+    (typeof status === 'number' && status >= 500 && status <= 599)
+  )
+}
+
+function pdfWorkerRetryDelay(attempt: number) {
+  const exponential = Math.min(
+    PDF_WORKER_RETRY_MAX_MS,
+    PDF_WORKER_RETRY_BASE_MS * 2 ** attempt,
+  )
+  return Math.min(
+    PDF_WORKER_RETRY_MAX_MS,
+    Math.round(exponential * (0.75 + Math.random() * 0.5)),
+  )
+}
+
+async function waitForPdfWorkerRetry(
+  attempt: number,
+  upstreamSignal?: AbortSignal,
+) {
+  if (upstreamSignal?.aborted) throw upstreamSignal.reason
+  await new Promise<void>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      upstreamSignal?.removeEventListener('abort', abort)
+      resolve()
+    }, pdfWorkerRetryDelay(attempt))
+    const abort = () => {
+      globalThis.clearTimeout(timeout)
+      reject(
+        upstreamSignal?.reason ?? new DOMException('Aborted', 'AbortError'),
+      )
+    }
+    upstreamSignal?.addEventListener('abort', abort, { once: true })
+    if (upstreamSignal?.aborted) abort()
+  })
+}
 
 function getWorkerBaseUrl(responseValue?: string | null, required = true) {
   const value = responseValue || import.meta.env.VITE_PDF_WORKER_BASE_URL
@@ -172,23 +225,62 @@ async function getDisplaySession(
   })
 }
 
-async function requestWorkerJson<T>(url: string, accessToken: string) {
-  const response = await fetch(url, {
-    cache: 'no-store',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as {
-      message?: string
-    } | null
-    throw Object.assign(
-      new Error(
-        body?.message ?? `PDF配信に失敗しました (${response.status})。`,
-      ),
-      { status: response.status },
+async function requestWorkerJson<T>(
+  url: string,
+  accessToken: string,
+  upstreamSignal?: AbortSignal,
+) {
+  for (let attempt = 0; attempt < PDF_WORKER_REQUEST_ATTEMPTS; attempt += 1) {
+    if (upstreamSignal?.aborted) throw upstreamSignal.reason
+    const controller = new AbortController()
+    const abortFromUpstream = () => controller.abort(upstreamSignal?.reason)
+    upstreamSignal?.addEventListener('abort', abortFromUpstream, { once: true })
+    const timeout = globalThis.setTimeout(
+      () => controller.abort(),
+      PDF_WORKER_REQUEST_TIMEOUT_MS,
     )
+    try {
+      const response = await fetch(url, {
+        cache: 'no-store',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          message?: string
+        } | null
+        throw Object.assign(
+          new Error(
+            body?.message ?? `PDF配信に失敗しました (${response.status})。`,
+          ),
+          { status: response.status },
+        )
+      }
+      return (await response.json()) as T
+    } catch (error) {
+      const status = (error as { status?: number }).status
+      if (upstreamSignal?.aborted) throw upstreamSignal.reason
+      const timedOut = controller.signal.aborted
+      const retryable =
+        timedOut ||
+        isRetryablePdfWorkerStatus(status) ||
+        error instanceof TypeError
+      if (!retryable || attempt >= PDF_WORKER_REQUEST_ATTEMPTS - 1) {
+        if (timedOut) {
+          throw Object.assign(
+            new Error('PDF配信の応答がタイムアウトしました。'),
+            { status: 408 },
+          )
+        }
+        throw error
+      }
+      await waitForPdfWorkerRetry(attempt, upstreamSignal)
+    } finally {
+      globalThis.clearTimeout(timeout)
+      upstreamSignal?.removeEventListener('abort', abortFromUpstream)
+    }
   }
-  return (await response.json()) as T
+  throw new Error('PDF配信に再接続できませんでした。')
 }
 
 export async function resolveRuntimePdf(input: {
@@ -198,6 +290,7 @@ export async function resolveRuntimePdf(input: {
   documentVersion: string
   lectureSessionId: string
   manifestVersion: number
+  signal?: AbortSignal
 }) {
   if (input.adminToken && input.displayToken) {
     throw new Error('PDF認証情報が重複しています。')
@@ -216,12 +309,13 @@ export async function resolveRuntimePdf(input: {
     requestWorkerJson<PublicManifestResponse>(
       `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/manifest`,
       session.accessToken,
+      input.signal,
     )
   let manifest: PublicManifestResponse
   try {
     manifest = await fetchManifest()
   } catch (error) {
-    if ((error as { status?: number }).status !== 401) throw error
+    if (!isRefreshablePdfAuthorizationError(error)) throw error
     session = await getSession(true)
     manifest = await fetchManifest()
   }
@@ -248,22 +342,36 @@ export async function resolveRuntimePdf(input: {
     visible: rawDocument.visible,
   }
 
-  async function getAccessUrl(mode: 'download' | 'inline') {
+  async function getAccessUrl(
+    mode: 'download' | 'inline',
+    options: PdfAccessUrlOptions = {},
+  ) {
     if (mode === 'download' && !document.downloadEnabled) {
       throw new Error('この資料はダウンロードできません。')
     }
-    if (Date.parse(session.expiresAt) <= Date.now() + 30_000) {
+    if (
+      options.forceRefresh ||
+      Date.parse(session.expiresAt) <= Date.now() + 30_000
+    ) {
       session = await getSession(true)
     }
     const endpoint = `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/documents/${document.documentId}/${document.documentVersion}/access?mode=${mode}`
     let ticket: { expiresAt: string; url: string }
     try {
-      ticket = await requestWorkerJson(endpoint, session.accessToken)
+      ticket = await requestWorkerJson(
+        endpoint,
+        session.accessToken,
+        input.signal,
+      )
     } catch (error) {
-      if ((error as { status?: number }).status !== 401) throw error
+      if (!isRefreshablePdfAuthorizationError(error)) throw error
       session = await getSession(true)
       const retryEndpoint = `${session.workerBaseUrl}/v1/lectures/${session.lecturePublicId}/documents/${document.documentId}/${document.documentVersion}/access?mode=${mode}`
-      ticket = await requestWorkerJson(retryEndpoint, session.accessToken)
+      ticket = await requestWorkerJson(
+        retryEndpoint,
+        session.accessToken,
+        input.signal,
+      )
     }
     return ticket.url
   }

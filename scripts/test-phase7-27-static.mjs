@@ -43,6 +43,12 @@ const adminPdfControl = read(
   'AdminWorkspace',
   'AdminPdfControl.tsx',
 )
+const lectureTransport = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'LectureTransportBar.tsx',
+)
 const learningSupport = read(
   'src',
   'components',
@@ -272,10 +278,10 @@ assert.doesNotMatch(
 )
 assert.match(learningSupport, /mode === 'display'[\s\S]*display-caption-strip/)
 assert.match(
-  adminPdfControl,
-  /displayState\.pdfPageCount \?\? selectedAsset\?\.pageCount/,
+  adminPage,
+  /displayState\.pdfPageCount \?\? selectedPdfAsset\?\.pageCount/,
 )
-assert.match(adminPdfControl, /aria-label="講義資料のページ操作"/)
+assert.match(lectureTransport, /aria-label="講義資料のページ操作"/)
 assert.doesNotMatch(preset, /正本/)
 assert.doesNotMatch(adminPdfControl, /正本/)
 assert.match(parityMigration, /Dual-targeting CasRx for C9orf72 ALS\/FTD/)

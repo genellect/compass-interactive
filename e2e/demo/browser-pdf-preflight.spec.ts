@@ -10,8 +10,10 @@ type PreflightResult = {
     text: string
   }>
   pdfSha256: string
+  textAvailable: boolean
   textCharCount: number
   textSha256: string
+  textTruncated: boolean
 }
 
 test('browser PDF preflight keeps verified extraction available only in memory', async ({
@@ -58,6 +60,8 @@ test('browser PDF preflight keeps verified extraction available only in memory',
   expect(result.byteSize).toBeGreaterThan(5)
   expect(result.pageCount).toBe(3)
   expect(result.textCharCount).toBeGreaterThan(0)
+  expect(result.textAvailable).toBe(true)
+  expect(result.textTruncated).toBe(false)
   expect(result.pdfSha256).toMatch(/^[0-9a-f]{64}$/)
   expect(result.pdfSha256).toBe(expectedPdfSha256)
   expect(result.textSha256).toMatch(/^[0-9a-f]{64}$/)
@@ -68,6 +72,25 @@ test('browser PDF preflight keeps verified extraction available only in memory',
     expectedExcerptIds,
   )
   expect(result).not.toHaveProperty('text')
+})
+
+test('browser PDF preflight accepts a valid PDF when the OS supplies no MIME type', async ({
+  page,
+}) => {
+  await page.goto('/demo')
+  const result = await page.evaluate(async (moduleUrl) => {
+    const module = (await import(moduleUrl)) as {
+      preflightBrowserPdf(file: File): Promise<PreflightResult>
+    }
+    const response = await fetch('/lecture-assets/m4-sample-v1.pdf')
+    const bytes = await response.arrayBuffer()
+    return module.preflightBrowserPdf(
+      new File([bytes], 'm4-sample-v1.pdf', { type: '' }),
+    )
+  }, '/src/pdf/browserPdfPreflight.ts')
+
+  expect(result.pageCount).toBe(3)
+  expect(result.pdfSha256).toMatch(/^[0-9a-f]{64}$/)
 })
 
 test('browser PDF preflight rejects non-PDF bytes', async ({ page }) => {

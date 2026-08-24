@@ -408,11 +408,13 @@ history.
 
 ## 16. Phase 7.30E Google-only cutover objects
 
-The first E migration adds the service-only
-`verify_google_display_terminal_session_v1` facade. It locks durable Google
-Display issuance by JTI hash and rechecks lecture, issued/expires timestamps and
-Display Auth UID before terminal downgrade or archive access. Unknown legacy
-descendants and cross-UID claims are invalid.
+The first E migration added the service-only
+`verify_google_display_terminal_session_v1` facade. The final lecture-delivery
+migration retains that facade only as fail-closed upgrade compatibility: it
+recognizes an exact historical root but never grants terminal or archive
+access. Display roots and their Realtime bindings are revoked when the lecture
+closes or its hard stop is reached, so a Display URL remains a live-lecture
+capability only.
 
 The dormant authority migration adds three RLS-enabled, policy-free private
 tables:
@@ -459,14 +461,14 @@ principal/user ID, project ref, host, email, token, PIN or secret value.
 
 The current historical billing admission inventory has six functions:
 
-| Function | Phase F treatment |
-| -------- | ----------------- |
-| `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)` | existence, owner, language, security and effective EXECUTE metadata only |
-| `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)` | same; current compatibility wrapper is not invoked |
-| `private.consume_ai_billing_grant_and_start_operations(uuid,text,uuid,jsonb,text)` | same; current direct consumer is not invoked |
-| `public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)` | same; current direct consumer wrapper is not invoked |
-| `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)` | same; current service wrapper is not invoked |
-| `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)` | same; current service wrapper is not invoked |
+| Function                                                                           | Phase F treatment                                                        |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `private.issue_ai_billing_grant(uuid,text[],text,boolean,text)`                    | existence, owner, language, security and effective EXECUTE metadata only |
+| `public.admin_issue_ai_billing_grant(uuid,text[],text,boolean,text)`               | same; current compatibility wrapper is not invoked                       |
+| `private.consume_ai_billing_grant_and_start_operations(uuid,text,uuid,jsonb,text)` | same; current direct consumer is not invoked                             |
+| `public.admin_consume_ai_billing_grant(uuid,text,uuid,jsonb,text)`                 | same; current direct consumer wrapper is not invoked                     |
+| `public.admin_authorize_ai_master(uuid,uuid,text,text,boolean)`                    | same; current service wrapper is not invoked                             |
+| `public.admin_issue_ai_billing_grant_from_master(uuid,uuid,text[],text,text)`      | same; current service wrapper is not invoked                             |
 
 The C1 migration already revoked `service_role` EXECUTE from the retained
 private master implementations, so they are outside this exact effective-six

@@ -63,6 +63,7 @@ const preCutoverHumanRecordNames = [
 ]
 const operationalAdminEdges = [
   'analyze-lecture-material',
+  'display-session-status',
   'generate-academic-answer',
   'generate-lecture-summary',
   'issue-display-session',
@@ -70,6 +71,7 @@ const operationalAdminEdges = [
   'issue-realtime-client-secret',
   'manage-admin-sessions',
   'manage-ai-control',
+  'manage-ai-activation-intent',
   'manage-comments',
   'manage-lecture-summaries',
   'manage-lectures',
@@ -557,8 +559,8 @@ const configuredOperationalAdminEdges = configuredFunctions.filter(({ name }) =>
 const configuredIdentityControlEdges = configuredFunctions.filter(({ name }) =>
   identityControlEdges.includes(name),
 )
-assert.equal(configuredFunctions.length, 31)
-assert.equal(configuredOperationalAdminEdges.length, 19)
+assert.equal(configuredFunctions.length, 33)
+assert.equal(configuredOperationalAdminEdges.length, 21)
 assert.equal(configuredIdentityControlEdges.length, 3)
 assert.equal(
   new Set(configuredOperationalAdminEdges.map(({ name }) => name)).size,

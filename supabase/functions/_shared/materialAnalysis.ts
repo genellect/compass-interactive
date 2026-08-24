@@ -23,8 +23,10 @@ export type MaterialExtraction = {
   lecturePublicId: string
   pageCount: number
   pages: ExtractionPage[]
+  textAvailable?: boolean
   textCharCount: number
   textSha256: string
+  textTruncated?: boolean
 }
 
 export type PollProposal = {
@@ -321,17 +323,26 @@ export async function verifyExtraction(
     textSha256: string
   },
 ) {
+  const textAvailable = extraction.textAvailable ?? extraction.textCharCount > 0
+  const textTruncated = extraction.textTruncated === true
+  const textlessV1Compatibility =
+    !textAvailable &&
+    extraction.textCharCount === 0 &&
+    expected.textCharCount === 1
   if (
     extraction.documentId !== expected.documentId ||
     extraction.documentVersion !== expected.documentVersion ||
     extraction.pageCount !== expected.pageCount ||
-    extraction.textCharCount !== expected.textCharCount ||
+    (!textlessV1Compatibility &&
+      extraction.textCharCount !== expected.textCharCount) ||
     extraction.textSha256 !== expected.textSha256 ||
     extraction.pages.length !== extraction.pageCount ||
     extraction.pageCount < 1 ||
     extraction.pageCount > 75 ||
-    extraction.textCharCount < 1 ||
-    extraction.textCharCount > 20_000
+    extraction.textCharCount < 0 ||
+    extraction.textCharCount > 20_000 ||
+    (!textAvailable && textTruncated) ||
+    (textTruncated && extraction.textCharCount !== 20_000)
   ) {
     throw new MaterialAnalysisError(
       'extraction_mismatch',
@@ -366,6 +377,13 @@ export async function verifyExtraction(
       409,
     )
   }
+  if (!textAvailable && characterCount !== 0) {
+    throw new MaterialAnalysisError(
+      'extraction_mismatch',
+      'Text availability does not match the local PDF extraction.',
+      409,
+    )
+  }
 
   const canonical = extraction.pages
     .map((page) => `--- page:${page.pageNumber} ---\n${page.text}`)
@@ -377,6 +395,7 @@ export async function verifyExtraction(
       409,
     )
   }
+  return { textAvailable, textTruncated }
 }
 
 function selectedPages(

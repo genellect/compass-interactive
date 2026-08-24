@@ -31,8 +31,10 @@ export type PublisherExtraction = {
   lecturePublicId: string
   pageCount: number
   pages: PublisherExtractionPage[]
+  textAvailable?: boolean
   textCharCount: number
   textSha256: string
+  textTruncated?: boolean
 }
 
 type PublisherResponse<T> = T & { message?: string; ok?: boolean }
@@ -135,10 +137,11 @@ export const publisherClient = {
     lecturePublicId: string
     publisherSessionToken: string
   }): Promise<PublisherPublication> {
+    const mimeType = input.file.type.toLowerCase().split(';', 1)[0]?.trim()
     if (
       input.file.size < 1 ||
       input.file.size > MAX_PDF_BYTES ||
-      input.file.type !== 'application/pdf' ||
+      (mimeType && mimeType !== 'application/pdf') ||
       !input.file.name.toLowerCase().endsWith('.pdf')
     ) {
       throw new Error('PDFはapplication/pdf・15MB以下で指定してください。')

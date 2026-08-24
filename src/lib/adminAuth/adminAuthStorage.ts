@@ -4,6 +4,8 @@ export const ADMIN_AUTH_STORAGE_KEY =
   'compass-interactive-admin-supabase-auth-v1'
 export const ADMIN_APP_SESSION_STORAGE_KEY =
   'compass-interactive-admin-google-app-session-v1'
+export const ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY =
+  'compass-interactive-admin-google-app-session-restore-seed-v1'
 export const ADMIN_OAUTH_ATTEMPT_STORAGE_KEY =
   'compass-interactive-admin-oauth-attempt-v1'
 export const ADMIN_LEDGER_PENDING_STORAGE_KEY =
@@ -16,6 +18,26 @@ const PROVIDER_TOKEN_FIELDS = new Set([
   'provider_refresh_token',
 ])
 export const ADMIN_AUTH_REQUEST_TIMEOUT_MS = 10_000
+let adminAuthRateLimitUntil = 0
+
+function parseRetryAfterMs(value: string | null, now = Date.now()) {
+  if (!value) return 0
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(
+      Math.max(1_000, Math.ceil(seconds * 1_000)),
+      60 * 60 * 1_000,
+    )
+  }
+  const retryAt = Date.parse(value)
+  return Number.isFinite(retryAt)
+    ? Math.min(Math.max(1_000, retryAt - now), 60 * 60 * 1_000)
+    : 0
+}
+
+export function getAdminAuthRateLimitRemainingMs(now = Date.now()) {
+  return Math.max(0, adminAuthRateLimitUntil - now)
+}
 
 export function stripAdminProviderTokens(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripAdminProviderTokens)
@@ -75,6 +97,19 @@ export function createAdminAuthFetch(
       upstreamSignal?.removeEventListener('abort', abortFromUpstream)
     }
     if (
+      requestUrl.origin === expectedOrigin &&
+      requestUrl.pathname.startsWith('/auth/v1/') &&
+      response.status === 429
+    ) {
+      const retryAfterMs = parseRetryAfterMs(
+        response.headers.get('retry-after'),
+      )
+      adminAuthRateLimitUntil = Math.max(
+        adminAuthRateLimitUntil,
+        Date.now() + (retryAfterMs || 60_000),
+      )
+    }
+    if (
       requestUrl.origin !== expectedOrigin ||
       !requestUrl.pathname.startsWith('/auth/v1/') ||
       !response.headers.get('content-type')?.toLowerCase().includes('json')
@@ -126,6 +161,59 @@ export function restoreAdminAppSessionToken() {
   return window.sessionStorage.getItem(ADMIN_APP_SESSION_STORAGE_KEY) ?? ''
 }
 
+export function clearAdminAppSessionToken() {
+  window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
+}
+
+type AdminAppSessionRestoreScope = {
+  authSessionId: string
+  authUserId: string
+}
+
+export function persistAdminAppSessionRestoreSeed(
+  seed: string,
+  scope: AdminAppSessionRestoreScope,
+) {
+  window.localStorage.setItem(
+    ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY,
+    JSON.stringify({ ...scope, seed, version: 1 }),
+  )
+}
+
+export function restoreAdminAppSessionRestoreSeed(
+  scope: AdminAppSessionRestoreScope,
+) {
+  const raw = window.localStorage.getItem(
+    ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY,
+  )
+  if (!raw) return ''
+  try {
+    const stored = JSON.parse(raw) as {
+      authSessionId?: unknown
+      authUserId?: unknown
+      seed?: unknown
+      version?: unknown
+    }
+    if (
+      stored.version === 1 &&
+      stored.authSessionId === scope.authSessionId &&
+      stored.authUserId === scope.authUserId &&
+      typeof stored.seed === 'string' &&
+      /^[A-Za-z0-9_-]{43}$/.test(stored.seed)
+    ) {
+      return stored.seed
+    }
+  } catch {
+    // A malformed or old restore seed cannot authorize anything and is purged.
+  }
+  clearAdminAppSessionRestoreSeed()
+  return ''
+}
+
+export function clearAdminAppSessionRestoreSeed() {
+  window.localStorage.removeItem(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY)
+}
+
 export function handoffAdminAppSessionToken(target: Window) {
   const token = restoreAdminAppSessionToken()
   if (!token) return { changed: false, handedOff: false }
@@ -140,6 +228,7 @@ export function clearAdminAuthStorage() {
   clearAdminOperationRequestIds()
   window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY)
   window.localStorage.removeItem(`${ADMIN_AUTH_STORAGE_KEY}-code-verifier`)
+  window.localStorage.removeItem(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_LEDGER_PENDING_STORAGE_KEY)
@@ -172,7 +261,7 @@ export function clearAdminOAuthAttempt() {
 export function consumeAdminOAuthAttempt(now = Date.now()) {
   const raw = window.sessionStorage.getItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
-  if (!raw) return false
+  if (!raw) return null
   try {
     const attempt = JSON.parse(raw) as {
       callbackPath?: unknown
@@ -185,7 +274,9 @@ export function consumeAdminOAuthAttempt(now = Date.now()) {
     const valid = Boolean(
       attempt.callbackPath === '/admin/auth/callback' &&
       typeof attempt.id === 'string' &&
-      /^[0-9a-f-]{36}$/i.test(attempt.id) &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        attempt.id,
+      ) &&
       typeof attempt.createdAt === 'number' &&
       Number.isSafeInteger(attempt.createdAt) &&
       attempt.createdAt <= now &&
@@ -193,9 +284,11 @@ export function consumeAdminOAuthAttempt(now = Date.now()) {
       typeof returnPath === 'string' &&
       ADMIN_RETURN_PATHS.has(returnPath),
     )
-    return valid ? (returnPath as string) : ''
+    return valid
+      ? { id: attempt.id as string, returnPath: returnPath as string }
+      : null
   } catch {
-    return ''
+    return null
   }
 }
 

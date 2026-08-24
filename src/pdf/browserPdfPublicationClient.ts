@@ -344,7 +344,9 @@ export const browserPdfPublicationClient = {
       lectureSessionId: input.lectureSessionId,
       pageCount: input.preflight.pageCount,
       pdfSha256: input.preflight.pdfSha256,
-      textCharCount: input.preflight.textCharCount,
+      // Publication metadata v1 requires a positive count. The extraction
+      // keeps the real zero count and textAvailable=false for textless PDFs.
+      textCharCount: Math.max(1, input.preflight.textCharCount),
       textSha256: input.preflight.textSha256,
     })
     const publicationId = assertPublicationId(response.publicationId)

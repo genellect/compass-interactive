@@ -191,6 +191,7 @@ export const aiMasterAuthorizationRepository = {
   },
 
   async authorizeAiMasterWithAal2Session(request: {
+    activationIntentVersion?: number
     adminToken: AdminOperationCredentialInput
     lectureSessionId: string
     masterScope: AiMasterAuthorizationScope
@@ -201,6 +202,7 @@ export const aiMasterAuthorizationRepository = {
     )
     const currentAuthorization = toAiMasterAuthorization(status.authorization)
     if (
+      request.activationIntentVersion === undefined &&
       currentAuthorization?.status === 'active' &&
       currentAuthorization.ownedByRequester
     ) {
@@ -245,6 +247,7 @@ export const aiMasterAuthorizationRepository = {
       data = await authorizeGoogleAiMasterWithAal2Session(
         request.adminToken.appSessionToken,
         {
+          intentVersion: request.activationIntentVersion,
           lectureSessionId: request.lectureSessionId,
           policyId: status.policy.id,
           policyVersion: status.policy.version,

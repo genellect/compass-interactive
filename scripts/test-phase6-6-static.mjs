@@ -193,7 +193,11 @@ assert.doesNotMatch(commentInput, /もう一度説明してほしい|この視�
 assert.match(app, /path="\/lecture\/comments"/)
 assert.match(app, /path="\/lecture\/archive"/)
 assert.match(app, /const appTheme = 'theme-light'/)
-assert.match(displayView, /comments\.slice\(0, 5\)/)
+assert.match(
+  displayView,
+  /<LiveBoard[\s\S]*?comments=\{comments\}[\s\S]*?limit=\{5\}[\s\S]*?mode="display"/,
+)
+assert.doesNotMatch(displayView, /comments=\{comments\.slice\(0, 5\)\}/)
 assert.match(
   css,
   /display-layout:fullscreen \.display-poll-rail[\s\S]*display: grid/,

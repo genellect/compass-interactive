@@ -1,10 +1,12 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0'
 import { handleCors } from '../_shared/cors.ts'
+import { verifyGoogleAdminOperationRequest } from '../_shared/googleAdminOperations.ts'
+import { hasLegacyAdminFields } from '../_shared/googleOnlyAdmin.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 
 const MAX_CAPTION_TEXT_CHARACTERS = 4_000
 const REALTIME_RELAY_TIMEOUT_MS = 5_000
+const RPC_TIMEOUT_MS = 5_500
 
 type CaptionMessage = {
   caption?: { text?: unknown } | null
@@ -16,8 +18,15 @@ type CaptionMessage = {
 }
 
 type RelayRequest = {
+  appSessionToken?: string
   lectureSessionId?: string
   message?: CaptionMessage
+  operationId?: string
+  startRequestId?: string
+}
+
+type RelayAdmission = {
+  status?: 'allowed' | 'invalid' | 'rate_limited' | 'stale' | 'unavailable'
   topic?: string
 }
 
@@ -51,6 +60,21 @@ function validMessage(value: CaptionMessage, lectureSessionId: string) {
   )
 }
 
+function hasOnlyKeys(body: RelayRequest, allowed: readonly string[]) {
+  const allowedKeys = new Set(allowed)
+  return Object.keys(body).every((key) => allowedKeys.has(key))
+}
+
+function isTopic(value: unknown, lectureSessionId: string): value is string {
+  return (
+    typeof value === 'string' &&
+    new RegExp(
+      `^display:${lectureSessionId.replaceAll('-', '\\-')}:[0-9a-f-]{36}$`,
+      'i',
+    ).test(value)
+  )
+}
+
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
@@ -78,13 +102,22 @@ Deno.serve(async (request) => {
   }
 
   if (
+    !hasOnlyKeys(body, [
+      'appSessionToken',
+      'lectureSessionId',
+      'message',
+      'operationId',
+      'startRequestId',
+    ]) ||
+    hasLegacyAdminFields(body) ||
+    typeof body.appSessionToken !== 'string' ||
+    body.appSessionToken.trim().length === 0 ||
     !body.lectureSessionId ||
     !isUuid(body.lectureSessionId) ||
-    !body.topic ||
-    !new RegExp(
-      `^display:${body.lectureSessionId.replaceAll('-', '\\-')}:[0-9a-f-]{36}$`,
-      'i',
-    ).test(body.topic) ||
+    !body.operationId ||
+    !isUuid(body.operationId) ||
+    !body.startRequestId ||
+    !isUuid(body.startRequestId) ||
     !body.message ||
     !validMessage(body.message, body.lectureSessionId)
   ) {
@@ -102,52 +135,61 @@ Deno.serve(async (request) => {
       500,
     )
   }
-  const service = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  })
-  const authorization = request.headers.get('Authorization') ?? ''
-  const bearerToken = authorization.startsWith('Bearer ')
-    ? authorization.slice('Bearer '.length).trim()
-    : ''
-  if (!bearerToken) {
-    return jsonResponse({ message: 'Authentication required.', ok: false }, 401)
-  }
-  const { data: authData, error: authError } =
-    await service.auth.getUser(bearerToken)
-  if (authError || !authData.user) {
-    return jsonResponse({ message: 'Authentication required.', ok: false }, 401)
+  const verification = await verifyGoogleAdminOperationRequest(
+    request,
+    body.appSessionToken,
+  )
+  if (!verification.ok) {
+    return jsonResponse(
+      {
+        code: verification.code,
+        message: verification.message,
+        ok: false,
+      },
+      verification.status,
+    )
   }
 
-  const { data: admission, error: admissionError } = await service.rpc(
-    'claim_display_caption_relay_v1',
-    {
-      target_admin_auth_user_id: authData.user.id,
+  const { data, error: admissionError } = await verification.serviceClient
+    .rpc('claim_google_admin_display_caption_relay_v1', {
+      target_auth_user_id: verification.authUserId,
+      target_google_issuer: verification.googleIssuer,
       target_lecture_session_id: body.lectureSessionId,
+      target_operation_id: body.operationId,
+      target_provider_subject_hmac: verification.googleSubjectHmac,
       target_sequence: body.message.sequence,
       target_source: body.message.source,
       target_stream_id: body.message.streamId,
-      target_topic: body.topic,
-    },
-  )
+      target_start_request_id: body.startRequestId,
+      target_subject_pepper_version: verification.subjectPepperVersion,
+      target_supabase_auth_session_id: verification.supabaseAuthSessionId,
+      target_token_hash: verification.appSessionTokenHash,
+      target_transport_enabled: verification.transportEnabled,
+    })
+    .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+  const admission = data as RelayAdmission | null
   if (admissionError) {
     return jsonResponse(
       { message: 'Display caption relay admission failed.', ok: false },
-      500,
+      admissionError.code === '42501' ? 401 : 503,
     )
   }
-  if (admission === 'rate_limited') {
+  if (admission?.status === 'rate_limited') {
     return jsonResponse(
       { message: 'Display caption relay is rate limited.', ok: false },
       429,
     )
   }
-  if (admission === 'stale') {
+  if (admission?.status === 'stale') {
     return jsonResponse(
       { message: 'Display caption relay is stale.', ok: false },
       409,
     )
   }
-  if (admission !== 'allowed') {
+  if (
+    admission?.status !== 'allowed' ||
+    !isTopic(admission.topic, body.lectureSessionId)
+  ) {
     return jsonResponse(
       { message: 'Display caption relay is unavailable.', ok: false },
       403,
@@ -155,7 +197,7 @@ Deno.serve(async (request) => {
   }
 
   const relayUrl = new URL(
-    `/realtime/v1/api/broadcast/${encodeURIComponent(body.topic)}/events/caption`,
+    `/realtime/v1/api/broadcast/${encodeURIComponent(admission.topic)}/events/caption`,
     supabaseUrl,
   )
   relayUrl.searchParams.set('private', 'true')

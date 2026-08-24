@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabaseClient'
+import { displaySupabase } from '../../lib/displaySupabaseClient'
 import {
   getAdminOperationCredentialBody,
   isAdminOperationCredential,
@@ -27,6 +28,8 @@ const GOOGLE_ADMIN_SESSION_INVALID_CODES = new Set([
 
 const GOOGLE_REQUEST_ID_FREE_ACTIONS = new Map<string, ReadonlySet<string>>([
   ['generate-academic-answer', new Set(['status'])],
+  ['display-session-status', new Set(['status'])],
+  ['manage-ai-activation-intent', new Set(['status'])],
   ['manage-admin-sessions', new Set(['list'])],
   ['manage-admin-ledger', new Set(['audit', 'snapshot'])],
   ['manage-ai-control', new Set(['status'])],
@@ -106,9 +109,7 @@ export async function invokeEdgeFunction<T>(
   ) {
     throw new Error('Google Admin credential is required.')
   }
-  if (
-    isAdminOperationCredential(suppliedAdminCredential)
-  ) {
+  if (isAdminOperationCredential(suppliedAdminCredential)) {
     const { adminToken: credential, ...body } = options.body as Record<
       string,
       unknown
@@ -145,5 +146,13 @@ export async function invokeEdgeFunction<T>(
     }
     return result
   }
-  return await supabase.functions.invoke<T>(functionName, options)
+  const suppliedDisplayToken =
+    options.body && typeof options.body === 'object'
+      ? (options.body as Record<string, unknown>).displayToken
+      : undefined
+  const client =
+    typeof suppliedDisplayToken === 'string' && suppliedDisplayToken.length > 0
+      ? displaySupabase
+      : supabase
+  return await client.functions.invoke<T>(functionName, options)
 }

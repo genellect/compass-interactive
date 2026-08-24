@@ -20,8 +20,9 @@ const budgets = {
   // The Phase 7.30 identity gate keeps the existing Admin workspace in the
   // lazy Google-only Admin workspace chunk. Preserve the approved budget.
   adminJs: { actual: largest('AdminWorkspaceApp-', '.js'), limit: 108_707 },
-  // The approved branding update shipped 91,262 bytes of app CSS; allow 1% drift.
-  appCss: { actual: largest('index-', '.css'), limit: 92_175 },
+  // The final projector and teacher UX ships 95,674 bytes of app CSS; allow
+  // 1% drift while keeping the production stylesheet under 100 KiB.
+  appCss: { actual: largest('index-', '.css'), limit: 96_631 },
   indexJs: { actual: largest('index-', '.js'), limit: 529_742 },
   pdfJs: { actual: largest('SyncedPdfViewer-', '.js'), limit: 479_617 },
 }

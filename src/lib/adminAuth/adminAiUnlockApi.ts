@@ -453,6 +453,7 @@ export async function authorizeGoogleAiMasterWithPin(
 export async function authorizeGoogleAiMasterWithAal2Session(
   appSessionToken: string,
   input: {
+    intentVersion?: number
     lectureSessionId: string
     policyId: string
     policyVersion: number

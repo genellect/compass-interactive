@@ -95,7 +95,10 @@ test('verifies the Publisher extraction and keeps source injection as user data'
   assert.equal(request.text.format.strict, true)
   assert.match(request.input[0]!.content[0]!.text, /untrusted source data/)
   assert.match(request.input[0]!.content[0]!.text, /exactly 5/)
-  assert.match(request.input[0]!.content[0]!.text, /qualityScore at least 0\.80/)
+  assert.match(
+    request.input[0]!.content[0]!.text,
+    /qualityScore at least 0\.80/,
+  )
   assert.match(
     request.input[0]!.content[0]!.text,
     /evidencePages and evidenceExcerptIds in the same order and length/,
@@ -124,6 +127,40 @@ test('rejects any extraction page or hash tampering', async () => {
       error instanceof MaterialAnalysisError &&
       error.code === 'extraction_mismatch',
   )
+})
+
+test('accepts the v1 textless metadata bridge and reports AI text unavailable', async () => {
+  const documentVersion = 'c'.repeat(64)
+  const pages = [
+    {
+      characterCount: 0,
+      excerptId: await sha256Hex(`${documentVersion}:1:`),
+      pageNumber: 1,
+      text: '',
+    },
+  ]
+  const canonical = '--- page:1 ---\n'
+  const state = await verifyExtraction(
+    {
+      documentId: 'doc-textless',
+      documentVersion,
+      lecturePublicId: 'lecture_1234567890abcdef',
+      pageCount: 1,
+      pages,
+      textAvailable: false,
+      textCharCount: 0,
+      textSha256: await sha256Hex(canonical),
+      textTruncated: false,
+    },
+    {
+      documentId: 'doc-textless',
+      documentVersion,
+      pageCount: 1,
+      textCharCount: 1,
+      textSha256: await sha256Hex(canonical),
+    },
+  )
+  assert.deepEqual(state, { textAvailable: false, textTruncated: false })
 })
 
 test('applies evidence, answer, similarity and educational quality gates', async () => {

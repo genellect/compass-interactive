@@ -108,6 +108,14 @@ const googleAal2SessionAiMasterMigrationName =
   '20260820081453_google_aal2_session_ai_master.sql'
 const googleAcademicPreflightLeaseRenewalMigrationName =
   '20260820223220_phase7_30c2_google_academic_preflight_lease_renewal.sql'
+const adminAuthLoginRestoreMigrationName =
+  '20260825090000_admin_auth_login_restore.sql'
+const finalDisplayDeliveryAckMigrationName =
+  '20260825173000_final_display_delivery_ack.sql'
+const displayCaptionTopicResolutionMigrationName =
+  '20260825180000_display_caption_topic_resolution.sql'
+const durableAdminAiActivationIntentMigrationName =
+  '20260825183000_durable_admin_ai_activation_intent.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -173,6 +181,10 @@ assert.deepEqual(
     adminAiPolicyManagementFacadeMigrationName,
     googleAal2SessionAiMasterMigrationName,
     googleAcademicPreflightLeaseRenewalMigrationName,
+    adminAuthLoginRestoreMigrationName,
+    finalDisplayDeliveryAckMigrationName,
+    displayCaptionTopicResolutionMigrationName,
+    durableAdminAiActivationIntentMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

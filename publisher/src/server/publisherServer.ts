@@ -264,8 +264,11 @@ export function createPublisherServer(dependencies: {
               lecturePublicId: extraction.lecturePublicId,
               pageCount: extraction.pageCount,
               pages: extraction.pages,
+              textAvailable:
+                extraction.textAvailable ?? extraction.textCharCount > 0,
               textCharCount: extraction.textCharCount,
               textSha256: extraction.textSha256,
+              textTruncated: extraction.textTruncated ?? false,
             },
             ok: true,
           },

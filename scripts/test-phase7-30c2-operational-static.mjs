@@ -328,10 +328,17 @@ assert.match(
 assert.match(displayToken, /export async function createBoundDisplayToken/)
 assert.match(
   displayToken,
-  /createDisplayTokenForClaims\([\s\S]*issuedAt[\s\S]*expiresAt[\s\S]*jti[\s\S]*expiresAt > issuedAt \+ MAX_TOKEN_TTL_SECONDS/,
+  /MAX_NEW_TOKEN_TTL_SECONDS = 90 \* 60[\s\S]*MAX_LEGACY_TOKEN_TTL_SECONDS = 95 \* 60/,
+)
+assert.match(
+  displayToken,
+  /createDisplayTokenForClaims\([\s\S]*issuedAt[\s\S]*expiresAt[\s\S]*jti[\s\S]*allowLegacyReplay[\s\S]*maxTtlSeconds = allowLegacyReplay[\s\S]*expiresAt > issuedAt \+ maxTtlSeconds/,
 )
 assert.match(issueDisplaySession, /hasLegacyAdminFields\(body\)/)
-assert.match(issueDisplaySession, /body\.appSessionToken\.trim\(\)\.length === 0/)
+assert.match(
+  issueDisplaySession,
+  /body\.appSessionToken\.trim\(\)\.length === 0/,
+)
 assert.match(issueDisplaySession, /verifyGoogleAdminOperationRequest/)
 assert.match(issueDisplaySession, /issue_google_admin_display_session_v1/)
 assert.match(issueDisplaySession, /target_request_id: body\.requestId/)
@@ -356,9 +363,9 @@ assert.doesNotMatch(
 for (const consumer of [operatorLiveSnapshot, issuePdfAccessToken]) {
   assert.match(consumer, /verify_and_claim_google_display_session_v1/)
   assert.match(consumer, /googleDisplayBinding\?\.recognized === true/)
-  assert.match(consumer, /verify_google_display_terminal_session_v1/)
-  assert.match(consumer, /descendant\?\.recognized !== true/)
-  assert.match(consumer, /claimed_by_other/)
+  assert.doesNotMatch(consumer, /verify_google_display_terminal_session_v1/)
+  assert.doesNotMatch(consumer, /getDisplayTerminalTokenClaims/)
+  assert.doesNotMatch(consumer, /admin_get_lecture_operator_access_v1/)
   assert.doesNotMatch(
     consumer,
     /verify_display_realtime_session_v1|verify_display_snapshot_fallback_v1/,
@@ -445,10 +452,7 @@ assert.match(
   presenterToken,
   /MANUAL_CODE_ALPHABET[\s\S]*presenter-manual-output[\s\S]*Array\.from\(\{ length: 8 \}/,
 )
-assert.match(
-  managePresenterConnection,
-  /hasLegacyAdminFields\(body\)/,
-)
+assert.match(managePresenterConnection, /hasLegacyAdminFields\(body\)/)
 assert.match(managePresenterConnection, /verifyGoogleAdminOperationRequest/)
 assert.match(
   managePresenterConnection,
@@ -628,10 +632,7 @@ for (const name of [
   assert.match(databaseTypes, new RegExp(`${name}: \\{[\\s\\S]*Returns: Json`))
 }
 
-assert.match(
-  managePdfPublications,
-  /hasLegacyAdminFields\(body\)/,
-)
+assert.match(managePdfPublications, /hasLegacyAdminFields\(body\)/)
 assert.match(managePdfPublications, /verifyGoogleAdminOperationRequest/)
 assert.match(
   managePdfPublications,

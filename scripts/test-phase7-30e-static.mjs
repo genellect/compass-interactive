@@ -578,7 +578,7 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?別ブラウザ用リンクをコピー[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
+  /画面共有を開始する[\s\S]*?URLをコピー[\s\S]*?const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?新しいURLを発行[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
   'the lifecycle must replace an already-connected Display and use the connected replacement for cross-surface checks',
 )
 assert.match(
@@ -634,8 +634,8 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /popupSession = await issuedDisplaySession[\s\S]*installClipboardCapture\(admin\.page\)[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*issue-display-session[\s\S]*getByRole\('button', \{ name: '別ブラウザ用リンクをコピー' \}\)[\s\S]*\.click\(\)[\s\S]*await expect\([\s\S]*getByRole\('button', \{ name: 'リンクをコピーしました' \}\)[\s\S]*\)\.toBeVisible\(\)[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
-  'the isolated lifecycle Display page must wait for a separately issued one-use URL to finish copying',
+  /displaySessionResponse = admin\.page\.waitForResponse[\s\S]*画面共有を開始する[\s\S]*popupSession[\s\S]*URLをコピー[\s\S]*initialDisplayUrl[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*新しいURLを発行[\s\S]*URLをコピー[\s\S]*URLをコピーしました[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
+  'the lifecycle must reuse one copied URL until explicit replacement, then copy the replacement before opening it',
 )
 assert.match(
   localLifecycleBrowser,

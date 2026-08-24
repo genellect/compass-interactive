@@ -6,6 +6,7 @@ import {
   SUPABASE_REQUEST_TIMEOUT_MS,
 } from './supabase/requestPolicy'
 import { invokeEdgeFunction } from './supabase/transport'
+import { aiActivationIntentRepository } from './supabase/aiActivationIntentRepository'
 import { aiMasterAuthorizationRepository } from './supabase/aiMasterAuthorizationRepository'
 import {
   adminContentAiRepository,
@@ -31,6 +32,7 @@ export type {
   AiMasterAuthorizationScope,
   AiMasterAuthorizationStatus,
 } from './supabase/aiMasterAuthorizationRepository'
+export type { AiActivationIntentStatus } from './supabase/aiActivationIntentRepository'
 export {
   AdminProviderAttemptError,
   shouldRetainAdminProviderAttempt,
@@ -79,6 +81,33 @@ type IssueDisplaySessionResponse = {
     expiresAt?: string
     topic?: string
   } | null
+}
+
+export type AdminDisplayDeliveryState =
+  'connected' | 'ended' | 'reconnecting' | 'synced' | 'waiting'
+
+export type AdminDisplaySessionStatus = {
+  connectedAt: string | null
+  connectionGeneration: number
+  currentDisplayVersion: number | null
+  currentPage: number | null
+  expiresAt: string
+  hardStopAt: string
+  lastAppliedDisplayVersion: number | null
+  lastHeartbeatAt: string | null
+  lastRenderedPage: number | null
+  revokeReason: string | null
+  revokedAt: string | null
+  sessionId: string
+  state: AdminDisplayDeliveryState
+}
+
+type DisplaySessionStatusResponse = {
+  message?: string
+  ok?: boolean
+  runtimeEnabled?: boolean
+  serverTime?: string
+  session?: AdminDisplaySessionStatus | null
 }
 
 export type AdminDisplayState = {
@@ -557,6 +586,7 @@ export type ManagePollsRequest =
       pollId: string
     }
 export const supabaseAdminRepository = {
+  ...aiActivationIntentRepository,
   ...aiMasterAuthorizationRepository,
 
   async manageAdminSessions(request: {
@@ -631,6 +661,36 @@ export const supabaseAdminRepository = {
               topic: data.realtime.topic,
             }
           : null,
+    }
+  },
+
+  async getDisplaySessionStatus(request: {
+    adminToken: AdminOperationCredentialInput
+    lectureSessionId: string
+  }) {
+    const { data, error } =
+      await invokeEdgeFunction<DisplaySessionStatusResponse>(
+        'display-session-status',
+        {
+          body: { action: 'status', ...request },
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+        },
+      )
+    if (error) {
+      throw new Error(
+        await getFunctionErrorMessage(
+          error,
+          'Display status could not be loaded.',
+        ),
+      )
+    }
+    if (!data?.ok) {
+      throw new Error(data?.message ?? 'Display status could not be loaded.')
+    }
+    return {
+      runtimeEnabled: data.runtimeEnabled === true,
+      serverTime: data.serverTime ?? null,
+      session: data.session ?? null,
     }
   },
 

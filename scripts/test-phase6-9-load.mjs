@@ -26,25 +26,10 @@ assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_INTERVAL_MS\s*=\s*5_000/)
 assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_INITIAL_JITTER_MS\s*=\s*5_000/)
 assert.match(liveSyncPolicy, /STUDENT_LIVE_SYNC_JITTER_MS\s*=\s*0/)
 assert.match(liveSyncPolicy, /LIVE_SYNC_JITTER_MS\s*=\s*1_000/)
+assert.match(context, /\.\.\.getLiveSyncRouteOptions\(normalizedPathname\)/)
 assert.match(
-  context,
-  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,120}STUDENT_LIVE_SYNC_INTERVAL_MS/,
-)
-assert.match(
-  context,
-  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_JITTER_MS/,
-)
-assert.match(
-  context,
-  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
-)
-assert.match(
-  context,
-  /runImmediately:\s*normalizedPathname\s*===\s*'\/lecture'/,
-)
-assert.match(
-  context,
-  /visibilityJitterMs:[\s\S]{0,100}normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,100}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
+  liveSyncPolicy,
+  /pathname === '\/lecture'[\s\S]*?foregroundIntervalMs: STUDENT_LIVE_SYNC_INTERVAL_MS[\s\S]*?initialJitterMs: STUDENT_LIVE_SYNC_INITIAL_JITTER_MS[\s\S]*?jitterMs: STUDENT_LIVE_SYNC_JITTER_MS[\s\S]*?runImmediately: true[\s\S]*?visibilityJitterMs: STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
 )
 assert.match(
   adaptiveSync,

@@ -44,7 +44,7 @@ assert.match(envExample, /VITE_PHASE7_26_BROWSER_PDF_PUBLISHING=false/)
 assert.doesNotMatch(envExample, /VITE_PHASE7_26_BROWSER_PDF_PUBLISHING=true/)
 
 assert.match(preflight, /new Worker\(/)
-assert.match(preflight, /\[bytes\]/)
+assert.match(preflight, /\[\s*bytes,?\s*\]/)
 assert.match(preflightWorker, /15 \* 1024 \* 1024/)
 assert.match(preflightWorker, /MAX_PDF_PAGES = 75/)
 assert.match(preflightWorker, /MAX_PDF_TEXT_CHARACTERS = 20_000/)
@@ -52,7 +52,7 @@ assert.match(preflightWorker, /crypto\.subtle\.digest\('SHA-256'/)
 assert.match(preflightWorker, /getTextContent/)
 assert.match(
   preflightWorker,
-  /excerptId:\s*await sha256Hex\(\s*`\$\{pdfSha256\}:\$\{index \+ 1\}:\$\{text\}`,\s*\)/,
+  /excerptId:\s*await sha256Hex\(\s*`\$\{pdfSha256\}:\$\{index \+ 1\}:\$\{text\}`[,]?\s*\)/,
 )
 assert.match(preflightWorker, /isOffscreenCanvasSupported: false/)
 assert.match(preflightWorker, /useWasm: false/)
@@ -60,6 +60,10 @@ assert.doesNotMatch(
   preflightWorker,
   /getImageData|createElement\(['"]canvas|Tesseract|page\.render\(/,
 )
+assert.match(preflightWorker, /extractedText\.slice\(0, remainingCharacters\)/)
+assert.match(preflightWorker, /textAvailable: textCharCount > 0/)
+assert.match(preflightWorker, /textTruncated/)
+assert.doesNotMatch(preflightWorker, /'text_limit'|'no_text_layer'/)
 
 for (const action of ['discover', 'initiate', 'status', 'finalize', 'abort']) {
   assert.match(publicationClient, new RegExp(`action: '${action}'`))
@@ -76,6 +80,11 @@ assert.match(publicationClient, /parsed\.origin !== configuredWorker\.origin/)
 assert.match(publicationClient, /\/v2\/pdf-publications\/\$\{publicationId\}/)
 assert.match(publicationClient, /response\.body\?\.getReader\(\)/)
 assert.match(publicationClient, /const FINALIZE_TIMEOUT_MS = 60 \* 1000/)
+assert.match(
+  publicationClient,
+  /textCharCount: Math\.max\(1, input\.preflight\.textCharCount\)/,
+  'textless delivery keeps compatibility with the positive v1 metadata count',
+)
 assert.match(
   publicationClient,
   /action: 'finalize'[\s\S]*?FINALIZE_TIMEOUT_MS,\s*\)/,
@@ -126,8 +135,9 @@ assert.match(
 assert.match(adminPdfExtraction, /response\.body\?\.getReader\(\)/)
 assert.match(
   adminPdfExtraction,
-  /await issuePdfAccessSession\(\{[\s\S]*?return cached/,
+  /await issuePdfAccessSession\(\{[\s\S]*?return requireAiText\(cached\)/,
 )
+assert.match(adminPdfExtraction, /AI分析は利用できません/)
 assert.doesNotMatch(adminPdfExtraction, /response\.arrayBuffer\(\)/)
 assert.match(browserPublicationHook, /restoreBrowserPdfPublication/)
 assert.match(
@@ -140,10 +150,43 @@ assert.match(browserPublicationHook, /abortInterruptedPdfPublication/)
 assert.match(browserPublicationHook, /browserPublishingEnabled/)
 assert.match(
   browserPublicationHook,
-  /refreshAdminPdfDocuments\(targetLectureSessionId, adminToken\)[\s\S]*onPublicationActivatedRef\.current\(targetLectureSessionId, \{[\s\S]*documentId:[\s\S]*documentVersion:[\s\S]*manifestVersion:/,
+  /PDF_PUBLICATION_RECOVERY_DELAYS_MS = \[2_000, 5_000, 10_000, 30_000\]/,
+)
+assert.match(
+  browserPublicationHook,
+  /retryDeadline = Date\.parse\(stored\.expiresAt\)[\s\S]*retryDeadline <= Date\.now\(\)[\s\S]*markRecoveryDeadlineReached\(\)/,
+  'committed publication recovery must stop at its stored server deadline',
+)
+assert.match(
+  browserPublicationHook,
+  /window\.addEventListener\('online',[\s\S]*window\.addEventListener\('pageshow',[\s\S]*document\.addEventListener\('visibilitychange'/,
+  'network, page-cache and visibility resumption must wake publication recovery',
+)
+assert.match(
+  browserPublicationHook,
+  /prepareBrowserPdfPublicationFinalization\(stored\)[\s\S]*scheduleRecovery\(\)/,
+  'a committed response must keep the same finalization identity and schedule bounded recovery',
+)
+assert.match(
+  browserPublicationHook,
+  /refreshAdminPdfDocuments\(\s*targetLectureSessionId,\s*adminToken,?\s*\)[\s\S]*onPublicationActivatedRef\.current\(targetLectureSessionId, \{[\s\S]*documentId:[\s\S]*documentVersion:[\s\S]*manifestVersion:/,
+)
+assert.match(
+  browserPublicationHook,
+  /refreshAdminPdfDocumentsRef\.current\([\s\S]*onPublicationActivatedRef\.current\([\s\S]*forgetBrowserPdfPublication\(activeLectureSessionId\)/,
+  'recovery state is retained until authoritative refresh and activation finish',
+)
+assert.match(
+  browserPublicationHook,
+  /recoveryControl\?\.cancelScheduled\(\)[\s\S]*browserPdfPublicationClient\.abort\([\s\S]*recoveryControl\?\.resumeNow\(\)/,
+  'discard fences recovery before abort and reconciles if finalize won the race',
 )
 assert.match(adminPdfControl, /中断した公開を破棄してやり直す/)
 assert.match(adminPdfControl, /講義を作成して資料を公開する/)
+assert.match(adminPdfControl, /PDFを選択（15MB・75ページ以下）/)
+assert.doesNotMatch(adminPdfControl, /20,000文字以下/)
+assert.match(browserPublicationHook, /AI分析には先頭20,000文字を使用します/)
+assert.match(browserPublicationHook, /AI分析は利用できません/)
 for (const removedCopy of [
   '大きい資料は公開やAI分析に時間と費用がかかります',
   '資料はこのブラウザで選択した状態を保ちます',

@@ -18,7 +18,8 @@ type ClaimResult = {
   hard_stop_at?: string
   lecture_session_id?: string
   session_id?: string
-  status?: 'claimed' | 'claimed_by_other' | 'expired' | 'invalid' | 'unavailable'
+  status?:
+    'claimed' | 'claimed_by_other' | 'expired' | 'invalid' | 'unavailable'
   topic?: string
 }
 
@@ -84,10 +85,7 @@ Deno.serve(async (request) => {
     )
   }
   if (displayClaims?.lectureSessionId !== body.lectureSessionId) {
-    return jsonResponse(
-      { message: 'Invalid Display session.', ok: false },
-      401,
-    )
+    return jsonResponse({ message: 'Invalid Display session.', ok: false }, 401)
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -110,7 +108,7 @@ Deno.serve(async (request) => {
   }
   const { data: authData, error: authError } =
     await service.auth.getUser(bearerToken)
-  if (authError || !authData.user) {
+  if (authError || !authData.user || authData.user.is_anonymous !== true) {
     return jsonResponse({ message: 'Authentication required.', ok: false }, 401)
   }
 
@@ -156,10 +154,7 @@ Deno.serve(async (request) => {
   }
 
   if (googleBinding?.recognized !== true) {
-    return jsonResponse(
-      { message: 'Invalid Display session.', ok: false },
-      401,
-    )
+    return jsonResponse({ message: 'Invalid Display session.', ok: false }, 401)
   }
   const result = (googleBinding.realtime ?? {}) as ClaimResult
   if (result.status === 'claimed_by_other') {

@@ -44,10 +44,12 @@ export type AdminLedgerOperationKey =
 
 export class AdminIdentityError extends Error {
   readonly code: string
+  readonly retryAfterMs: number
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, retryAfterMs = 0) {
     super(message)
     this.code = code
+    this.retryAfterMs = retryAfterMs
     this.name = 'AdminIdentityError'
   }
 }
@@ -111,7 +113,23 @@ function getIdentityMessage(code: string) {
   )
 }
 
-async function readIdentityErrorCode(error: unknown) {
+function readRetryAfterMs(response: Response) {
+  const value = response.headers.get('retry-after')
+  if (!value) return 0
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(
+      Math.max(1_000, Math.ceil(seconds * 1_000)),
+      60 * 60 * 1_000,
+    )
+  }
+  const retryAt = Date.parse(value)
+  return Number.isFinite(retryAt)
+    ? Math.min(Math.max(1_000, retryAt - Date.now()), 60 * 60 * 1_000)
+    : 0
+}
+
+async function readIdentityError(error: unknown) {
   if (!(error instanceof FunctionsHttpError)) return null
   const response = error.context
   if (!(response instanceof Response)) return null
@@ -134,27 +152,32 @@ async function readIdentityErrorCode(error: unknown) {
     if (text.length > 4_096) return null
     const body = JSON.parse(text) as { code?: unknown }
     return typeof body.code === 'string' && body.code in ADMIN_IDENTITY_MESSAGES
-      ? body.code
+      ? { code: body.code, retryAfterMs: readRetryAfterMs(response) }
       : null
   } catch {
     return null
   }
 }
 
-async function invoke(body: Record<string, unknown>) {
+async function invoke(
+  body: Record<string, unknown>,
+  options: { notifyInvalidAppSession?: boolean } = {},
+) {
   const { data, error } =
     await adminSupabase.functions.invoke<IdentityResponse>(
       'admin-identity-session',
       { body, timeout: 10_000 },
     )
   if (error || !data?.ok) {
+    const responseError = await readIdentityError(error)
     const code =
       (typeof data?.code === 'string' && data.code in ADMIN_IDENTITY_MESSAGES
         ? data.code
         : null) ??
-      (await readIdentityErrorCode(error)) ??
+      responseError?.code ??
       'identity_request_failed'
     if (
+      options.notifyInvalidAppSession !== false &&
       typeof body.appSessionToken === 'string' &&
       (code === 'aal2_required' ||
         code === 'app_session_invalid' ||
@@ -162,15 +185,23 @@ async function invoke(body: Record<string, unknown>) {
     ) {
       notifyGoogleAdminSessionInvalid(body.appSessionToken)
     }
-    throw new AdminIdentityError(code, getIdentityMessage(code))
+    throw new AdminIdentityError(
+      code,
+      getIdentityMessage(code),
+      responseError?.retryAfterMs ?? 0,
+    )
   }
   return data
 }
 
-export async function admitGoogleAdmin(invitationToken?: string) {
+export async function admitGoogleAdmin(
+  loginRequestId: string,
+  invitationToken?: string,
+) {
   const result = await invoke({
     action: 'admit',
     invitationToken: invitationToken || undefined,
+    loginRequestId,
   })
   if (result.eligible !== true) {
     throw new AdminIdentityError(
@@ -182,12 +213,14 @@ export async function admitGoogleAdmin(invitationToken?: string) {
 
 export async function beginGoogleAdminStepUp(
   challengedFactorId: string,
+  loginRequestId: string,
   invitationToken?: string,
 ) {
   const result = await invoke({
     action: 'beginStepUp',
     challengedFactorId,
     invitationToken: invitationToken || undefined,
+    loginRequestId,
   })
   if (!result.stepUpNonce || !result.expiresAt) {
     throw new AdminIdentityError(
@@ -198,8 +231,15 @@ export async function beginGoogleAdminStepUp(
   return { expiresAt: result.expiresAt, stepUpNonce: result.stepUpNonce }
 }
 
-export async function completeGoogleAdminStepUp(stepUpNonce: string) {
-  const result = await invoke({ action: 'completeStepUp', stepUpNonce })
+export async function completeGoogleAdminStepUp(
+  stepUpNonce: string,
+  loginRequestId: string,
+) {
+  const result = await invoke({
+    action: 'completeStepUp',
+    loginRequestId,
+    stepUpNonce,
+  })
   if (!result.appSessionToken || !result.session) {
     throw new AdminIdentityError(
       'step_up_invalid',
@@ -212,8 +252,28 @@ export async function completeGoogleAdminStepUp(stepUpNonce: string) {
   }
 }
 
+export async function restoreGoogleAdminSessionFromAuth(restoreSeed: string) {
+  const result = await invoke({ action: 'restore', restoreSeed })
+  if (!result.appSessionToken || !result.session) {
+    throw new AdminIdentityError(
+      'app_session_invalid',
+      getIdentityMessage('app_session_invalid'),
+    )
+  }
+  return {
+    appSessionToken: result.appSessionToken,
+    session: result.session,
+  }
+}
+
 export async function restoreGoogleAdminSession(appSessionToken: string) {
-  const result = await invoke({ action: 'status', appSessionToken })
+  // A stale tab-scoped token may still be rotated from the same live AAL2
+  // Supabase Auth session. Do not broadcast terminal invalidation until the
+  // route has attempted that server-bound recovery path.
+  const result = await invoke(
+    { action: 'status', appSessionToken },
+    { notifyInvalidAppSession: false },
+  )
   if (!result.session) {
     throw new AdminIdentityError(
       'app_session_invalid',

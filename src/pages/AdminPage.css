@@ -11,6 +11,27 @@
   display: none;
 }
 
+.display-launch-instructions {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 14px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.display-launch-instructions p {
+  margin: 0;
+}
+
+.display-launch-instructions > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .teacher-setup-stack {
   display: grid;
   gap: 22px;
@@ -71,6 +92,20 @@
   font-variant-numeric: tabular-nums;
   min-width: 76px;
   text-align: center;
+}
+
+.lecture-transport-bar {
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--background) 72%, transparent);
+  margin-bottom: 0;
+  top: 12px;
+  z-index: 12;
+}
+
+.lecture-transport-label,
+.lecture-transport-shortcut {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .admin-pdf-page-jump,
@@ -187,8 +222,34 @@
 }
 
 @media (max-width: 640px) {
+  .admin-page-shell.has-lecture-transport {
+    padding-bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .display-launch-instructions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .display-launch-instructions > div {
+    flex-direction: column;
+  }
+
   .admin-pdf-page-controller {
-    position: static;
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    left: 8px;
+    margin: 0;
+    max-height: min(156px, 38dvh);
+    overflow: auto;
+    position: fixed;
+    right: 8px;
+    top: auto;
+    width: auto;
+    z-index: 40;
+  }
+
+  .lecture-transport-shortcut {
+    display: none;
   }
 
   .admin-presenter-binding {
