@@ -60,7 +60,8 @@ set
 where binding.expires_at > least(
   binding.hard_stop_at,
   binding.issued_at + interval '90 minutes'
-);
+)
+  and binding.hard_stop_at > binding.issued_at;
 
 update public.display_realtime_sessions as binding
 set
@@ -101,8 +102,18 @@ alter table private.admin_google_display_sessions
     or (revoked_at is not null and revoke_reason is not null)
   ),
   add constraint admin_google_display_sessions_exact_hard_stop_check check (
-    expires_at <= hard_stop_at
-    and expires_at <= issued_at + interval '90 minutes'
+    (
+      hard_stop_at > issued_at
+      and expires_at <= hard_stop_at
+      and expires_at <= issued_at + interval '90 minutes'
+    )
+    or (
+      -- Preserve the already-terminal shape written by the C2 migration.
+      -- It cannot pass live or terminal verification after this migration.
+      hard_stop_at <= issued_at
+      and expires_at <= hard_stop_at + interval '5 minutes'
+      and expires_at <= issued_at + interval '90 minutes'
+    )
   );
 
 with ranked as (

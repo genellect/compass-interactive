@@ -37,8 +37,8 @@ select ok(
     '73034000-0000-4000-8000-00000000000e'::uuid,
     '2026-01-01 00:00:00+00'::timestamptz,
     '2026-01-01 00:05:00+00'::timestamptz
-  ) @> '{"recognized":true,"valid":true}'::jsonb,
-  'the five-argument terminal verifier accepts the exact durable binding'
+  ) @> '{"recognized":true,"valid":false}'::jsonb,
+  'the legacy binding is recognized but terminal access remains disabled'
 );
 select ok(
   public.verify_google_display_terminal_session_v1(
@@ -48,7 +48,7 @@ select ok(
     '2026-01-01 00:00:00+00'::timestamptz,
     '2026-01-01 00:05:00+00'::timestamptz
   ) @> '{"recognized":true,"valid":false}'::jsonb,
-  'a different Display Auth user cannot take over the terminal binding'
+  'a different Display Auth user also receives an invalid terminal compatibility result'
 );
 reset role;
 
@@ -66,9 +66,8 @@ select ok(
       and display_session.admin_auth_user_id =
         '73034000-0000-4000-8000-000000000002'::uuid
       and not display_session.realtime_enabled
-      and display_session.display_auth_user_id =
-        '73034000-0000-4000-8000-00000000000e'::uuid
-      and display_session.claimed_at is not null
+      and display_session.display_auth_user_id is null
+      and display_session.claimed_at is null
       and display_session.issued_at =
         '2026-01-01 00:00:00+00'::timestamptz
       and display_session.expires_at =
@@ -76,7 +75,7 @@ select ok(
       and display_session.hard_stop_at =
         '2026-01-01 00:00:00+00'::timestamptz
   ),
-  'terminal claim changes only the Display browser binding metadata'
+  'terminal compatibility verification does not claim Display browser metadata'
 );
 
 select ok(
