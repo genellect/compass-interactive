@@ -7,6 +7,8 @@
 
 > [!IMPORTANT]
 > 本書の`ADMIN_PIN`、`BILLING_PIN`、API利用PINに関するPhase 0〜6の記述は、当時の実装判断を保存するhistorical contractである。承認済みのPhase 7.30最終契約が優先し、MFAはGoogle Authenticator互換のSupabase標準TOTPだけを用いる。Phase 7.30Eは`ADMIN_PIN`の現行application経路を撤去し、独立して確認したHosted deployment evidence後のoperator cutoverだけがdatabase verifierを不可逆にfenceする。personal AI PINの証拠完了後は`BILLING_PIN`互換RPCも別境界でProduction前に撤去する。共有PINをrollback経路として温存せず、Google-only immutable revisionとoperator owner recoveryを使う。詳細は`docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`、`docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md`と`docs/ROADMAP.md`を正本とする。
+>
+> 2026-08-25に承認された講義UX修正では、`docs/LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`を正本とする。通常講義のAI有効化は有効なGoogle/TOTP AAL2 application sessionから一操作で行い、personal AI PINや追加TOTPを要求しない。Displayの別ブラウザ起動、講義終了時／最長90分の認可、事前Poll/AI準備、常設スライド操作、PDF回復、本番反映について本書のhistorical記述と矛盾する場合は同計画を優先する。
 
 ## 1. このガイドの位置付け
 

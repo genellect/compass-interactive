@@ -1,8 +1,8 @@
 # Agent Execution and Reasoning Routing
 
-Status: Operational through the Phase 7.30F source/local readiness candidate
+Status: Operational through the final lecture UX requirements baseline
 Scope: agent responsibilities and reasoning budget for Phase 7.29 onward
-Last verified: 2026-08-12
+Last verified: 2026-08-25
 
 ## General rule
 
@@ -31,6 +31,7 @@ Production secrets or independent deployment authority.
 | 7.30E Google-only cutover and regression         | **Ultra**                                                                 | Old-client, explicit backfill and immutable-rollback review                                | Ownership claim/backfill, full Phase 0-7.29 regression and complete shared-PIN removal must avoid lockout or privilege expansion                                                                                                           |
 | 7.30F Hosted/Human identity migration gate       | **Ultra**                                                                 | External final read-only review strongly recommended                                       | Source tooling may reach only `READY_FOR_SEPARATE_HOSTED_EXECUTION`; exact hosted state, MFA, operator owner recovery, two-admin separation and Google-only rollback decide later canary readiness; this is not the Phase 7.33 formal gate |
 | Lecture Cycle Production Candidate               | **Ultra controller**, Extra High bounded lane tasks                       | Read-only security, lecture UX and release review                                          | Four cloud lanes prepare a private-source, no-regression candidate in 50 active hours; only the controller integrates, and Hosted/Human/canary gates remain ordered and separately approved                                                |
+| Final Lecture UX and Production Completion       | **Ultra controller plus subagents**, `xhigh` bounded implementers         | Read-only Auth/RLS, Display/Realtime and UX/reliability review                              | One controller reconciles identity, lifecycle, Realtime, PDF and Production evidence; focused writers stay within isolated components and one shared integration owner                                                                  |
 | 7.31A GitHub governance                          | **Ultra**                                                                 | Independent supply-chain and repository-governance review                                  | Rulesets, release authority and history exposure determine whether later publication is safe                                                                                                                                               |
 | 7.31B public-source readiness                    | **Ultra**                                                                 | External history/secret/license review                                                     | Visibility is difficult to reverse and exposes every reachable Git surface                                                                                                                                                                 |
 | 7.31C contest environment                        | **Ultra**                                                                 | Independent identity/isolation/cost review plus human reviewer E2E                         | Real `instructor + can_use_ai` access must remain isolated from Production without a mock bypass                                                                                                                                           |
@@ -49,6 +50,13 @@ Write-capable lanes always use separate branches/worktrees. The controller
 owns integration and the final `LECTURE_CYCLE_SOURCE_READY`,
 `READY_FOR_BOUNDED_PRODUCTION_CANARY`, `PASS` or `HOLD` decision defined by
 [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md).
+
+The approved final lecture UX lane uses exactly two profiles: `xhigh` for
+bounded implementation and deterministic tests, or `ultra + subagent` for
+cross-cutting Auth/RLS/lifecycle/Realtime work, Production integration and
+final acceptance. Its canonical requirements, role assignments, complexity
+approval boundary and completion states are in
+[`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md).
 
 ## External reviewer boundary
 
