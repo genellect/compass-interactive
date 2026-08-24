@@ -353,9 +353,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       new RegExp(`^display:${lecture.id}:[0-9a-f-]{36}$`, 'i'),
     )
     await expect(
-      adminPage
-        .locator('.display-launch-instructions')
-        .getByRole('status'),
+      adminPage.locator('.display-launch-instructions').getByRole('status'),
     ).toContainText('コピーしました。')
     const displayUrl = await copiedDisplayUrl(adminPage)
     expect(displayUrl).toContain(`/display#`)
@@ -405,31 +403,35 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await displayPage.evaluate(() => {
       const root = document.documentElement
       root.removeAttribute('data-display-page-probe-elapsed-ms')
+      root.removeAttribute('data-display-page-probe-rendered-page')
       const startedAt = performance.now()
-      const observer = new MutationObserver(() => {
-        const pageChanged = Array.from(
-          document.querySelectorAll('.pdf-page-controls'),
-        ).some((controls) => controls.textContent?.includes('2 / 3'))
-        if (!pageChanged) return
+      const handleRendered = (event: Event) => {
+        if (!(event instanceof CustomEvent) || event.detail?.page !== 2) return
         root.dataset.displayPageProbeElapsedMs = String(
           performance.now() - startedAt,
         )
-        observer.disconnect()
-      })
-      observer.observe(document.body, {
-        characterData: true,
-        childList: true,
-        subtree: true,
-      })
+        root.dataset.displayPageProbeRenderedPage = String(event.detail.page)
+        window.removeEventListener(
+          'compass:display-pdf-rendered',
+          handleRendered,
+        )
+      }
+      window.addEventListener('compass:display-pdf-rendered', handleRendered)
     })
     await adminPage
       .locator('.admin-pdf-page-controller')
       .locator('button')
       .filter({ hasText: /次/ })
       .click()
-    await expect(displayPage.getByText('2 / 3', { exact: true })).toBeVisible({
-      timeout: 3_000,
-    })
+    await expect
+      .poll(
+        () =>
+          displayPage
+            .locator('html')
+            .getAttribute('data-display-page-probe-rendered-page'),
+        { timeout: 3_000 },
+      )
+      .toBe('2')
     const pageAccelerationValue = await displayPage
       .locator('html')
       .getAttribute('data-display-page-probe-elapsed-ms')
@@ -437,11 +439,10 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     const pageAccelerationMs = Number(pageAccelerationValue)
     expect(Number.isFinite(pageAccelerationMs)).toBe(true)
     expect(pageAccelerationMs).toBeLessThan(2_000)
-    await displayPage
-      .locator('html')
-      .evaluate((element) =>
-        element.removeAttribute('data-display-page-probe-elapsed-ms'),
-      )
+    await displayPage.locator('html').evaluate((element) => {
+      element.removeAttribute('data-display-page-probe-elapsed-ms')
+      element.removeAttribute('data-display-page-probe-rendered-page')
+    })
 
     const streamId = randomUUID()
     const captionOperationId = randomUUID()
