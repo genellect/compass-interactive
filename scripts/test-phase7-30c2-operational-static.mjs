@@ -491,7 +491,7 @@ assert.match(
 )
 assert.match(
   pgTap,
-  /the first Display browser atomically claims the live root binding[\s\S]*a different browser cannot take over the claimed Display session[\s\S]*Admin-session revocation immediately invalidates its Display capability/,
+  /the first Display browser atomically claims the live root binding[\s\S]*a different browser cannot take over the claimed Display session[\s\S]*a superseded Display capability remains invalid after Admin-session revocation/,
 )
 assert.match(
   pgTap,

@@ -126,7 +126,7 @@ assert.match(
 )
 assert.match(
   pgTap,
-  /the C2 policy matrix contains exactly 75 approved operations/,
+  /the C2 policy matrix contains exactly 81 approved operations/,
 )
 assert.match(pgTap, /only service_role can execute the C2 public facades/)
 assert.match(

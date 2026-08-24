@@ -35,8 +35,8 @@ SELECT is(
     FROM private.admin_google_operation_policies
     WHERE edge_function <> 'manage-admin-ledger'
   ),
-  75,
-  'the C2 policy matrix contains exactly 75 approved operations'
+  81,
+  'the C2 policy matrix contains exactly 81 approved operations'
 );
 SELECT is(
   (
@@ -44,8 +44,8 @@ SELECT is(
     FROM private.admin_google_operation_policies
     WHERE edge_function <> 'manage-admin-ledger'
   ),
-  20,
-  'the policy matrix covers exactly 20 operational Admin Edge functions'
+  23,
+  'the policy matrix covers exactly 23 operational Admin Edge functions'
 );
 SELECT is(
   (

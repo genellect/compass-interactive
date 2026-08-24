@@ -1204,8 +1204,8 @@ SELECT is(
     '00000000-0000-4000-8000-00000000d209'::uuid,
     '00000000-0000-4000-8000-00000000d220'::uuid
   ) ->> 'reason',
-  'inactive',
-  'Admin-session revocation immediately invalidates its Display capability'
+  'session_replaced',
+  'a superseded Display capability remains invalid after Admin-session revocation'
 );
 RESET ROLE;
 
