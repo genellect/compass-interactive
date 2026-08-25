@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { DisplayView } from '../components/DisplayView'
 import { useCompassState } from '../hooks/useCompassState'
 import {
@@ -10,9 +10,21 @@ import { isPhase728DisplayRealtimeEnabled } from '../lib/featureFlags'
 import {
   canFallbackFromDisplayRealtimeClaim,
   claimDisplayRealtimeSession,
+  createDisplaySessionReporter,
   subscribeClaimedDisplayRealtimeSession,
   type ClaimedDisplayRealtimeSession,
 } from '../display/displayRealtime'
+import {
+  clearStoredDisplayLaunch,
+  persistClaimedDisplayLaunch,
+  readDisplayLaunch,
+  stripDisplayLaunchFragment,
+} from '../display/displaySessionStorage'
+import {
+  getDisplayPdfRenderKey,
+  subscribeDisplayPdfRendered,
+} from '../display/displayRenderEvents'
+import { getLatestPublicSummary } from '../display/displaySummary'
 
 export function DisplayPage() {
   const {
@@ -25,7 +37,6 @@ export function DisplayPage() {
     hasJoinedLectureSession,
     lecture,
     openPolls,
-    participantCount,
     pollResults,
     pollResultsError,
     pollsError,
@@ -36,28 +47,30 @@ export function DisplayPage() {
     setOperatorLiveAccess,
     isSessionSyncPaused,
     sessionSyncMessage,
+    summaries,
     visibleCommentCount,
     visibleComments,
   } = useCompassState()
   const [displayAccessError, setDisplayAccessError] = useState<string | null>(
     null,
   )
-  const [displayLaunch] = useState(() => {
-    const fragment = new URLSearchParams(window.location.hash.slice(1))
-    return {
-      displayToken: fragment.get('token') ?? '',
-      lectureCode: fragment.get('code') ?? '',
-      lectureSessionId: fragment.get('lecture') ?? '',
-    }
-  })
+  const [displayLaunch] = useState(readDisplayLaunch)
   const operatorCleanupTimerRef = useRef<number | null>(null)
   const refreshDisplayStateRef = useRef(refreshDisplayState)
   refreshDisplayStateRef.current = refreshDisplayState
+  const displayStateRef = useRef(displayState)
+  displayStateRef.current = displayState
+  const lastPdfRenderKeyRef = useRef<string | null>(null)
   const displayClaimRef = useRef<Promise<ClaimedDisplayRealtimeSession> | null>(
     null,
   )
   const [displayRealtimeSession, setDisplayRealtimeSession] =
     useState<ClaimedDisplayRealtimeSession | null>(null)
+  const [displayRealtimeSubscribed, setDisplayRealtimeSubscribed] =
+    useState(false)
+  const displayReporterRef = useRef<ReturnType<
+    typeof createDisplaySessionReporter
+  > | null>(null)
   const [localCaption, setLocalCaption] = useState<{
     content: CaptionContent
     updatedAt: number
@@ -82,12 +95,6 @@ export function DisplayPage() {
       window.clearTimeout(operatorCleanupTimerRef.current)
       operatorCleanupTimerRef.current = null
     }
-    window.history.replaceState(
-      null,
-      '',
-      `${window.location.pathname}${window.location.search}`,
-    )
-
     if (hasJoinedMemberAccess) {
       displayClaimRef.current = null
       setDisplayRealtimeSession(null)
@@ -101,7 +108,7 @@ export function DisplayPage() {
       setDisplayRealtimeSession(null)
       setOperatorLiveAccess(null)
       setDisplayAccessError(
-        '管理画面から「共有画面を開く」を押して、もう一度開いてください。',
+        '管理画面から「画面共有を開始する」を押して、もう一度開いてください。',
       )
       return
     }
@@ -115,13 +122,27 @@ export function DisplayPage() {
           lectureSessionId,
         })
         try {
-          realtimeSession = await displayClaimRef.current
+          const claimedSession = await displayClaimRef.current
+          const persisted = persistClaimedDisplayLaunch({
+            displayToken,
+            lectureCode: displayLaunch.lectureCode,
+            lectureSessionId,
+            realtime: claimedSession,
+          })
+          realtimeSession = {
+            ...claimedSession,
+            connectionGeneration: persisted.connectionGeneration,
+          }
+          if (displayLaunch.source === 'fragment') {
+            stripDisplayLaunchFragment()
+          }
         } catch (error) {
           if (canFallbackFromDisplayRealtimeClaim(error)) {
             realtimeSession = null
             displayClaimRef.current = null
           } else {
             if (!disposed) {
+              clearStoredDisplayLaunch()
               setOperatorLiveAccess(null)
               setDisplayRealtimeSession(null)
               setDisplayAccessError(
@@ -164,11 +185,119 @@ export function DisplayPage() {
   ])
 
   useEffect(() => {
+    if (!displayRealtimeSession || !displayLaunch.displayToken) return
+    const reporter = createDisplaySessionReporter({
+      displayToken: displayLaunch.displayToken,
+      onStatus: (status, error) => {
+        document.documentElement.dataset.displayDelivery = status
+        if (error) {
+          document.documentElement.dataset.displayDeliveryError = error.message
+        } else {
+          delete document.documentElement.dataset.displayDeliveryError
+        }
+      },
+      session: displayRealtimeSession,
+    })
+    displayReporterRef.current = reporter
+    return () => {
+      reporter.close()
+      if (displayReporterRef.current === reporter) {
+        displayReporterRef.current = null
+      }
+      delete document.documentElement.dataset.displayDelivery
+      delete document.documentElement.dataset.displayDeliveryError
+    }
+  }, [displayLaunch.displayToken, displayRealtimeSession])
+
+  const reportRenderedDisplayState = useCallback(
+    (rendered: { displayUpdatedAt: string; renderedPage: number }) => {
+      if (!displayRealtimeSubscribed) return
+      displayReporterRef.current?.reportRendered(rendered)
+    },
+    [displayRealtimeSubscribed],
+  )
+
+  useEffect(() => {
+    lastPdfRenderKeyRef.current = null
+    if (!displayRealtimeSession || !displayRealtimeSubscribed) return
+    return subscribeDisplayPdfRendered((rendered) => {
+      const current = displayStateRef.current
+      if (
+        !current ||
+        current.lectureSessionId !== displayRealtimeSession.lectureSessionId ||
+        rendered.lectureSessionId !== displayRealtimeSession.lectureSessionId ||
+        rendered.documentId !== current.pdfDocumentId ||
+        rendered.documentVersion !== current.pdfDocumentVersion ||
+        rendered.manifestVersion !== current.pdfManifestVersion ||
+        rendered.page !== current.currentPdfPage
+      ) {
+        return
+      }
+      lastPdfRenderKeyRef.current = getDisplayPdfRenderKey(rendered)
+      reportRenderedDisplayState({
+        displayUpdatedAt: current.updatedAt,
+        renderedPage: current.currentPdfPage,
+      })
+    })
+  }, [
+    displayRealtimeSession,
+    displayRealtimeSubscribed,
+    reportRenderedDisplayState,
+  ])
+
+  useEffect(() => {
+    if (
+      !displayRealtimeSession ||
+      !displayRealtimeSubscribed ||
+      !displayState ||
+      displayState.lectureSessionId !== displayRealtimeSession.lectureSessionId
+    ) {
+      return
+    }
+    if (displayState.pdfVisible && displayState.pdfDocumentId) {
+      if (
+        !displayState.pdfDocumentVersion ||
+        displayState.pdfManifestVersion < 1
+      ) {
+        return
+      }
+      const expectedRenderKey = getDisplayPdfRenderKey({
+        documentId: displayState.pdfDocumentId,
+        documentVersion: displayState.pdfDocumentVersion,
+        lectureSessionId: displayRealtimeSession.lectureSessionId,
+        manifestVersion: displayState.pdfManifestVersion,
+        page: displayState.currentPdfPage,
+      })
+      if (lastPdfRenderKeyRef.current !== expectedRenderKey) return
+    }
+    const frame = window.requestAnimationFrame(() => {
+      reportRenderedDisplayState({
+        displayUpdatedAt: displayState.updatedAt,
+        renderedPage: displayState.currentPdfPage,
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    displayRealtimeSession,
+    displayRealtimeSubscribed,
+    displayState,
+    reportRenderedDisplayState,
+  ])
+
+  useEffect(() => {
+    setDisplayRealtimeSubscribed(false)
     if (!displayRealtimeSession) return
     document.documentElement.dataset.displayRealtime = 'connecting'
     let close: (() => Promise<void>) | null = null
     let disposed = false
     let displayRefreshTimer: number | null = null
+    const scheduleDisplayRefresh = () => {
+      if (disposed || displayRefreshTimer !== null) return
+      displayRefreshTimer = window.setTimeout(() => {
+        displayRefreshTimer = null
+        void refreshDisplayStateRef.current().catch(() => undefined)
+      }, 25)
+    }
 
     void subscribeClaimedDisplayRealtimeSession({
       onCaption: (message) => {
@@ -180,27 +309,37 @@ export function DisplayPage() {
         )
       },
       onConnectionStatus: (status, error) => {
+        setDisplayRealtimeSubscribed(status === 'SUBSCRIBED')
         document.documentElement.dataset.displayRealtimeStatus = status
+        document.documentElement.dataset.displayRealtime =
+          status === 'SUBSCRIBED' ? 'connected' : 'fallback'
         if (error) {
           document.documentElement.dataset.displayRealtimeStatusError =
             error.message
+        } else {
+          delete document.documentElement.dataset.displayRealtimeStatusError
         }
       },
-      onDisplayState: () => {
-        if (disposed || displayRefreshTimer !== null) return
-        displayRefreshTimer = window.setTimeout(() => {
-          displayRefreshTimer = null
-          void refreshDisplayStateRef.current().catch(() => undefined)
-        }, 25)
-      },
+      onDisplayState: scheduleDisplayRefresh,
+      onLiveStateChanged: scheduleDisplayRefresh,
       onSessionClosed: (reason) => {
         if (disposed) return
+        setDisplayRealtimeSubscribed(false)
         setLocalCaption(null)
+        if (reason === 'feature_disabled') {
+          // The DB kill switch revokes Realtime admission but preserves the
+          // same claimed UID's signed five-second snapshot/PDF fallback.
+          setDisplayRealtimeSession(null)
+          scheduleDisplayRefresh()
+          return
+        }
+        clearStoredDisplayLaunch()
+        setDisplayRealtimeSession(null)
+        setOperatorLiveAccess(null)
         if (
           reason === 'admin_session_revoked' ||
           reason === 'session_replaced'
         ) {
-          setOperatorLiveAccess(null)
           setDisplayAccessError(
             reason === 'session_replaced'
               ? '新しい共有画面が開かれたため、この画面を終了しました。'
@@ -208,12 +347,9 @@ export function DisplayPage() {
           )
           return
         }
-        if (reason === 'feature_disabled') {
-          // The DB kill switch revokes Realtime admission but preserves the
-          // same claimed UID's signed five-second snapshot/PDF fallback.
-          setDisplayRealtimeSession(null)
-        }
-        void refreshDisplayStateRef.current().catch(() => undefined)
+        setDisplayAccessError(
+          'この共有画面セッションは終了しました。管理画面の「画面共有を開始する」から新しいリンクを開いてください。',
+        )
       },
       session: displayRealtimeSession,
     })
@@ -223,12 +359,12 @@ export function DisplayPage() {
           return
         }
         close = closeSubscription
-        document.documentElement.dataset.displayRealtime = 'connected'
       })
       .catch((error) => {
         // Claim succeeded, so the operator snapshot remains the safe
         // five-second fallback if Realtime itself is temporarily unavailable.
         document.documentElement.dataset.displayRealtime = 'fallback'
+        setDisplayRealtimeSubscribed(false)
         document.documentElement.dataset.displayRealtimeError =
           error instanceof Error ? error.message : 'unknown'
       })
@@ -260,9 +396,10 @@ export function DisplayPage() {
       return
     }
     setDisplayRealtimeSession(null)
+    clearStoredDisplayLaunch()
     setOperatorLiveAccess(null)
     setDisplayAccessError(
-      'この共有画面セッションは終了しました。管理画面から新しいリンクを開いてください。',
+      'この共有画面セッションは終了しました。管理画面の「画面共有を開始する」から新しいリンクを開いてください。',
     )
   }, [displayLaunch.displayToken, displayStateError, setOperatorLiveAccess])
 
@@ -301,6 +438,7 @@ export function DisplayPage() {
     localCaption && now - localCaption.updatedAt <= 15_000
       ? localCaption.content
       : null
+  const latestSummary = getLatestPublicSummary(summaries)
 
   if (displayAccessError) {
     return (
@@ -332,7 +470,6 @@ export function DisplayPage() {
           ? displayLaunch.lectureCode
           : ''
       }
-      participantCount={participantCount}
       pollResults={pollResults}
       pollResultsError={pollResultsError}
       polls={openPolls}
@@ -340,6 +477,7 @@ export function DisplayPage() {
       pollsLoading={pollsLoading}
       runtimeMode={runtimeMode}
       sessionSyncMessage={sessionSyncMessage}
+      summary={latestSummary}
       visibleCommentCount={visibleCommentCount}
     />
   )

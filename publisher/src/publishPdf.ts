@@ -31,11 +31,7 @@ function sha256(bytes: Uint8Array) {
 }
 
 function verifyManifestEtag(etag: string) {
-  if (
-    etag.length < 1 ||
-    etag.length > 512 ||
-    containsControlCharacters(etag)
-  ) {
+  if (etag.length < 1 || etag.length > 512 || containsControlCharacters(etag)) {
     throw new PublicationVerificationError(
       'Committed manifest ETag is invalid.',
     )
@@ -194,6 +190,10 @@ export async function publishPdf(
     const otherVisible = replacementDocuments.filter(
       (document) => document.visible,
     )
+    // The v1 manifest/database wire contract uses one as the compatibility
+    // count for a textless PDF. Apply that same value to admission so a
+    // publication cannot pass the aggregate check and fail after object writes.
+    const wireTextCharacterCount = Math.max(1, validated.textCharCount)
     const aggregateBytes =
       otherVisible.reduce((total, document) => total + document.byte_size, 0) +
       validated.byteSize
@@ -204,7 +204,7 @@ export async function publishPdf(
       otherVisible.reduce(
         (total, document) => total + document.text_char_count,
         0,
-      ) + validated.textCharCount
+      ) + wireTextCharacterCount
     if (
       aggregateBytes > MAX_PDF_BYTES ||
       aggregatePages > MAX_PDF_PAGES ||
@@ -274,7 +274,10 @@ export async function publishPdf(
       object_key: objectKey,
       page_count: validated.pageCount,
       pdf_sha256: validated.pdfSha256,
-      text_char_count: validated.textCharCount,
+      // The deployed manifest/database v1 contract requires at least one
+      // character. Keep that wire value for textless PDFs while the private
+      // extraction records the real zero count and explicit availability.
+      text_char_count: wireTextCharacterCount,
       text_sha256: validated.textSha256,
       visible: true,
     }

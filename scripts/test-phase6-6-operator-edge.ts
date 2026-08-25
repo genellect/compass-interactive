@@ -111,12 +111,14 @@ assert.match(
 )
 assert.match(operatorSnapshot, /include_hidden: credentialKind === 'admin'/)
 assert.match(operatorSnapshot, /credentialKind !== 'admin'/)
-assert.match(operatorSnapshot, /terminalOnly/)
 assert.match(operatorSnapshot, /credentialExpired: true/)
 assert.match(operatorSnapshot, /verify_and_claim_google_display_session_v1/)
-assert.match(operatorSnapshot, /verify_google_display_terminal_session_v1/g)
-assert.match(operatorSnapshot, /descendant\?\.recognized !== true/)
-assert.match(operatorSnapshot, /admin_get_lecture_operator_access_v1/)
+assert.doesNotMatch(operatorSnapshot, /getDisplayTerminalTokenClaims/)
+assert.doesNotMatch(
+  operatorSnapshot,
+  /verify_google_display_terminal_session_v1/,
+)
+assert.doesNotMatch(operatorSnapshot, /admin_get_lecture_operator_access_v1/)
 assert.match(operatorSnapshot, /admin_get_lecture_operator_comment_history_v1/)
 assert.match(operatorSnapshot, /Math\.min\(Math\.max\(body\.limit, 1\), 50\)/)
 assert.match(operatorSnapshot, /comment_limit: 5/)
@@ -132,14 +134,10 @@ assert.match(
   /displayClaims\?\.lectureSessionId !== body\.lectureSessionId/,
 )
 assert.match(issuePdfAccess, /admin_get_pdf_access_claims_v1/)
-assert.match(issuePdfAccess, /getDisplayTerminalTokenClaims/)
 assert.match(issuePdfAccess, /verify_and_claim_google_display_session_v1/)
-assert.match(issuePdfAccess, /verify_google_display_terminal_session_v1/g)
-assert.match(issuePdfAccess, /descendant\?\.recognized !== true/)
-assert.match(
-  issuePdfAccess,
-  /terminalOnly[\s\S]*?admin_get_lecture_operator_access_v1[\s\S]*?mode !== 'terminal'/,
-)
+assert.doesNotMatch(issuePdfAccess, /getDisplayTerminalTokenClaims/)
+assert.doesNotMatch(issuePdfAccess, /verify_google_display_terminal_session_v1/)
+assert.doesNotMatch(issuePdfAccess, /admin_get_lecture_operator_access_v1/)
 assert.match(pdfDelivery, /\? 'display'\s*:\s*'member'/)
 assert.match(
   pdfDelivery,

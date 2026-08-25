@@ -17,8 +17,10 @@ export type StoredExtraction = {
   lecturePublicId: string
   pageCount: number
   pages: ValidatedPdf['pages']
+  textAvailable?: boolean
   textCharCount: number
   textSha256: string
+  textTruncated?: boolean
 }
 
 function assertSafeId(lecturePublicId: string, documentId: string) {
@@ -75,8 +77,10 @@ export class LocalTextStore {
       lecturePublicId: input.lecturePublicId,
       pageCount: input.validatedPdf.pageCount,
       pages: input.validatedPdf.pages,
+      textAvailable: input.validatedPdf.textAvailable,
       textCharCount: input.validatedPdf.textCharCount,
       textSha256: input.validatedPdf.textSha256,
+      textTruncated: input.validatedPdf.textTruncated,
     }
     await writeFile(temporaryPath, `${JSON.stringify(payload)}\n`, {
       encoding: 'utf8',
@@ -105,6 +109,8 @@ export class LocalTextStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
+    const textAvailable = stored.textAvailable ?? stored.textCharCount > 0
+    const textTruncated = stored.textTruncated === true
     if (
       stored.lecturePublicId !== input.lecturePublicId ||
       stored.documentId !== input.documentId ||
@@ -112,8 +118,10 @@ export class LocalTextStore {
       stored.textSha256 === '' ||
       !/^[0-9a-f]{64}$/.test(stored.textSha256) ||
       stored.pages.length !== stored.pageCount ||
-      stored.textCharCount < 1 ||
-      stored.textCharCount > 20_000
+      stored.textCharCount < 0 ||
+      stored.textCharCount > 20_000 ||
+      (!textAvailable && stored.textCharCount !== 0) ||
+      (textTruncated && stored.textCharCount !== 20_000)
     ) {
       throw new Error('Local extraction identity is inconsistent.')
     }

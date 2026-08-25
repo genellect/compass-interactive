@@ -15,6 +15,7 @@ import {
 } from '../supabase/functions/_shared/adminIdentity.ts'
 import {
   createAdminAuthFetch,
+  getAdminAuthRateLimitRemainingMs,
   sanitizeAdminAuthStorageValue,
 } from '../src/lib/adminAuth/adminAuthStorage.ts'
 
@@ -142,6 +143,43 @@ assert.equal(
   'opaque-pkce-code-verifier',
 )
 
+const operationStorage = new Map<string, string>()
+Object.defineProperty(globalThis, 'window', {
+  configurable: true,
+  value: {
+    sessionStorage: {
+      getItem: (key: string) => operationStorage.get(key) ?? null,
+      removeItem: (key: string) => operationStorage.delete(key),
+      setItem: (key: string, value: string) => operationStorage.set(key, value),
+    },
+  },
+})
+const operationBody = {
+  action: 'update',
+  rawText: 'PRIVATE LECTURE RAW BODY',
+}
+const firstOperationModule =
+  await import('../src/lib/adminAuth/adminOperationRequestId.ts?phase730-reload=first')
+const firstOperation = firstOperationModule.reserveAdminOperationRequestId(
+  'manage-lectures',
+  operationBody,
+  '73000000-0000-4000-8000-000000000777',
+)
+const persistedOperationJson = [...operationStorage.values()].join('\n')
+assert.doesNotMatch(persistedOperationJson, /PRIVATE LECTURE RAW BODY/)
+const reloadedOperationModule =
+  await import('../src/lib/adminAuth/adminOperationRequestId.ts?phase730-reload=second')
+assert.equal(
+  reloadedOperationModule.reserveAdminOperationRequestId(
+    'manage-lectures',
+    operationBody,
+  ).requestId,
+  firstOperation.requestId,
+  'a reload must reuse the pending request ID without persisting raw body text',
+)
+reloadedOperationModule.clearAdminOperationRequestIds()
+Reflect.deleteProperty(globalThis, 'window')
+
 const adminAuthFetch = createAdminAuthFetch(
   (async () =>
     new Response(
@@ -165,10 +203,33 @@ assert.doesNotMatch(sanitizedAuthJson, /provider-(?:access|refresh)-secret/)
 assert.match(sanitizedAuthJson, /supabase-access-token/)
 assert.match(sanitizedAuthJson, /supabase-refresh-token/)
 
+const rateLimitedAuthFetch = createAdminAuthFetch(
+  (async () =>
+    new Response(JSON.stringify({ message: 'rate limited' }), {
+      headers: {
+        'content-type': 'application/json',
+        'retry-after': '2',
+      },
+      status: 429,
+    })) as typeof fetch,
+  'https://rate-limit.example.supabase.co',
+)
+await rateLimitedAuthFetch(
+  'https://rate-limit.example.supabase.co/auth/v1/factors/factor-id/verify',
+)
+assert.ok(
+  getAdminAuthRateLimitRemainingMs() > 1_000,
+  'Auth Retry-After must suppress immediate TOTP resubmission',
+)
+
 const migration = read(
   'supabase/migrations/20260809143000_phase7_30b1_admin_identity_aal2.sql',
 )
+const restoreMigration = read(
+  'supabase/migrations/20260825090000_admin_auth_login_restore.sql',
+)
 const edge = read('supabase/functions/admin-identity-session/index.ts')
+const cors = read('supabase/functions/_shared/cors.ts')
 const studentClient = read('src/lib/supabaseClient.ts')
 const anonymousAuth = read('src/lib/anonymousAuth.ts')
 const adminClient = read('src/lib/adminAuth/adminSupabaseClient.ts')
@@ -222,6 +283,38 @@ assert.match(edge, /getFreshTotpAmrTimestamp/)
 assert.match(edge, /requestOrigin/)
 assert.doesNotMatch(edge, /user_metadata/)
 assert.doesNotMatch(edge, /body\.environment/)
+assert.match(edge, /consume_admin_identity_admission_once_v1/)
+assert.equal(
+  [...edge.matchAll(/await admitIdentity\(\)/g)].length,
+  1,
+  'one logical browser login must mutate admission exactly once',
+)
+assert.match(edge, /body\.action === 'restore'/)
+assert.match(edge, /restore_google_admin_session_v1/)
+assert.match(
+  restoreMigration,
+  /serialize_admin_ai_request_v1\(target_request_id\)/,
+)
+assert.match(restoreMigration, /action = 'admin_identity\.admit'/)
+assert.match(restoreMigration, /auth_session_created_at \+ interval '8 hours'/)
+assert.match(restoreMigration, /approved_totp_factor_set_hash/)
+assert.match(restoreMigration, /verified_totp_factor_set_hash/)
+assert.match(restoreMigration, /session\.token_hash = target_token_hash/)
+assert.doesNotMatch(
+  restoreMigration,
+  /target_new_token_hash|set\s+token_hash\s*=/,
+)
+assert.match(
+  restoreMigration,
+  /select principal\.\*[\s\S]*?for update;[\s\S]*?select membership\.\*[\s\S]*?for update;[\s\S]*?select environment\.\*[\s\S]*?for share;[\s\S]*?select session\.\*[\s\S]*?for update;[\s\S]*?from auth\.sessions[\s\S]*?for key share;/,
+  'restore must keep the canonical principal -> membership -> environment -> Admin session -> Auth session lock order',
+)
+assert.match(restoreMigration, /'token_restored', true/)
+assert.match(
+  cors,
+  /'Access-Control-Expose-Headers': 'Retry-After'/,
+  'the browser must be able to observe the server Retry-After header',
+)
 
 assert.equal(
   existsSync(join(root, 'supabase/functions/verify-admin-pin/index.ts')),
@@ -237,6 +330,15 @@ assert.match(adminStorage, /createAdminAuthFetch/)
 assert.match(adminStorage, /ADMIN_AUTH_REQUEST_TIMEOUT_MS = 10_000/)
 assert.match(adminStorage, /provider_refresh_token/)
 assert.match(adminStorage, /provider_token/)
+assert.match(adminStorage, /ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY/)
+assert.match(
+  adminStorage,
+  /JSON\.stringify\(\{ \.\.\.scope, seed, version: 1 \}\)/,
+)
+assert.match(
+  adminStorage,
+  /stored\.authSessionId === scope\.authSessionId[\s\S]*?stored\.authUserId === scope\.authUserId/,
+)
 assert.match(
   adminRoute,
   /function normalizeAdminPathname\(pathname: string\)[\s\S]*pathname\.replace\(\/\\\/\+\$\/, ''\)[\s\S]*const adminPathname = normalizeAdminPathname\(location\.pathname\)/,
@@ -247,6 +349,24 @@ assert.match(
   /!\['\/admin', '\/admin\/settings'\]\.includes\(adminPathname\)/,
 )
 assert.match(adminRoute, /exchangeCodeForSession/)
+assert.match(adminRoute, /queryParams: \{ prompt: 'select_account' \}/)
+assert.match(
+  adminRoute,
+  /restoreAdminAppSessionRestoreSeed\([\s\S]*?restoreGoogleAdminSessionFromAuth\(restoreSeed\)/,
+)
+assert.match(
+  adminRoute,
+  /clearAdminAppSessionToken\(\)[\s\S]*?restoreAdminAppSessionRestoreSeed\([\s\S]*?restoreGoogleAdminSessionFromAuth\([\s\S]*?restoreSeed/,
+  'a stale tab token must fall through to same-session AAL2 restore',
+)
+assert.match(
+  adminRoute,
+  /persistAdminAppSessionRestoreSeed\(stepUpNonce, transitionRecoveryScope\)/,
+)
+assert.match(edge, /assertAdminLoginNonce\(restoreSeed\)/)
+assert.match(edge, /createGoogleAdminSessionToken\([\s\S]*?restoreSeed/)
+assert.match(adminRoute, /getAdminAuthRateLimitRemainingMs/)
+assert.match(adminRoute, /再試行まで \{rateLimitRemainingSeconds\} 秒/)
 assert.match(adminRoute, /window\.history\.replaceState\(\{\}, '', '\/admin'\)/)
 assert.match(adminRoute, /challengeAndVerify/)
 assert.doesNotMatch(adminRoute, /従来PIN|AdminLegacyApp/)
@@ -288,6 +408,11 @@ assert.ok(
   adminRoute.lastIndexOf("adminSupabase.auth.signOut({ scope: 'local' })") <
     adminRoute.lastIndexOf('clearAdminAuthStorage()'),
   'Supabase Auth logout must run before local Admin auth storage is cleared',
+)
+assert.match(
+  adminRoute,
+  /if \(!data\.session\) \{[\s\S]*?restoreAdminAppSessionToken\(\)[\s\S]*?clearAdminAuthStorage\(\)[\s\S]*?forgetGoogleAdminOperationSession/,
+  'an app token without a backing Auth session must be cleared before OAuth',
 )
 
 console.log('Phase 7.30 A-B1 Admin identity contract checks passed.')

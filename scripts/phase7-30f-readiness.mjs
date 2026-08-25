@@ -45,12 +45,14 @@ const expectedIdentityControlFunctions = new Map([
 
 const expectedOperationalFunctions = new Map([
   ['analyze-lecture-material', true],
+  ['display-session-status', true],
   ['generate-academic-answer', true],
   ['generate-lecture-summary', true],
   ['issue-display-session', true],
   ['issue-pdf-access-token', true],
   ['issue-realtime-client-secret', true],
   ['manage-admin-sessions', true],
+  ['manage-ai-activation-intent', true],
   ['manage-ai-control', true],
   ['manage-comments', true],
   ['manage-lecture-summaries', true],

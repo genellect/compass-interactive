@@ -1,5 +1,4 @@
 type AdminDisplayLinkCopyButtonProps = {
-  copied: boolean
   isCopying: boolean
   isOpening: boolean
   lectureIsOpen: boolean
@@ -7,7 +6,6 @@ type AdminDisplayLinkCopyButtonProps = {
 }
 
 export function AdminDisplayLinkCopyButton({
-  copied,
   isCopying,
   isOpening,
   lectureIsOpen,
@@ -20,11 +18,7 @@ export function AdminDisplayLinkCopyButton({
       onClick={onCopy}
       type="button"
     >
-      {isCopying
-        ? '準備中…'
-        : copied
-          ? 'リンクをコピーしました'
-          : '別ブラウザ用リンクをコピー'}
+      {isCopying ? '準備中…' : 'URLをコピー'}
     </button>
   )
 }

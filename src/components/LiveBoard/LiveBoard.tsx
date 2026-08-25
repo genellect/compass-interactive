@@ -7,6 +7,7 @@ type LiveBoardProps = {
   currentParticipantId?: string | null
   hasOlderComments?: boolean
   isLoadingOlderComments?: boolean
+  limit?: number
   mode?: 'student' | 'admin' | 'display'
   onLoadOlderComments?: () => void | Promise<void>
   onToggleLike?: (commentId: string) => void | Promise<void>
@@ -21,7 +22,8 @@ function sortForDisplay(comments: LiveComment[]) {
     if (a.isPinned !== b.isPinned) {
       return a.isPinned ? -1 : 1
     }
-    return b.likeCount - a.likeCount
+    const recency = b.createdAt.localeCompare(a.createdAt)
+    return recency !== 0 ? recency : b.likeCount - a.likeCount
   })
 }
 
@@ -30,6 +32,7 @@ export function LiveBoard({
   currentParticipantId,
   hasOlderComments = false,
   isLoadingOlderComments = false,
+  limit,
   mode = 'student',
   onLoadOlderComments,
   onToggleLike,
@@ -43,28 +46,36 @@ export function LiveBoard({
       ? comments
       : comments.filter((comment) => comment.status === 'visible')
 
-  const displayedComments =
+  const rankedComments =
     mode === 'display' ? sortForDisplay(visibleComments) : visibleComments
+  const displayedComments =
+    limit === undefined ? rankedComments : rankedComments.slice(0, limit)
 
   return (
     <section className="panel live-board">
-      <div className="panel-heading">
-        <div className="section-intro">
-          <span className="section-icon">
-            <AppIcon name="users" size={18} />
-          </span>
-          <div>
-            <p className="eyebrow">CLASS VOICES</p>
-            <h2>
-              {title ??
-                (mode === 'admin' ? 'みんなの声を管理' : 'みんなの声')}
-            </h2>
-          </div>
+      {mode === 'display' ? (
+        <div className="panel-heading display-board-heading">
+          <h2>{title ?? 'コメント'}</h2>
         </div>
-        <span className="metric">
-          {totalCount ?? displayedComments.length}件
-        </span>
-      </div>
+      ) : (
+        <div className="panel-heading">
+          <div className="section-intro">
+            <span className="section-icon">
+              <AppIcon name="users" size={18} />
+            </span>
+            <div>
+              <p className="eyebrow">CLASS VOICES</p>
+              <h2>
+                {title ??
+                  (mode === 'admin' ? 'みんなの声を管理' : 'みんなの声')}
+              </h2>
+            </div>
+          </div>
+          <span className="metric">
+            {totalCount ?? displayedComments.length}件
+          </span>
+        </div>
+      )}
 
       <div className="comment-list">
         {displayedComments.length > 0 ? (

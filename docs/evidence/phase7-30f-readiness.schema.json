@@ -909,7 +909,7 @@
           "items": {
             "$ref": "#/$defs/functionInventoryEntry"
           },
-          "maxItems": 19
+          "maxItems": 21
         },
         "identityControlFunctionInventory": {
           "type": "array",

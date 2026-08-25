@@ -209,7 +209,7 @@ test('classroom display without an issued token fails closed on the display rout
   await expect(page).toHaveURL(/\/display$/)
   await expect(
     page.getByText(
-      '管理画面から「共有画面を開く」を押して、もう一度開いてください。',
+      '管理画面から「画面共有を開始する」を押して、もう一度開いてください。',
     ),
   ).toBeVisible()
 })

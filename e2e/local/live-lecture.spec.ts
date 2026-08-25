@@ -81,6 +81,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   const admin = await openMonitoredPage(adminContext)
   const student = await openMonitoredPage(studentContext)
   const peerStudent = await openMonitoredPage(peerStudentContext)
+  let displayContext: BrowserContext | null = null
   let displayPage: Page | null = null
   let isolatedDisplayContext: BrowserContext | null = null
   let isolatedDisplayPage: Page | null = null
@@ -134,8 +135,40 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     const lectureCode = (await lectureRow.locator('code').textContent())?.trim()
     expect(lectureCode).toMatch(/^\d{6}$/)
 
+    await admin.page.locator('#teacher-workspace-participation-tab').click()
+    const pollPanel = admin.page.locator('#teacher-workspace-participation')
+    await expect(pollPanel).toBeVisible({ timeout: 10_000 })
+    await pollPanel.getByLabel('質問').fill('講義前に準備した投票')
+    await pollPanel.getByRole('button', { name: '投票を作成' }).click()
+    const preparedPoll = admin.page
+      .locator('.poll-admin-row')
+      .filter({ hasText: '講義前に準備した投票' })
+    await expect(preparedPoll).toContainText('準備中')
+    await expect(
+      preparedPoll.getByRole('button', { name: '開始する' }),
+    ).toBeDisabled()
+
+    await admin.page.locator('#teacher-workspace-ai-tab').click()
+    await admin.page
+      .getByRole('button', { name: '講義開始時にAI機能を有効にする' })
+      .click()
+    await expect(
+      admin.page.getByRole('button', {
+        name: '講義開始時のAI有効化を取り消す',
+      }),
+    ).toBeVisible()
+
+    await admin.page.locator('#teacher-workspace-setup-tab').click()
+
     await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
     await expect(lectureRow).toContainText('受付中')
+
+    await admin.page.locator('#teacher-workspace-participation-tab').click()
+    await expect(
+      preparedPoll.getByRole('button', { name: '開始する' }),
+    ).toBeEnabled()
+    await preparedPoll.getByRole('button', { name: '開始する' }).click()
+    await expect(preparedPoll).toContainText('受付中')
 
     await admin.page.locator('#teacher-workspace-setup-tab').click()
 
@@ -157,6 +190,11 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
 
     await admin.page.locator('#teacher-workspace-ai-tab').click()
 
+    await expect(admin.page.getByTestId('ai-master-auth')).toContainText(
+      '許可済み',
+      { timeout: 15_000 },
+    )
+
     const summaryLanguage = admin.page.getByLabel('要約言語')
     await expect(summaryLanguage).toHaveValue('auto')
     await summaryLanguage.selectOption('en')
@@ -177,22 +215,28 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     await expect(summarySourceDomain).toHaveValue('auto')
     await autoAcademicAnswers.uncheck()
 
-    const displayPopup = admin.page.waitForEvent('popup')
+    await installClipboardCapture(admin.page)
     const displaySessionResponse = admin.page.waitForResponse(
       (response) =>
         response.url().endsWith('/functions/v1/issue-display-session') &&
         response.status() === 200,
     )
-    await admin.page.getByRole('button', { name: '共有画面を開く' }).click()
-    displayPage = await displayPopup
-    const initialDisplayPage = displayPage
-    const issuedDisplaySession = (
-      await displaySessionResponse
-    ).json() as Promise<{
+    await admin.page.getByRole('button', { name: '画面共有を開始する' }).click()
+    const popupSession = (await (await displaySessionResponse).json()) as {
       displayToken: string
       lectureSessionId: string
-    }>
+    }
+    await admin.page.getByRole('button', { name: 'URLをコピー' }).click()
+    const initialDisplayUrl = await copiedDisplayUrl(admin.page)
+    expect(initialDisplayUrl).toContain('/display#')
+    expect(initialDisplayUrl).toContain(
+      encodeURIComponent(popupSession.displayToken),
+    )
+    displayContext = await browser.newContext()
+    displayPage = await displayContext.newPage()
+    const initialDisplayPage = displayPage
     const displaySafety = await installBrowserSafetyMonitor(initialDisplayPage)
+    await initialDisplayPage.goto(initialDisplayUrl)
     await expect(
       initialDisplayPage.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()
@@ -215,25 +259,24 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       )
       .toBe('connected')
 
-    const popupSession = await issuedDisplaySession
-    await installClipboardCapture(admin.page)
     const isolatedDisplaySessionResponse = admin.page.waitForResponse(
       (response) =>
         response.url().endsWith('/functions/v1/issue-display-session') &&
         response.status() === 200,
     )
-    await admin.page
-      .getByRole('button', { name: '別ブラウザ用リンクをコピー' })
-      .click()
+    await admin.page.getByRole('button', { name: '新しいURLを発行' }).click()
     const isolatedSession = (
       await isolatedDisplaySessionResponse
     ).json() as Promise<{
       displayToken: string
       lectureSessionId: string
     }>
+    await admin.page.getByRole('button', { name: 'URLをコピー' }).click()
     await expect(
-      admin.page.getByRole('button', { name: 'リンクをコピーしました' }),
-    ).toBeVisible()
+      admin.page
+        .locator('.display-launch-instructions')
+        .getByRole('status'),
+    ).toContainText('コピーしました。')
     const isolatedDisplayUrl = await copiedDisplayUrl(admin.page)
     const issuedIsolatedSession = await isolatedSession
     expect(issuedIsolatedSession.lectureSessionId).toBe(
@@ -484,6 +527,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     }
     if (isolatedDisplayContext) await isolatedDisplayContext.close()
     if (displayPage && !displayPage.isClosed()) await displayPage.close()
+    if (displayContext) await displayContext.close()
     await closeContext(peerStudentContext, peerStudent.page)
     await closeContext(studentContext, student.page)
     await closeContext(adminContext, admin.page)

@@ -17,6 +17,7 @@ const publicationId = '70000000-0000-4000-8000-000000000726'
 const idempotencyKey = '72000000-0000-4000-8000-000000000726'
 const documentId = 'doc-browser-admin-e2e'
 const expiresAt = '2099-07-21T00:00:00.000Z'
+const pdfWorkerAccessToken = `eyJhbGciOiJIUzI1NiJ9.${'c'.repeat(43)}`
 const samplePdfPath = fileURLToPath(
   new URL('../../public/lecture-assets/m4-sample-v1.pdf', import.meta.url),
 )
@@ -38,6 +39,10 @@ type MockState = {
   publicationActions: PublicationAction[]
   postActivationSnapshotFailuresRemaining: number
   postActivationSnapshotCount: number
+  pdfAccessSessionCount: number
+  pdfAccessTicketCount: number
+  pdfDocumentListFailuresRemaining: number
+  pdfDocumentFailureCount: number
   storedPublicationAtUpload: string | null
   uploadCount: number
   uploadedBytes: number
@@ -177,6 +182,9 @@ async function installNetworkMocks(
     conflictOnFirstInitiate?: boolean
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
+    pdfDocumentListFailuresAfterActivation?: number
+    pdfDeliveryFailures?: number
+    pdfDeliveryFailureStatus?: 401 | 403 | 416
     delayInitialLectureListUntilCreate?: boolean
     finalizeStatus?: 'active' | 'committed'
     initialLectureStatus?: 'closed' | 'open'
@@ -200,6 +208,11 @@ async function installNetworkMocks(
     postActivationSnapshotFailuresRemaining:
       options.postActivationSnapshotFailures ?? 0,
     postActivationSnapshotCount: 0,
+    pdfAccessSessionCount: 0,
+    pdfAccessTicketCount: 0,
+    pdfDocumentListFailuresRemaining:
+      options.pdfDocumentListFailuresAfterActivation ?? 0,
+    pdfDocumentFailureCount: 0,
     storedPublicationAtUpload: null,
     uploadCount: 0,
     uploadedBytes: 0,
@@ -208,9 +221,78 @@ async function installNetworkMocks(
   const initialLectureListRelease = new Promise<void>((resolve) => {
     releaseInitialLectureList = resolve
   })
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  const pdfDeliveryFailures =
+    options.pdfDeliveryFailures ?? (options.pdfDeliveryFailureStatus ? 1 : 0)
+  if (options.pdfDeliveryFailureStatus && !appBaseUrl) {
+    throw new Error(
+      'PLAYWRIGHT_BASE_URL is required for PDF delivery recovery.',
+    )
+  }
+
+  await page.route('**/__pdf-delivery-transient.pdf*', async (route) => {
+    if (state.pdfDocumentFailureCount < pdfDeliveryFailures) {
+      state.pdfDocumentFailureCount += 1
+      await fulfillJson(
+        route,
+        { message: 'The short-lived PDF ticket expired.' },
+        options.pdfDeliveryFailureStatus ?? 403,
+      )
+      return
+    }
+    await route.fulfill({
+      contentType: 'application/pdf',
+      path: samplePdfPath,
+      status: 200,
+    })
+  })
 
   await page.route('https://pdf.example/**', async (route) => {
     const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() !== 'PUT') {
+      expect(request.headers().authorization).toBe(
+        `Bearer ${pdfWorkerAccessToken}`,
+      )
+      if (url.pathname.endsWith('/manifest')) {
+        await fulfillJson(route, {
+          access_version: 2,
+          documents: [
+            {
+              archive_expires_at: null,
+              byte_size: 12_345,
+              delete_after: null,
+              display_name: 'Browser publication E2E',
+              document_id: state.inflightDocumentId ?? documentId,
+              document_version: 'a'.repeat(64),
+              download_enabled: true,
+              page_count: 3,
+              text_char_count: 2_000,
+              visible: true,
+            },
+          ],
+          lecture_public_id: 'phase726-public',
+          manifest_version: 2,
+          schema_version: 1,
+          updated_at: new Date().toISOString(),
+        })
+        return
+      }
+      if (url.pathname.endsWith('/access')) {
+        state.pdfAccessTicketCount += 1
+        await fulfillJson(route, {
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          url:
+            state.pdfDocumentFailureCount < pdfDeliveryFailures &&
+            options.pdfDeliveryFailureStatus
+              ? `${appBaseUrl}/__pdf-delivery-transient.pdf?ticket=test-signed-ticket-must-not-reach-dom`
+              : `${appBaseUrl}/lecture-assets/m4-sample-v1.pdf`,
+        })
+        return
+      }
+      await fulfillJson(route, { message: 'Not found.' }, 404)
+      return
+    }
     expect(request.method()).toBe('PUT')
     expect(request.headers().authorization).toBe(
       'Bearer playwright.header.signature',
@@ -295,6 +377,11 @@ async function installNetworkMocks(
       return
     }
     if (functionName === 'manage-pdf-documents') {
+      if (state.active && state.pdfDocumentListFailuresRemaining > 0) {
+        state.pdfDocumentListFailuresRemaining -= 1
+        await fulfillJson(route, { message: 'Temporary list failure.' }, 503)
+        return
+      }
       await fulfillJson(route, {
         documents: state.active
           ? [activeDocument(state.inflightDocumentId ?? documentId)]
@@ -408,6 +495,19 @@ async function installNetworkMocks(
         })
         return
       }
+    }
+
+    if (functionName === 'issue-pdf-access-token') {
+      state.pdfAccessSessionCount += 1
+      await fulfillJson(route, {
+        accessToken: pdfWorkerAccessToken,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        lecturePublicId: 'phase726-public',
+        manifestVersion: 2,
+        ok: true,
+        workerBaseUrl: 'https://pdf.example',
+      })
+      return
     }
 
     if (functionName === 'update-display-state') {
@@ -581,6 +681,7 @@ test('Admin publishes a PDF in-browser without exposing Local Publisher controls
   await expect(
     page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
+  await expect.poll(() => state.active).toBe(true)
   await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
   await expect
     .poll(() =>
@@ -662,9 +763,12 @@ test('Admin completes a committed PDF publication without another teacher action
   await page.goto('/admin')
   await openTeacherSetup(page)
   const pdfPanel = page.locator('#admin-live .publisher-control-panel')
-  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
   await pdfPanel.locator('button.primary-button').click()
 
+  await expect.poll(() => state.active).toBe(true)
+  await expect(fileInput).toHaveValue('')
   await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
   expect(withoutDiscovery(state.publicationActions)).toEqual([
     'initiate',
@@ -675,6 +779,146 @@ test('Admin completes a committed PDF publication without another teacher action
   expect(state.finalizeRequestIds).toHaveLength(2)
   expect(new Set(state.finalizeRequestIds).size).toBe(1)
   expect(state.displayMutationCount).toBe(0)
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin automatically resynchronizes the PDF list after activation readback fails', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    pdfDocumentListFailuresAfterActivation: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '公開は完了しました。資料一覧を再同期しています…',
+  )
+  await expect(fileInput).toHaveValue('')
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeEnabled()
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .toBeNull()
+  expect(state.pdfDocumentListFailuresRemaining).toBe(0)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+    'status',
+  ])
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin keeps converging a committed PDF publication after the short finalize window', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    committedFinalizeResponses: 3,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '資料の送信は完了しました。公開の最終確定を再開しています。',
+  )
+  await expect.poll(() => state.active, { timeout: 8_000 }).toBe(true)
+  expect(state.finalizeRequestIds).toHaveLength(4)
+  expect(new Set(state.finalizeRequestIds).size).toBe(1)
+  expect(state.uploadCount).toBe(1)
+  await stopAdminOperatorPolling(page)
+})
+
+test('PDF viewer refreshes an expired delivery ticket and rerenders after its stage resizes', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    pdfDeliveryFailureStatus: 403,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+  await page.locator('#teacher-workspace-slides-tab').click()
+
+  const viewer = page.locator(
+    '#admin-live .admin-current-pdf-preview .synced-pdf-viewer',
+  )
+  const stage = viewer.locator('.pdf-stage')
+  const canvas = viewer.locator('canvas.pdf-canvas')
+  await expect(canvas).toBeVisible({ timeout: 10_000 })
+  await expect.poll(() => state.pdfDocumentFailureCount).toBe(1)
+  await expect.poll(() => state.pdfAccessSessionCount).toBeGreaterThanOrEqual(2)
+  await expect.poll(() => state.pdfAccessTicketCount).toBeGreaterThanOrEqual(2)
+  await expect
+    .poll(() =>
+      canvas.evaluate((element) => (element as HTMLCanvasElement).width),
+    )
+    .toBeGreaterThan(0)
+  const initialCanvasWidth = await canvas.evaluate(
+    (element) => (element as HTMLCanvasElement).width,
+  )
+
+  await stage.evaluate((element) => {
+    element.style.height = '202px'
+    element.style.maxWidth = '360px'
+    element.style.width = '360px'
+  })
+  await expect
+    .poll(() =>
+      canvas.evaluate((element) => (element as HTMLCanvasElement).width),
+    )
+    .not.toBe(initialCanvasWidth)
+  await expect(viewer.getByText(/PDFの読み込みに失敗しました/)).toHaveCount(0)
+  await stopAdminOperatorPolling(page)
+})
+
+test('PDF viewer never exposes a signed delivery URL after its retry is exhausted', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    pdfDeliveryFailures: 2,
+    pdfDeliveryFailureStatus: 403,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  await pdfPanel.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+  await page.locator('#teacher-workspace-slides-tab').click()
+
+  const viewer = page.locator(
+    '#admin-live .admin-current-pdf-preview .synced-pdf-viewer',
+  )
+  await expect(viewer.getByText('PDFの読み込みに失敗しました。')).toBeVisible({
+    timeout: 35_000,
+  })
+  await expect.poll(() => state.pdfDocumentFailureCount).toBe(2)
+  await expect(page.locator('body')).not.toContainText(
+    'test-signed-ticket-must-not-reach-dom',
+  )
   await stopAdminOperatorPolling(page)
 })
 
@@ -724,8 +968,10 @@ test('Admin reloads a committed PDF publication with the same finalize request I
 
   await expect(pdfPanel).toContainText(
     '資料の送信は完了しました。公開の最終確定を再開しています。',
+    { timeout: 25_000 },
   )
-  await expect(page.locator('#teacher-workspace-slides-tab')).toHaveCount(0)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeDisabled()
   await expect(fileInput).toHaveValue(/m4-sample-v1\.pdf/)
   expect(state.displayMutationCount).toBe(0)
   expect(state.active).toBe(false)
@@ -760,6 +1006,7 @@ test('Admin reloads a committed PDF publication with the same finalize request I
   expect(storedFinalizeRequestId).toBe(state.finalizeRequestIds[0])
 
   await page.reload()
+  await expect.poll(() => state.active).toBe(true)
   await expect(page.locator('#teacher-workspace-slides-tab')).toBeVisible()
   expect(state.finalizeRequestIds).toHaveLength(4)
   expect(new Set(state.finalizeRequestIds).size).toBe(1)

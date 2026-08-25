@@ -242,7 +242,15 @@ export function RealtimeCaptionControl({
     } as const
     transportSequenceRef.current += 1
     broadcastRef.current?.postMessage(message)
-    void publishAdminCaptionRealtime(message).catch(() => undefined)
+    const operationId = operationIdRef.current
+    const startRequestId = startRequestIdRef.current
+    if (operationId && startRequestId) {
+      return publishAdminCaptionRealtime(message, adminToken, {
+        operationId,
+        startRequestId,
+      }).catch(() => undefined)
+    }
+    return Promise.resolve()
   }
 
   function clearTimers() {
@@ -277,7 +285,7 @@ export function RealtimeCaptionControl({
     setLocalCaption('')
     updateStatus(nextStatus)
     setMessage(nextMessage)
-    broadcastCaption(null, 'stopped')
+    void broadcastCaption(null, 'stopped')
   }
 
   async function stopServerOperation(reason: string) {
@@ -308,7 +316,7 @@ export function RealtimeCaptionControl({
       `${reason} 自動再接続はしません。再開は教員が明示的に操作してください。`,
     )
     setLocalCaption('')
-    broadcastCaption(null, 'stopped')
+    await broadcastCaption(null, 'stopped')
     let terminalConfirmed = !operationId
     if (operationId) {
       try {
@@ -371,7 +379,7 @@ export function RealtimeCaptionControl({
       itemTextRef.current.set(event.itemId, nextText)
       const normalized = normalizeCaptionText(nextText)
       setLocalCaption(normalized)
-      broadcastCaption(normalized ? { text: normalized } : null, 'delta')
+      void broadcastCaption(normalized ? { text: normalized } : null, 'delta')
       return
     }
 
@@ -399,7 +407,7 @@ export function RealtimeCaptionControl({
     void saveCompletedCaptionSegment(segment).catch(() => {
       setMessage('字幕は継続中ですが、ローカルレビュー用保存に失敗しました。')
     })
-    broadcastCaption({ text }, 'completed')
+    void broadcastCaption({ text }, 'completed')
   }
 
   async function publishCompletedWindow() {
@@ -644,6 +652,7 @@ export function RealtimeCaptionControl({
     sessionRef.current?.stop()
     sessionRef.current = null
     setLocalCaption('')
+    await broadcastCaption(null, 'stopped')
     try {
       await stopServerOperation('selected_duration_elapsed')
       stopLocal(
@@ -685,6 +694,7 @@ export function RealtimeCaptionControl({
           return
         }
       }
+      await broadcastCaption(null, 'stopped')
       await stopServerOperation('admin_manual_stop')
       unresolvedGoogleStartRef.current = null
       stopLocal('字幕を停止しました。停止に個人AI PINは不要です。', 'idle')

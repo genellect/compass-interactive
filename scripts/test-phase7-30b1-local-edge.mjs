@@ -31,11 +31,24 @@ assert.ok(
   !browserFixtureResetRetainedMemberships || browserFixtureRetainEnvironment,
   'Retained membership reset requires a retained browser fixture.',
 )
+const browserFixtureEnableAiValue =
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI?.trim() ?? 'false'
+assert.ok(
+  browserFixtureEnableAiValue === 'true' ||
+    browserFixtureEnableAiValue === 'false',
+  'TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI must be true or false.',
+)
+const browserFixtureEnableAi =
+  browserFixtureMode && browserFixtureEnableAiValue === 'true'
 const browserFixtureAiPin =
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN?.trim() ?? ''
 assert.ok(
   !browserFixtureAiPin || /^\d{4}$/.test(browserFixtureAiPin),
   'TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN must be an optional synthetic 4-digit PIN.',
+)
+assert.ok(
+  !browserFixtureAiPin || browserFixtureEnableAi,
+  'The legacy AI PIN fixture requires TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI=true.',
 )
 const identityPepper = process.env.TEST_ADMIN_IDENTITY_PEPPER?.trim() ?? ''
 assert.ok(
@@ -479,6 +492,7 @@ try {
   `)
 
   const aal1 = accessToken(status, { aal: 'aal1' })
+  const loginRequestId = randomUUID()
   const malformed = await invoke(
     status,
     aal1,
@@ -492,10 +506,28 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'admit' },
+    { action: 'admit', loginRequestId },
     200,
   )
   assert.equal(admitted.eligible, true)
+  const replayedAdmission = await invoke(
+    status,
+    aal1,
+    'admin-identity-session',
+    { action: 'admit', loginRequestId },
+    200,
+  )
+  assert.equal(replayedAdmission.eligible, true)
+  const logicalAdmissionCount = Number(
+    await runSql(`
+      select count(*)
+      from private.admin_audit_events
+      where request_id = ${sqlLiteral(loginRequestId)}::uuid
+        and action = 'admin_identity.admit'
+        and result = 'accepted';
+    `),
+  )
+  assert.equal(logicalAdmissionCount, 1)
 
   await runSql(`
     update auth.sessions
@@ -508,7 +540,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'beginStepUp', challengedFactorId: enrolled.id },
+    {
+      action: 'beginStepUp',
+      challengedFactorId: enrolled.id,
+      loginRequestId,
+    },
     401,
   )
   assert.equal(expiredSessionBegin.code, 'reauthentication_required')
@@ -533,7 +569,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'beginStepUp', challengedFactorId: enrolled.id },
+    {
+      action: 'beginStepUp',
+      challengedFactorId: enrolled.id,
+      loginRequestId,
+    },
     200,
   )
   assert.match(begun.stepUpNonce, /^[A-Za-z0-9_-]{43}$/)
@@ -542,7 +582,11 @@ try {
     status,
     aal1,
     'admin-identity-session',
-    { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+    {
+      action: 'completeStepUp',
+      loginRequestId,
+      stepUpNonce: begun.stepUpNonce,
+    },
     401,
   )
   assert.equal(rejectedAal1.code, 'aal2_required')
@@ -573,7 +617,11 @@ try {
     status,
     aal2,
     'admin-identity-session',
-    { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+    {
+      action: 'completeStepUp',
+      loginRequestId,
+      stepUpNonce: begun.stepUpNonce,
+    },
     200,
   )
   assert.match(completed.appSessionToken, /^g1\.[A-Za-z0-9_-]{43}$/)
@@ -639,7 +687,7 @@ try {
   }
 
   if (browserFixtureMode) {
-    if (browserFixtureAiPin) {
+    if (browserFixtureEnableAi) {
       await runSql(`
         update private.admin_environment_memberships
         set can_use_ai = true,
@@ -660,7 +708,7 @@ try {
           max_realtime_minutes_per_lecture, max_realtime_minutes_per_day,
           max_concurrency, valid_from, valid_until, version,
           created_by_membership_id, created_by_admin_session_id, request_id
-        ) values (
+        ) select
           ${sqlLiteral(randomUUID())}::uuid,
           ${sqlLiteral(environmentId)}::uuid,
           ${sqlLiteral(completed.session.membershipId)}::uuid,
@@ -673,8 +721,16 @@ try {
           ${sqlLiteral(completed.session.membershipId)}::uuid,
           ${sqlLiteral(completed.session.id)}::uuid,
           ${sqlLiteral(randomUUID())}::uuid
+        where not exists (
+          select 1
+          from private.admin_ai_policies
+          where environment_id = ${sqlLiteral(environmentId)}::uuid
+            and membership_id = ${sqlLiteral(completed.session.membershipId)}::uuid
+            and status = 'active'
         );
       `)
+    }
+    if (browserFixtureAiPin) {
       const pinRequestId = randomUUID()
       const pinPrepared = await invoke(
         status,
@@ -984,7 +1040,11 @@ try {
       status,
       aal2,
       'admin-identity-session',
-      { action: 'completeStepUp', stepUpNonce: begun.stepUpNonce },
+      {
+        action: 'completeStepUp',
+        loginRequestId,
+        stepUpNonce: begun.stepUpNonce,
+      },
       200,
     )
     assert.equal(replayed.appSessionToken, completed.appSessionToken)
@@ -1283,11 +1343,30 @@ try {
     )
     assert.equal(legacyEndpoint.status, 404)
 
+    const restoredSession = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'restore', restoreSeed: begun.stepUpNonce },
+      200,
+    )
+    assert.equal(restoredSession.appSessionToken, completed.appSessionToken)
+    assert.equal(restoredSession.session?.id, completed.session.id)
+
+    const restoredTokenStatus = await invoke(
+      status,
+      refreshedAal2,
+      'admin-identity-session',
+      { action: 'status', appSessionToken: completed.appSessionToken },
+      200,
+    )
+    assert.equal(restoredTokenStatus.session?.id, completed.session.id)
+
     const loggedOut = await invoke(
       status,
       refreshedAal2,
       'admin-identity-session',
-      { action: 'logout', appSessionToken: completed.appSessionToken },
+      { action: 'logout', appSessionToken: restoredSession.appSessionToken },
       200,
     )
     assert.equal(loggedOut.ok, true)
@@ -1296,7 +1375,7 @@ try {
       status,
       refreshedAal2,
       'admin-identity-session',
-      { action: 'status', appSessionToken: completed.appSessionToken },
+      { action: 'status', appSessionToken: restoredSession.appSessionToken },
       401,
     )
     assert.equal(revokedStatus.code, 'app_session_invalid')
@@ -1327,7 +1406,11 @@ try {
       status,
       aal1,
       'admin-identity-session',
-      { action: 'beginStepUp', challengedFactorId: enrolled.id },
+      {
+        action: 'beginStepUp',
+        challengedFactorId: enrolled.id,
+        loginRequestId,
+      },
       401,
     )
     assert.equal(missingSessionBegin.code, 'reauthentication_required')

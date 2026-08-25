@@ -53,6 +53,25 @@ assert.match(
   /const key = `\$\{adminToken\.appSessionToken\}:\$\{lectureSessionId\}`[\s\S]*pendingAdminSessions\.get\(key\)[\s\S]*pendingAdminSessions\.set\(key, request\)[\s\S]*pendingAdminSessions\.get\(key\) === request[\s\S]*pendingAdminSessions\.delete\(key\)/,
   'concurrent Admin PDF authorization shares one in-flight request without extending its lifetime',
 )
+assert.match(pdfDelivery, /status === 401 \|\| status === 403/)
+assert.match(pdfDelivery, /const PDF_WORKER_REQUEST_TIMEOUT_MS = 10_000/)
+assert.match(pdfDelivery, /const PDF_WORKER_REQUEST_ATTEMPTS = 3/)
+assert.match(pdfDelivery, /new AbortController\(\)/)
+assert.match(pdfDelivery, /upstreamSignal\?\.addEventListener\('abort'/)
+assert.match(
+  pdfDelivery,
+  /manifestVersion: number[\s\S]*signal\?: AbortSignal[\s\S]*requestWorkerJson<PublicManifestResponse>[\s\S]*input\.signal/,
+)
+assert.match(
+  pdfDelivery,
+  /status === 408[\s\S]*status === 429[\s\S]*status >= 500/,
+)
+assert.match(pdfDelivery, /PDF_WORKER_RETRY_MAX_MS[\s\S]*Math\.random\(\)/)
+assert.match(
+  pdfDelivery,
+  /options\.forceRefresh[\s\S]*session = await getSession\(true\)/,
+  'the viewer can explicitly replace an expired delivery session and ticket',
+)
 assert.match(
   displayRealtimeE2e,
   /const pendingAdminPdfRequests = new Set<Request>\(\)[\s\S]*maxConcurrentAdminPdfRequests = Math\.max[\s\S]*await expect\.poll\(\(\) => maxConcurrentAdminPdfRequests\)\.toBe\(1\)[\s\S]*await expect\.poll\(\(\) => pendingAdminPdfRequests\.size\)\.toBe\(0\)[\s\S]*expect\(maxConcurrentAdminPdfRequests\)\.toBe\(1\)/,
@@ -60,8 +79,8 @@ assert.match(
 )
 assert.match(
   displayRealtimeE2e,
-  /const startedAt = performance\.now\(\)[\s\S]*new MutationObserver[\s\S]*displayPageProbeElapsedMs = String\([\s\S]*performance\.now\(\) - startedAt[\s\S]*expect\(pageAccelerationMs\)\.toBeLessThan\(2_000\)/,
-  'Display acceleration records the browser DOM mutation time without Playwright polling delay',
+  /const startedAt = performance\.now\(\)[\s\S]*event\.detail\?\.page !== 2[\s\S]*displayPageProbeElapsedMs = String\([\s\S]*performance\.now\(\) - startedAt[\s\S]*addEventListener\(\s*'compass:display-pdf-rendered',[\s\S]*expect\(pageAccelerationMs\)\.toBeLessThan\(2_000\)/,
+  'Display acceleration records the completed canvas render event without Playwright polling delay',
 )
 
 for (const catalog of [edgeCatalog, frontendCatalog]) {
@@ -105,7 +124,7 @@ assert.match(
 )
 assert.match(
   viewer,
-  /const isCurrentRequest = \(\) =>[\s\S]*requestId === renderRequestRef\.current[\s\S]*canvasRef\.current === canvas[\s\S]*stageRef\.current === stage[\s\S]*await cancelAndSettleRenderTask\(previousRenderTask\)[\s\S]*if \(!isCurrentRequest\(\)\) return[\s\S]*page = await document\.getPage\(pageNumber\)[\s\S]*if \(!isCurrentRequest\(\)\) return/,
+  /const isCurrentRequest = \(\) =>[\s\S]*requestId === renderRequestRef\.current[\s\S]*canvasRef\.current === canvas[\s\S]*stageRef\.current === stage[\s\S]*await cancelAndSettleRenderTask\(previousRenderTask\)[\s\S]*if \(!isCurrentRequest\(\)\) return[\s\S]*page = await pdfDocument\.getPage\(pageNumber\)[\s\S]*if \(!isCurrentRequest\(\)\) return/,
 )
 assert.match(
   viewer,
@@ -120,6 +139,53 @@ assert.match(
   /active = false[\s\S]*renderRequestRef\.current \+= 1[\s\S]*renderTaskRef\.current\?\.cancel\(\)/,
 )
 assert.match(viewer, /loadingTask\.destroy\(\)\.catch\(\(\) => undefined\)/)
+assert.doesNotMatch(
+  viewer,
+  /setErrorMessage\([\s\S]{0,180}(?:error|refreshError)\.message/,
+  'PDF errors shown in the DOM must never include raw delivery URLs or credentials',
+)
+assert.doesNotMatch(
+  viewer,
+  /`[^`]*\$\{(?:error|refreshError)\.message\}[^`]*`/,
+  'PDF viewer user-facing messages must be fixed and sanitized',
+)
+assert.match(
+  viewer,
+  /RETRYABLE_DELIVERY_STATUSES = new Set\(\[401, 403, 408, 416, 429\]\)/,
+)
+assert.match(
+  viewer,
+  /getAccessUrl\('inline', \{[\s\S]*forceRefresh: true/,
+  'an authorization or Range failure obtains a fresh ticket before one reload',
+)
+assert.match(
+  viewer,
+  /new ResizeObserver\([\s\S]*observer\.observe\(stage\)[\s\S]*observer\.disconnect\(\)/,
+  'the cached PDF rerenders when its real CSS container changes size',
+)
+assert.match(viewer, /const MAX_CANVAS_BYTES = 32 \* 1024 \* 1024/)
+assert.match(viewer, /const PDF_DOCUMENT_LOAD_TIMEOUT_MS = 15_000/)
+assert.match(viewer, /MAX_CANVAS_PIXELS/)
+assert.match(viewer, /MAX_ADJACENT_PAGE_CACHE_ENTRIES = 2/)
+assert.match(viewer, /preRenderAdjacentPages/)
+assert.match(
+  viewer,
+  /const adjacentRenderTaskRef = useRef<PdfRenderTask \| null>/,
+)
+assert.match(viewer, /adjacentRenderTaskRef\.current\?\.cancel\(\)/)
+assert.match(
+  displayView,
+  /<SyncedPdfViewer[\s\S]*?key=\{`\$\{activeLectureSessionId[\s\S]*?pdfDocumentId[\s\S]*?pdfDocumentVersion[\s\S]*?pdfManifestVersion/,
+  'Display remounts the viewer at an authoritative document identity boundary',
+)
+assert.match(viewer, /window\.devicePixelRatio/)
+assert.match(viewer, /window\.matchMedia/)
+assert.match(viewer, /window\.visualViewport\?\.addEventListener/)
+assert.match(
+  viewer,
+  /const resolverController = new AbortController\(\)[\s\S]*signal: resolverController\.signal[\s\S]*resolverController\.abort\(\)/,
+  'lecture or document cleanup aborts stale manifest and ticket requests',
+)
 assert.match(
   viewer,
   /const timer = window\.setTimeout\(\(\) => \{[\s\S]*renderPage\(currentPage, pdfDocument\)\.catch[\s\S]*if \(!active\) return[\s\S]*PDFページの描画に失敗しました/,

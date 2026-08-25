@@ -1113,6 +1113,78 @@ SELECT ok(
   'PDF receipts contain no raw ticket, nonce, URL, ETag or document content'
 );
 
+SELECT set_config(
+  'test.c2_display_issued_at',
+  (
+    SELECT issued_at::text
+    FROM private.admin_google_display_sessions
+    WHERE id = '00000000-0000-4000-8000-00000000d212'::uuid
+  ),
+  true
+);
+SELECT set_config(
+  'test.c2_display_expires_at',
+  (
+    SELECT expires_at::text
+    FROM private.admin_google_display_sessions
+    WHERE id = '00000000-0000-4000-8000-00000000d212'::uuid
+  ),
+  true
+);
+SET ROLE service_role;
+SELECT ok(
+  public.admin_set_lecture_status(
+    '00000000-0000-4000-8000-00000000d209'::uuid,
+    'close',
+    null
+  ),
+  'canonical lecture close terminates the active Google Display capability'
+);
+RESET ROLE;
+SELECT is(
+  (
+    SELECT revoke_reason
+    FROM private.admin_google_display_sessions
+    WHERE id = '00000000-0000-4000-8000-00000000d212'::uuid
+  ),
+  'lecture_closed',
+  'manual close revokes the private Display root'
+);
+SET ROLE service_role;
+SELECT is(
+  public.verify_and_claim_google_display_session_v1(
+    encode(
+      extensions.digest(
+        convert_to('00000000-0000-4000-8000-00000000d212', 'UTF8'),
+        'sha256'
+      ),
+      'hex'
+    ),
+    '00000000-0000-4000-8000-00000000d209'::uuid,
+    '00000000-0000-4000-8000-00000000d223'::uuid
+  ) ->> 'valid',
+  'false',
+  'manual close rejects the live Display verifier'
+);
+SELECT is(
+  public.verify_google_display_terminal_session_v1(
+    encode(
+      extensions.digest(
+        convert_to('00000000-0000-4000-8000-00000000d212', 'UTF8'),
+        'sha256'
+      ),
+      'hex'
+    ),
+    '00000000-0000-4000-8000-00000000d209'::uuid,
+    '00000000-0000-4000-8000-00000000d223'::uuid,
+    current_setting('test.c2_display_issued_at')::timestamptz,
+    current_setting('test.c2_display_expires_at')::timestamptz
+  ) ->> 'valid',
+  'false',
+  'manual close cannot downgrade the Display URL to terminal or archive access'
+);
+RESET ROLE;
+
 UPDATE public.admin_sessions
 SET
   revoked_at = statement_timestamp(),
@@ -1132,8 +1204,8 @@ SELECT is(
     '00000000-0000-4000-8000-00000000d209'::uuid,
     '00000000-0000-4000-8000-00000000d220'::uuid
   ) ->> 'reason',
-  'inactive',
-  'Admin-session revocation immediately invalidates its Display capability'
+  'session_replaced',
+  'a superseded Display capability remains invalid after Admin-session revocation'
 );
 RESET ROLE;
 

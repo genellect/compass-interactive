@@ -10,7 +10,11 @@ import {
   type PutObjectOptions,
 } from '../src/cloudflare/objectStore.ts'
 import { decodeManifest } from '../src/manifest/manifest.ts'
-import { PdfValidationError, validatePdf } from '../src/pdf/validatePdf.ts'
+import {
+  boundExtractedPdfText,
+  PdfValidationError,
+  validatePdf,
+} from '../src/pdf/validatePdf.ts'
 import {
   ManifestConflictError,
   getManifestKey,
@@ -51,13 +55,7 @@ async function withStores(
   }
 }
 
-function blankPdf() {
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
-    '<< /Length 0 >>\nstream\n\nendstream',
-  ]
+function buildPdf(objects: string[]) {
   let body = '%PDF-1.4\n'
   const offsets = [0]
   for (const [index, object] of objects.entries()) {
@@ -72,6 +70,15 @@ function blankPdf() {
     .join('')
   body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
   return Buffer.from(body)
+}
+
+function blankPdf() {
+  return buildPdf([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
+    '<< /Length 0 >>\nstream\n\nendstream',
+  ])
 }
 
 function publicationInput(bytes: Uint8Array, documentId = 'doc-main') {
@@ -105,13 +112,19 @@ test('validates embedded text without rendering or OCR', async () => {
   )
 })
 
-test('rejects MIME spoofing, oversize input and a textless PDF before publish', async () => {
+test('rejects MIME spoofing and oversize input but accepts textless PDF delivery', async () => {
   const bytes = await readFile(samplePath)
   await assert.rejects(
     validatePdf({ bytes, fileName: 'sample.pdf', mimeType: 'text/plain' }),
     (error: unknown) =>
       error instanceof PdfValidationError && error.code === 'invalid_mime',
   )
+  const missingMime = await validatePdf({
+    bytes,
+    fileName: 'sample.pdf',
+    mimeType: '',
+  })
+  assert.equal(missingMime.pageCount, 3)
   const oversized = Buffer.alloc(15 * 1024 * 1024 + 1)
   oversized.write('%PDF-')
   await assert.rejects(
@@ -123,15 +136,41 @@ test('rejects MIME spoofing, oversize input and a textless PDF before publish', 
     (error: unknown) =>
       error instanceof PdfValidationError && error.code === 'size_limit',
   )
-  await assert.rejects(
-    validatePdf({
-      bytes: blankPdf(),
-      fileName: 'blank.pdf',
-      mimeType: 'application/pdf',
-    }),
-    (error: unknown) =>
-      error instanceof PdfValidationError && error.code === 'no_text_layer',
-  )
+  const textless = await validatePdf({
+    bytes: blankPdf(),
+    fileName: 'blank.pdf',
+    mimeType: 'application/pdf',
+  })
+  assert.equal(textless.textAvailable, false)
+  assert.equal(textless.textCharCount, 0)
+  assert.equal(textless.textTruncated, false)
+})
+
+test('bounds text-heavy extraction instead of rejecting PDF delivery', () => {
+  const bounded = boundExtractedPdfText('A'.repeat(20_500), 0)
+  assert.equal(bounded.text.length, 20_000)
+  assert.equal(bounded.truncated, true)
+  const exhausted = boundExtractedPdfText('later page', 20_000)
+  assert.equal(exhausted.text, '')
+  assert.equal(exhausted.truncated, true)
+})
+
+test('publishes a textless PDF with v1 metadata compatibility', async () => {
+  await withStores(async ({ objectStore, textStore }) => {
+    const published = await publishPdf(publicationInput(blankPdf()), {
+      now: () => new Date('2026-07-14T00:00:00.000Z'),
+      objectStore,
+      textStore,
+    })
+    assert.equal(published.document.text_char_count, 1)
+    const extraction = await textStore.load({
+      documentId: 'doc-main',
+      documentVersion: published.document.document_version,
+      lecturePublicId: 'lecture_1234567890abcdef',
+    })
+    assert.equal(extraction?.textAvailable, false)
+    assert.equal(extraction?.textCharCount, 0)
+  })
 })
 
 test('publishes hash-addressed bytes, local text and a verified manifest', async () => {

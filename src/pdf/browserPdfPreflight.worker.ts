@@ -23,8 +23,10 @@ type PreflightSuccess = {
       text: string
     }>
     pdfSha256: string
+    textAvailable: boolean
     textCharCount: number
     textSha256: string
+    textTruncated: boolean
   }
   type: 'compass-pdf-preflight-result'
 }
@@ -86,7 +88,8 @@ async function inspectPdf(input: PreflightRequest) {
       'ファイル名の拡張子が.pdfではありません。',
     )
   }
-  if (input.mimeType.toLowerCase().split(';', 1)[0]?.trim() !== 'application/pdf') {
+  const mimeType = input.mimeType.toLowerCase().split(';', 1)[0]?.trim()
+  if (mimeType && mimeType !== 'application/pdf') {
     throw new PdfPreflightError(
       'invalid_mime',
       'PDFファイル（application/pdf）を選択してください。',
@@ -95,10 +98,7 @@ async function inspectPdf(input: PreflightRequest) {
 
   const bytes = new Uint8Array(input.bytes)
   if (bytes.byteLength < 5 || bytes.byteLength > MAX_PDF_BYTES) {
-    throw new PdfPreflightError(
-      'size_limit',
-      'PDFは15MB以下にしてください。',
-    )
+    throw new PdfPreflightError('size_limit', 'PDFは15MB以下にしてください。')
   }
   if (new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-') {
     throw new PdfPreflightError(
@@ -129,30 +129,24 @@ async function inspectPdf(input: PreflightRequest) {
 
     const pageTexts: string[] = []
     let textCharCount = 0
+    let textTruncated = false
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const content = await page.getTextContent({ disableNormalization: false })
-      const text = normalizeExtractedText(
+      const extractedText = normalizeExtractedText(
         content.items.flatMap((item) =>
           'str' in item ? [{ hasEOL: item.hasEOL, str: item.str }] : [],
         ),
       )
+      const remainingCharacters = Math.max(
+        0,
+        MAX_PDF_TEXT_CHARACTERS - textCharCount,
+      )
+      const text = extractedText.slice(0, remainingCharacters)
+      textTruncated ||= extractedText.length > text.length
       textCharCount += text.length
-      if (textCharCount > MAX_PDF_TEXT_CHARACTERS) {
-        throw new PdfPreflightError(
-          'text_limit',
-          'PDFから読み取る文字数は20,000文字以下にしてください。',
-        )
-      }
       pageTexts.push(text)
       page.cleanup()
-    }
-
-    if (textCharCount < 1) {
-      throw new PdfPreflightError(
-        'no_text_layer',
-        '文字を選択できるPDFを使用してください。画像OCRは行いません。',
-      )
     }
 
     const joinedText = pageTexts
@@ -164,16 +158,16 @@ async function inspectPdf(input: PreflightRequest) {
       pages: await Promise.all(
         pageTexts.map(async (text, index) => ({
           characterCount: text.length,
-          excerptId: await sha256Hex(
-            `${pdfSha256}:${index + 1}:${text}`,
-          ),
+          excerptId: await sha256Hex(`${pdfSha256}:${index + 1}:${text}`),
           pageNumber: index + 1,
           text,
         })),
       ),
       pdfSha256,
+      textAvailable: textCharCount > 0,
       textCharCount,
       textSha256: await sha256Hex(joinedText),
+      textTruncated,
     }
   } catch (error) {
     if (error instanceof PdfPreflightError) throw error
@@ -208,7 +202,9 @@ workerScope.onmessage = (event) => {
       workerScope.postMessage({
         error: {
           code:
-            error instanceof PdfPreflightError ? error.code : 'preflight_failed',
+            error instanceof PdfPreflightError
+              ? error.code
+              : 'preflight_failed',
           message:
             error instanceof Error
               ? error.message

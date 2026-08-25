@@ -902,6 +902,29 @@ and
 Passing this candidate does not alter the dependencies or status of sections
 16–18.
 
+## 15B. Final Lecture UX and Production Completion lane
+
+The product owner approved a bounded correction lane on 2026-08-25 for the
+existing Production lecture experience. It fixes Admin login continuity,
+pre-start Poll/AI preparation, persistent slide controls, a copy-URL
+cross-browser Display with lecture-end/max-90-minute authority, complete
+Display Realtime plus render ACK/fallback, projector layout, and resilient PDF
+delivery.
+
+This lane uses the current Production environment rather than creating a
+separate review-only Production-equivalent environment. It may release the
+bounded corrections after its own exact-SHA local, CI and canonical-host
+acceptance without waiting for Phase 7.32 multi-tenancy or the unified Phase
+7.33 commercial certification. Success does not claim those later gates or a
+signed/native Presenter activation.
+
+The lane must use the simplest existing architecture, avoid unnecessary paid
+or long CI, and stop for a new explicit approval if an unavoidable material
+complexity expansion is discovered. The authoritative requirements,
+implementation work packages, two-profile agent routing, acceptance matrix and
+fast Production procedure are in
+[`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md).
+
 ## 16. Phase 7.31 - protected publication and real contest review
 
 ### 7.31A - GitHub governance

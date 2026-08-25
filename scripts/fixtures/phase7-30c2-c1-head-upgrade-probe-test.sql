@@ -37,8 +37,8 @@ select is(
     from private.admin_google_operation_policies
     where edge_function <> 'manage-admin-ledger'
   ),
-  75,
-  'the closed C2 operation matrix is installed exactly once'
+  81,
+  'the expanded operation matrix is installed exactly once'
 );
 select is(
   (select count(*)::integer from private.admin_google_operation_receipts),

@@ -131,12 +131,29 @@ function redactRealtimeFrame(payload: string) {
 
 async function invokeDisplaySnapshot(
   page: Page,
-  input: { displayToken: string; lectureSessionId: string },
+  input: {
+    authClient?: 'display' | 'student'
+    displayToken: string
+    lectureSessionId: string
+  },
 ) {
   return page.evaluate(
-    async ({ displayToken, endpoint, lectureSessionId, publicKey }) => {
-      // @ts-expect-error Vite resolves this browser-only source module.
-      const { supabase } = await import('/src/lib/supabaseClient.ts')
+    async ({
+      authClient,
+      displayToken,
+      endpoint,
+      lectureSessionId,
+      publicKey,
+    }) => {
+      const clientPath =
+        authClient === 'student'
+          ? '/src/lib/supabaseClient.ts'
+          : '/src/lib/displaySupabaseClient.ts'
+      const clientModule = await import(/* @vite-ignore */ clientPath)
+      const supabase =
+        authClient === 'student'
+          ? clientModule.supabase
+          : clientModule.displaySupabase
       const { data } = await supabase.auth.getSession()
       const accessToken = data.session?.access_token ?? ''
       const response = await fetch(endpoint, {
@@ -155,6 +172,7 @@ async function invokeDisplaySnapshot(
       return { body: await response.json(), status: response.status }
     },
     {
+      authClient: input.authClient ?? 'display',
       displayToken: input.displayToken,
       endpoint: `${supabaseUrl}/functions/v1/operator-live-snapshot`,
       lectureSessionId: input.lectureSessionId,
@@ -169,9 +187,11 @@ async function invokeDisplayPdf(
 ) {
   return page.evaluate(
     async ({ displayToken, endpoint, lectureSessionId, publicKey }) => {
-      // @ts-expect-error Vite resolves this browser-only source module.
-      const { supabase } = await import('/src/lib/supabaseClient.ts')
-      const { data } = await supabase.auth.getSession()
+      const displayClientPath = '/src/lib/displaySupabaseClient.ts'
+      const { displaySupabase } = await import(
+        /* @vite-ignore */ displayClientPath
+      )
+      const { data } = await displaySupabase.auth.getSession()
       const accessToken = data.session?.access_token ?? ''
       const response = await fetch(endpoint, {
         body: JSON.stringify({
@@ -335,13 +355,14 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         response.url().endsWith('/functions/v1/issue-display-session') &&
         response.status() === 200,
     )
+    await adminPage.getByRole('button', { name: '画面共有を開始する' }).click()
+    const issueResponse = await issueResponsePromise
     const copyButton = adminPage.getByRole('button', {
-      name: '別ブラウザ用リンクをコピー',
+      name: 'URLをコピー',
     })
     await copyButton.focus()
     await expect(copyButton).toBeFocused()
     await adminPage.keyboard.press('Enter')
-    const issueResponse = await issueResponsePromise
     const issued = (await issueResponse.json()) as {
       displayToken: string
       lectureSessionId: string
@@ -352,8 +373,8 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       new RegExp(`^display:${lecture.id}:[0-9a-f-]{36}$`, 'i'),
     )
     await expect(
-      adminPage.getByRole('button', { name: 'リンクをコピーしました' }),
-    ).toBeVisible()
+      adminPage.locator('.display-launch-instructions').getByRole('status'),
+    ).toContainText('コピーしました。')
     const displayUrl = await copiedDisplayUrl(adminPage)
     expect(displayUrl).toContain(`/display#`)
     expect(displayUrl).toContain(encodeURIComponent(issued.displayToken))
@@ -402,31 +423,35 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await displayPage.evaluate(() => {
       const root = document.documentElement
       root.removeAttribute('data-display-page-probe-elapsed-ms')
+      root.removeAttribute('data-display-page-probe-rendered-page')
       const startedAt = performance.now()
-      const observer = new MutationObserver(() => {
-        const pageChanged = Array.from(
-          document.querySelectorAll('.pdf-page-controls'),
-        ).some((controls) => controls.textContent?.includes('2 / 3'))
-        if (!pageChanged) return
+      const handleRendered = (event: Event) => {
+        if (!(event instanceof CustomEvent) || event.detail?.page !== 2) return
         root.dataset.displayPageProbeElapsedMs = String(
           performance.now() - startedAt,
         )
-        observer.disconnect()
-      })
-      observer.observe(document.body, {
-        characterData: true,
-        childList: true,
-        subtree: true,
-      })
+        root.dataset.displayPageProbeRenderedPage = String(event.detail.page)
+        window.removeEventListener(
+          'compass:display-pdf-rendered',
+          handleRendered,
+        )
+      }
+      window.addEventListener('compass:display-pdf-rendered', handleRendered)
     })
     await adminPage
       .locator('.admin-pdf-page-controller')
       .locator('button')
       .filter({ hasText: /次/ })
       .click()
-    await expect(displayPage.getByText('2 / 3', { exact: true })).toBeVisible({
-      timeout: 3_000,
-    })
+    await expect
+      .poll(
+        () =>
+          displayPage
+            .locator('html')
+            .getAttribute('data-display-page-probe-rendered-page'),
+        { timeout: 3_000 },
+      )
+      .toBe('2')
     const pageAccelerationValue = await displayPage
       .locator('html')
       .getAttribute('data-display-page-probe-elapsed-ms')
@@ -434,58 +459,142 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     const pageAccelerationMs = Number(pageAccelerationValue)
     expect(Number.isFinite(pageAccelerationMs)).toBe(true)
     expect(pageAccelerationMs).toBeLessThan(2_000)
-    await displayPage
-      .locator('html')
-      .evaluate((element) =>
-        element.removeAttribute('data-display-page-probe-elapsed-ms'),
-      )
+    await displayPage.locator('html').evaluate((element) => {
+      element.removeAttribute('data-display-page-probe-elapsed-ms')
+      element.removeAttribute('data-display-page-probe-rendered-page')
+    })
 
     const streamId = randomUUID()
+    const captionOperationId = randomUUID()
+    const captionStartRequestId = randomUUID()
+    await adminPage.route(
+      '**/functions/v1/broadcast-display-caption',
+      async (route) => {
+        const body = route.request().postDataJSON() as Record<string, unknown>
+        if (
+          body.appSessionToken !== appSessionToken ||
+          body.lectureSessionId !== lecture.id ||
+          body.operationId !== captionOperationId ||
+          body.startRequestId !== captionStartRequestId ||
+          !body.message ||
+          typeof body.message !== 'object'
+        ) {
+          await route.fulfill({
+            contentType: 'application/json',
+            json: {
+              message: 'Invalid provider-free caption fixture.',
+              ok: false,
+            },
+            status: 400,
+          })
+          return
+        }
+        const relayUrl = new URL(
+          `/realtime/v1/api/broadcast/${encodeURIComponent(issued.realtime?.topic ?? '')}/events/caption`,
+          supabaseUrl,
+        )
+        relayUrl.searchParams.set('private', 'true')
+        const relayResponse = await fetch(relayUrl, {
+          body: JSON.stringify(body.message),
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/json',
+          },
+          method: 'POST',
+        })
+        await route.fulfill({
+          contentType: 'application/json',
+          json: relayResponse.ok
+            ? { ok: true }
+            : { message: 'Provider-free caption relay failed.', ok: false },
+          status: relayResponse.ok ? 200 : 502,
+        })
+      },
+    )
     await adminPage.evaluate(
-      async ({ lectureSessionId, id }) => {
+      async ({
+        appSessionToken,
+        lectureSessionId,
+        operationId,
+        startRequestId,
+        id,
+      }) => {
         const realtimePath = '/src/display/displayRealtime.ts'
         const { publishAdminCaptionRealtime } = await import(
           /* @vite-ignore */ realtimePath
         )
-        await publishAdminCaptionRealtime({
-          caption: { text: 'Phase 7.28B private caption' },
-          lectureSessionId,
-          sequence: 0,
-          source: 'completed',
-          streamId: id,
-          timestamp: Date.now(),
-        })
+        await publishAdminCaptionRealtime(
+          {
+            caption: { text: 'Phase 7.28B private caption' },
+            lectureSessionId,
+            sequence: 0,
+            source: 'completed',
+            streamId: id,
+            timestamp: Date.now(),
+          },
+          { appSessionToken, kind: 'google' },
+          { operationId, startRequestId },
+        )
       },
-      { id: streamId, lectureSessionId: lecture.id },
+      {
+        appSessionToken,
+        id: streamId,
+        lectureSessionId: lecture.id,
+        operationId: captionOperationId,
+        startRequestId: captionStartRequestId,
+      },
     )
     await expect(displayPage.locator('.display-caption-strip')).toContainText(
       'Phase 7.28B private caption',
       { timeout: 2_000 },
     )
     await adminPage.evaluate(
-      async ({ lectureSessionId, id }) => {
+      async ({
+        appSessionToken,
+        lectureSessionId,
+        operationId,
+        startRequestId,
+        id,
+      }) => {
         const realtimePath = '/src/display/displayRealtime.ts'
         const { publishAdminCaptionRealtime } = await import(
           /* @vite-ignore */ realtimePath
         )
-        await publishAdminCaptionRealtime({
-          caption: null,
-          lectureSessionId,
-          sequence: 1,
-          source: 'stopped',
-          streamId: id,
-          timestamp: Date.now(),
-        })
-        await publishAdminCaptionRealtime({
-          caption: { text: 'must not reappear after stop' },
-          lectureSessionId,
-          sequence: 2,
-          source: 'completed',
-          streamId: id,
-          timestamp: Date.now(),
-        })
+        const credential = { appSessionToken, kind: 'google' } as const
+        const authority = { operationId, startRequestId }
+        await publishAdminCaptionRealtime(
+          {
+            caption: null,
+            lectureSessionId,
+            sequence: 1,
+            source: 'stopped',
+            streamId: id,
+            timestamp: Date.now(),
+          },
+          credential,
+          authority,
+        )
+        await publishAdminCaptionRealtime(
+          {
+            caption: { text: 'must not reappear after stop' },
+            lectureSessionId,
+            sequence: 2,
+            source: 'completed',
+            streamId: id,
+            timestamp: Date.now(),
+          },
+          credential,
+          authority,
+        )
       },
-      { id: streamId, lectureSessionId: lecture.id },
+      {
+        appSessionToken,
+        id: streamId,
+        lectureSessionId: lecture.id,
+        operationId: captionOperationId,
+        startRequestId: captionStartRequestId,
+      },
     )
     await expect(displayPage.locator('.display-caption-strip')).toHaveCount(0)
     await displayPage.waitForTimeout(700)
@@ -570,23 +679,69 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(sameUserPdfFallback.status).toBe(200)
       expect(sameUserPdfFallback.body).toMatchObject({ ok: true })
       const crossUserFallback = await invokeDisplaySnapshot(studentPage, {
+        authClient: 'student',
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
       expect(crossUserFallback.status).toBe(401)
       expect(crossUserFallback.body).toMatchObject({
-        message: 'Invalid Display session.',
+        credentialExpired: true,
+        credentialKind: 'display',
         ok: false,
       })
+      expect(crossUserFallback.body).not.toHaveProperty('result')
 
       const bindingResult = await service
         .from('display_realtime_sessions')
-        .select('admin_session_id')
+        .select('admin_session_id, revoke_reason')
         .eq('lecture_session_id', lecture.id)
-        .eq('revoke_reason', 'feature_disabled')
         .single()
       expect(bindingResult.error).toBeNull()
       expect(bindingResult.data?.admin_session_id).toBeTruthy()
+      expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
+
+      await displaySafety.assertClean()
+      await displayPage.close()
+      const displayProbePage = await displayContext.newPage()
+      const displayProbeSafety =
+        await installBrowserSafetyMonitor(displayProbePage)
+      await displayProbePage.goto('/join')
+
+      const closeResult = await service.rpc('admin_set_lecture_status', {
+        target_action: 'close',
+        target_lecture_session_id: lecture.id,
+      })
+      expect(closeResult.error).toBeNull()
+      expect(closeResult.data).toBe(true)
+      const closedBindingResult = await service
+        .from('display_realtime_sessions')
+        .select('revoke_reason')
+        .eq('lecture_session_id', lecture.id)
+        .single()
+      expect(closedBindingResult.error).toBeNull()
+      expect(closedBindingResult.data?.revoke_reason).toBe('lecture_closed')
+
+      const postCloseSnapshot = await invokeDisplaySnapshot(displayProbePage, {
+        displayToken: issued.displayToken,
+        lectureSessionId: lecture.id,
+      })
+      expect(postCloseSnapshot.status).toBe(401)
+      expect(postCloseSnapshot.body).toMatchObject({
+        credentialExpired: true,
+        ok: false,
+      })
+      expect(postCloseSnapshot.body).not.toHaveProperty('result')
+      const postClosePdf = await invokeDisplayPdf(displayProbePage, {
+        displayToken: issued.displayToken,
+        lectureSessionId: lecture.id,
+      })
+      expect(postClosePdf.status).toBe(401)
+      expect(postClosePdf.body).toMatchObject({
+        credentialExpired: true,
+        ok: false,
+      })
+      expect(postClosePdf.body).not.toHaveProperty('accessToken')
+
       const revokeResult = await service
         .from('admin_sessions')
         .update({
@@ -596,26 +751,44 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         .eq('id', bindingResult.data?.admin_session_id ?? '')
       expect(revokeResult.error).toBeNull()
 
-      const postRevokeSnapshot = await invokeDisplaySnapshot(displayPage, {
+      const postRevokeSnapshot = await invokeDisplaySnapshot(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
-      expect(postRevokeSnapshot.status).toBe(200)
+      expect(postRevokeSnapshot.status).toBe(401)
       expect(postRevokeSnapshot.body).toMatchObject({
         credentialExpired: true,
         ok: false,
       })
       expect(postRevokeSnapshot.body).not.toHaveProperty('result')
-      const postRevokePdf = await invokeDisplayPdf(displayPage, {
+      const postRevokePdf = await invokeDisplayPdf(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
-      expect(postRevokePdf.status).toBe(200)
+      expect(postRevokePdf.status).toBe(401)
       expect(postRevokePdf.body).toMatchObject({
         credentialExpired: true,
         ok: false,
       })
       expect(postRevokePdf.body).not.toHaveProperty('accessToken')
+
+      const unauthorizedConsoleMessage =
+        'Failed to load resource: the server responded with a status of 401 (Unauthorized)'
+      await displayProbeSafety.expectConsoleErrors(
+        {
+          message: unauthorizedConsoleMessage,
+          url: `${supabaseUrl}/functions/v1/operator-live-snapshot`,
+        },
+        2,
+      )
+      await displayProbeSafety.expectConsoleErrors(
+        {
+          message: unauthorizedConsoleMessage,
+          url: `${supabaseUrl}/functions/v1/issue-pdf-access-token`,
+        },
+        2,
+      )
+      await displayProbeSafety.assertClean()
     } finally {
       const enabled = await service.rpc('set_display_realtime_runtime_v1', {
         target_enabled: true,
@@ -647,9 +820,30 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         return body.action === 'status'
       },
     )
+    const invalidRestoreResponsePromise = invalidAdminPage.waitForResponse(
+      (response) => {
+        const request = response.request()
+        if (
+          new URL(response.url()).pathname !==
+            '/functions/v1/admin-identity-session' ||
+          request.method() !== 'POST' ||
+          response.status() !== 401
+        ) {
+          return false
+        }
+
+        const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+        return body.action === 'restore'
+      },
+    )
     await invalidAdminPage.goto('/admin')
     const invalidSessionResponse = await invalidSessionResponsePromise
+    const invalidRestoreResponse = await invalidRestoreResponsePromise
     expect(await invalidSessionResponse.json()).toMatchObject({
+      code: 'app_session_invalid',
+      ok: false,
+    })
+    expect(await invalidRestoreResponse.json()).toMatchObject({
       code: 'app_session_invalid',
       ok: false,
     })
@@ -658,12 +852,14 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     ).toBeVisible()
     await expect(invalidAdminPage.locator('.admin-workflow')).toHaveCount(0)
 
-    await invalidAdminSafety.expectConsoleErrorOnce({
-      message:
-        'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
-      url: invalidSessionResponse.url(),
-    })
-    await displaySafety.assertClean()
+    await invalidAdminSafety.expectConsoleErrors(
+      {
+        message:
+          'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
+        url: invalidSessionResponse.url(),
+      },
+      2,
+    )
     await invalidAdminSafety.assertClean()
   } finally {
     if (displayContext) await displayContext.close()

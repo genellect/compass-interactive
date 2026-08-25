@@ -60,33 +60,36 @@ export function TeacherWorkspaceNav({
       className="admin-workflow"
       role="tablist"
     >
-      {items
-        .filter((item) => available.has(item.view))
-        .map((item) => {
-          const selected = activeView === item.view
-          const controlledPanel =
-            item.view === 'setup' || item.view === 'slides'
-              ? 'teacher-workspace-material'
-              : `teacher-workspace-${item.view}`
-          const description =
-            item.view === 'ai' && aiActive ? '利用中' : item.description
-          return (
-            <button
-              aria-controls={controlledPanel}
-              aria-selected={selected}
-              className={selected ? 'is-active' : undefined}
-              id={`teacher-workspace-${item.view}-tab`}
-              key={item.view}
-              onClick={() => onSelect(item.view)}
-              role="tab"
-              type="button"
-            >
-              <span>{item.number}</span>
-              <strong>{item.label}</strong>
-              <small>{description}</small>
-            </button>
-          )
-        })}
+      {items.map((item) => {
+        const enabled = available.has(item.view)
+        const selected = activeView === item.view
+        const controlledPanel =
+          item.view === 'setup' || item.view === 'slides'
+            ? 'teacher-workspace-material'
+            : `teacher-workspace-${item.view}`
+        const description =
+          item.view === 'ai' && aiActive ? '利用中' : item.description
+        return (
+          <button
+            aria-controls={controlledPanel}
+            aria-disabled={!enabled}
+            aria-selected={selected}
+            className={selected ? 'is-active' : undefined}
+            disabled={!enabled}
+            id={`teacher-workspace-${item.view}-tab`}
+            key={item.view}
+            onClick={() => {
+              if (enabled) onSelect(item.view)
+            }}
+            role="tab"
+            type="button"
+          >
+            <span>{item.number}</span>
+            <strong>{item.label}</strong>
+            <small>{description}</small>
+          </button>
+        )
+      })}
     </nav>
   )
 }

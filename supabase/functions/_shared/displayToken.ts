@@ -2,7 +2,11 @@ import { getAdminTokenSecret, timingSafeEqual } from './adminToken.ts'
 
 const DISPLAY_TOKEN_SCOPE = 'compass-display'
 const DISPLAY_TOKEN_AUDIENCE = 'operator-live-snapshot'
-const MAX_TOKEN_TTL_SECONDS = 95 * 60
+const MAX_NEW_TOKEN_TTL_SECONDS = 90 * 60
+// Previously issued immutable receipts can replay their original 95-minute
+// signature. Database bindings are migration-clamped to the lecture hard stop,
+// so this compatibility decoder cannot extend effective authorization.
+const MAX_LEGACY_TOKEN_TTL_SECONDS = 95 * 60
 const TERMINAL_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 const textDecoder = new TextDecoder()
 const textEncoder = new TextEncoder()
@@ -80,8 +84,12 @@ async function createDisplayTokenForClaims(
   expiresAt: number,
   jti: string,
   secret: string,
+  allowLegacyReplay: boolean,
 ) {
   const now = Math.floor(Date.now() / 1000)
+  const maxTtlSeconds = allowLegacyReplay
+    ? MAX_LEGACY_TOKEN_TTL_SECONDS
+    : MAX_NEW_TOKEN_TTL_SECONDS
   if (
     !isUuid(lectureSessionId) ||
     !isUuid(jti) ||
@@ -90,7 +98,7 @@ async function createDisplayTokenForClaims(
     issuedAt > now + 5 ||
     expiresAt <= now ||
     expiresAt <= issuedAt ||
-    expiresAt > issuedAt + MAX_TOKEN_TTL_SECONDS
+    expiresAt > issuedAt + maxTtlSeconds
   ) {
     throw new Error('Invalid display session claims.')
   }
@@ -121,6 +129,7 @@ export async function createBoundDisplayToken(
   expiresAt: number,
   jti: string,
   secret: string,
+  allowLegacyReplay = false,
 ) {
   return createDisplayTokenForClaims(
     lectureSessionId,
@@ -128,6 +137,7 @@ export async function createBoundDisplayToken(
     expiresAt,
     jti,
     secret,
+    allowLegacyReplay,
   )
 }
 
@@ -173,7 +183,7 @@ async function getSignedDisplayTokenClaims(
       typeof parsedPayload.iat === 'number' &&
       parsedPayload.iat <= now + 5 &&
       typeof parsedPayload.exp === 'number' &&
-      parsedPayload.exp - parsedPayload.iat <= MAX_TOKEN_TTL_SECONDS &&
+      parsedPayload.exp - parsedPayload.iat <= MAX_LEGACY_TOKEN_TTL_SECONDS &&
       parsedPayload.exp > parsedPayload.iat &&
       typeof parsedPayload.terminalExp === 'number' &&
       parsedPayload.terminalExp ===

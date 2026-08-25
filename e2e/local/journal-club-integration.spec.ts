@@ -468,13 +468,14 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       response.url().endsWith('/functions/v1/issue-display-session') &&
       response.status() === 200,
   )
-  await page.getByRole('button', { name: '別ブラウザ用リンクをコピー' }).click()
+  await page.getByRole('button', { name: '画面共有を開始する' }).click()
   const displaySession = (await (
     await displaySessionResponsePromise
   ).json()) as {
     displayToken: string
     lectureSessionId: string
   }
+  await page.getByRole('button', { name: 'URLをコピー' }).click()
   const copiedDisplayUrl = await page.evaluate(
     () => window.sessionStorage.getItem('phase728b-jc-display-url') ?? '',
   )

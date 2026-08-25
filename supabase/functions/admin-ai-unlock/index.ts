@@ -168,6 +168,7 @@ const ACTION_KEYS: Record<AiUnlockAction, ReadonlySet<string>> = {
   authorizeMasterWithAal2Session: new Set([
     'action',
     'appSessionToken',
+    'intentVersion',
     'lectureSessionId',
     'policyId',
     'policyVersion',
@@ -1103,6 +1104,8 @@ async function handleRequest(request: Request) {
       !isUuid(body.lectureSessionId) ||
       !isUuid(body.policyId) ||
       !isPositiveInteger(body.policyVersion) ||
+      (body.intentVersion !== undefined &&
+        !isPositiveInteger(body.intentVersion)) ||
       (body.requestedScope !== 'all_except_captions' &&
         body.requestedScope !== 'all_including_captions') ||
       !isUuid(body.requestId)
@@ -1115,26 +1118,29 @@ async function handleRequest(request: Request) {
       )
     }
 
-    const replay = await serviceClient.rpc(
-      'replay_google_ai_master_admission_v1',
-      {
-        target_auth_user_id: userData.user.id,
-        target_lecture_session_id: body.lectureSessionId,
-        target_policy_id: body.policyId,
-        target_policy_version: body.policyVersion,
-        target_request_id: body.requestId,
-        target_scope: body.requestedScope,
-        target_supabase_auth_session_id: claims.sessionId,
-        target_token_hash: tokenHash,
-        target_unlock_method: 'google_aal2_session',
-      },
-    )
-    if (replay.error) return rpcErrorResponse(jsonResponse, replay.error.code)
-    if (replay.data) {
-      return masterResultResponse(
-        jsonResponse,
-        replay.data as Record<string, unknown>,
+    const fromActivationIntent = isPositiveInteger(body.intentVersion)
+    if (!fromActivationIntent) {
+      const replay = await serviceClient.rpc(
+        'replay_google_ai_master_admission_v1',
+        {
+          target_auth_user_id: userData.user.id,
+          target_lecture_session_id: body.lectureSessionId,
+          target_policy_id: body.policyId,
+          target_policy_version: body.policyVersion,
+          target_request_id: body.requestId,
+          target_scope: body.requestedScope,
+          target_supabase_auth_session_id: claims.sessionId,
+          target_token_hash: tokenHash,
+          target_unlock_method: 'google_aal2_session',
+        },
       )
+      if (replay.error) return rpcErrorResponse(jsonResponse, replay.error.code)
+      if (replay.data) {
+        return masterResultResponse(
+          jsonResponse,
+          replay.data as Record<string, unknown>,
+        )
+      }
     }
     if (!c1AdmissionSourceAllowed || !aiSourceEnabled) {
       return errorResponse(
@@ -1147,19 +1153,27 @@ async function handleRequest(request: Request) {
     const gateError = await requireC1AdmissionGate(false)
     if (gateError) return gateError
 
-    const result = await serviceClient.rpc(
-      'authorize_google_ai_master_with_session_v1',
-      {
-        target_auth_user_id: userData.user.id,
-        target_lecture_session_id: body.lectureSessionId,
-        target_policy_id: body.policyId,
-        target_policy_version: body.policyVersion,
-        target_request_id: body.requestId,
-        target_scope: body.requestedScope,
-        target_supabase_auth_session_id: claims.sessionId,
-        target_token_hash: tokenHash,
-      },
-    )
+    const admissionInput = {
+      target_auth_user_id: userData.user.id,
+      target_lecture_session_id: body.lectureSessionId,
+      target_policy_id: body.policyId,
+      target_policy_version: body.policyVersion,
+      target_request_id: body.requestId,
+      target_scope: body.requestedScope,
+      target_supabase_auth_session_id: claims.sessionId,
+      target_token_hash: tokenHash,
+    }
+    const result = fromActivationIntent
+      ? await serviceClient.rpc(
+          'authorize_google_ai_master_from_activation_intent_v1',
+          {
+            ...admissionInput,
+            target_intent_version: body.intentVersion,
+          },
+        )
+      : await serviceClient.rpc('authorize_google_ai_master_with_session_v1', {
+          ...admissionInput,
+        })
     if (result.error) return rpcErrorResponse(jsonResponse, result.error.code)
     const value = result.data as Record<string, unknown> | null
     if (value?.accepted === true) {

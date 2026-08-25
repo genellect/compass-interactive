@@ -1,9 +1,7 @@
-import { useState, type ChangeEvent, type FormEventHandler } from 'react'
+import { useEffect, useRef, type ChangeEvent } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
-import { isPhase729PowerPointSyncEnabled } from '../../lib/featureFlags'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import { SyncedPdfViewer } from '../DisplayView/SyncedPdfViewer'
-import { AdminPowerPointIntegration } from './AdminPowerPointIntegration'
 
 type PdfAsset = { id: string; pageCount: number; title: string }
 
@@ -13,7 +11,6 @@ type AdminPdfControlProps = {
   availableAssets: readonly PdfAsset[]
   browserPublishingEnabled: boolean
   canCreateLectureForPublication: boolean
-  displayPageInput: string
   displayState: DisplayState | null
   displayStateError: string | null
   displayStateLoading: boolean
@@ -22,14 +19,9 @@ type AdminPdfControlProps = {
   onAbortInterruptedPublication: () => void
   onCheckPublisher: () => void
   onDisplayNameChange: (value: string) => void
-  onDisplayStateRefresh: () => void
   onDownloadEnabledChange: (enabled: boolean) => void
   onFileChange: (file: File | null) => void
-  onGoToPage: FormEventHandler<HTMLFormElement>
-  onNext: () => void
-  onPageInputChange: (value: string) => void
   onPairingCodeChange: (value: string) => void
-  onPrevious: () => void
   onPublish: () => void
   onSelectDocument: (documentId: string) => void
   onSetDocument: () => void
@@ -49,18 +41,17 @@ type AdminPdfControlProps = {
     expectedByteSize: number
     expectedPageCount: number
   } | null
-  selectedAsset: PdfAsset | null | undefined
   view: 'material' | 'slides'
 }
 
 export function AdminPdfControl(props: AdminPdfControlProps) {
+  const pdfFileInputRef = useRef<HTMLInputElement>(null)
   const {
     activeLectureSessionId,
     adminToken,
     availableAssets,
     browserPublishingEnabled,
     canCreateLectureForPublication,
-    displayPageInput,
     displayState,
     displayStateError,
     displayStateLoading,
@@ -69,14 +60,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     onAbortInterruptedPublication,
     onCheckPublisher,
     onDisplayNameChange,
-    onDisplayStateRefresh,
     onDownloadEnabledChange,
     onFileChange,
-    onGoToPage,
-    onNext,
-    onPageInputChange,
     onPairingCodeChange,
-    onPrevious,
     onPublish,
     onSelectDocument,
     onSetDocument,
@@ -91,29 +77,21 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     publisherSessionToken,
     publisherStatus,
     requiredDocument,
-    selectedAsset,
     view,
   } = props
-  const [manualNavigationLocked, setManualNavigationLocked] = useState(false)
   const closed = lectureStatus === 'closed'
   const requiredDocumentPublished = requiredDocument
     ? availableAssets.some((asset) => asset.id === requiredDocument.documentId)
     : false
-  const activePageCount = displayState?.pdfDocumentId
-    ? (displayState.pdfPageCount ?? selectedAsset?.pageCount ?? null)
-    : null
-  const canNavigate =
-    Boolean(activeLectureSessionId) &&
-    Boolean(displayState?.pdfDocumentId) &&
-    Boolean(displayState?.pdfVisible) &&
-    Boolean(activePageCount) &&
-    !displayStateLoading &&
-    !manualNavigationLocked &&
-    !closed
-
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     onFileChange(event.target.files?.[0] ?? null)
   }
+
+  useEffect(() => {
+    if (!pdfFile && pdfFileInputRef.current) {
+      pdfFileInputRef.current.value = ''
+    }
+  }, [pdfFile])
 
   return (
     <section
@@ -126,72 +104,6 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
           <span className="metric">
             現在のページ: {displayState?.currentPdfPage ?? 1}
           </span>
-        ) : null}
-      </div>
-      <div hidden={view !== 'slides'}>
-        {activeLectureSessionId && displayState?.pdfDocumentId ? (
-          <div
-            aria-label="講義資料のページ操作"
-            className="admin-pdf-page-controller"
-          >
-            <button
-              className="secondary-button"
-              disabled={!canNavigate || displayState.currentPdfPage <= 1}
-              onClick={onPrevious}
-              type="button"
-            >
-              ← 前へ
-            </button>
-            <strong aria-live="polite">
-              {displayState.currentPdfPage} / {activePageCount ?? '—'}
-            </strong>
-            <button
-              className="primary-button compact"
-              disabled={
-                !canNavigate ||
-                displayState.currentPdfPage >= (activePageCount ?? 1)
-              }
-              onClick={onNext}
-              type="button"
-            >
-              次へ →
-            </button>
-            <form className="admin-pdf-page-jump" onSubmit={onGoToPage}>
-              <label>
-                <span>ページ</span>
-                <input
-                  aria-label="表示するページ番号"
-                  disabled={!canNavigate}
-                  max={activePageCount ?? 1}
-                  min={1}
-                  onChange={(event) => onPageInputChange(event.target.value)}
-                  type="number"
-                  value={displayPageInput}
-                />
-              </label>
-              <button
-                className="secondary-button compact"
-                disabled={!canNavigate}
-                type="submit"
-              >
-                移動
-              </button>
-            </form>
-          </div>
-        ) : null}
-        {isPhase729PowerPointSyncEnabled &&
-        activeLectureSessionId &&
-        displayState?.pdfDocumentId ? (
-          <AdminPowerPointIntegration
-            activeLectureSessionId={activeLectureSessionId}
-            adminToken={adminToken}
-            displayState={displayState}
-            lectureStatus={lectureStatus}
-            onCommittedPage={onDisplayStateRefresh}
-            onManualNavigationLockedChange={setManualNavigationLocked}
-            pdfPageCount={activePageCount}
-            pdfTitle={selectedAsset?.title ?? '講義資料'}
-          />
         ) : null}
       </div>
       {privatePdfEnabled ? (
@@ -256,12 +168,13 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
                       1024 /
                       1024
                     ).toFixed(2)}MB）`
-                  : 'PDFを選択（15MB・75ページ・20,000文字以下）'}
+                  : 'PDFを選択（15MB・75ページ以下）'}
               </span>
               <input
                 accept="application/pdf,.pdf"
                 disabled={pdfPublishing || closed}
                 onChange={handleFileChange}
+                ref={pdfFileInputRef}
                 type="file"
               />
             </label>
@@ -338,9 +251,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <label className="field compact-field">
               <span>PDF資料</span>
               <select
-                disabled={
-                  displayStateLoading || manualNavigationLocked || closed
-                }
+                disabled={displayStateLoading || closed}
                 onChange={(event) => onSelectDocument(event.target.value)}
                 value={pdfDocumentInput}
               >
@@ -358,7 +269,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             </label>
             <button
               className="secondary-button"
-              disabled={displayStateLoading || manualNavigationLocked || closed}
+              disabled={displayStateLoading || closed}
               onClick={onSetDocument}
               type="button"
             >
@@ -386,13 +297,6 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
       ) : null}
       {displayStateError ? (
         <p className="error-note">{displayStateError}</p>
-      ) : null}
-      {view === 'slides' ? (
-        <p className="note">
-          {closed
-            ? '講義終了時点で表示していた資料とページです。'
-            : '学生画面と教室表示は、教員が選んだ資料とページに自動で追従します。'}
-        </p>
       ) : null}
     </section>
   )

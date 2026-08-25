@@ -64,7 +64,7 @@ assert.match(
 for (const responsibility of [
   'commentsAndPolls',
   'sessionLifecycle',
-  'snapshotState',
+  'liveSnapshot',
   'useArchiveResume',
 ]) {
   assert.match(context, new RegExp(responsibility))

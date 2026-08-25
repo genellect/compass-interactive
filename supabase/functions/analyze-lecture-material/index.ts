@@ -178,10 +178,10 @@ Deno.serve(async (request) => {
     )
   }
   if (
-    (!isUuid(body.grantRequestId) ||
-      !isUuid(body.startRequestId) ||
-      body.grantRequestId.toLowerCase() === body.startRequestId.toLowerCase() ||
-      body.idempotencyKey !== undefined)
+    !isUuid(body.grantRequestId) ||
+    !isUuid(body.startRequestId) ||
+    body.grantRequestId.toLowerCase() === body.startRequestId.toLowerCase() ||
+    body.idempotencyKey !== undefined
   ) {
     return jsonResponse(
       {
@@ -320,13 +320,20 @@ Deno.serve(async (request) => {
       )
     }
     const document = documentData as PdfDocumentRow
-    await verifyExtraction(body.extraction, {
+    const extractionState = await verifyExtraction(body.extraction, {
       documentId: document.document_id,
       documentVersion: document.document_version,
       pageCount: document.page_count,
       textCharCount: document.text_char_count,
       textSha256: document.text_sha256,
     })
+    if (!extractionState.textAvailable) {
+      throw new MaterialAnalysisError(
+        'text_unavailable',
+        'このPDFには読み取れる文字情報がないため、AI分析は利用できません。資料の配信とスライド操作は利用できます。',
+        422,
+      )
+    }
 
     const selectedCharacterCount = body.extraction.pages
       .filter(
@@ -336,238 +343,245 @@ Deno.serve(async (request) => {
             page.pageNumber <= (body.pageEnd ?? body.extraction.pageCount)),
       )
       .reduce((sum, page) => sum + page.characterCount, 0)
+    if (selectedCharacterCount === 0) {
+      throw new MaterialAnalysisError(
+        'selected_text_unavailable',
+        '選択したページはAI分析用の文字抽出範囲外です。資料の配信とスライド操作は利用できます。',
+        422,
+      )
+    }
     const reservation = estimateReservation(selectedCharacterCount, body.action)
     reservedInputTokens = reservation.estimatedInputTokens
     reservedOutputTokens = reservation.estimatedOutputTokens
 
     let started: StartResult
     const { error: reapError } = await supabase.rpc(
-        'reap_stale_google_ai_provider_dispatches_v1',
-        { job_limit: 10 },
+      'reap_stale_google_ai_provider_dispatches_v1',
+      { job_limit: 10 },
+    )
+    if (reapError) {
+      throw new MaterialAnalysisError(
+        'provider_dispatch_cleanup_failed',
+        'Previous model activity could not be reconciled safely.',
+        503,
       )
-      if (reapError) {
-        throw new MaterialAnalysisError(
-          'provider_dispatch_cleanup_failed',
-          'Previous model activity could not be reconciled safely.',
-          503,
-        )
-      }
-      let nonce: string
-      let keyVersion: number
-      try {
-        const derived = await deriveGoogleAiChildGrantNonce({
-          feature: body.action,
-          lectureSessionId: body.lectureSessionId,
-          requestId: body.grantRequestId!,
+    }
+    let nonce: string
+    let keyVersion: number
+    try {
+      const derived = await deriveGoogleAiChildGrantNonce({
+        feature: body.action,
+        lectureSessionId: body.lectureSessionId,
+        requestId: body.grantRequestId!,
+      })
+      nonce = derived.nonce
+      keyVersion = derived.keyVersion
+    } catch {
+      throw new MaterialAnalysisError(
+        'google_ai_child_not_configured',
+        'Google Admin AI authorization is not configured.',
+        503,
+      )
+    }
+    const nonceHash = await sha256Hex(nonce)
+    const { data: childData, error: childError } = await supabase.rpc(
+      'issue_google_material_ai_child_grant_v1',
+      {
+        ...googleRpcIdentity,
+        target_analysis_id:
+          body.action === 'poll_suggestions' ? body.analysisId : null,
+        target_document_id: body.documentId,
+        target_document_version: body.documentVersion,
+        target_estimated_input_tokens: reservation.estimatedInputTokens,
+        target_estimated_microusd: reservation.estimatedMicrousd,
+        target_estimated_output_tokens: reservation.estimatedOutputTokens,
+        target_feature: body.action,
+        target_input_price_microusd_per_million:
+          PHASE5_INPUT_PRICE_MICROUSD_PER_MILLION,
+        target_lecture_session_id: body.lectureSessionId,
+        target_max_output_tokens: reservation.maxOutputTokens,
+        target_model_id: PHASE5_MODEL,
+        target_nonce_hash: nonceHash,
+        target_nonce_key_version: keyVersion,
+        target_output_price_microusd_per_million:
+          PHASE5_OUTPUT_PRICE_MICROUSD_PER_MILLION,
+        target_page_end:
+          body.action === 'poll_suggestions' ? body.pageEnd : null,
+        target_page_start:
+          body.action === 'poll_suggestions' ? body.pageStart : null,
+        target_prompt_version: PHASE5_PROMPT_VERSION,
+        target_request_id: body.grantRequestId,
+        target_text_sha256: body.extraction.textSha256,
+        target_transport_enabled:
+          googleContext.transportEnabled &&
+          materialTransportEnabled &&
+          Boolean(openAiKey),
+      },
+    )
+    if (childError) {
+      throw new MaterialAnalysisError(
+        childError.code === 'P7338'
+          ? 'google_ai_admission_disabled'
+          : 'google_ai_child_rejected',
+        childError.code === 'P7338'
+          ? 'AI use is not enabled for this Admin environment.'
+          : 'AI authorization is no longer available for this lecture.',
+        childError.code === 'P7338' ? 503 : 409,
+      )
+    }
+    const child = childData as GoogleChildResult
+    if (
+      !child.accepted ||
+      !child.grant_id ||
+      !child.providerIntentDigest ||
+      !/^[0-9a-f]{64}$/.test(child.providerIntentDigest)
+    ) {
+      throw new MaterialAnalysisError(
+        'google_ai_child_rejected',
+        'AI authorization is no longer available for this lecture.',
+        409,
+      )
+    }
+
+    const { data: startedData, error: startError } = await supabase.rpc(
+      'start_google_admin_material_ai_operation_v1',
+      {
+        ...googleRpcIdentity,
+        target_analysis_id:
+          body.action === 'poll_suggestions' ? body.analysisId : null,
+        target_document_id: body.documentId,
+        target_document_version: body.documentVersion,
+        target_estimated_input_tokens: reservation.estimatedInputTokens,
+        target_estimated_microusd: reservation.estimatedMicrousd,
+        target_estimated_output_tokens: reservation.estimatedOutputTokens,
+        target_feature: body.action,
+        target_grant_id: child.grant_id,
+        target_input_price_microusd_per_million:
+          PHASE5_INPUT_PRICE_MICROUSD_PER_MILLION,
+        target_lecture_session_id: body.lectureSessionId,
+        target_max_output_tokens: reservation.maxOutputTokens,
+        target_model_id: PHASE5_MODEL,
+        target_nonce_hash: nonceHash,
+        target_output_price_microusd_per_million:
+          PHASE5_OUTPUT_PRICE_MICROUSD_PER_MILLION,
+        target_page_end:
+          body.action === 'poll_suggestions' ? body.pageEnd : null,
+        target_page_start:
+          body.action === 'poll_suggestions' ? body.pageStart : null,
+        target_prompt_version: PHASE5_PROMPT_VERSION,
+        target_provider_intent_digest: child.providerIntentDigest,
+        target_start_request_id: body.startRequestId,
+        target_text_sha256: body.extraction.textSha256,
+        target_transport_enabled:
+          googleContext.transportEnabled &&
+          materialTransportEnabled &&
+          Boolean(openAiKey),
+      },
+    )
+    if (startError) {
+      throw new MaterialAnalysisError(
+        startError.code === 'P7338'
+          ? 'google_ai_admission_disabled'
+          : 'operation_rejected',
+        startError.code === 'P7338'
+          ? 'AI use is not enabled for this Admin environment.'
+          : 'The material analysis operation could not be started.',
+        startError.code === 'P7338' ? 503 : 409,
+      )
+    }
+    started = startedData as StartResult
+    actorId = started.actorId ?? null
+    operationId = started.operationId ?? null
+    if (
+      !started.accepted ||
+      !actorId ||
+      !operationId ||
+      typeof started.idempotentReplay !== 'boolean'
+    ) {
+      throw new MaterialAnalysisError(
+        started.reason ?? 'operation_rejected',
+        'The material analysis operation was rejected by its usage limits.',
+        409,
+      )
+    }
+    // A fresh start belongs to this invocation and is safe to settle if the
+    // subsequent dispatch claim fails before any provider request is sent.
+    // A replay is never owned until this invocation wins the append-only
+    // dispatch claim below.
+    ownsNewOperation = !started.idempotentReplay
+    if (started.idempotentReplay) {
+      const state = await readOperationState(body.startRequestId!, actorId)
+      if (state?.status === 'succeeded' && state.result_saved) {
+        return jsonResponse({
+          idempotentReplay: true,
+          ok: true,
+          results: state.results,
         })
-        nonce = derived.nonce
-        keyVersion = derived.keyVersion
-      } catch {
-        throw new MaterialAnalysisError(
-          'google_ai_child_not_configured',
-          'Google Admin AI authorization is not configured.',
-          503,
-        )
       }
-      const nonceHash = await sha256Hex(nonce)
-      const { data: childData, error: childError } = await supabase.rpc(
-        'issue_google_material_ai_child_grant_v1',
-        {
-          ...googleRpcIdentity,
-          target_analysis_id:
-            body.action === 'poll_suggestions' ? body.analysisId : null,
-          target_document_id: body.documentId,
-          target_document_version: body.documentVersion,
-          target_estimated_input_tokens: reservation.estimatedInputTokens,
-          target_estimated_microusd: reservation.estimatedMicrousd,
-          target_estimated_output_tokens: reservation.estimatedOutputTokens,
-          target_feature: body.action,
-          target_input_price_microusd_per_million:
-            PHASE5_INPUT_PRICE_MICROUSD_PER_MILLION,
-          target_lecture_session_id: body.lectureSessionId,
-          target_max_output_tokens: reservation.maxOutputTokens,
-          target_model_id: PHASE5_MODEL,
-          target_nonce_hash: nonceHash,
-          target_nonce_key_version: keyVersion,
-          target_output_price_microusd_per_million:
-            PHASE5_OUTPUT_PRICE_MICROUSD_PER_MILLION,
-          target_page_end:
-            body.action === 'poll_suggestions' ? body.pageEnd : null,
-          target_page_start:
-            body.action === 'poll_suggestions' ? body.pageStart : null,
-          target_prompt_version: PHASE5_PROMPT_VERSION,
-          target_request_id: body.grantRequestId,
-          target_text_sha256: body.extraction.textSha256,
-          target_transport_enabled:
-            googleContext.transportEnabled &&
-            materialTransportEnabled &&
-            Boolean(openAiKey),
-        },
-      )
-      if (childError) {
-        throw new MaterialAnalysisError(
-          childError.code === 'P7338'
-            ? 'google_ai_admission_disabled'
-            : 'google_ai_child_rejected',
-          childError.code === 'P7338'
-            ? 'AI use is not enabled for this Admin environment.'
-            : 'AI authorization is no longer available for this lecture.',
-          childError.code === 'P7338' ? 503 : 409,
-        )
-      }
-      const child = childData as GoogleChildResult
-      if (
-        !child.accepted ||
-        !child.grant_id ||
-        !child.providerIntentDigest ||
-        !/^[0-9a-f]{64}$/.test(child.providerIntentDigest)
-      ) {
-        throw new MaterialAnalysisError(
-          'google_ai_child_rejected',
-          'AI authorization is no longer available for this lecture.',
-          409,
-        )
-      }
-
-      const { data: startedData, error: startError } = await supabase.rpc(
-        'start_google_admin_material_ai_operation_v1',
-        {
-          ...googleRpcIdentity,
-          target_analysis_id:
-            body.action === 'poll_suggestions' ? body.analysisId : null,
-          target_document_id: body.documentId,
-          target_document_version: body.documentVersion,
-          target_estimated_input_tokens: reservation.estimatedInputTokens,
-          target_estimated_microusd: reservation.estimatedMicrousd,
-          target_estimated_output_tokens: reservation.estimatedOutputTokens,
-          target_feature: body.action,
-          target_grant_id: child.grant_id,
-          target_input_price_microusd_per_million:
-            PHASE5_INPUT_PRICE_MICROUSD_PER_MILLION,
-          target_lecture_session_id: body.lectureSessionId,
-          target_max_output_tokens: reservation.maxOutputTokens,
-          target_model_id: PHASE5_MODEL,
-          target_nonce_hash: nonceHash,
-          target_output_price_microusd_per_million:
-            PHASE5_OUTPUT_PRICE_MICROUSD_PER_MILLION,
-          target_page_end:
-            body.action === 'poll_suggestions' ? body.pageEnd : null,
-          target_page_start:
-            body.action === 'poll_suggestions' ? body.pageStart : null,
-          target_prompt_version: PHASE5_PROMPT_VERSION,
-          target_provider_intent_digest: child.providerIntentDigest,
-          target_start_request_id: body.startRequestId,
-          target_text_sha256: body.extraction.textSha256,
-          target_transport_enabled:
-            googleContext.transportEnabled &&
-            materialTransportEnabled &&
-            Boolean(openAiKey),
-        },
-      )
-      if (startError) {
-        throw new MaterialAnalysisError(
-          startError.code === 'P7338'
-            ? 'google_ai_admission_disabled'
-            : 'operation_rejected',
-          startError.code === 'P7338'
-            ? 'AI use is not enabled for this Admin environment.'
-            : 'The material analysis operation could not be started.',
-          startError.code === 'P7338' ? 503 : 409,
-        )
-      }
-      started = startedData as StartResult
-      actorId = started.actorId ?? null
-      operationId = started.operationId ?? null
-      if (
-        !started.accepted ||
-        !actorId ||
-        !operationId ||
-        typeof started.idempotentReplay !== 'boolean'
-      ) {
-        throw new MaterialAnalysisError(
-          started.reason ?? 'operation_rejected',
-          'The material analysis operation was rejected by its usage limits.',
-          409,
-        )
-      }
-      // A fresh start belongs to this invocation and is safe to settle if the
-      // subsequent dispatch claim fails before any provider request is sent.
-      // A replay is never owned until this invocation wins the append-only
-      // dispatch claim below.
-      ownsNewOperation = !started.idempotentReplay
-      if (started.idempotentReplay) {
-        const state = await readOperationState(body.startRequestId!, actorId)
-        if (state?.status === 'succeeded' && state.result_saved) {
-          return jsonResponse({
-            idempotentReplay: true,
-            ok: true,
-            results: state.results,
-          })
-        }
-        if (state?.status !== 'running') {
-          return jsonResponse(
-            {
-              code: 'operation_not_retryable',
-              message: 'Start a new material analysis attempt.',
-              ok: false,
-            },
-            409,
-          )
-        }
-      }
-
-      // Starting the DB operation and dispatching the external request are
-      // intentionally separate. A retry may claim a committed-but-undelivered
-      // start response, while an existing claim can never dispatch twice.
-      const { data: claimData, error: claimError } = await supabase.rpc(
-        'claim_google_ai_provider_dispatch_v1',
-        {
-          ...googleRpcIdentity,
-          target_client_request_id: body.startRequestId,
-          target_operation_id: operationId,
-          target_provider_family: 'openai_responses_v1',
-          target_start_request_id: body.startRequestId,
-          target_transport_enabled:
-            googleContext.transportEnabled &&
-            materialTransportEnabled &&
-            Boolean(openAiKey),
-        },
-      )
-      if (claimError) throw claimError
-      const claim = claimData as GoogleDispatchClaimResult | null
-      if (
-        !claim?.accepted ||
-        claim.operationId !== operationId ||
-        !isUuid(claim.clientRequestId)
-      ) {
-        throw new MaterialAnalysisError(
-          'provider_dispatch_not_authorized',
-          'The model request could not be authorized.',
-          409,
-        )
-      }
-      if (!claim.dispatchAllowed) {
-        if (claim.staleRecovered) {
-          return jsonResponse(
-            {
-              code: 'provider_dispatch_recovered',
-              message:
-                'The previous model request ended safely. Start a new analysis attempt.',
-              ok: false,
-            },
-            409,
-          )
-        }
+      if (state?.status !== 'running') {
         return jsonResponse(
           {
-            code: 'operation_in_progress',
-            message: 'This material analysis is already running.',
+            code: 'operation_not_retryable',
+            message: 'Start a new material analysis attempt.',
             ok: false,
-            retryAfter: claim.leaseExpiresAt,
           },
           409,
         )
       }
+    }
+
+    // Starting the DB operation and dispatching the external request are
+    // intentionally separate. A retry may claim a committed-but-undelivered
+    // start response, while an existing claim can never dispatch twice.
+    const { data: claimData, error: claimError } = await supabase.rpc(
+      'claim_google_ai_provider_dispatch_v1',
+      {
+        ...googleRpcIdentity,
+        target_client_request_id: body.startRequestId,
+        target_operation_id: operationId,
+        target_provider_family: 'openai_responses_v1',
+        target_start_request_id: body.startRequestId,
+        target_transport_enabled:
+          googleContext.transportEnabled &&
+          materialTransportEnabled &&
+          Boolean(openAiKey),
+      },
+    )
+    if (claimError) throw claimError
+    const claim = claimData as GoogleDispatchClaimResult | null
+    if (
+      !claim?.accepted ||
+      claim.operationId !== operationId ||
+      !isUuid(claim.clientRequestId)
+    ) {
+      throw new MaterialAnalysisError(
+        'provider_dispatch_not_authorized',
+        'The model request could not be authorized.',
+        409,
+      )
+    }
+    if (!claim.dispatchAllowed) {
+      if (claim.staleRecovered) {
+        return jsonResponse(
+          {
+            code: 'provider_dispatch_recovered',
+            message:
+              'The previous model request ended safely. Start a new analysis attempt.',
+            ok: false,
+          },
+          409,
+        )
+      }
+      return jsonResponse(
+        {
+          code: 'operation_in_progress',
+          message: 'This material analysis is already running.',
+          ok: false,
+          retryAfter: claim.leaseExpiresAt,
+        },
+        409,
+      )
+    }
     providerRequestId = claim.clientRequestId
     ownsNewOperation = true
 

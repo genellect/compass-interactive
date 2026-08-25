@@ -1,8 +1,8 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 104 documents in `docs/`
-Last verified: 2026-08-14
+Scope: entrypoint and status vocabulary for the 110 documents in `docs/`
+Last verified: 2026-08-25
 
 This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30F source/local readiness candidate. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
@@ -15,18 +15,22 @@ When two sources disagree, the higher one wins.
 1. What the user explicitly required for the task at hand
 2. Current Production behavior and the implementation on the latest `origin/main`
 3. [`AGENTS.md`](../AGENTS.md)
-4. Approved current future contracts: [`ROADMAP.md`](ROADMAP.md) controls phase
+4. The approved bounded lecture UX correction and fast Production lane is
+   controlled by
+   [`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md).
+   Within that scope it supersedes contrary older phase text.
+5. Approved current future contracts: [`ROADMAP.md`](ROADMAP.md) controls phase
    order and gates; [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)
    and [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md)
    control their detailed domain contracts
-5. The bounded private-source lecture-cycle path is controlled by
+6. The historical bounded private-source lecture-cycle path is controlled by
    [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)
    and its agent prompts in
    [`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md).
-6. [`README.md`](../README.md) and [`PROJECT_GUIDE.md`](../PROJECT_GUIDE.md)
-7. [`docs/CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md), [`docs/architecture.md`](architecture.md), [`docs/SECURITY.md`](SECURITY.md), [`docs/data_policy.md`](data_policy.md), [`docs/database_schema.md`](database_schema.md)
-8. [`docs/RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md), [`docs/GATE_ROUTING.md`](GATE_ROUTING.md), [`docs/CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md), and other route- or feature-specific requirement documents
-9. Other `PHASE*` design, gate and handoff records
+7. [`README.md`](../README.md) and [`PROJECT_GUIDE.md`](../PROJECT_GUIDE.md)
+8. [`docs/CLOUD_DEVELOPMENT.md`](CLOUD_DEVELOPMENT.md), [`docs/architecture.md`](architecture.md), [`docs/SECURITY.md`](SECURITY.md), [`docs/data_policy.md`](data_policy.md), [`docs/database_schema.md`](database_schema.md)
+9. [`docs/RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md), [`docs/GATE_ROUTING.md`](GATE_ROUTING.md), [`docs/CI_AND_BROWSER_E2E.md`](CI_AND_BROWSER_E2E.md), and other route- or feature-specific requirement documents
+10. Other `PHASE*` design, gate and handoff records
 
 If Production and `origin/main` disagree, report the difference. Do not pick one as canonical by guessing.
 If the Roadmap and an approved detailed domain contract disagree, stop and
@@ -62,6 +66,7 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified            | Entrypoint for setup, verification, deployment, rollback, incidents                                |
 | [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                           | Future phases, cross-phase invariants, stop-the-line gates                                         |
 | [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                           | Reasoning budget and internal/external agent responsibility                                        |
+| [`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md)   | Planned                           | Final lecture UX requirements, implementation work packages and fast Production release contract  |
 | [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)                               | Planned                           | Private-source, no-regression lecture-cycle candidate and 50-hour bounded release plan             |
 | [`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)                                         | Planned                           | Copy-ready parallel cloud task instructions, ownership and handoff contract                        |
 | [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)                                       | Implemented, verification pending | Direct Production topology, UI canary, stop conditions and repair-forward release contract         |

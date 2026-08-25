@@ -66,14 +66,16 @@ never infers approval. B2.2b now implements default-OFF add/remove rare-control:
 one aggregate live snapshot, a fresh existing-set control grant and an exact
 expected post-set advance the principal anchor while draining old authority.
 Its maximum 30-minute hash-only recovery is capped by the same Auth session.
-C2 adds the shared Google Edge verifier, a closed 75-action policy
+C2 added the shared Google Edge verifier, an initial closed 75-action policy
 matrix and same-transaction database facades for lecture lifecycle, comments,
 polls, Admin self-session controls, PDF documents and Admin access claims,
 Admin operator snapshots, Display state, Presenter and PDF publication,
 material-analysis, Summary, Academic and Realtime provider continuations. All
-20 C2 operational Admin Edge functions initially had a default-OFF dual
-transport. E deletes the redundant `authorize-ai-start` entry and makes the 19
-remaining operational adapters Google-app-session only. The Admin workspace
+20 initial C2 operational Admin Edge functions had a default-OFF dual
+transport. The final lecture UX adds six closed actions across three endpoints,
+making the current non-ledger matrix 81 actions across 23 Edge functions. E
+deletes the redundant `authorize-ai-start` entry and makes the remaining
+operational adapters Google-app-session only. The Admin workspace
 uses its distinct AAL2 Supabase client and has no raw-string legacy transport.
 Status, hide, stop and revoke remain available when admission flags are OFF;
 provider starts retain request-bound IDs across ambiguous responses.

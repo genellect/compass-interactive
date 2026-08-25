@@ -767,7 +767,7 @@ assert.match(
 )
 assert.match(
   localEdge,
-  /action: 'beginStepUp', challengedFactorId: enrolled\.id/,
+  /action: 'beginStepUp',[\s\S]*?challengedFactorId: enrolled\.id,[\s\S]*?loginRequestId/,
 )
 assert.match(
   localEdge,

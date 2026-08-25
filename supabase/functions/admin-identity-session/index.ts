@@ -30,6 +30,7 @@ type AdminIdentityRequest = {
     | 'completeStepUp'
     | 'logout'
     | 'reconcileTotpFactorSet'
+    | 'restore'
     | 'status'
   appSessionToken?: string
   challengedFactorId?: string
@@ -39,6 +40,8 @@ type AdminIdentityRequest = {
   controlRequestId?: string
   controlStepUpNonce?: string
   invitationToken?: string
+  loginRequestId?: string
+  restoreSeed?: string
   stepUpNonce?: string
 }
 
@@ -337,6 +340,7 @@ async function handleRequest(request: Request) {
       'completeStepUp',
       'logout',
       'reconcileTotpFactorSet',
+      'restore',
       'status',
     ].includes(body.action)
   ) {
@@ -350,11 +354,11 @@ async function handleRequest(request: Request) {
 
   const allowedBodyKeys = new Set(
     body.action === 'admit'
-      ? ['action', 'invitationToken']
+      ? ['action', 'invitationToken', 'loginRequestId']
       : body.action === 'beginStepUp'
-        ? ['action', 'challengedFactorId', 'invitationToken']
+        ? ['action', 'challengedFactorId', 'invitationToken', 'loginRequestId']
         : body.action === 'completeStepUp'
-          ? ['action', 'stepUpNonce']
+          ? ['action', 'loginRequestId', 'stepUpNonce']
           : body.action === 'beginControlStepUp'
             ? [
                 'action',
@@ -377,7 +381,9 @@ async function handleRequest(request: Request) {
                 ]
               : body.action === 'reconcileTotpFactorSet'
                 ? ['action']
-                : ['action', 'appSessionToken'],
+                : body.action === 'restore'
+                  ? ['action', 'restoreSeed']
+                  : ['action', 'appSessionToken'],
   )
   const rawBody = body as Record<string, unknown>
   if (
@@ -391,10 +397,24 @@ async function handleRequest(request: Request) {
       'controlRequestId',
       'controlStepUpNonce',
       'invitationToken',
+      'loginRequestId',
+      'restoreSeed',
       'stepUpNonce',
     ].some(
       (key) => rawBody[key] !== undefined && typeof rawBody[key] !== 'string',
     )
+  ) {
+    return errorResponse(
+      jsonResponse,
+      'request_invalid',
+      'Request is invalid.',
+      400,
+    )
+  }
+
+  if (
+    ['admit', 'beginStepUp', 'completeStepUp'].includes(body.action) &&
+    (!body.loginRequestId || !UUID_PATTERN.test(body.loginRequestId))
   ) {
     return errorResponse(
       jsonResponse,
@@ -578,7 +598,7 @@ async function handleRequest(request: Request) {
 
   const admitIdentity = async () => {
     const { data, error } = await serviceClient.rpc(
-      'consume_admin_identity_admission_v1',
+      'consume_admin_identity_admission_once_v1',
       {
         target_auth_user_id: userData.user.id,
         target_display_name: googleIdentity.displayName,
@@ -588,7 +608,7 @@ async function handleRequest(request: Request) {
         target_invitation_token_hash: invitationTokenHash,
         target_normalized_email: googleIdentity.email,
         target_provider_subject_hmac: subjectHmac,
-        target_request_id: requestId,
+        target_request_id: body.loginRequestId!,
         target_subject_pepper_version: pepperVersion,
       },
     )
@@ -633,16 +653,6 @@ async function handleRequest(request: Request) {
         'step_up_unavailable',
         'Two-step verification could not be started.',
         409,
-      )
-    }
-    const { admission, errorCode } = await admitIdentity()
-    if (errorCode) return rpcErrorResponse(jsonResponse, errorCode)
-    if (!admission?.eligible) {
-      return errorResponse(
-        jsonResponse,
-        'membership_unavailable',
-        'This Google account is not available for Admin sign-in.',
-        403,
       )
     }
     const rawNonce = createAdminLoginNonce()
@@ -740,15 +750,74 @@ async function handleRequest(request: Request) {
     )
   }
 
-  const { admission, errorCode } = await admitIdentity()
-  if (errorCode) return rpcErrorResponse(jsonResponse, errorCode)
-  if (!admission?.eligible) {
-    return errorResponse(
-      jsonResponse,
-      'membership_unavailable',
-      'This Google account is not available for Admin sign-in.',
-      403,
+  if (body.action === 'restore') {
+    const restoreSeed = body.restoreSeed?.trim() ?? ''
+    try {
+      assertAdminLoginNonce(restoreSeed)
+    } catch {
+      return errorResponse(
+        jsonResponse,
+        'app_session_invalid',
+        'Admin session could not be restored.',
+        401,
+      )
+    }
+    const appSessionToken = await createGoogleAdminSessionToken(
+      restoreSeed,
+      adminSessionSecret,
     )
+    const networkIdentifier = getTrustedNetworkIdentifier(request)
+    const [networkHash, userAgentHash] = await Promise.all([
+      networkIdentifier
+        ? hashAdminContext(networkIdentifier, adminSessionSecret, 'network')
+        : Promise.resolve(null),
+      request.headers.get('user-agent')
+        ? hashAdminContext(
+            request.headers.get('user-agent')!.slice(0, 512),
+            adminSessionSecret,
+            'user-agent',
+          )
+        : Promise.resolve(null),
+    ])
+    const { data, error } = await serviceClient.rpc(
+      'restore_google_admin_session_v1',
+      {
+        target_auth_user_id: userData.user.id,
+        target_google_issuer: googleIdentity.issuer,
+        target_network_hash: networkHash,
+        target_token_hash: await sha256Hex(appSessionToken),
+        target_provider_subject_hmac: subjectHmac,
+        target_request_id: crypto.randomUUID(),
+        target_subject_pepper_version: pepperVersion,
+        target_supabase_auth_session_id: claims.sessionId,
+        target_user_agent_hash: userAgentHash,
+      },
+    )
+    const session = normalizeSession(data)
+    if (error) return rpcErrorResponse(jsonResponse, error.code)
+    if (!session) {
+      return errorResponse(
+        jsonResponse,
+        'app_session_invalid',
+        'Admin session could not be restored.',
+        401,
+      )
+    }
+    return jsonResponse({
+      appSessionToken,
+      ok: true,
+      session: {
+        canUseAi: session.can_use_ai,
+        environmentId: session.environment_id,
+        expiresAt: session.expires_at,
+        id: session.id,
+        idleExpiresAt: session.idle_expires_at,
+        membershipId: session.membership_id,
+        principalId: session.principal_id,
+        role: session.role,
+        stepUpVerifiedAt: session.step_up_verified_at,
+      },
+    })
   }
 
   if (body.action === 'beginControlStepUp') {

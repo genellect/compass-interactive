@@ -3,12 +3,11 @@ import { LiveBoard } from '../LiveBoard'
 import { LivePoll } from '../LivePoll'
 import { SyncedPdfViewer } from './SyncedPdfViewer'
 import { useFullscreen } from '../../hooks/useFullscreen'
-import { AppIcon } from '../AppIcon'
 import { LectureJoinQr } from '../LectureJoinQr'
 import { LiveCaptionPanel, type CaptionContent } from '../LearningSupport'
-import { isPhase71ClassroomExtensionsEnabled } from '../../lib/featureFlags'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
 import type { PollResultSummary } from '../../repositories/supabasePollRepository'
+import type { PublicLectureSummary } from '../../repositories/supabaseLiveStateRepository'
 import type {
   LectureRuntimeMode,
   LectureSession,
@@ -29,7 +28,6 @@ type DisplayViewProps = {
   isSessionSyncPaused: boolean
   lecture: LectureSession
   lectureCode: string
-  participantCount: number
   pollResults: PollResultSummary[]
   pollResultsError: string | null
   polls: Poll[]
@@ -37,6 +35,7 @@ type DisplayViewProps = {
   pollsLoading: boolean
   runtimeMode: LectureRuntimeMode
   sessionSyncMessage: string | null
+  summary: PublicLectureSummary | null
   visibleCommentCount: number
 }
 
@@ -53,7 +52,6 @@ export function DisplayView({
   isSessionSyncPaused,
   lecture,
   lectureCode,
-  participantCount,
   pollResults,
   pollResultsError,
   polls,
@@ -61,48 +59,30 @@ export function DisplayView({
   pollsLoading,
   runtimeMode,
   sessionSyncMessage,
+  summary,
   visibleCommentCount,
 }: DisplayViewProps) {
-  const presentationRef = useRef<HTMLDivElement | null>(null)
+  const presentationRef = useRef<HTMLElement | null>(null)
   const {
     errorMessage: presentationFullscreenError,
     isFullscreen: isPresentationFullscreen,
     isFullscreenSupported,
     toggleFullscreen,
   } = useFullscreen(presentationRef)
-  const displayMode = displayState?.displayMode ?? 'normal'
   const remotePdfPage = displayState?.currentPdfPage ?? null
   const isLectureClosed = lecture.status === 'closed'
+  const activePolls = isLectureClosed ? [] : polls.slice(0, 1)
 
   return (
-    <main className="display-shell">
+    <main className="display-shell" ref={presentationRef}>
       <section className="display-hero">
         <div className="display-title-group">
-          <span className={isLectureClosed ? 'archive-badge' : 'live-badge'}>
-            {isLectureClosed ? (
-              'LECTURE ENDED'
-            ) : (
-              <>
-                <i /> LIVE CLASSROOM
-              </>
-            )}
-          </span>
-          <div>
-            <p className="eyebrow">COMPASS INTERACTIVE</p>
-            <h1 title={lecture.title}>{lecture.title}</h1>
-          </div>
+          <h1 title={lecture.title}>{lecture.title}</h1>
         </div>
-        <div className="display-status-row">
-          <span className="metric">
-            <AppIcon name="users" size={16} /> 約{participantCount}人参加
-          </span>
-          <span className="metric">
-            <AppIcon name="message" size={16} /> {visibleCommentCount}件の声
-          </span>
-          <span className="metric">
-            <AppIcon name="poll" size={16} />{' '}
-            {isLectureClosed ? 0 : polls.length}件受付中
-          </span>
+        {!isLectureClosed ? (
+          <LectureJoinQr code={lectureCode} compact title="講義に参加" />
+        ) : null}
+        <div className="display-actions">
           <button
             className="secondary-button display-fullscreen-button"
             disabled={!isFullscreenSupported}
@@ -119,13 +99,6 @@ export function DisplayView({
         ) : null}
         {displayStateError ? (
           <p className="error-note">教室表示の更新に時間がかかっています。</p>
-        ) : null}
-        {isPhase71ClassroomExtensionsEnabled && !isLectureClosed ? (
-          <LectureJoinQr
-            code={lectureCode}
-            compact
-            title="スマートフォンで参加"
-          />
         ) : null}
       </section>
 
@@ -149,28 +122,26 @@ export function DisplayView({
       ) : null}
 
       <div
-        className={`display-layout display-mode-${displayMode}`}
-        ref={presentationRef}
+        className={`display-layout display-mode-normal ${
+          activePolls.length > 0 ? 'has-active-poll' : 'without-active-poll'
+        }`}
       >
-        {isPresentationFullscreen ? (
-          <button
-            className="secondary-button display-fullscreen-exit"
-            onClick={() => void toggleFullscreen()}
-            type="button"
-          >
-            全画面を終了
-          </button>
-        ) : null}
         <section className="display-main-stage">
           <div className="display-placeholder slide-placeholder">
             <SyncedPdfViewer
               displayToken={displayToken}
               documentId={displayState?.pdfDocumentId ?? null}
               documentVersion={displayState?.pdfDocumentVersion}
+              key={`${activeLectureSessionId ?? 'none'}:${
+                displayState?.pdfDocumentId ?? 'none'
+              }:${displayState?.pdfDocumentVersion ?? 'none'}:${
+                displayState?.pdfManifestVersion ?? 0
+              }`}
               lectureSessionId={activeLectureSessionId}
               manifestVersion={displayState?.pdfManifestVersion}
               pageCount={displayState?.pdfPageCount}
               presenterLocked
+              projector
               remotePage={remotePdfPage}
               viewMode={isLectureClosed ? 'closed' : 'live'}
               visible={displayState?.pdfVisible}
@@ -188,6 +159,23 @@ export function DisplayView({
         </section>
 
         <aside className="display-side-rail">
+          {!isLectureClosed && summary && summary.lectureRecap.length > 0 ? (
+            <section
+              aria-live="polite"
+              className="display-summary-card"
+              key={summary.revisionId}
+            >
+              <div className="display-summary-heading">
+                <p className="eyebrow">5 MINUTE RECAP</p>
+                <h2>直近5分のハイライト</h2>
+              </div>
+              <ul>
+                {summary.lectureRecap.slice(0, 3).map((point, index) => (
+                  <li key={`${summary.revisionId}:${index}`}>{point}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {commentsError ? (
             <p className="error-note">コメントの取得に失敗しました。</p>
           ) : null}
@@ -195,14 +183,18 @@ export function DisplayView({
             <p className="note">コメントを読み込んでいます。</p>
           ) : null}
           <LiveBoard
-            comments={comments.slice(0, 5)}
+            comments={comments}
+            limit={5}
             mode="display"
             totalCount={visibleCommentCount}
           />
         </aside>
 
         {!isLectureClosed &&
-        (polls.length > 0 || pollsError || pollResultsError || pollsLoading) ? (
+        (activePolls.length > 0 ||
+          pollsError ||
+          pollResultsError ||
+          pollsLoading) ? (
           <section className="display-poll-rail">
             <div className="display-poll-heading">
               <p className="eyebrow">LIVE POLL</p>
@@ -217,7 +209,7 @@ export function DisplayView({
             {pollsLoading ? (
               <p className="note">投票を読み込んでいます。</p>
             ) : null}
-            {polls.map((poll) => (
+            {activePolls.map((poll) => (
               <LivePoll
                 displayMode
                 key={poll.id}

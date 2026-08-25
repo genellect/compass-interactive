@@ -181,6 +181,7 @@ Deno.serve(async (request) => {
       expiresAtEpoch,
       body.requestId,
       getDisplayTokenSecret(),
+      issuance.idempotentReplay,
     )
     return jsonResponse({
       displayToken,

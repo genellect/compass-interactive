@@ -22,11 +22,15 @@ import {
 import { createGoogleAdminCredential } from '../lib/adminAuth/adminOperationCredential'
 import {
   clearAdminAuthStorage,
+  clearAdminAppSessionToken,
   clearAdminOAuthAttempt,
   beginAdminOAuthAttempt,
   consumeAdminOAuthAttempt,
+  getAdminAuthRateLimitRemainingMs,
   persistAdminAppSessionToken,
+  persistAdminAppSessionRestoreSeed,
   restoreAdminAppSessionToken,
+  restoreAdminAppSessionRestoreSeed,
 } from '../lib/adminAuth/adminAuthStorage'
 import { claimAdminSurfaceWindow } from '../lib/adminAuth/adminSurfaceNavigation'
 import { AdminAiUnlockError } from '../lib/adminAuth/adminAiUnlockApi'
@@ -55,6 +59,7 @@ import {
   beginGoogleAdminStepUp,
   completeGoogleAdminStepUp,
   restoreGoogleAdminSession,
+  restoreGoogleAdminSessionFromAuth,
   revokeGoogleAdminSession,
   type GoogleAdminSession,
 } from '../lib/adminAuth/adminIdentityApi'
@@ -132,6 +137,7 @@ export function AdminRoute() {
   const bootStarted = useRef(false)
   const enrollmentSecretRef = useRef<EnrollmentSecret | null>(null)
   const forcedSessionInvalidRef = useRef(false)
+  const loginRequestIdRef = useRef('')
   const [phase, setPhase] = useState<IdentityPhase>('booting')
   const [errorMessage, setErrorMessage] = useState('')
   const [factorId, setFactorId] = useState('')
@@ -139,6 +145,8 @@ export function AdminRoute() {
     useState<EnrollmentSecret | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [rateLimitUntil, setRateLimitUntil] = useState(0)
+  const [rateLimitNow, setRateLimitNow] = useState(() => Date.now())
   const [session, setSession] = useState<GoogleAdminSession | null>(null)
   const [appSessionToken, setAppSessionToken] = useState('')
   const [transitionRecovery, setTransitionRecovery] =
@@ -166,6 +174,7 @@ export function AdminRoute() {
         forgetGoogleAdminOperationSession(invalidatedAppSessionToken)
       }
       clearEnrollmentSecret()
+      loginRequestIdRef.current = ''
       clearAdminAuthStorage()
       clearAdminPdfExtractionCache()
       setAppSessionToken('')
@@ -215,6 +224,11 @@ export function AdminRoute() {
       const { data, error } = await adminSupabase.auth.getSession()
       if (error) throw error
       if (!data.session) {
+        const staleAppSessionToken = restoreAdminAppSessionToken()
+        clearAdminAuthStorage()
+        if (staleAppSessionToken) {
+          forgetGoogleAdminOperationSession(staleAppSessionToken)
+        }
         setSession(null)
         setAppSessionToken('')
         setTransitionRecoveryScope(null)
@@ -291,18 +305,56 @@ export function AdminRoute() {
               'reauthentication_required',
             ].includes(error.code)
           ) {
-            await returnToGoogleReauthentication(
-              '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
-              appSessionToken,
-            )
-            return
+            clearAdminAppSessionToken()
+            forgetGoogleAdminOperationSession(appSessionToken)
+            try {
+              const restoreSeed =
+                restoreAdminAppSessionRestoreSeed(currentRecoveryScope)
+              const rotated =
+                await restoreGoogleAdminSessionFromAuth(restoreSeed)
+              persistAdminAppSessionToken(rotated.appSessionToken)
+              forcedSessionInvalidRef.current = false
+              setAppSessionToken(rotated.appSessionToken)
+              setSession(rotated.session)
+              setPhase('ready')
+              return
+            } catch (restoreError) {
+              await returnToGoogleReauthentication(
+                restoreError instanceof AdminIdentityError
+                  ? restoreError.message
+                  : '管理者セッションを復元できませんでした。Googleログインからやり直してください。',
+                appSessionToken,
+              )
+              return
+            }
           } else {
             throw error
           }
         }
       }
 
-      await admitGoogleAdmin()
+      if (!loginRequestIdRef.current) {
+        try {
+          const restoreSeed =
+            restoreAdminAppSessionRestoreSeed(currentRecoveryScope)
+          const restored = await restoreGoogleAdminSessionFromAuth(restoreSeed)
+          persistAdminAppSessionToken(restored.appSessionToken)
+          forcedSessionInvalidRef.current = false
+          setAppSessionToken(restored.appSessionToken)
+          setSession(restored.session)
+          setPhase('ready')
+          return
+        } catch (error) {
+          await returnToGoogleReauthentication(
+            error instanceof AdminIdentityError
+              ? error.message
+              : '管理者セッションを復元できませんでした。Googleログインからやり直してください。',
+          )
+          return
+        }
+      }
+
+      await admitGoogleAdmin(loginRequestIdRef.current)
       const { data: factors, error: factorsError } =
         await adminSupabase.auth.mfa.listFactors()
       if (factorsError) throw factorsError
@@ -358,7 +410,7 @@ export function AdminRoute() {
 
       const parameters = new URLSearchParams(location.search)
       const codes = parameters.getAll('code')
-      const returnPath = consumeAdminOAuthAttempt()
+      const oauthAttempt = consumeAdminOAuthAttempt()
       window.history.replaceState({}, '', '/admin/auth/callback')
       const allowedKeys = new Set(['code'])
       const hasUnexpectedParameter = Array.from(parameters.keys()).some(
@@ -368,7 +420,7 @@ export function AdminRoute() {
         codes.length !== 1 ||
         !codes[0] ||
         hasUnexpectedParameter ||
-        !returnPath
+        !oauthAttempt
       ) {
         setErrorMessage(
           'Googleログインの応答を確認できませんでした。最初からやり直してください。',
@@ -376,14 +428,15 @@ export function AdminRoute() {
         setPhase('error')
         return
       }
+      loginRequestIdRef.current = oauthAttempt.id
 
       void adminSupabase.auth
         .exchangeCodeForSession(codes[0])
         .then(({ error }) => {
           if (error) throw error
           bootStarted.current = true
-          window.history.replaceState({}, '', returnPath)
-          navigate(returnPath, { replace: true })
+          window.history.replaceState({}, '', oauthAttempt.returnPath)
+          navigate(oauthAttempt.returnPath, { replace: true })
           return prepareIdentity()
         })
         .catch((error) => {
@@ -438,6 +491,7 @@ export function AdminRoute() {
       provider: 'google',
       options: {
         redirectTo: getAdminOAuthCallbackUrl(),
+        queryParams: { prompt: 'select_account' },
         scopes: 'openid email profile',
       },
     })
@@ -450,25 +504,61 @@ export function AdminRoute() {
 
   async function verifyTotp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!/^\d{6}$/.test(totpCode) || !factorId || isSubmitting) return
+    const retryAfterMs = Math.max(
+      getAdminAuthRateLimitRemainingMs(),
+      rateLimitUntil - Date.now(),
+    )
+    if (
+      !/^\d{6}$/.test(totpCode) ||
+      !factorId ||
+      !loginRequestIdRef.current ||
+      isSubmitting ||
+      retryAfterMs > 0
+    )
+      return
     setIsSubmitting(true)
     setErrorMessage('')
     try {
-      const { stepUpNonce } = await beginGoogleAdminStepUp(factorId)
+      const { stepUpNonce } = await beginGoogleAdminStepUp(
+        factorId,
+        loginRequestIdRef.current,
+      )
       const { error } = await adminSupabase.auth.mfa.challengeAndVerify({
         code: totpCode,
         factorId,
       })
       if (error) throw error
-      const completed = await completeGoogleAdminStepUp(stepUpNonce)
+      const completed = await completeGoogleAdminStepUp(
+        stepUpNonce,
+        loginRequestIdRef.current,
+      )
+      if (!transitionRecoveryScope) {
+        throw new Error('The Google session recovery scope is invalid.')
+      }
+      loginRequestIdRef.current = ''
       forcedSessionInvalidRef.current = false
       persistAdminAppSessionToken(completed.appSessionToken)
+      persistAdminAppSessionRestoreSeed(stepUpNonce, transitionRecoveryScope)
       setAppSessionToken(completed.appSessionToken)
       setSession(completed.session)
       clearEnrollmentSecret()
       setPhase('ready')
     } catch (error) {
       setTotpCode('')
+      const authRetryAfterMs = getAdminAuthRateLimitRemainingMs()
+      const identityRetryAfterMs =
+        error instanceof AdminIdentityError && error.code === 'rate_limited'
+          ? error.retryAfterMs || 5 * 60_000
+          : 0
+      const nextRetryAfterMs = Math.max(authRetryAfterMs, identityRetryAfterMs)
+      if (nextRetryAfterMs > 0) {
+        setRateLimitUntil(Date.now() + nextRetryAfterMs)
+        setRateLimitNow(Date.now())
+        setErrorMessage(
+          '試行回数が多すぎます。待機時間の終了後に再度お試しください。',
+        )
+        return
+      }
       if (
         error instanceof AdminIdentityError &&
         error.code === 'reauthentication_required'
@@ -488,6 +578,16 @@ export function AdminRoute() {
       setIsSubmitting(false)
     }
   }
+
+  useEffect(() => {
+    if (rateLimitUntil <= Date.now()) return
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      setRateLimitNow(now)
+      if (now >= rateLimitUntil) window.clearInterval(timer)
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [rateLimitUntil])
 
   async function logout() {
     const finishForcedSessionInvalidation = () => {
@@ -678,6 +778,10 @@ export function AdminRoute() {
     transitionRecovery &&
     Date.now() >= Date.parse(transitionRecovery.expiresAt) + 5_000,
   )
+  const rateLimitRemainingSeconds = Math.max(
+    0,
+    Math.ceil((rateLimitUntil - rateLimitNow) / 1_000),
+  )
   const googleAdminCredential = useMemo(
     () =>
       appSessionToken
@@ -741,6 +845,11 @@ export function AdminRoute() {
           {errorMessage ? (
             <p className="error-note" role="alert">
               {errorMessage}
+            </p>
+          ) : null}
+          {rateLimitRemainingSeconds > 0 ? (
+            <p className="helper-note" role="status">
+              再試行まで {rateLimitRemainingSeconds} 秒
             </p>
           ) : null}
           <button
@@ -840,7 +949,7 @@ export function AdminRoute() {
             <input
               aria-label="認証コード"
               autoComplete="one-time-code"
-              disabled={isSubmitting}
+              disabled={isSubmitting || rateLimitRemainingSeconds > 0}
               inputMode="numeric"
               maxLength={6}
               onChange={(event) =>
@@ -857,9 +966,18 @@ export function AdminRoute() {
               {errorMessage}
             </p>
           ) : null}
+          {rateLimitRemainingSeconds > 0 ? (
+            <p className="helper-note" role="status">
+              再試行まで {rateLimitRemainingSeconds} 秒
+            </p>
+          ) : null}
           <button
             className="primary-button"
-            disabled={isSubmitting || totpCode.length !== 6}
+            disabled={
+              isSubmitting ||
+              rateLimitRemainingSeconds > 0 ||
+              totpCode.length !== 6
+            }
             type="submit"
           >
             {isSubmitting ? '確認中…' : '続ける'}

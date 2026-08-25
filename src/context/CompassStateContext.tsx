@@ -29,10 +29,8 @@ import {
   type ServerClockSample,
 } from '../lib/lectureLifecycle'
 import {
+  getLiveSyncRouteOptions,
   normalizeLiveSyncPathname,
-  STUDENT_LIVE_SYNC_INITIAL_JITTER_MS,
-  STUDENT_LIVE_SYNC_INTERVAL_MS,
-  STUDENT_LIVE_SYNC_JITTER_MS,
 } from '../lib/liveSync'
 import {
   isPhase1SyncProtocolEnabled,
@@ -46,7 +44,10 @@ import {
 } from '../lib/lectureResumeStorage'
 import {
   advanceLiveStateVersions,
+  createLiveSnapshotFenceState,
+  getLiveSnapshotFreshness,
   getRequestedLiveStateVersions,
+  mergeLiveStateVersions,
 } from '../lib/liveSnapshot'
 import {
   createOptimisticComment,
@@ -62,7 +63,6 @@ import { mockCompassRepository } from '../repositories'
 import { supabaseCommentRepository } from '../repositories/supabaseCommentRepository'
 import {
   type CommentCursor,
-  type LiveStateVersions,
   type ParticipantLiveState,
   type PublicAcademicAnswer,
   type PublicCaption,
@@ -102,7 +102,6 @@ import {
   getInitialJoinedLectureSession,
   getSessionPauseMessage,
 } from './compass/sessionLifecycle'
-import { createEmptyLiveStateVersions } from './compass/snapshotState'
 import { useArchiveResume } from './compass/useArchiveResume'
 
 const ARCHIVE_JOIN_PREFLIGHT_TIMEOUT_MS = 5_000
@@ -202,9 +201,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   const [displayStateError, setDisplayStateError] = useState<string | null>(
     null,
   )
-  const liveStateVersionsRef = useRef<LiveStateVersions>(
-    createEmptyLiveStateVersions(),
-  )
+  const liveSnapshotFenceRef = useRef(createLiveSnapshotFenceState())
   const liveSnapshotInFlightRef =
     useRef<Promise<JoinedLectureSession | null> | null>(null)
   const commentCursorRef = useRef<CommentCursor | null>(null)
@@ -263,8 +260,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   const setOperatorLiveAccess = useCallback(
     (access: OperatorLiveAccess | null) => {
+      lifecycleRequestEpochRef.current += 1
       setOperatorLiveAccessState(access)
-      liveStateVersionsRef.current = createEmptyLiveStateVersions()
+      liveSnapshotFenceRef.current = createLiveSnapshotFenceState()
       liveSnapshotInFlightRef.current = null
       commentCursorRef.current = null
     },
@@ -392,7 +390,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setHiddenCommentCount(0)
       setLastSuccessfulSyncAt(null)
       setDisplayStateError(null)
-      liveStateVersionsRef.current = createEmptyLiveStateVersions()
+      liveSnapshotFenceRef.current = createLiveSnapshotFenceState()
+      liveSnapshotInFlightRef.current = null
       commentCursorRef.current = null
       likedCommentIdsRef.current = new Set()
       serverClockSampleRef.current = null
@@ -439,7 +438,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setHasOlderComments(false)
       setIsLoadingOlderComments(false)
       setLastSuccessfulSyncAt(null)
-      liveStateVersionsRef.current = createEmptyLiveStateVersions()
+      liveSnapshotFenceRef.current = createLiveSnapshotFenceState()
       liveSnapshotInFlightRef.current = null
       commentCursorRef.current = null
       likedCommentIdsRef.current = new Set()
@@ -484,6 +483,11 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
         return liveSnapshotInFlightRef.current
       }
 
+      const requestEpoch = lifecycleRequestEpochRef.current
+      const liveSnapshotFence = liveSnapshotFenceRef.current
+      const requestSequence = liveSnapshotFence.requestSequence + 1
+      liveSnapshotFence.requestSequence = requestSequence
+
       if (showLoading) {
         setCommentsLoading(true)
         setPollsLoading(true)
@@ -497,7 +501,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
       const snapshotRequest = (async () => {
         try {
-          const knownVersions = liveStateVersionsRef.current
+          const knownVersions = liveSnapshotFence.requestedVersions
           const activeOperatorAccess =
             operatorLiveAccess &&
             (normalizedPathname === '/admin' ||
@@ -541,7 +545,15 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             participantStatePromise,
           ])
 
-          if (snapshot.serverTime) {
+          if (requestEpoch !== lifecycleRequestEpochRef.current) return null
+
+          const responseIsNewest =
+            requestSequence >= liveSnapshotFence.appliedSequence
+          const appliedVersions = liveSnapshotFence.appliedVersions
+          const freshness = getLiveSnapshotFreshness(appliedVersions, snapshot)
+          const terminalLecture = snapshot.lecture?.status === 'closed'
+
+          if (responseIsNewest && snapshot.serverTime) {
             serverClockSampleRef.current = createServerClockSample(
               snapshot.serverTime,
               performance.now(),
@@ -549,37 +561,37 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
           }
           setLastSuccessfulSyncAt(Date.now())
 
-          if (snapshot.lecture) {
+          if (snapshot.lecture && (terminalLecture || freshness.lecture)) {
             persistJoinedLectureSession(snapshot.lecture)
             setJoinedLectureSession(snapshot.lecture)
           }
-          if (snapshot.currentParticipantId) {
+          if (responseIsNewest && snapshot.currentParticipantId) {
             setCurrentParticipantId(snapshot.currentParticipantId)
-          }
-          if (snapshot.currentParticipantId) {
             persistLocalParticipantIdentity(
               snapshot.currentParticipantId,
               activeLectureSessionId,
             )
           }
 
-          if (snapshot.comments || snapshot.likeTotals) {
+          const freshComments = freshness.comments ? snapshot.comments : null
+          const freshLikeTotals = freshness.likes ? snapshot.likeTotals : null
+          if (freshComments || freshLikeTotals) {
             setComments((current) => {
               let nextComments =
-                snapshot.comments?.mode === 'initial'
+                freshComments?.mode === 'initial'
                   ? mergeInitialCommentsWithPending(
                       current,
-                      snapshot.comments.items,
+                      freshComments.items,
                     )
-                  : (snapshot.comments?.items.reduce(
+                  : (freshComments?.items.reduce(
                       (merged, comment) => mergeVisibleComment(merged, comment),
                       current,
                     ) ?? current)
 
-              if (snapshot.likeTotals) {
+              if (freshLikeTotals) {
                 nextComments = applyCommentLikeTotals(
                   nextComments,
-                  snapshot.likeTotals,
+                  freshLikeTotals,
                   snapshot.currentParticipantId ??
                     participantState?.participantId ??
                     null,
@@ -591,49 +603,49 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             })
           }
 
-          if (snapshot.comments) {
-            if (snapshot.comments.mode === 'initial') {
-              setHasOlderComments(snapshot.comments.hasOlder)
+          if (freshComments) {
+            if (freshComments.mode === 'initial') {
+              setHasOlderComments(freshComments.hasOlder)
             }
             commentCursorRef.current = getNewestCommentCursor(
-              snapshot.comments.items,
-              snapshot.comments.mode === 'initial'
+              freshComments.items,
+              freshComments.mode === 'initial'
                 ? null
                 : commentCursorRef.current,
             )
           }
 
-          if (snapshot.polls) {
+          if (freshness.polls && snapshot.polls) {
             setPolls(snapshot.polls)
             setPollResults(snapshot.pollResults ?? [])
           }
 
-          if (snapshot.pollResponses) {
+          if (freshness.polls && snapshot.pollResponses) {
             setPollResponses(snapshot.pollResponses)
           }
 
-          if (snapshot.display) {
+          if (freshness.display && snapshot.display) {
             latestDisplayStateRef.current = snapshot.display
             setDisplayState(snapshot.display)
           }
 
-          if (snapshot.caption !== undefined) {
+          if (freshness.caption && snapshot.caption !== undefined) {
             setCaption(snapshot.caption)
           }
 
-          if (snapshot.summaries) {
+          if (freshness.summaries && snapshot.summaries) {
             setSummaries(snapshot.summaries)
           }
 
-          if (snapshot.academicAnswers) {
+          if (freshness.summaries && snapshot.academicAnswers) {
             setAcademicAnswers(snapshot.academicAnswers)
           }
 
-          if (snapshot.materialSummary !== undefined) {
+          if (freshness.summaries && snapshot.materialSummary !== undefined) {
             setMaterialSummary(snapshot.materialSummary)
           }
 
-          if (snapshot.metrics) {
+          if (freshness.metrics && snapshot.metrics) {
             setParticipantCount(snapshot.metrics.participantCountApproximate)
             setVisibleCommentCount(snapshot.metrics.visibleCommentCount)
             if (
@@ -644,16 +656,24 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          liveStateVersionsRef.current = advanceLiveStateVersions(
-            knownVersions,
+          liveSnapshotFence.requestedVersions = advanceLiveStateVersions(
+            liveSnapshotFence.requestedVersions,
             snapshot,
           )
+          liveSnapshotFence.appliedVersions = mergeLiveStateVersions(
+            appliedVersions,
+            snapshot.versions,
+          )
+          liveSnapshotFence.appliedSequence = Math.max(
+            liveSnapshotFence.appliedSequence,
+            requestSequence,
+          )
 
-          if (participantState) {
+          if (responseIsNewest && participantState) {
             applyParticipantLiveState(participantState)
           }
 
-          if (snapshot.lecture?.status === 'closed') {
+          if (terminalLecture) {
             lifecycleRequestEpochRef.current += 1
             setComments(removePendingComments)
             setIsSubmittingComment(false)
@@ -662,6 +682,12 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
           return snapshot.lecture
         } catch (error) {
+          if (
+            requestEpoch !== lifecycleRequestEpochRef.current ||
+            requestSequence < liveSnapshotFenceRef.current.appliedSequence
+          ) {
+            return null
+          }
           const message =
             error instanceof Error
               ? error.message
@@ -826,7 +852,9 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
   }, [hasActiveLectureSessionId, hydrateDemo, refreshLiveSnapshot, runtimeMode])
 
   useEffect(() => {
-    liveStateVersionsRef.current = createEmptyLiveStateVersions()
+    lifecycleRequestEpochRef.current += 1
+    liveSnapshotFenceRef.current = createLiveSnapshotFenceState()
+    liveSnapshotInFlightRef.current = null
     commentCursorRef.current = null
     likedCommentIdsRef.current = new Set()
     archiveLoadedLectureIdRef.current = null
@@ -953,24 +981,8 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
 
   useAdaptiveLiveSync({
     enabled: canRunLiveSync,
-    foregroundIntervalMs:
-      normalizedPathname === '/lecture'
-        ? STUDENT_LIVE_SYNC_INTERVAL_MS
-        : undefined,
-    initialJitterMs:
-      normalizedPathname === '/lecture'
-        ? STUDENT_LIVE_SYNC_INITIAL_JITTER_MS
-        : undefined,
-    jitterMs:
-      normalizedPathname === '/lecture'
-        ? STUDENT_LIVE_SYNC_JITTER_MS
-        : undefined,
+    ...getLiveSyncRouteOptions(normalizedPathname),
     onSync: runLiveSync,
-    runImmediately: normalizedPathname === '/lecture',
-    visibilityJitterMs:
-      normalizedPathname === '/lecture'
-        ? STUDENT_LIVE_SYNC_INITIAL_JITTER_MS
-        : undefined,
   })
 
   useEffect(() => {

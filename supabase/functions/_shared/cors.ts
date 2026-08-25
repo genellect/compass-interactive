@@ -23,6 +23,7 @@ export function getCorsHeaders(request: Request) {
     'Access-Control-Allow-Headers':
       'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Expose-Headers': 'Retry-After',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   })

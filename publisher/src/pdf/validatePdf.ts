@@ -19,8 +19,10 @@ export type ValidatedPdf = {
   pageCount: number
   pages: ExtractedPdfPage[]
   pdfSha256: string
+  textAvailable: boolean
   textCharCount: number
   textSha256: string
+  textTruncated: boolean
 }
 
 export class PdfValidationError extends Error {
@@ -72,6 +74,18 @@ function normalizeExtractedText(
     .trim()
 }
 
+export function boundExtractedPdfText(
+  extractedText: string,
+  extractedCharacterCount: number,
+) {
+  const remainingCharacters = Math.max(
+    0,
+    MAX_PDF_TEXT_CHARACTERS - extractedCharacterCount,
+  )
+  const text = extractedText.slice(0, remainingCharacters)
+  return { text, truncated: extractedText.length > text.length }
+}
+
 export async function validatePdf(input: {
   bytes: Uint8Array
   fileName: string
@@ -84,7 +98,8 @@ export async function validatePdf(input: {
       'invalid_name',
     )
   }
-  if (mimeType.toLowerCase().split(';', 1)[0]?.trim() !== 'application/pdf') {
+  const normalizedMimeType = mimeType.toLowerCase().split(';', 1)[0]?.trim()
+  if (normalizedMimeType && normalizedMimeType !== 'application/pdf') {
     throw new PdfValidationError(
       'MIME typeはapplication/pdfである必要があります。',
       'invalid_mime',
@@ -130,21 +145,19 @@ export async function validatePdf(input: {
 
     const pages: ExtractedPdfPage[] = []
     let textCharCount = 0
+    let textTruncated = false
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const content = await page.getTextContent({ disableNormalization: false })
-      const text = normalizeExtractedText(
+      const extractedText = normalizeExtractedText(
         content.items.flatMap((item) =>
           'str' in item ? [{ hasEOL: item.hasEOL, str: item.str }] : [],
         ),
       )
+      const boundedText = boundExtractedPdfText(extractedText, textCharCount)
+      const text = boundedText.text
+      textTruncated ||= boundedText.truncated
       textCharCount += text.length
-      if (textCharCount > MAX_PDF_TEXT_CHARACTERS) {
-        throw new PdfValidationError(
-          'PDFの抽出文字数は合計20,000文字以下にしてください。',
-          'text_limit',
-        )
-      }
       pages.push({
         characterCount: text.length,
         excerptId: sha256(`${pdfSha256}:${pageNumber}:${text}`),
@@ -152,13 +165,6 @@ export async function validatePdf(input: {
         text,
       })
       page.cleanup()
-    }
-
-    if (textCharCount < 1) {
-      throw new PdfValidationError(
-        'テキストレイヤーがないPDFは公開できません。OCRや画像解析は行いません。',
-        'no_text_layer',
-      )
     }
 
     const joinedText = pages
@@ -169,8 +175,10 @@ export async function validatePdf(input: {
       pageCount: document.numPages,
       pages,
       pdfSha256,
+      textAvailable: textCharCount > 0,
       textCharCount,
       textSha256: sha256(joinedText),
+      textTruncated,
     }
   } catch (error) {
     if (error instanceof PdfValidationError) {

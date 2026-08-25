@@ -10,6 +10,7 @@ import {
   getHiddenLiveSyncDelay,
   getLiveSyncBackoffDelay,
   getLiveSyncJitter,
+  getLiveSyncRouteOptions,
   normalizeLiveSyncPathname,
   STUDENT_LIVE_SYNC_INITIAL_JITTER_MS,
   STUDENT_LIVE_SYNC_INTERVAL_MS,
@@ -97,6 +98,18 @@ assert.equal(getLiveSyncJitter(1, 5_000), 5_000)
 assert.equal(STUDENT_LIVE_SYNC_INTERVAL_MS, 5_000)
 assert.equal(STUDENT_LIVE_SYNC_INITIAL_JITTER_MS, 5_000)
 assert.equal(STUDENT_LIVE_SYNC_JITTER_MS, 0)
+assert.deepEqual(getLiveSyncRouteOptions('/lecture'), {
+  foregroundIntervalMs: 5_000,
+  initialJitterMs: 5_000,
+  jitterMs: 0,
+  runImmediately: true,
+  visibilityJitterMs: 5_000,
+})
+assert.deepEqual(getLiveSyncRouteOptions('/display'), {
+  foregroundIntervalMs: 5_000,
+  initialJitterMs: 0,
+  jitterMs: 0,
+})
 assert.equal(
   getHiddenLiveSyncDelay({ elapsedHiddenMs: 0, hiddenSyncCompleted: false }),
   30_000,
@@ -185,31 +198,15 @@ assert.equal(
   1,
   'Only one adaptive live-sync loop may be mounted.',
 )
-assert.match(
-  context,
-  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,120}STUDENT_LIVE_SYNC_INTERVAL_MS/,
-  'The student surface must keep the established five-second request envelope.',
-)
-assert.match(
-  context,
-  /normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,180}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
-  'Student phases must be spread across the five-second window without adding requests.',
-)
-assert.match(
-  context,
-  /runImmediately:\s*normalizedPathname\s*===\s*'\/lecture'/,
-  'The first student refresh must land inside the initial five-second phase window.',
-)
-assert.match(
-  context,
-  /visibilityJitterMs:[\s\S]{0,100}normalizedPathname\s*===\s*'\/lecture'[\s\S]{0,100}STUDENT_LIVE_SYNC_INITIAL_JITTER_MS/,
-  'Visible student tabs must re-enter a distributed five-second phase window.',
-)
+assert.match(context, /\.\.\.getLiveSyncRouteOptions\(normalizedPathname\)/)
 assert.match(
   adaptiveSyncHook,
   /scheduleSync\(\s*getLiveSyncJitter\(Math\.random\(\), visibilityJitterMs\)/,
 )
-assert.match(adaptiveSyncHook, /Math\.max\(backoffDelay - completedRequestMs, 0\)/)
+assert.match(
+  adaptiveSyncHook,
+  /Math\.max\(backoffDelay - completedRequestMs, 0\)/,
+)
 assert.match(
   adaptiveSyncHook,
   /const syncStartedAt = Date\.now\(\)[\s\S]*scheduleForegroundSync\(syncStartedAt\)/,

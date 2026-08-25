@@ -8,6 +8,8 @@ test.skip(
 const adminAuthStorageKey = 'compass-interactive-admin-supabase-auth-v1'
 const adminAppSessionStorageKey =
   'compass-interactive-admin-google-app-session-v1'
+const adminAppSessionRestoreSeedStorageKey =
+  'compass-interactive-admin-google-app-session-restore-seed-v1'
 const adminOAuthAttemptStorageKey = 'compass-interactive-admin-oauth-attempt-v1'
 const studentAuthStorageKey = 'sb-example-auth-token'
 const studentStorageSentinelKey = 'compass-phase730-student-sentinel'
@@ -17,7 +19,10 @@ const factorId = '73000000-0000-4000-8000-000000000003'
 const abandonedFactorId = '73000000-0000-4000-8000-000000000006'
 const challengeId = '73000000-0000-4000-8000-000000000004'
 const appSessionToken = `g1.${'a'.repeat(43)}`
+const restoreSeed = 'b'.repeat(43)
 const studentParticipantId = '73000000-0000-4000-8000-000000000099'
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 type EdgeCall = {
   action: string
@@ -324,7 +329,9 @@ async function installNetworkMocks(
   options: {
     beginStepUpReauthenticationRequired?: boolean
     includeAbandonedFactor?: boolean
+    invalidStatusToken?: string
     initialVerified?: boolean
+    verifyRateLimited?: boolean
   } = {},
 ) {
   const aal1Session = authSession('aal1', {
@@ -447,6 +454,18 @@ async function installNetworkMocks(
         state.factorVerifyBodies.push(
           (request.postDataJSON() ?? {}) as Record<string, unknown>,
         )
+        if (options.verifyRateLimited) {
+          await route.fulfill({
+            body: JSON.stringify({ message: 'rate limited' }),
+            contentType: 'application/json',
+            headers: {
+              'cache-control': 'no-store',
+              'retry-after': '2',
+            },
+            status: 429,
+          })
+          return
+        }
         state.verified = true
         await fulfillJson(route, {
           ...aal2Session,
@@ -498,7 +517,7 @@ async function installNetworkMocks(
         await fulfillJson(route, {
           expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
           ok: true,
-          stepUpNonce: `n1.${'b'.repeat(43)}`,
+          stepUpNonce: restoreSeed,
         })
         return
       }
@@ -510,9 +529,28 @@ async function installNetworkMocks(
         })
         return
       }
+      if (action === 'restore') {
+        if (body.restoreSeed !== restoreSeed) {
+          state.unexpectedRequests.push('restore seed binding mismatch')
+          await fulfillJson(
+            route,
+            { code: 'app_session_invalid', ok: false },
+            401,
+          )
+          return
+        }
+        await fulfillJson(route, {
+          appSessionToken,
+          ok: true,
+          session: trackedSession(),
+        })
+        return
+      }
       if (action === 'status') {
         if (body.appSessionToken !== appSessionToken) {
-          state.unexpectedRequests.push('status app session binding mismatch')
+          if (body.appSessionToken !== options.invalidStatusToken) {
+            state.unexpectedRequests.push('status app session binding mismatch')
+          }
           await fulfillJson(
             route,
             { code: 'app_session_invalid', ok: false },
@@ -713,7 +751,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     page.getByRole('heading', { name: '講義を準備する', exact: true }),
   ).toBeVisible()
   await expect(page.locator('main')).not.toContainText('AI時代の英語と学び')
-  await expect(page.getByRole('tab')).toHaveCount(1)
+  await expect(page.getByRole('tab')).toHaveCount(4)
   await expect(page.locator('#admin-live')).toBeVisible()
   await expect(page.locator('#teacher-workspace-ai')).toBeHidden()
   await expect
@@ -742,6 +780,7 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   expect(state.authorizeQueries).toHaveLength(1)
   expect(state.authorizeQueries[0]).toMatchObject({
     code_challenge_method: 's256',
+    prompt: 'select_account',
     provider: 'google',
     redirect_to: expect.stringMatching(/\/admin\/auth\/callback$/),
     scopes: 'openid email profile',
@@ -767,9 +806,15 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   expect(state.edgeCalls[0]?.authorization).toBe(`Bearer ${aal1AccessToken}`)
   expect(state.edgeCalls[1]?.authorization).toBe(`Bearer ${aal1AccessToken}`)
   expect(state.edgeCalls[2]?.authorization).toBe(`Bearer ${aal2AccessToken}`)
+  const loginRequestIds = state.edgeCalls.map(({ body }) => body.loginRequestId)
+  expect(loginRequestIds).toHaveLength(3)
+  expect(loginRequestIds[0]).toEqual(loginRequestIds[1])
+  expect(loginRequestIds[1]).toEqual(loginRequestIds[2])
+  expect(loginRequestIds[0]).toEqual(expect.stringMatching(uuidPattern))
   expect(state.edgeCalls[1]?.body).toEqual({
     action: 'beginStepUp',
     challengedFactorId: factorId,
+    loginRequestId: loginRequestIds[0],
   })
   await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
   for (const lectureCall of state.lectureCalls) {
@@ -954,6 +999,202 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   expect(pageErrors).toEqual([])
 })
 
+test('restores the same app token only from its scoped live AAL2 Auth session', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { aal2AccessToken, state } = await installNetworkMocks(
+    page,
+    student.accessToken,
+    { initialVerified: true },
+  )
+  const storedSession = {
+    ...authSession('aal2', { verified: true }),
+    access_token: aal2AccessToken,
+  }
+  await page.addInitScript(
+    ({
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      restoreSeed,
+      storedSession,
+    }) => {
+      window.localStorage.setItem(
+        adminAuthStorageKey,
+        JSON.stringify(storedSession),
+      )
+      window.localStorage.setItem(
+        adminAppSessionRestoreSeedStorageKey,
+        JSON.stringify({
+          authSessionId: '73000000-0000-4000-8000-000000000002',
+          authUserId: '73000000-0000-4000-8000-000000000001',
+          seed: restoreSeed,
+          version: 1,
+        }),
+      )
+    },
+    {
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      restoreSeed,
+      storedSession,
+    },
+  )
+
+  await page.goto('/admin')
+
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual(['restore'])
+  expect(state.edgeCalls[0]?.authorization).toBe(`Bearer ${aal2AccessToken}`)
+  expect(
+    await page.evaluate(
+      ({ adminAppSessionStorageKey }) =>
+        window.sessionStorage.getItem(adminAppSessionStorageKey),
+      { adminAppSessionStorageKey },
+    ),
+  ).toBe(appSessionToken)
+  expect(state.edgeCalls[0]?.body).toEqual({ action: 'restore', restoreSeed })
+  expect(state.unexpectedRequests).toEqual([])
+})
+
+test('replaces a stale tab token from the same scoped live AAL2 Auth session', async ({
+  page,
+}) => {
+  const staleAppSessionToken = 'stale-admin-app-session'
+  const student = anonymousStudentSession()
+  const { aal2AccessToken, state } = await installNetworkMocks(
+    page,
+    student.accessToken,
+    { initialVerified: true, invalidStatusToken: staleAppSessionToken },
+  )
+  const storedSession = {
+    ...authSession('aal2', { verified: true }),
+    access_token: aal2AccessToken,
+  }
+  await page.addInitScript(
+    ({
+      adminAppSessionStorageKey,
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      restoreSeed,
+      staleToken,
+      session,
+    }) => {
+      window.localStorage.setItem(adminAuthStorageKey, JSON.stringify(session))
+      window.localStorage.setItem(
+        adminAppSessionRestoreSeedStorageKey,
+        JSON.stringify({
+          authSessionId: '73000000-0000-4000-8000-000000000002',
+          authUserId: '73000000-0000-4000-8000-000000000001',
+          seed: restoreSeed,
+          version: 1,
+        }),
+      )
+      window.sessionStorage.setItem(adminAppSessionStorageKey, staleToken)
+    },
+    {
+      adminAppSessionStorageKey,
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      restoreSeed,
+      session: storedSession,
+      staleToken: staleAppSessionToken,
+    },
+  )
+
+  await page.goto('/admin')
+
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+    'status',
+    'restore',
+  ])
+  expect(state.edgeCalls[1]?.authorization).toBe(`Bearer ${aal2AccessToken}`)
+  expect(
+    await page.evaluate(
+      ({ adminAppSessionStorageKey }) =>
+        window.sessionStorage.getItem(adminAppSessionStorageKey),
+      { adminAppSessionStorageKey },
+    ),
+  ).toBe(appSessionToken)
+  expect(state.edgeCalls[1]?.body).toEqual({ action: 'restore', restoreSeed })
+  expect(state.unexpectedRequests).toEqual([])
+})
+
+test('clears a stale app token without backing Auth before one OAuth reaches TOTP', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { state } = await installNetworkMocks(page, student.accessToken, {
+    initialVerified: true,
+  })
+  await page.addInitScript(
+    ({ adminAppSessionStorageKey, seedKey }) => {
+      if (window.sessionStorage.getItem(seedKey)) return
+      window.sessionStorage.setItem(seedKey, 'true')
+      window.sessionStorage.setItem(
+        adminAppSessionStorageKey,
+        'stale-admin-app-session',
+      )
+    },
+    {
+      adminAppSessionStorageKey,
+      seedKey: 'phase730-stale-app-token-seeded',
+    },
+  )
+
+  await page.goto('/admin')
+
+  const card = page.locator('main .admin-identity-card')
+  await expect(card.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  expect(
+    await page.evaluate(
+      ({ adminAppSessionStorageKey }) =>
+        window.sessionStorage.getItem(adminAppSessionStorageKey),
+      { adminAppSessionStorageKey },
+    ),
+  ).toBeNull()
+
+  await card.getByRole('button', { name: 'Googleで続ける' }).click()
+  await expect
+    .poll(() => state.edgeCalls.map(({ action }) => action))
+    .toEqual(['admit'])
+  await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  expect(state.unexpectedRequests).toEqual([])
+})
+
+test('honors Auth Retry-After before another TOTP submission', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { state } = await installNetworkMocks(page, student.accessToken, {
+    initialVerified: true,
+    verifyRateLimited: true,
+  })
+
+  await page.goto('/admin')
+  await page.locator('main .admin-identity-card button.primary-button').click()
+  const card = page.locator('main .admin-identity-card')
+  await expect(card.locator('.eyebrow')).toHaveText('TWO-STEP VERIFICATION')
+  await card.getByLabel('認証コード', { exact: true }).fill('123456')
+  await card.getByRole('button', { name: '続ける', exact: true }).click()
+
+  await expect(card.getByRole('alert')).toContainText(
+    '試行回数が多すぎます。待機時間の終了後に再度お試しください。',
+  )
+  await expect(card.getByRole('status')).toContainText('再試行まで')
+  await expect(card.getByLabel('認証コード', { exact: true })).toBeDisabled()
+  await expect(
+    card.getByRole('button', { name: '続ける', exact: true }),
+  ).toBeDisabled()
+  expect(state.factorVerifyBodies).toHaveLength(1)
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+    'admit',
+    'beginStepUp',
+  ])
+  expect(state.unexpectedRequests).toEqual([])
+})
+
 test('an expired or missing backing Auth session clears Admin state and preserves the settings return path for Google reauthentication', async ({
   page,
 }) => {
@@ -1125,6 +1366,7 @@ test('uses the existing verified factor instead of an abandoned unverified facto
   ).toEqual({
     action: 'beginStepUp',
     challengedFactorId: factorId,
+    loginRequestId: expect.stringMatching(uuidPattern),
   })
   expect(
     state.edgeCalls.some(

@@ -309,7 +309,7 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
     .toEqual({ legacyAuthenticated: null, legacyToken: null })
   await expect(page.getByTestId('powerpoint-sync-control')).toHaveCount(0)
   const pageControls = page.locator(
-    '#admin-live [aria-label="講義資料のページ操作"]',
+    '[aria-label="講義資料のページ操作"]',
   )
   await expect(pageControls).toBeVisible()
   await expect(

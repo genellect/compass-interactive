@@ -99,6 +99,10 @@ assert.match(
 )
 assert.doesNotMatch(files.retryMigration, /update public\.lecture_ai_control/)
 assert.match(files.edge, /readJsonBody<RequestBody>/)
+assert.match(
+  files.edge,
+  /selectedCharacterCount === 0[\s\S]*selected_text_unavailable[\s\S]*422[\s\S]*estimateReservation/,
+)
 assert.match(files.requestBody, /request\.body\?\.getReader\(\)/)
 assert.match(files.requestBody, /totalBytes > maxBytes/)
 assert.match(files.manageAi, /provider_specific_authority_required/)

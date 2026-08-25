@@ -136,7 +136,7 @@ export function AdminAiControlPanel({
           />
         </Suspense>
       ) : null}
-      {adminToken && activeLectureSessionId ? (
+      {status === 'open' && adminToken && activeLectureSessionId ? (
         <Suspense fallback={<p className="note">字幕機能を準備しています…</p>}>
           <RealtimeCaptionControl
             admissionEnabled={realtimeEnabled}
@@ -150,7 +150,7 @@ export function AdminAiControlPanel({
           />
         </Suspense>
       ) : null}
-      {adminToken && activeLectureSessionId ? (
+      {status === 'open' && adminToken && activeLectureSessionId ? (
         <LectureSummaryControl
           admissionEnabled={summariesEnabled}
           adminToken={adminToken}
@@ -166,7 +166,7 @@ export function AdminAiControlPanel({
           masterAuthorization={masterAuthorization}
         />
       ) : null}
-      {adminToken && activeLectureSessionId ? (
+      {status === 'open' && adminToken && activeLectureSessionId ? (
         <Suspense fallback={<p className="note">参考回答を準備しています…</p>}>
           <AcademicAnswerControl
             admissionEnabled={academicEnabled}
@@ -178,11 +178,17 @@ export function AdminAiControlPanel({
           />
         </Suspense>
       ) : null}
-      {adminToken && activeLectureSessionId ? (
+      {status === 'open' && adminToken && activeLectureSessionId ? (
         <MaterialAnalysisControl
           adminToken={adminToken}
           documents={documents}
           generationEnabled={materialEnabled}
+          key={`${activeLectureSessionId}:${documents
+            .map(
+              (document) =>
+                `${document.documentId}@${document.documentVersion}`,
+            )
+            .join(',')}`}
           lectureSessionId={activeLectureSessionId}
           lectureStatus={status}
           onPollDraftCreated={onPollDraftCreated}

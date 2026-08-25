@@ -3,10 +3,8 @@ import { sha256Hex } from '../_shared/adminToken.ts'
 import { handleCors } from '../_shared/cors.ts'
 import { describeJsonBodyError, readJsonBody } from '../_shared/requestBody.ts'
 import {
-  type DisplayTokenClaims,
   getDisplayTokenClaims,
   getDisplayTokenSecret,
-  getDisplayTerminalTokenClaims,
 } from '../_shared/displayToken.ts'
 import { createJsonResponse } from '../_shared/responses.ts'
 import {
@@ -31,11 +29,6 @@ type OperatorSnapshotRequest = {
   knownSummariesVersion?: number | null
   lectureSessionId?: string
   limit?: number
-}
-
-type OperatorAccess = {
-  mode: 'live' | 'terminal' | 'unavailable'
-  terminal?: Record<string, unknown> | null
 }
 
 type LiveDisplayClaims = {
@@ -83,9 +76,7 @@ Deno.serve(async (request) => {
       400,
     )
   }
-  if (
-    [body.appSessionToken, body.displayToken].filter(Boolean).length !== 1
-  ) {
+  if ([body.appSessionToken, body.displayToken].filter(Boolean).length !== 1) {
     return jsonResponse(
       {
         ok: false,
@@ -111,8 +102,6 @@ Deno.serve(async (request) => {
   }
   let credentialKind: 'admin' | 'display' | null = null
   let googleContext: GoogleAdminOperationContext | null = null
-  let terminalOnly = false
-  let terminalDisplayClaims: DisplayTokenClaims | null = null
   let liveDisplayClaims: LiveDisplayClaims | null = null
   try {
     if (body.appSessionToken) {
@@ -140,16 +129,6 @@ Deno.serve(async (request) => {
       if (liveClaims?.lectureSessionId === body.lectureSessionId) {
         credentialKind = 'display'
         liveDisplayClaims = liveClaims
-      } else {
-        const terminalClaims = await getDisplayTerminalTokenClaims(
-          body.displayToken,
-          getDisplayTokenSecret(),
-        )
-        if (terminalClaims?.lectureSessionId === body.lectureSessionId) {
-          credentialKind = 'display'
-          terminalOnly = true
-          terminalDisplayClaims = terminalClaims
-        }
       }
     }
   } catch (error) {
@@ -231,61 +210,15 @@ Deno.serve(async (request) => {
       googleDisplayBinding?.recognized === true &&
       googleDisplayBinding.valid !== true
     ) {
-      if (googleDisplayBinding.reason === 'claimed_by_other') {
-        return jsonResponse(
-          { ok: false, message: 'Invalid Display session.' },
-          401,
-        )
-      }
-      const { data: descendantData, error: descendantError } =
-        await supabase.rpc('verify_google_display_terminal_session_v1', {
-          target_display_auth_user_id: authData.user.id,
-          target_lecture_session_id: body.lectureSessionId,
-          target_token_expires_at: new Date(
-            liveDisplayClaims.exp * 1_000,
-          ).toISOString(),
-          target_token_issued_at: new Date(
-            liveDisplayClaims.iat * 1_000,
-          ).toISOString(),
-          target_token_jti_hash: tokenJtiHash,
-        })
-      const descendant = descendantData as {
-        recognized?: unknown
-        valid?: unknown
-      } | null
-      if (
-        descendantError ||
-        descendant?.recognized !== true ||
-        descendant.valid !== true
-      ) {
-        return jsonResponse(
-          { ok: false, message: 'Invalid Display session.' },
-          descendantError ? 503 : 401,
-        )
-      }
-      const { data: terminalData, error: terminalError } = await supabase.rpc(
-        'admin_get_lecture_operator_access_v1',
-        { target_lecture_session_id: body.lectureSessionId },
-      )
-      const terminalAccess = terminalData as OperatorAccess | null
-      if (
-        !terminalError &&
-        terminalAccess?.mode === 'terminal' &&
-        terminalAccess.terminal
-      ) {
-        return jsonResponse({
+      return jsonResponse(
+        {
           credentialExpired: true,
           credentialKind: 'display',
-          ok: true,
-          result: { mode: 'terminal', terminal: terminalAccess.terminal },
-        })
-      }
-      return jsonResponse({
-        credentialExpired: true,
-        credentialKind: 'display',
-        message: 'Display session has ended.',
-        ok: false,
-      })
+          message: 'Display session has ended.',
+          ok: false,
+        },
+        401,
+      )
     }
     if (googleDisplayBinding?.recognized !== true) {
       return jsonResponse(
@@ -294,79 +227,6 @@ Deno.serve(async (request) => {
       )
     }
   }
-  if (terminalOnly) {
-    if (!terminalDisplayClaims) {
-      return jsonResponse(
-        { ok: false, message: 'Invalid Display session.' },
-        401,
-      )
-    }
-    const authorization = request.headers.get('Authorization') ?? ''
-    const bearerToken = authorization.startsWith('Bearer ')
-      ? authorization.slice('Bearer '.length).trim()
-      : ''
-    const { data: authData, error: authError } = bearerToken
-      ? await supabase.auth.getUser(bearerToken)
-      : { data: { user: null }, error: new Error('Missing bearer token.') }
-    if (authError || !authData.user) {
-      return jsonResponse(
-        { ok: false, message: 'Invalid Display session.' },
-        401,
-      )
-    }
-    const { data: descendantData, error: descendantError } =
-      await supabase.rpc('verify_google_display_terminal_session_v1', {
-        target_display_auth_user_id: authData.user.id,
-        target_lecture_session_id: body.lectureSessionId,
-        target_token_expires_at: new Date(
-          terminalDisplayClaims.exp * 1_000,
-        ).toISOString(),
-        target_token_issued_at: new Date(
-          terminalDisplayClaims.iat * 1_000,
-        ).toISOString(),
-        target_token_jti_hash: await sha256Hex(terminalDisplayClaims.jti),
-      })
-    if (descendantError) {
-      return jsonResponse(
-        { ok: false, message: 'Display session verification failed.' },
-        503,
-      )
-    }
-    const descendant = descendantData as {
-      recognized?: unknown
-      valid?: unknown
-    } | null
-    if (descendant?.recognized !== true || descendant.valid !== true) {
-      return jsonResponse(
-        { ok: false, message: 'Invalid Display session.' },
-        401,
-      )
-    }
-    const { data: accessData, error: accessError } = await supabase.rpc(
-      'admin_get_lecture_operator_access_v1',
-      { target_lecture_session_id: body.lectureSessionId },
-    )
-    const access = accessData as OperatorAccess | null
-    if (accessError) {
-      return jsonResponse(
-        { ok: false, message: 'Terminal state could not be loaded.' },
-        500,
-      )
-    }
-    if (access?.mode === 'terminal' && access.terminal) {
-      return jsonResponse({
-        credentialExpired: true,
-        credentialKind: 'display',
-        ok: true,
-        result: { mode: 'terminal', terminal: access.terminal },
-      })
-    }
-    return jsonResponse(
-      { ok: false, message: 'Display session has expired.' },
-      401,
-    )
-  }
-
   const historyLimit =
     typeof body.limit === 'number' && Number.isSafeInteger(body.limit)
       ? Math.min(Math.max(body.limit, 1), 50)

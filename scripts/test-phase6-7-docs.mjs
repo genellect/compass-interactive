@@ -44,6 +44,7 @@ const requiredDocuments = [
   'docs/PHASE7_30E_GOOGLE_ONLY_CUTOVER.md',
   'docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md',
   'docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md',
+  'docs/LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md',
   'docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md',
   'docs/LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md',
   'docs/PHASE6_7_DOCUMENTATION_BASELINE.md',
@@ -109,9 +110,13 @@ const googleAiMasterC1Record = read(
 const hostedHumanReadiness = read('docs/PHASE7_30F_HOSTED_HUMAN_READINESS.md')
 const docsIndex = read('docs/README.md')
 const agentRouting = read('docs/AGENT_EXECUTION_ROUTING.md')
+const lectureUxPlan = read(
+  'docs/LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md',
+)
 const gateRouting = read('docs/GATE_ROUTING.md')
 const runbook = read('docs/RUNBOOK_INDEX.md')
 const agentsContract = read('AGENTS.md')
+const projectGuide = read('PROJECT_GUIDE.md')
 const ciAndBrowser = read('docs/CI_AND_BROWSER_E2E.md')
 const databaseSchema = read('docs/database_schema.md')
 const lectureCyclePlan = read('docs/LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md')
@@ -280,7 +285,36 @@ assert.match(
 assert.match(docsIndex, /PHASE7_30B22A_ADMIN_CONTROL_HARDENING\.md/)
 assert.match(docsIndex, /PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER\.md/)
 assert.match(docsIndex, /PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION\.md/)
-assert.match(docsIndex, /104 documents/)
+assert.match(docsIndex, /110 documents/)
+for (const requiredText of [
+  'Status: Planned',
+  'COMPLEXITY_APPROVAL_REQUIRED',
+  '`xhigh`',
+  '`ultra + subagent`',
+  '`URLをコピー`',
+  'lecture.hard_stop_at',
+  'same browser profile may reload and recover',
+  'one integrated local lecture-cycle run across two browser contexts',
+  '`PRODUCTION_VERIFIED`',
+]) {
+  assert.ok(
+    lectureUxPlan.includes(requiredText),
+    `Final lecture UX contract missing: ${requiredText}`,
+  )
+}
+for (const document of [
+  roadmap,
+  docsIndex,
+  agentRouting,
+  agentsContract,
+  projectGuide,
+]) {
+  assert.match(
+    document,
+    /LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN\.md/,
+    'Canonical routing must include the final lecture UX contract',
+  )
+}
 for (const requiredText of [
   'Lecture Cycle Production Candidate',
   '50 active person-hours',
@@ -482,7 +516,7 @@ assert.match(
 )
 assert.match(
   agentsContract,
-  /GitHub Actions capacity is scarce[\s\S]*blind same-head reruns[\s\S]*repository Actions ceiling of \$15[\s\S]*account Actions ceiling of \$35/,
+  /GitHub Actions capacity is scarce[\s\S]*blind same-head reruns[\s\S]*Inspect the current repository and account budget state[\s\S]*explicit approval before any new ceiling increase or paid\/long workflow/,
   'Every agent must follow the common Actions conservation contract',
 )
 assert.match(

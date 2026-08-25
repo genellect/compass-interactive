@@ -578,7 +578,7 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?別ブラウザ用リンクをコピー[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
+  /画面共有を開始する[\s\S]*?URLをコピー[\s\S]*?const initialDisplayPage = displayPage[\s\S]*?initialDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?新しいURLを発行[\s\S]*?isolatedDisplayPage[\s\S]*?getAttribute\('data-display-realtime'\)[\s\S]*?toBe\('connected'\)[\s\S]*?共有画面の確認が必要です/,
   'the lifecycle must replace an already-connected Display and use the connected replacement for cross-surface checks',
 )
 assert.match(
@@ -634,8 +634,8 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /popupSession = await issuedDisplaySession[\s\S]*installClipboardCapture\(admin\.page\)[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*issue-display-session[\s\S]*getByRole\('button', \{ name: '別ブラウザ用リンクをコピー' \}\)[\s\S]*\.click\(\)[\s\S]*await expect\([\s\S]*getByRole\('button', \{ name: 'リンクをコピーしました' \}\)[\s\S]*\)\.toBeVisible\(\)[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
-  'the isolated lifecycle Display page must wait for a separately issued one-use URL to finish copying',
+  /displaySessionResponse = admin\.page\.waitForResponse[\s\S]*画面共有を開始する[\s\S]*popupSession[\s\S]*URLをコピー[\s\S]*initialDisplayUrl[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*新しいURLを発行[\s\S]*URLをコピー[\s\S]*display-launch-instructions[\s\S]*getByRole\('status'\)[\s\S]*コピーしました。[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
+  'the lifecycle must reuse one copied URL until explicit replacement, then copy the replacement before opening it',
 )
 assert.match(
   localLifecycleBrowser,
@@ -661,6 +661,21 @@ assert.match(
   browserRunner,
   /const localFixtureEnvironmentId = localMode[\s\S]*00000000-0000-4000-8000-000000000730[\s\S]*TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:[\s\S]*googleAdminFixtureHandles\.length === 0 \? 'true' : 'false'[\s\S]*retainEnvironment: true/,
   'local browser runs must share the create-only Edge environment and reset retained memberships exactly once before each Playwright run',
+)
+assert.match(
+  browserRunner,
+  /TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI:[\s\S]*mode === 'local' \|\| mode === 'local-ai' \? 'true' : 'false'[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:[\s\S]*mode === 'local-ai' \? '1357' : ''/,
+  'the complete local lifecycle and AI browser suites must provision AI independently from the legacy local-ai PIN fixture',
+)
+assert.match(
+  localGoogleFixture,
+  /browserFixtureEnableAiValue[\s\S]*=== 'true' \|\|[\s\S]*=== 'false'[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI must be true or false[\s\S]*browserFixtureEnableAi =/,
+  'the local AI fixture enable flag must fail closed on every value except exact true or false',
+)
+assert.match(
+  localGoogleFixture,
+  /if \(browserFixtureEnableAi\) \{[\s\S]*set can_use_ai = true[\s\S]*google_ai_master_admission_enabled = true[\s\S]*google_ai_child_grant_enabled = true[\s\S]*remembered_browser_enabled = true[\s\S]*insert into private\.admin_ai_policies[\s\S]*\) select[\s\S]*array\['academic_answers', 'captions', 'material_analysis', 'poll_suggestions', 'summaries'\]::text\[\][\s\S]*where not exists \([\s\S]*private\.admin_ai_policies[\s\S]*status = 'active'[\s\S]*if \(browserFixtureAiPin\) \{[\s\S]*action: 'preparePinMutation'/,
+  'AI-capable browser fixtures must receive one full policy while legacy PIN enrollment remains in its explicit local-ai-only block',
 )
 assert.match(
   localGoogleFixture,
@@ -760,12 +775,12 @@ assert.match(
 assert.match(
   localGoogleFixture,
   /insert into private\.admin_ai_policies[\s\S]*?array\[[\s\S]*?'academic_answers',[\s\S]*?'captions',[\s\S]*?'material_analysis',[\s\S]*?'poll_suggestions',[\s\S]*?'summaries'[\s\S]*?\]::text\[\]/,
-  'the local AI-PIN fixture policy must cover every action required by the current master scopes',
+  'the local AI fixture policy must cover every action required by the current master scopes',
 )
 assert.match(
   localGoogleFixture,
-  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
-  'the local AI fixture must enable master admission, child grants, and remembered-browser admission',
+  /if \(browserFixtureEnableAi\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
+  'the PIN-independent local AI fixture must enable master admission, child grants, and remembered-browser admission',
 )
 assert.equal(
   (
@@ -826,15 +841,44 @@ assert.match(
   /await adminSafety\.assertClean\(\)[\s\S]*await adminPage\.close\(\)[\s\S]*set_display_realtime_runtime_v1[\s\S]*phase728b_e2e_revoke/,
   'the Display regression must stop the original clean Admin page before revoking its tracked session',
 )
+const displayProbePhaseStart = displayRealtimeBrowser.indexOf(
+  'await displaySafety.assertClean()',
+)
+assert.ok(
+  displayProbePhaseStart >= 0,
+  'the Display regression must prove the live Display page clean before invalidation',
+)
+const displayProbePhase = displayRealtimeBrowser.slice(displayProbePhaseStart)
 assert.match(
-  revokedDisplayBrowserPhase,
-  /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
-  'the final Display phase must prove the exact fail-closed Admin status response on a fresh page in the same browser context',
+  displayProbePhase,
+  /await displaySafety\.assertClean\(\)[\s\S]*await displayPage\.close\(\)[\s\S]*displayContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(displayProbePage\)[\s\S]*await displayProbePage\.goto\('\/join'\)/,
+  'the Display regression must stop the live five-second fallback before isolated invalidation probes',
+)
+assert.equal(
+  [...displayProbePhase.matchAll(/invokeDisplaySnapshot\(displayProbePage/g)]
+    .length,
+  2,
+  'the isolated Display probe must exercise exactly the post-close and post-revoke snapshot denials',
+)
+assert.equal(
+  [...displayProbePhase.matchAll(/invokeDisplayPdf\(displayProbePage/g)].length,
+  2,
+  'the isolated Display probe must exercise exactly the post-close and post-revoke PDF denials',
+)
+assert.match(
+  displayProbePhase,
+  /displayProbeSafety\.expectConsoleErrors\([\s\S]*operator-live-snapshot[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*displayProbeSafety\.expectConsoleErrors\([\s\S]*issue-pdf-access-token[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await displayProbeSafety\.assertClean\(\)/,
+  'the isolated Display probe may consume only the exact two snapshot and two PDF 401 diagnostics before its final safety check',
 )
 assert.match(
   revokedDisplayBrowserPhase,
-  /await invalidAdminSafety\.expectConsoleErrorOnce\(\{[\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
-  'the Display regression may consume only the proven status 401 before its final safety checks',
+  /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*invalidRestoreResponsePromise[\s\S]*body\.action === 'restore'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*invalidRestoreResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
+  'the final Display phase must prove the bounded fail-closed Admin status and restore responses on a fresh page in the same browser context',
+)
+assert.match(
+  revokedDisplayBrowserPhase,
+  /await invalidAdminSafety\.expectConsoleErrors\([\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
+  'the Display regression may consume only the proven status and single restore 401 responses before its final safety checks',
 )
 assert.match(
   ci,
