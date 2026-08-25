@@ -28,6 +28,7 @@ type PublicationAction =
 
 type MockState = {
   active: boolean
+  committed: boolean
   displayMutationCount: number
   finalizeRequestIds: string[]
   inflightDocumentId: string | null
@@ -182,6 +183,8 @@ async function installNetworkMocks(
     conflictOnFirstInitiate?: boolean
     discoverPublicationAfterConflict?: boolean
     discoverPublication?: boolean
+    finalizeTransportFailures?: number
+    finalizeTransportFailureStatus?: 'active' | 'committed'
     pdfDocumentListFailuresAfterActivation?: number
     pdfDeliveryFailures?: number
     pdfDeliveryFailureStatus?: 401 | 403 | 416
@@ -192,10 +195,12 @@ async function installNetworkMocks(
     postActivationStaleSnapshots?: number
     recoverPublication?: boolean
     startWithoutLecture?: boolean
+    uploadTransportFailures?: number
   } = {},
 ) {
   const state: MockState = {
     active: false,
+    committed: false,
     displayMutationCount: 0,
     finalizeRequestIds: [],
     inflightDocumentId: null,
@@ -311,6 +316,10 @@ async function installNetworkMocks(
     )
     state.uploadCount += 1
     state.uploadedBytes = bytes?.byteLength ?? 0
+    if (state.uploadCount <= (options.uploadTransportFailures ?? 0)) {
+      await route.abort('timedout')
+      return
+    }
     await fulfillJson(
       route,
       { ok: true, publicationId, status: 'uploaded' },
@@ -451,7 +460,7 @@ async function installNetworkMocks(
       if (action === 'status') {
         const publicationStatus = state.active
           ? 'active'
-          : state.finalizeRequestIds.length > 0
+          : state.committed
             ? 'committed'
             : options.recoverPublication
               ? 'uploaded'
@@ -471,11 +480,20 @@ async function installNetworkMocks(
         const finalizeAttempt = state.publicationActions.filter(
           (publicationAction) => publicationAction === 'finalize',
         ).length
+        if (finalizeAttempt <= (options.finalizeTransportFailures ?? 0)) {
+          const responseStatus =
+            options.finalizeTransportFailureStatus ?? 'committed'
+          state.active = responseStatus === 'active'
+          state.committed = responseStatus === 'committed'
+          await route.abort('timedout')
+          return
+        }
         const finalizeStatus =
           finalizeAttempt <= (options.committedFinalizeResponses ?? 0)
             ? 'committed'
             : (options.finalizeStatus ?? 'active')
         state.active = finalizeStatus === 'active'
+        state.committed = finalizeStatus === 'committed'
         await fulfillJson(route, {
           documentId: state.inflightDocumentId ?? documentId,
           documentVersion: 'a'.repeat(64),
@@ -779,6 +797,134 @@ test('Admin completes a committed PDF publication without another teacher action
   expect(state.finalizeRequestIds).toHaveLength(2)
   expect(new Set(state.finalizeRequestIds).size).toBe(1)
   expect(state.displayMutationCount).toBe(0)
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin recovers an ambiguous finalize transport failure without another upload or teacher action', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    finalizeTransportFailures: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '資料の送信は完了しました。公開の最終確定を再開しています。',
+  )
+  await expect.poll(() => state.active, { timeout: 8_000 }).toBe(true)
+  await expect(fileInput).toHaveValue('')
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeEnabled()
+  expect(state.uploadCount).toBe(1)
+  expect(state.finalizeRequestIds).toHaveLength(2)
+  expect(new Set(state.finalizeRequestIds).size).toBe(1)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+    'status',
+    'finalize',
+  ])
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin reloads after an active finalize response is lost without another upload or finalize', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    finalizeTransportFailures: 1,
+    finalizeTransportFailureStatus: 'active',
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '資料の送信は完了しました。公開の最終確定を再開しています。',
+  )
+  const storedFinalizeRequestId = await page.evaluate((lectureId) => {
+    const raw = window.sessionStorage.getItem(
+      `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+    )
+    return raw
+      ? (JSON.parse(raw) as { finalizeRequestId?: string }).finalizeRequestId
+      : null
+  }, lectureSessionId)
+  expect(storedFinalizeRequestId).toBe(state.finalizeRequestIds[0])
+
+  await page.reload()
+  await openTeacherSetup(page)
+  await expect(
+    page.locator(`#admin-live select option[value="${documentId}"]`),
+  ).toHaveCount(1)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toBeEnabled()
+  expect(state.uploadCount).toBe(1)
+  expect(state.finalizeRequestIds).toHaveLength(1)
+  expect(withoutDiscovery(state.publicationActions)).toEqual([
+    'initiate',
+    'finalize',
+    'status',
+  ])
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (lectureId) =>
+          window.sessionStorage.getItem(
+            `compass-interactive-browser-pdf-publication-v1:${lectureId}`,
+          ),
+        lectureSessionId,
+      ),
+    )
+    .toBeNull()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Admin keeps the selected PDF and reports an upload transport failure without starting finalization', async ({
+  page,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page, {
+    uploadTransportFailures: 1,
+  })
+
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const pdfPanel = page.locator('#admin-live .publisher-control-panel')
+  const fileInput = pdfPanel.locator('input[type="file"]')
+  await fileInput.setInputFiles(samplePdfPath)
+  await pdfPanel.locator('button.primary-button').click()
+
+  await expect(pdfPanel).toContainText(
+    '資料を公開できませんでした。現在の資料は維持されています:',
+  )
+  await expect(pdfPanel).not.toContainText(
+    '資料の送信は完了しました。公開の最終確定を再開しています。',
+  )
+  await expect(fileInput).toHaveValue(/m4-sample-v1\.pdf/)
+  expect(state.uploadCount).toBe(1)
+  expect(withoutDiscovery(state.publicationActions)).toEqual(['initiate'])
+  expect(state.finalizeRequestIds).toHaveLength(0)
   await stopAdminOperatorPolling(page)
 })
 
