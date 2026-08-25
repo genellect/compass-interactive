@@ -136,12 +136,8 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     expect(lectureCode).toMatch(/^\d{6}$/)
 
     await admin.page.locator('#teacher-workspace-participation-tab').click()
-    const pollPanel = admin.page
-      .getByRole('heading', {
-        name: 'ライブ投票をつくる',
-      })
-      .locator('..')
-      .locator('..')
+    const pollPanel = admin.page.locator('#teacher-workspace-participation')
+    await expect(pollPanel).toBeVisible({ timeout: 10_000 })
     await pollPanel.getByLabel('質問').fill('講義前に準備した投票')
     await pollPanel.getByRole('button', { name: '投票を作成' }).click()
     const preparedPoll = admin.page
