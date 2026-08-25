@@ -634,7 +634,7 @@ assert.match(
 )
 assert.match(
   localLifecycleBrowser,
-  /displaySessionResponse = admin\.page\.waitForResponse[\s\S]*画面共有を開始する[\s\S]*popupSession[\s\S]*URLをコピー[\s\S]*initialDisplayUrl[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*新しいURLを発行[\s\S]*URLをコピー[\s\S]*URLをコピーしました[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
+  /displaySessionResponse = admin\.page\.waitForResponse[\s\S]*画面共有を開始する[\s\S]*popupSession[\s\S]*URLをコピー[\s\S]*initialDisplayUrl[\s\S]*isolatedDisplaySessionResponse = admin\.page\.waitForResponse[\s\S]*新しいURLを発行[\s\S]*URLをコピー[\s\S]*display-launch-instructions[\s\S]*getByRole\('status'\)[\s\S]*コピーしました。[\s\S]*const isolatedDisplayUrl = await copiedDisplayUrl\(admin\.page\)/,
   'the lifecycle must reuse one copied URL until explicit replacement, then copy the replacement before opening it',
 )
 assert.match(

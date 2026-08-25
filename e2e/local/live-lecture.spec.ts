@@ -273,8 +273,10 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     }>
     await admin.page.getByRole('button', { name: 'URLをコピー' }).click()
     await expect(
-      admin.page.getByRole('button', { name: 'URLをコピーしました' }),
-    ).toBeVisible()
+      admin.page
+        .locator('.display-launch-instructions')
+        .getByRole('status'),
+    ).toContainText('コピーしました。')
     const isolatedDisplayUrl = await copiedDisplayUrl(admin.page)
     const issuedIsolatedSession = await isolatedSession
     expect(issuedIsolatedSession.lectureSessionId).toBe(
