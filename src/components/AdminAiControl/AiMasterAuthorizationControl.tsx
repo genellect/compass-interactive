@@ -56,6 +56,11 @@ export function AiMasterAuthorizationControl({
   const [message, setMessage] = useState('')
   const [activationIntent, setActivationIntentState] = useState(false)
   const statusRequestVersionRef = useRef(0)
+  // masterStatus touches the current Admin session row. Keep reads serial and
+  // retain one trailing refresh so focus/status transitions cannot race it.
+  const refreshAttemptRef = useRef<(() => Promise<void>) | null>(null)
+  const refreshInFlightRef = useRef(false)
+  const refreshQueuedRef = useRef(false)
   const automaticAttemptRef = useRef<string | null>(null)
   const consumeAttemptCountRef = useRef(0)
   const consumeInFlightRef = useRef(false)
@@ -120,12 +125,12 @@ export function AiMasterAuthorizationControl({
     [onAuthorizationChange],
   )
 
-  const refresh = useCallback(async () => {
+  const refreshAttempt = useCallback(async () => {
     const targetLectureSessionId = lectureSessionId
     const requestVersion = ++statusRequestVersionRef.current
     onReadinessChange('checking')
     try {
-      const [status, intent] = await Promise.all([
+      const [statusResult, intentResult] = await Promise.allSettled([
         supabaseAdminRepository.getAiMasterAuthorization({
           adminToken,
           lectureSessionId: targetLectureSessionId,
@@ -135,6 +140,10 @@ export function AiMasterAuthorizationControl({
           lectureSessionId: targetLectureSessionId,
         }),
       ])
+      if (statusResult.status === 'rejected') throw statusResult.reason
+      if (intentResult.status === 'rejected') throw intentResult.reason
+      const status = statusResult.value
+      const intent = intentResult.value
       if (
         requestVersion === statusRequestVersionRef.current &&
         lectureSessionIdRef.current === targetLectureSessionId
@@ -213,6 +222,32 @@ export function AiMasterAuthorizationControl({
     onReadinessChange,
   ])
 
+  refreshAttemptRef.current = refreshAttempt
+  const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true
+      statusRequestVersionRef.current += 1
+      return
+    }
+    refreshInFlightRef.current = true
+    try {
+      do {
+        refreshQueuedRef.current = false
+        await refreshAttemptRef.current?.()
+      } while (refreshQueuedRef.current)
+    } finally {
+      refreshInFlightRef.current = false
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      statusRequestVersionRef.current += 1
+      refreshQueuedRef.current = false
+    },
+    [],
+  )
+
   useEffect(() => {
     setActivationIntentState(false)
     setBusy(false)
@@ -228,7 +263,14 @@ export function AiMasterAuthorizationControl({
     onReadinessChange('checking')
     setMessage('')
     void refresh()
-  }, [applyAuthorization, lectureSessionId, onReadinessChange, refresh])
+  }, [
+    adminToken.appSessionToken,
+    applyAuthorization,
+    lectureSessionId,
+    lectureStatus,
+    onReadinessChange,
+    refresh,
+  ])
 
   useEffect(() => {
     if (lectureStatus !== 'open') {
@@ -236,7 +278,6 @@ export function AiMasterAuthorizationControl({
       activationHandoffVersionRef.current = null
     }
     if (lectureStatus === 'open') {
-      void refresh()
       return
     }
     if (lectureStatus === 'closed') {

@@ -86,6 +86,31 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
   let isolatedDisplayContext: BrowserContext | null = null
   let isolatedDisplayPage: Page | null = null
   const lectureTitle = `CI講義 ${Date.now()}`
+  let masterStatusInFlight = 0
+  let maxMasterStatusInFlight = 0
+
+  await admin.page.route('**/functions/v1/admin-ai-unlock', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue()
+      return
+    }
+    const payload = route.request().postDataJSON() as Record<string, unknown>
+    if (payload.action !== 'masterStatus') {
+      await route.continue()
+      return
+    }
+    masterStatusInFlight += 1
+    maxMasterStatusInFlight = Math.max(
+      maxMasterStatusInFlight,
+      masterStatusInFlight,
+    )
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 250))
+      await route.continue()
+    } finally {
+      masterStatusInFlight -= 1
+    }
+  })
 
   try {
     await installGoogleAdminSession(admin.page)
@@ -273,9 +298,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     }>
     await admin.page.getByRole('button', { name: 'URLをコピー' }).click()
     await expect(
-      admin.page
-        .locator('.display-launch-instructions')
-        .getByRole('status'),
+      admin.page.locator('.display-launch-instructions').getByRole('status'),
     ).toContainText('コピーしました。')
     const isolatedDisplayUrl = await copiedDisplayUrl(admin.page)
     const issuedIsolatedSession = await isolatedSession
@@ -518,6 +541,7 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       admin.page.getByRole('heading', { name: '教員ポータル' }),
     ).toBeVisible()
 
+    expect(maxMasterStatusInFlight).toBe(1)
     await admin.safety.assertClean()
     await student.safety.assertClean()
     await peerStudent.safety.assertClean()
