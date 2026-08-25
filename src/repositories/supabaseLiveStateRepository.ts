@@ -1,6 +1,7 @@
 import type { JoinedLectureSession } from '../lib/joinedLecture'
 import type { AdminOperationCredentialInput } from '../lib/adminAuth/adminOperationCredential'
 import { ensureAnonymousAuthSession } from '../lib/anonymousAuth'
+import { ensureDisplayAnonymousAuthSession } from '../lib/displaySupabaseClient'
 import { assertSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import type { LiveComment, Poll, PollResponse } from '../types'
 import type { DisplayState } from './supabaseDisplayStateRepository'
@@ -311,7 +312,7 @@ export const supabaseLiveStateRepository = {
   ): Promise<LiveSnapshot> {
     assertSupabaseConfigured()
     if (request.displayToken) {
-      await ensureAnonymousAuthSession()
+      await ensureDisplayAnonymousAuthSession()
     }
 
     const credential = request.adminToken

@@ -841,6 +841,35 @@ assert.match(
   /await adminSafety\.assertClean\(\)[\s\S]*await adminPage\.close\(\)[\s\S]*set_display_realtime_runtime_v1[\s\S]*phase728b_e2e_revoke/,
   'the Display regression must stop the original clean Admin page before revoking its tracked session',
 )
+const displayProbePhaseStart = displayRealtimeBrowser.indexOf(
+  'await displaySafety.assertClean()',
+)
+assert.ok(
+  displayProbePhaseStart >= 0,
+  'the Display regression must prove the live Display page clean before invalidation',
+)
+const displayProbePhase = displayRealtimeBrowser.slice(displayProbePhaseStart)
+assert.match(
+  displayProbePhase,
+  /await displaySafety\.assertClean\(\)[\s\S]*await displayPage\.close\(\)[\s\S]*displayContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(displayProbePage\)[\s\S]*await displayProbePage\.goto\('\/join'\)/,
+  'the Display regression must stop the live five-second fallback before isolated invalidation probes',
+)
+assert.equal(
+  [...displayProbePhase.matchAll(/invokeDisplaySnapshot\(displayProbePage/g)]
+    .length,
+  2,
+  'the isolated Display probe must exercise exactly the post-close and post-revoke snapshot denials',
+)
+assert.equal(
+  [...displayProbePhase.matchAll(/invokeDisplayPdf\(displayProbePage/g)].length,
+  2,
+  'the isolated Display probe must exercise exactly the post-close and post-revoke PDF denials',
+)
+assert.match(
+  displayProbePhase,
+  /displayProbeSafety\.expectConsoleErrors\([\s\S]*operator-live-snapshot[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*displayProbeSafety\.expectConsoleErrors\([\s\S]*issue-pdf-access-token[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await displayProbeSafety\.assertClean\(\)/,
+  'the isolated Display probe may consume only the exact two snapshot and two PDF 401 diagnostics before its final safety check',
+)
 assert.match(
   revokedDisplayBrowserPhase,
   /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*invalidRestoreResponsePromise[\s\S]*body\.action === 'restore'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*invalidRestoreResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
@@ -848,7 +877,7 @@ assert.match(
 )
 assert.match(
   revokedDisplayBrowserPhase,
-  /await invalidAdminSafety\.expectConsoleErrors\([\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
+  /await invalidAdminSafety\.expectConsoleErrors\([\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
   'the Display regression may consume only the proven status and single restore 401 responses before its final safety checks',
 )
 assert.match(

@@ -32,6 +32,10 @@ const displayPage = read('src/pages/DisplayPage.tsx')
 const displayView = read('src/components/DisplayView/DisplayView.tsx')
 const appCss = read('src/App.css')
 const compassStateContext = read('src/context/CompassStateContext.tsx')
+const liveStateRepository = read(
+  'src/repositories/supabaseLiveStateRepository.ts',
+)
+const supabaseTransport = read('src/repositories/supabase/transport.ts')
 const displayLauncher = read('src/pages/admin/useAdminDisplayLauncher.ts')
 const displayStatusHook = read('src/pages/admin/useAdminDisplayStatus.ts')
 const displayMutationHook = read('src/pages/admin/useAdminDisplayMutation.ts')
@@ -529,6 +533,55 @@ test('operator snapshot and PDF access preserve live flag-OFF tokens but reject 
   assert.doesNotMatch(
     `${migration}\n${operatorSnapshot}\n${pdfAccess}`,
     /verify_display_realtime_terminal_session_v1/,
+  )
+})
+
+test('Display snapshot fallback creates only the dedicated Display auth session and transport uses the same client', () => {
+  const operatorSnapshotStart = liveStateRepository.indexOf(
+    'async getOperatorSnapshot(',
+  )
+  const operatorSnapshotEnd = liveStateRepository.indexOf(
+    'async getOperatorCommentHistory(',
+    operatorSnapshotStart,
+  )
+  const operatorSnapshotClient = liveStateRepository.slice(
+    operatorSnapshotStart,
+    operatorSnapshotEnd,
+  )
+  assert.ok(
+    operatorSnapshotStart > 0 && operatorSnapshotEnd > operatorSnapshotStart,
+  )
+  assert.match(
+    liveStateRepository,
+    /import \{ ensureDisplayAnonymousAuthSession \} from '\.\.\/lib\/displaySupabaseClient'/,
+  )
+  assert.match(
+    operatorSnapshotClient,
+    /if \(request\.displayToken\) \{\s*await ensureDisplayAnonymousAuthSession\(\)\s*\}/,
+  )
+  assert.doesNotMatch(operatorSnapshotClient, /ensureAnonymousAuthSession\(/)
+  assert.equal(
+    (operatorSnapshotClient.match(/ensureDisplayAnonymousAuthSession\(\)/g) ?? [])
+      .length,
+    1,
+    'Admin operator snapshots must not create either anonymous auth session',
+  )
+  assert.match(
+    operatorSnapshotClient,
+    /const credential = request\.adminToken\s*\? \{ adminToken: request\.adminToken \}\s*: request\.displayToken\s*\? \{ displayToken: request\.displayToken \}/,
+  )
+
+  const adminReturn = supabaseTransport.indexOf('return result')
+  const displayCredential = supabaseTransport.indexOf(
+    'const suppliedDisplayToken =',
+  )
+  assert.ok(
+    adminReturn > 0 && displayCredential > adminReturn,
+    'Admin credential handling must return before Display client selection',
+  )
+  assert.match(
+    supabaseTransport.slice(displayCredential),
+    /typeof suppliedDisplayToken === 'string' && suppliedDisplayToken\.length > 0\s*\? displaySupabase\s*: supabase/,
   )
 })
 

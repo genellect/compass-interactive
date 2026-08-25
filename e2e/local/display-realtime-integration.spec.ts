@@ -700,6 +700,13 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(bindingResult.data?.admin_session_id).toBeTruthy()
       expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
 
+      await displaySafety.assertClean()
+      await displayPage.close()
+      const displayProbePage = await displayContext.newPage()
+      const displayProbeSafety =
+        await installBrowserSafetyMonitor(displayProbePage)
+      await displayProbePage.goto('/join')
+
       const closeResult = await service.rpc('admin_set_lecture_status', {
         target_action: 'close',
         target_lecture_session_id: lecture.id,
@@ -714,7 +721,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(closedBindingResult.error).toBeNull()
       expect(closedBindingResult.data?.revoke_reason).toBe('lecture_closed')
 
-      const postCloseSnapshot = await invokeDisplaySnapshot(displayPage, {
+      const postCloseSnapshot = await invokeDisplaySnapshot(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
@@ -724,7 +731,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         ok: false,
       })
       expect(postCloseSnapshot.body).not.toHaveProperty('result')
-      const postClosePdf = await invokeDisplayPdf(displayPage, {
+      const postClosePdf = await invokeDisplayPdf(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
@@ -744,7 +751,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         .eq('id', bindingResult.data?.admin_session_id ?? '')
       expect(revokeResult.error).toBeNull()
 
-      const postRevokeSnapshot = await invokeDisplaySnapshot(displayPage, {
+      const postRevokeSnapshot = await invokeDisplaySnapshot(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
@@ -754,7 +761,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         ok: false,
       })
       expect(postRevokeSnapshot.body).not.toHaveProperty('result')
-      const postRevokePdf = await invokeDisplayPdf(displayPage, {
+      const postRevokePdf = await invokeDisplayPdf(displayProbePage, {
         displayToken: issued.displayToken,
         lectureSessionId: lecture.id,
       })
@@ -764,6 +771,24 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         ok: false,
       })
       expect(postRevokePdf.body).not.toHaveProperty('accessToken')
+
+      const unauthorizedConsoleMessage =
+        'Failed to load resource: the server responded with a status of 401 (Unauthorized)'
+      await displayProbeSafety.expectConsoleErrors(
+        {
+          message: unauthorizedConsoleMessage,
+          url: `${supabaseUrl}/functions/v1/operator-live-snapshot`,
+        },
+        2,
+      )
+      await displayProbeSafety.expectConsoleErrors(
+        {
+          message: unauthorizedConsoleMessage,
+          url: `${supabaseUrl}/functions/v1/issue-pdf-access-token`,
+        },
+        2,
+      )
+      await displayProbeSafety.assertClean()
     } finally {
       const enabled = await service.rpc('set_display_realtime_runtime_v1', {
         target_enabled: true,
@@ -835,7 +860,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       },
       2,
     )
-    await displaySafety.assertClean()
     await invalidAdminSafety.assertClean()
   } finally {
     if (displayContext) await displayContext.close()
