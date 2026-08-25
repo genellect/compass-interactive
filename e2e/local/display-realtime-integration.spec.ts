@@ -685,9 +685,11 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       })
       expect(crossUserFallback.status).toBe(401)
       expect(crossUserFallback.body).toMatchObject({
-        message: 'Invalid Display session.',
+        credentialExpired: true,
+        credentialKind: 'display',
         ok: false,
       })
+      expect(crossUserFallback.body).not.toHaveProperty('result')
 
       const bindingResult = await service
         .from('display_realtime_sessions')
