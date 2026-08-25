@@ -4,7 +4,7 @@ import { AppIcon } from './AppIcon'
 
 const INTERACTIVE_INTRO_URL =
   'https://compass-official.pages.dev/INTRO_Interactive/'
-const COMPASS_OFFICIAL_URL = 'https://compass-official.pages.dev/'
+const DEVELOPER_URL = 'https://compass-official.pages.dev/founder/'
 
 export function CompassContextMenu() {
   const [isOpen, setIsOpen] = useState(false)
@@ -82,7 +82,7 @@ export function CompassContextMenu() {
           <AppIcon name="arrow-right" size={15} />
         </a>
         <a
-          href={COMPASS_OFFICIAL_URL}
+          href={DEVELOPER_URL}
           onClick={() => setIsOpen(false)}
           rel="noopener noreferrer"
           target="_blank"
@@ -91,8 +91,8 @@ export function CompassContextMenu() {
             <AppIcon name="compass" size={17} />
           </span>
           <span>
-            <strong>COMPASS公式サイト</strong>
-            <small>プロジェクト全体を見る</small>
+            <strong>Meet the Developer</strong>
+            <small>Yuto Matsui — Interactiveの開発者</small>
           </span>
           <AppIcon name="arrow-right" size={15} />
         </a>

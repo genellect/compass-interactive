@@ -784,23 +784,25 @@ export function AdminPage({
     const mutationEpoch = ++lectureMutationEpochRef.current
 
     try {
-      const nextLectures = await supabaseAdminRepository.manageLectures({
-        action: 'create',
+      const result = await supabaseAdminRepository.createLecture({
         adminToken,
         endsAt: fromDatetimeLocalValue(newLectureEndsAt),
         startsAt: fromDatetimeLocalValue(newLectureStartsAt),
         title: newLectureTitle,
       })
       if (mutationEpoch !== lectureMutationEpochRef.current) return null
-      setLectures(nextLectures)
-      const createdLecture = nextLectures[0]
-      if (createdLecture) {
-        selectAdminLecture(createdLecture)
+      const createdLecture = result.lectures.find(
+        (lecture) => lecture.id === result.lectureSessionId,
+      )
+      if (!createdLecture) {
+        throw new Error('作成した講義が一覧にありません。')
       }
+      setLectures(result.lectures)
+      selectAdminLecture(createdLecture)
       setNewLectureTitle('')
       setNewLectureStartsAt('')
       setNewLectureEndsAt('')
-      return createdLecture ?? null
+      return createdLecture
     } catch (error) {
       if (handleInvalidAdminSession(error)) return null
       setLecturesError(
@@ -911,24 +913,23 @@ export function AdminPage({
     setLecturesLoading(true)
     setLecturesError(null)
     const mutationEpoch = ++lectureMutationEpochRef.current
-    const existingIds = new Set(lectures.map((item) => item.id))
 
     try {
-      const nextLectures = await supabaseAdminRepository.manageLectures({
-        action: 'duplicate',
+      const result = await supabaseAdminRepository.duplicateLecture({
         adminToken,
         lectureSessionId,
       })
       if (mutationEpoch !== lectureMutationEpochRef.current) return
-      setLectures(nextLectures)
-      const duplicatedLecture = nextLectures.find(
-        (item) => !existingIds.has(item.id),
+      const duplicatedLecture = result.lectures.find(
+        (lecture) => lecture.id === result.lectureSessionId,
       )
-      if (duplicatedLecture) {
-        selectAdminLecture(duplicatedLecture)
-        setWorkspaceView('setup')
-        setShowLectureHistory(false)
+      if (!duplicatedLecture) {
+        throw new Error('複製した講義が一覧にありません。')
       }
+      setLectures(result.lectures)
+      selectAdminLecture(duplicatedLecture)
+      setWorkspaceView('setup')
+      setShowLectureHistory(false)
     } catch (error) {
       setLecturesError(
         error instanceof Error

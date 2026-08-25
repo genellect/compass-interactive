@@ -57,6 +57,8 @@ const aiMasterAuthorizationControl = read(
 const aiMasterAuthorizationRepository = read(
   'src/repositories/supabase/aiMasterAuthorizationRepository.ts',
 )
+const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
+const adminPage = read('src/pages/AdminPage.tsx')
 const adminRoute = read('src/pages/AdminRoute.tsx')
 const adminOperationSessionEvents = read(
   'src/lib/adminAuth/adminOperationSessionEvents.ts',
@@ -998,6 +1000,53 @@ assert.equal(
   3,
   'Google create, Journal and duplicate must validate RPC results',
 )
+const createLectureEdgeBlock = manageLectures.slice(
+  manageLectures.indexOf("if (body.action === 'create')"),
+  manageLectures.indexOf("if (body.action === 'createJournalClubRun')"),
+)
+assert.match(
+  createLectureEdgeBlock,
+  /const result = await createWithUniqueCode\('create',[\s\S]*createdLectureSessionId: result\.lectureSessionId[\s\S]*idempotentReplay: result\.idempotentReplay === true/,
+  'normal lecture creation must return the exact RPC result instead of relying on list order',
+)
+const duplicateLectureEdgeBlock = manageLectures.slice(
+  manageLectures.indexOf("if (body.action === 'duplicate')"),
+  manageLectures.indexOf("body.action === 'start'"),
+)
+assert.match(
+  duplicateLectureEdgeBlock,
+  /const result = await createWithUniqueCode\('duplicate',[\s\S]*createdLectureSessionId: result\.lectureSessionId[\s\S]*idempotentReplay: result\.idempotentReplay === true/,
+  'lecture duplication must return the exact RPC result instead of relying on list differences',
+)
+const exactLectureRepositoryBlock = adminRepository.slice(
+  adminRepository.indexOf('async createLecture('),
+  adminRepository.indexOf('async createJournalClubRun('),
+)
+assert.match(
+  exactLectureRepositoryBlock,
+  /async createLecture\([\s\S]*invokeManageLectures\(\{ action: 'create',[\s\S]*createdLectureSessionId[\s\S]*async duplicateLecture\([\s\S]*invokeManageLectures\(\{ action: 'duplicate',[\s\S]*createdLectureSessionId/,
+  'the compatible repository API must expose exact IDs for create and duplicate while manageLectures remains available',
+)
+const createDraftLectureBlock = adminPage.slice(
+  adminPage.indexOf('async function createDraftLecture'),
+  adminPage.indexOf('async function handleCreateLecture'),
+)
+assert.match(
+  createDraftLectureBlock,
+  /supabaseAdminRepository\.createLecture\([\s\S]*result\.lectures\.find\([\s\S]*lecture\.id === result\.lectureSessionId[\s\S]*if \(!createdLecture\)[\s\S]*throw new Error\('作成した講義が一覧にありません。'\)[\s\S]*selectAdminLecture\(createdLecture\)/,
+  'the Admin workspace must select only the exact created lecture and fail closed when it is absent',
+)
+assert.doesNotMatch(createDraftLectureBlock, /nextLectures\[0\]/)
+const duplicateLecturePageBlock = adminPage.slice(
+  adminPage.indexOf('async function duplicateLecture'),
+  adminPage.indexOf('async function handleCreatePoll'),
+)
+assert.match(
+  duplicateLecturePageBlock,
+  /supabaseAdminRepository\.duplicateLecture\([\s\S]*result\.lectures\.find\([\s\S]*lecture\.id === result\.lectureSessionId[\s\S]*if \(!duplicatedLecture\)[\s\S]*throw new Error\('複製した講義が一覧にありません。'\)[\s\S]*selectAdminLecture\(duplicatedLecture\)/,
+  'the Admin workspace must select only the exact duplicated lecture and fail closed when it is absent',
+)
+assert.doesNotMatch(duplicateLecturePageBlock, /existingIds/)
 assert.match(
   manageLectures,
   /const result = requireGoogleAdminRpcResult\(\s*data as \{ ok\?: boolean \} \| null,?\s*\)\s*if \(result(?:\?\.|\.)ok !== true\) \{\s*throw new Error\(\s*'Google Admin lecture transition result is unavailable\.'/,

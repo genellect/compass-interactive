@@ -144,9 +144,9 @@ cost/time impact, rollback, and a simpler rejected alternative.
 
 Only two execution profiles are allowed for this lane.
 
-| Profile | Use | Ownership |
-| --- | --- | --- |
-| `xhigh` | Bounded implementation or deterministic tests in one established component | One write-capable agent on an isolated branch/worktree |
+| Profile            | Use                                                                                                 | Ownership                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `xhigh`            | Bounded implementation or deterministic tests in one established component                          | One write-capable agent on an isolated branch/worktree               |
 | `ultra + subagent` | Cross-cutting Auth/RLS/lifecycle/Realtime, concurrency, Production integration, or final acceptance | One Ultra controller; independent subagents are read-only by default |
 
 Do not use a lower reasoning profile merely to save tokens. Do not use Ultra as
@@ -155,15 +155,15 @@ independent evidence and reviews.
 
 ### Recommended roles
 
-| Role | Profile | Responsibility |
-| --- | --- | --- |
-| Integration and release controller | `ultra + subagent` | Requirements, dependency order, shared schema, integration, exact-head acceptance, PR/merge, deployment and final decision |
-| Admin identity implementer | `xhigh` under Ultra review | Login admission, session restoration, OAuth routing, rate-limit UI and tests |
-| Display authorization/Realtime implementer | `xhigh` under Ultra review | Capability lifetime, claim/recovery, event coverage, ACK/heartbeat and fallback |
-| Teacher UX implementer | `xhigh` | Pre-start Poll/AI state, stable navigation, persistent transport and concise UI |
-| PDF/Display rendering implementer | `xhigh` | Delivery recovery, render quality, responsive projector layout and tests |
-| Independent security reviewer | Ultra subagent, read-only | Auth/RLS/token replay/cross-lecture/session/lifecycle negative review |
-| Independent UX/reliability reviewer | Ultra subagent, read-only | Complete browser flow, timing, recovery, viewport and regression review |
+| Role                                       | Profile                    | Responsibility                                                                                                             |
+| ------------------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Integration and release controller         | `ultra + subagent`         | Requirements, dependency order, shared schema, integration, exact-head acceptance, PR/merge, deployment and final decision |
+| Admin identity implementer                 | `xhigh` under Ultra review | Login admission, session restoration, OAuth routing, rate-limit UI and tests                                               |
+| Display authorization/Realtime implementer | `xhigh` under Ultra review | Capability lifetime, claim/recovery, event coverage, ACK/heartbeat and fallback                                            |
+| Teacher UX implementer                     | `xhigh`                    | Pre-start Poll/AI state, stable navigation, persistent transport and concise UI                                            |
+| PDF/Display rendering implementer          | `xhigh`                    | Delivery recovery, render quality, responsive projector layout and tests                                                   |
+| Independent security reviewer              | Ultra subagent, read-only  | Auth/RLS/token replay/cross-lecture/session/lifecycle negative review                                                      |
+| Independent UX/reliability reviewer        | Ultra subagent, read-only  | Complete browser flow, timing, recovery, viewport and regression review                                                    |
 
 Subagents do not deploy, change budgets, read secret values, merge, or approve
 their own work. The controller records each handoff as files changed, tests run,
@@ -583,3 +583,33 @@ Next exact action:
 
 Do not claim a Hosted, Human, Device, CI, merge, deployment, or Production result
 that was not directly observed for the recorded exact SHA.
+
+## 18. 2026-08-25 completion re-freeze
+
+This lane is complete only when one coherent Production release contains every
+approved requirement and its canonical browser paths have been verified. The
+required release scope is:
+
+- the authenticated, separate-browser Realtime Display flow, including
+  five-second fallback, recovery, and explicit synchronization ACK;
+- PDF finalization recovery and reliable student PDF rendering;
+- AI activation-intent protection against stale reads and lecture-close races;
+- exact selection of the lecture returned by create and duplicate operations;
+- the public English-lecture Demo Display at `/demo/display`, using only local
+  demo data and making no Supabase, database, authentication, Storage, or
+  Realtime request;
+- the shared context-menu Developer CTA with the approved copy and canonical
+  founder URL; and
+- every previously approved lecture-UX correction included in the candidate
+  source, with no required runtime, Edge, or feature gate left OFF.
+
+Required evidence is one focused local acceptance batch, the required checks
+for the frozen PR head, post-merge validation for the exact `main` SHA, ordered
+Production rollout (migration, affected Edge Function, then same-SHA Pages),
+and bounded canonical-host browser verification of educator, student,
+authenticated Display, public Demo Display, and narrow/mobile paths.
+
+A local implementation, passing local tests, PR, merge, CI artifact, partial
+deployment, or deployed-but-untested route is not completion. Any missing,
+disabled, or unverified required path remains `HOLD`; only
+`PRODUCTION_VERIFIED` is terminal success.

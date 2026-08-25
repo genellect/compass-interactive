@@ -1,4 +1,11 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+  type Request,
+  type Route,
+} from '@playwright/test'
 import jsQR from 'jsqr'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
@@ -11,6 +18,25 @@ const decodeQrPixels = jsQR as unknown as (
   width: number,
   height: number,
 ) => { data: string } | null
+
+function isFunctionActionRequest(
+  request: Request,
+  functionName: string,
+  action: string,
+) {
+  if (
+    request.method() !== 'POST' ||
+    !request.url().includes(`/functions/v1/${functionName}`)
+  ) {
+    return false
+  }
+  try {
+    const payload = request.postDataJSON() as Record<string, unknown>
+    return payload.action === action
+  } catch {
+    return false
+  }
+}
 
 test.describe.configure({ retries: 0 })
 
@@ -486,10 +512,65 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       student.page.getByRole('heading', { name: lectureTitle }),
     ).toBeVisible()
 
-    admin.page.once('dialog', (dialog) => dialog.accept())
-    await admin.page
-      .getByRole('button', { name: '講義を終了', exact: true })
-      .click()
+    const settledIntentStatusResponse = admin.page.waitForResponse((response) =>
+      isFunctionActionRequest(
+        response.request(),
+        'manage-ai-activation-intent',
+        'status',
+      ),
+    )
+    await admin.page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    expect((await settledIntentStatusResponse).status()).toBe(200)
+
+    const intentStatusPattern = '**/functions/v1/manage-ai-activation-intent'
+    let releaseCloseCrossingStatus = () => {}
+    const closeCrossingStatusGate = new Promise<void>((resolve) => {
+      releaseCloseCrossingStatus = resolve
+    })
+    let closeCrossingStatusHeld = false
+    let closeCrossingStatusRequest: Request | null = null
+    const holdCloseCrossingStatus = async (route: Route) => {
+      if (
+        closeCrossingStatusHeld ||
+        !isFunctionActionRequest(
+          route.request(),
+          'manage-ai-activation-intent',
+          'status',
+        )
+      ) {
+        await route.continue()
+        return
+      }
+      closeCrossingStatusHeld = true
+      closeCrossingStatusRequest = route.request()
+      await closeCrossingStatusGate
+      await route.continue()
+    }
+    await admin.page.route(intentStatusPattern, holdCloseCrossingStatus)
+    const closeCrossingStatusResponse = admin.page.waitForResponse(
+      (response) => response.request() === closeCrossingStatusRequest,
+    )
+    let closeCrossingStatusCode: number | null = null
+    try {
+      await admin.page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await expect.poll(() => closeCrossingStatusHeld).toBe(true)
+
+      const lectureCloseResponse = admin.page.waitForResponse((response) =>
+        isFunctionActionRequest(response.request(), 'manage-lectures', 'close'),
+      )
+      admin.page.once('dialog', (dialog) => dialog.accept())
+      await admin.page
+        .getByRole('button', { name: '講義を終了', exact: true })
+        .click()
+      expect((await lectureCloseResponse).status()).toBe(200)
+
+      releaseCloseCrossingStatus()
+      closeCrossingStatusCode = (await closeCrossingStatusResponse).status()
+    } finally {
+      releaseCloseCrossingStatus()
+      await admin.page.unroute(intentStatusPattern, holdCloseCrossingStatus)
+    }
+    expect(closeCrossingStatusCode).toBe(200)
     await expect(
       admin.page.getByRole('heading', { name: '講義を準備する' }),
     ).toBeVisible()

@@ -80,7 +80,12 @@ export function DisplayView({
           <h1 title={lecture.title}>{lecture.title}</h1>
         </div>
         {!isLectureClosed ? (
-          <LectureJoinQr code={lectureCode} compact title="講義に参加" />
+          <LectureJoinQr
+            code={lectureCode}
+            compact
+            demoJoin={runtimeMode === 'demo'}
+            title="講義に参加"
+          />
         ) : null}
         <div className="display-actions">
           <button

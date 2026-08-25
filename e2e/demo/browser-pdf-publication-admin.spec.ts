@@ -363,6 +363,12 @@ async function installNetworkMocks(
         state.lectureTitle = String(body.title ?? '')
       }
       await fulfillJson(route, {
+        ...(body.action === 'create'
+          ? {
+              createdLectureSessionId: lectureSessionId,
+              idempotentReplay: false,
+            }
+          : {}),
         lectures:
           body.action === 'list' && !lectureCreatedWhenRequestStarted
             ? []

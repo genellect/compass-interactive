@@ -116,6 +116,8 @@ const displayCaptionTopicResolutionMigrationName =
   '20260825180000_display_caption_topic_resolution.sql'
 const durableAdminAiActivationIntentMigrationName =
   '20260825183000_durable_admin_ai_activation_intent.sql'
+const aiActivationIntentStatusRetainedMigrationName =
+  '20260825190000_ai_activation_intent_status_retained.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -185,6 +187,7 @@ assert.deepEqual(
     finalDisplayDeliveryAckMigrationName,
     displayCaptionTopicResolutionMigrationName,
     durableAdminAiActivationIntentMigrationName,
+    aiActivationIntentStatusRetainedMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

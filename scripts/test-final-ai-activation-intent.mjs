@@ -7,6 +7,9 @@ const read = (path) =>
 const migrationPath =
   'supabase/migrations/20260825183000_durable_admin_ai_activation_intent.sql'
 const migration = read(migrationPath)
+const statusAfterCloseMigration = read(
+  'supabase/migrations/20260825190000_ai_activation_intent_status_retained.sql',
+)
 const edge = read('supabase/functions/manage-ai-activation-intent/index.ts')
 const repository = read(
   'src/repositories/supabase/aiActivationIntentRepository.ts',
@@ -56,6 +59,37 @@ assert.match(
 assert.match(
   migration,
   /'manage-ai-activation-intent\.cancel',[\s\S]*?'owned_lecture',[\s\S]*?'draft_or_open',[\s\S]*?'gate_independent',[\s\S]*?'free_control',[\s\S]*?false,[\s\S]*?false,[\s\S]*?true/,
+)
+const statusAfterCloseCorrection =
+  statusAfterCloseMigration.match(/do \$\$[\s\S]*?\n\$\$;/)?.[0] ?? ''
+assert.equal(
+  (
+    statusAfterCloseCorrection.match(
+      /update\s+private\.admin_google_operation_policies/g,
+    ) ?? []
+  ).length,
+  1,
+  'the status-after-close migration must update exactly one policy statement',
+)
+assert.match(
+  statusAfterCloseCorrection,
+  /set lecture_state = 'retained'[\s\S]*?where operation_key = 'manage-ai-activation-intent\.status'[\s\S]*?and edge_function = 'manage-ai-activation-intent'[\s\S]*?and action_name = 'status'[\s\S]*?and access_scope = 'owned_lecture'[\s\S]*?and lecture_state = 'draft_or_open'[\s\S]*?and gate_mode = 'gate_independent'[\s\S]*?and operation_class = 'read'[\s\S]*?and lecture_lock_mode = 'share'[\s\S]*?and instructor_requires_ai = false[\s\S]*?and owner_requires_ai = false[\s\S]*?and request_binding_required = false[\s\S]*?and control_step_up_action is null/,
+  'the correction must match the complete old status policy before widening only its lecture state',
+)
+assert.match(
+  statusAfterCloseCorrection,
+  /get diagnostics updated_policy_count = row_count;[\s\S]*?if updated_policy_count <> 1 then[\s\S]*?raise exception/,
+  'the correction must fail unless exactly one policy row changes',
+)
+assert.doesNotMatch(
+  statusAfterCloseCorrection,
+  /\b(?:insert\s+into|delete\s+from|truncate|alter\s+table)\b/i,
+  'the correction block must not mutate any other database surface',
+)
+assert.match(
+  statusAfterCloseMigration,
+  /drop trigger admin_google_operation_policies_immutable[\s\S]*?create trigger admin_google_operation_policies_immutable\s+before update or delete on private\.admin_google_operation_policies\s+for each row execute function private\.reject_admin_c1_evidence_mutation_v1\(\);/,
+  'the operation policy immutability guard must be restored in the same migration',
 )
 assert.match(
   migration,

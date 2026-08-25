@@ -54,7 +54,8 @@ function requireGoogleAdminRpcResult<T>(data: T | null): T {
 function normalizeTimestamp(value: string | null | undefined) {
   if (!value) return null
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) throw new Error('Invalid lecture timestamp.')
+  if (Number.isNaN(date.getTime()))
+    throw new Error('Invalid lecture timestamp.')
   return date.toISOString()
 }
 
@@ -102,7 +103,9 @@ Deno.serve(async (request) => {
     )
   }
   const requestId =
-    body.action === 'createJournalClubRun' ? body.clientRequestId : body.requestId
+    body.action === 'createJournalClubRun'
+      ? body.clientRequestId
+      : body.requestId
   if (body.action !== 'list' && !UUID_PATTERN.test(requestId ?? '')) {
     return jsonResponse({ ok: false, message: 'requestId is required.' }, 400)
   }
@@ -216,7 +219,10 @@ Deno.serve(async (request) => {
             ok?: boolean
           } | null,
         )
-        if (result?.ok !== true || !UUID_PATTERN.test(result.lectureSessionId ?? '')) {
+        if (
+          result?.ok !== true ||
+          !UUID_PATTERN.test(result.lectureSessionId ?? '')
+        ) {
           throw new Error('Google Admin lecture operation was not accepted.')
         }
         return result
@@ -245,7 +251,10 @@ Deno.serve(async (request) => {
     if (body.action === 'create') {
       const title = body.title?.trim()
       if (!title) {
-        return jsonResponse({ ok: false, message: 'Lecture title is required.' }, 400)
+        return jsonResponse(
+          { ok: false, message: 'Lecture title is required.' },
+          400,
+        )
       }
       const startsAt = normalizeTimestamp(body.startsAt)
       const endsAt = normalizeTimestamp(body.endsAt)
@@ -255,13 +264,18 @@ Deno.serve(async (request) => {
           400,
         )
       }
-      await createWithUniqueCode('create', {
+      const result = await createWithUniqueCode('create', {
         target_ends_at: endsAt,
         target_request_id: body.requestId,
         target_starts_at: startsAt,
         target_title: title,
       })
-      return jsonResponse({ lectures: await listLectures(), ok: true })
+      return jsonResponse({
+        createdLectureSessionId: result.lectureSessionId,
+        idempotentReplay: result.idempotentReplay === true,
+        lectures: await listLectures(),
+        ok: true,
+      })
     }
 
     if (body.action === 'createJournalClubRun') {
@@ -305,11 +319,16 @@ Deno.serve(async (request) => {
           400,
         )
       }
-      await createWithUniqueCode('duplicate', {
+      const result = await createWithUniqueCode('duplicate', {
         target_lecture_session_id: body.lectureSessionId,
         target_request_id: body.requestId,
       })
-      return jsonResponse({ lectures: await listLectures(), ok: true })
+      return jsonResponse({
+        createdLectureSessionId: result.lectureSessionId,
+        idempotentReplay: result.idempotentReplay === true,
+        lectures: await listLectures(),
+        ok: true,
+      })
     }
 
     if (

@@ -13,6 +13,7 @@ const routes = [
   'admin',
   'display',
   'demo',
+  'demo/display',
 ]
 
 if (!existsSync(indexPath)) {

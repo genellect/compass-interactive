@@ -212,4 +212,67 @@ test('classroom display without an issued token fails closed on the display rout
       '管理画面から「画面共有を開始する」を押して、もう一度開いてください。',
     ),
   ).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: '英語講義の共有Displayを体験' }),
+  ).toHaveAttribute('href', '/demo/display')
+})
+
+test('English lecture demo opens a local-only classroom Display without Supabase', async ({
+  page,
+}) => {
+  const safety = await installBrowserSafetyMonitor(page)
+  const hostedServiceRequests: string[] = []
+
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (
+      url.hostname.endsWith('.supabase.co') ||
+      url.port === '54321' ||
+      /\/(?:auth|functions|realtime|rest|storage)\/v1(?:\/|$)/.test(
+        url.pathname,
+      )
+    ) {
+      hostedServiceRequests.push(request.url())
+    }
+  })
+
+  await page.goto('/demo')
+  await page.getByRole('link', { name: '共有Displayを見る' }).click()
+
+  await expect(page).toHaveURL(/\/demo\/display$/)
+  await expect(
+    page.getByRole('heading', { name: 'AI時代の英語と学び' }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: '教室表示を全画面にする' }),
+  ).toBeVisible()
+  const demoJoinQr = page.locator('.lecture-join-qr')
+  await expect(demoJoinQr).toContainText('DEMO')
+  await expect(demoJoinQr).toHaveAttribute('data-lecture-join-url', /\/demo$/)
+  await expect(page.locator('.pdf-canvas')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByLabel('講義字幕')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'コメント' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: '直近5分のハイライト' }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      'AI翻訳によって、海外の情報へアクセスするための壁は小さくなっている。',
+    ),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('heading', {
+      name: '翻訳AIが使える今、英語を学ぶ価値として最も大きいものは？',
+    }),
+  ).toBeVisible()
+  await expect(page.getByText('共有画面の確認が必要です')).toHaveCount(0)
+  const horizontalOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  )
+  expect(horizontalOverflow).toBeLessThanOrEqual(1)
+  expect(hostedServiceRequests).toEqual([])
+
+  await safety.assertClean()
 })

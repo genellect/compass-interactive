@@ -3,7 +3,7 @@ import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
 
 const INTERACTIVE_INTRO_URL =
   'https://compass-official.pages.dev/INTRO_Interactive/'
-const COMPASS_OFFICIAL_URL = 'https://compass-official.pages.dev/'
+const DEVELOPER_URL = 'https://compass-official.pages.dev/founder/'
 
 test('join hero and secondary COMPASS links preserve the primary lecture flow', async ({
   page,
@@ -62,16 +62,43 @@ test('join hero and secondary COMPASS links preserve the primary lecture flow', 
   const interactiveLink = page.getByRole('link', {
     name: /Interactiveについて/,
   })
-  const officialLink = page.getByRole('link', {
-    name: /COMPASS公式サイト/,
+  const developerLink = page.getByRole('link', {
+    name: /Meet the Developer/,
   })
   await expect(interactiveLink).toHaveAttribute('href', INTERACTIVE_INTRO_URL)
-  await expect(officialLink).toHaveAttribute('href', COMPASS_OFFICIAL_URL)
-  for (const link of [interactiveLink, officialLink]) {
+  await expect(developerLink).toHaveAttribute('href', DEVELOPER_URL)
+  await expect(
+    developerLink.getByText('Yuto Matsui — Interactiveの開発者', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  for (const link of [interactiveLink, developerLink]) {
     await expect(link).toHaveAttribute('target', '_blank')
     await expect(link).toHaveAttribute('rel', /noopener/)
     await expect(link).toHaveAttribute('rel', /noreferrer/)
   }
+
+  const developerLinkLayout = await developerLink.evaluate((link) => {
+    const support = link.querySelector<HTMLElement>('small')
+    const arrow = link.querySelector<SVGElement>(':scope > svg:last-child')
+    if (!support || !arrow) {
+      throw new Error('The developer link visual contract is incomplete.')
+    }
+
+    const linkRect = link.getBoundingClientRect()
+    const supportRect = support.getBoundingClientRect()
+    const arrowRect = arrow.getBoundingClientRect()
+    return {
+      arrowInside: arrowRect.right <= linkRect.right + 1,
+      contentDoesNotOverlapArrow: supportRect.right <= arrowRect.left + 1,
+      overflowFree: link.scrollWidth <= link.clientWidth + 1,
+    }
+  })
+  expect(developerLinkLayout).toEqual({
+    arrowInside: true,
+    contentDoesNotOverlapArrow: true,
+    overflowFree: true,
+  })
 
   await page.keyboard.press('Escape')
   await expect(contextTrigger).toHaveAttribute('aria-expanded', 'false')

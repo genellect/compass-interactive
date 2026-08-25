@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { DisplayView } from '../components/DisplayView'
 import { useCompassState } from '../hooks/useCompassState'
 import {
@@ -447,6 +448,9 @@ export function DisplayPage() {
           <p className="eyebrow">CLASSROOM DISPLAY</p>
           <h1>共有画面の確認が必要です</h1>
           <p>{displayAccessError}</p>
+          <Link className="text-link-button" to="/demo/display">
+            英語講義の共有Displayを体験
+          </Link>
         </section>
       </main>
     )

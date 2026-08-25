@@ -1,6 +1,7 @@
 import type { LectureSession, LiveComment, Poll } from '../types/index.ts'
 import type { PollResultSummary } from '../repositories/supabasePollRepository.ts'
 import type { DisplayState } from '../repositories/supabaseDisplayStateRepository.ts'
+import type { PublicLectureSummary } from '../repositories/supabaseLiveStateRepository.ts'
 
 export const DEMO_LECTURE_CODE = 'DEMO'
 export const DEMO_LECTURE_ID = 'compass-demo-lecture'
@@ -25,6 +26,24 @@ export const demoDisplayState: DisplayState = {
   currentPdfPage: 3,
   displayMode: 'normal',
   updatedAt: '2026-01-01T00:05:00.000Z',
+}
+
+export const demoDisplaySummary: PublicLectureSummary = {
+  commentPulse: [
+    '翻訳結果を確かめるためにも、英語の基礎が必要だという声が集まっています。',
+  ],
+  id: 'demo-display-summary',
+  lectureRecap: [
+    'AI翻訳によって、海外の情報へアクセスするための壁は小さくなっている。',
+    '英語は、世界の人と直接つながり信頼を築く力へと役割を広げている。',
+  ],
+  pinned: false,
+  publishedAt: '2026-01-01T00:05:00.000Z',
+  reviewState: 'admin_confirmed',
+  revisionId: 'demo-display-summary-r1',
+  windowEnd: '2026-01-01T00:05:00.000Z',
+  windowIndex: 1,
+  windowStart: '2026-01-01T00:00:00.000Z',
 }
 
 export const demoSeedComments: LiveComment[] = [
