@@ -1047,7 +1047,15 @@ test.describe('Phase 7.27 flag ON', () => {
       state.pdfPublicationActions.every((action) => action === 'discover'),
     ).toBe(true)
     expect(state.uploadRequests).toBe(0)
-    expect(state.aiActivationIntentRequests).toHaveLength(3)
+    expect(
+      [
+        ...new Set(
+          state.aiActivationIntentRequests.map((request) =>
+            String(request.lectureSessionId),
+          ),
+        ),
+      ].sort(),
+    ).toEqual([productionLectureId, rehearsalLectureId].sort())
     expect(
       state.aiActivationIntentRequests.every(
         (request) =>
