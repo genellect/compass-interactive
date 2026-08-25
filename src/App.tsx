@@ -16,6 +16,11 @@ const DisplayPage = lazy(() =>
     default: module.DisplayPage,
   })),
 )
+const DemoDisplayPage = lazy(() =>
+  import('./pages/DemoDisplayPage').then((module) => ({
+    default: module.DemoDisplayPage,
+  })),
+)
 const JoinPage = lazy(() =>
   import('./pages/JoinPage').then((module) => ({ default: module.JoinPage })),
 )
@@ -44,6 +49,10 @@ const joinedNavItems = [
   { to: '/display', label: '教室表示', icon: 'display' as const },
 ]
 
+const demoJoinedNavItems = joinedNavItems.map((item) =>
+  item.to === '/display' ? { ...item, to: '/demo/display' } : item,
+)
+
 const adminNavItems = [
   { to: '/join', label: '学生画面', icon: 'users' as const },
 ]
@@ -68,14 +77,16 @@ function RouteFallback() {
 }
 
 function AppShell() {
-  const { hasJoinedLectureSession } = useCompassState()
+  const { hasJoinedLectureSession, runtimeMode } = useCompassState()
   const location = useLocation()
   const isAdminRoute = location.pathname.startsWith('/admin')
   const appTheme = 'theme-light'
   const navItems = isAdminRoute
     ? adminNavItems
     : hasJoinedLectureSession
-      ? joinedNavItems
+      ? runtimeMode === 'demo'
+        ? demoJoinedNavItems
+        : joinedNavItems
       : publicNavItems
 
   return (
@@ -109,6 +120,7 @@ function AppShell() {
             element={<Navigate replace to="/join?code=DEMO" />}
             path="/demo"
           />
+          <Route element={<DemoDisplayPage />} path="/demo/display" />
           <Route
             element={
               <RequireJoinedLecture>

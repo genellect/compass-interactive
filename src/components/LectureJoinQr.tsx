@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  createDemoLectureJoinQrSvg,
   createLectureJoinQrSvg,
   normalizeStandardLectureCode,
 } from '../qr/lectureJoinQr'
@@ -7,15 +8,20 @@ import {
 type LectureJoinQrProps = {
   code: string
   compact?: boolean
+  demoJoin?: boolean
   title?: string
 }
 
 export function LectureJoinQr({
   code,
   compact = false,
+  demoJoin = false,
   title = '講義に参加',
 }: LectureJoinQrProps) {
-  const normalizedCode = normalizeStandardLectureCode(code)
+  const isDemoJoin = demoJoin && code.trim() === 'DEMO'
+  const normalizedCode = isDemoJoin
+    ? 'DEMO'
+    : normalizeStandardLectureCode(code)
   const [qr, setQr] = useState<{ joinUrl: string; svg: string } | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -25,7 +31,11 @@ export function LectureJoinQr({
     setFailed(false)
     if (!normalizedCode) return
 
-    void createLectureJoinQrSvg(normalizedCode, window.location.origin)
+    const createQr = isDemoJoin
+      ? createDemoLectureJoinQrSvg(window.location.origin)
+      : createLectureJoinQrSvg(normalizedCode, window.location.origin)
+
+    void createQr
       .then((result) => {
         if (active) setQr(result)
       })
@@ -36,7 +46,7 @@ export function LectureJoinQr({
     return () => {
       active = false
     }
-  }, [normalizedCode])
+  }, [isDemoJoin, normalizedCode])
 
   if (!normalizedCode) return null
 
@@ -61,7 +71,10 @@ export function LectureJoinQr({
           QRコードを表示できませんでした。講義コードを入力してください。
         </p>
       ) : (
-        <span className="lecture-join-qr-loading" aria-label="QRコードを準備中" />
+        <span
+          className="lecture-join-qr-loading"
+          aria-label="QRコードを準備中"
+        />
       )}
     </section>
   )

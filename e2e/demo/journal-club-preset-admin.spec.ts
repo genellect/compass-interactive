@@ -53,7 +53,11 @@ type Lecture = {
 
 type MockState = {
   aiActivationIntentRequests: Array<Record<string, unknown>>
+  aiActivationIntentStatusResponses: number
   aiFunctionCalls: string[]
+  aiMasterStatusHoldsStarted: number
+  aiMasterStatusRequests: Array<Record<string, unknown>>
+  aiMasterStatusResponses: number
   anonymousSignupHandlerSettled: number
   anonymousSignupRequestFailures: number
   anonymousSignupRequests: number
@@ -64,6 +68,11 @@ type MockState = {
   pdfPublicationActions: string[]
   pdfPublicationRequests: Array<Record<string, unknown>>
   pollRequests: Array<Record<string, unknown>>
+  holdAiMasterStatusRequest: (
+    lectureSessionId: string,
+    requestNumber: number,
+  ) => void
+  releaseAiMasterStatus: () => void
   resumeIssueResolvedAt: number | null
   uploadRequests: number
 }
@@ -301,9 +310,19 @@ async function installNetworkMocks(
     resumeIssueDelayMs = 0,
   }: NetworkMockOptions = {},
 ) {
+  let aiMasterStatusHoldPending = false
+  let aiMasterStatusHoldLectureId: string | null = null
+  let aiMasterStatusHoldRequestNumber = 0
+  let aiMasterStatusGateResolve: (() => void) | null = null
+  let aiActivationIntentArmed = false
+  let aiActivationIntentVersion = 0
   const state: MockState = {
     aiActivationIntentRequests: [],
+    aiActivationIntentStatusResponses: 0,
     aiFunctionCalls: [],
+    aiMasterStatusHoldsStarted: 0,
+    aiMasterStatusRequests: [],
+    aiMasterStatusResponses: 0,
     anonymousSignupHandlerSettled: 0,
     anonymousSignupRequestFailures: 0,
     anonymousSignupRequests: 0,
@@ -314,6 +333,21 @@ async function installNetworkMocks(
     pdfPublicationActions: [],
     pdfPublicationRequests: [],
     pollRequests: [],
+    holdAiMasterStatusRequest: (lectureSessionId, requestNumber) => {
+      if (aiMasterStatusHoldPending || aiMasterStatusGateResolve) {
+        throw new Error('An AI master-status hold is already active.')
+      }
+      aiMasterStatusHoldPending = true
+      aiMasterStatusHoldLectureId = lectureSessionId
+      aiMasterStatusHoldRequestNumber = requestNumber
+    },
+    releaseAiMasterStatus: () => {
+      aiMasterStatusHoldPending = false
+      aiMasterStatusHoldLectureId = null
+      aiMasterStatusHoldRequestNumber = 0
+      aiMasterStatusGateResolve?.()
+      aiMasterStatusGateResolve = null
+    },
     resumeIssueResolvedAt: null,
     uploadRequests: 0,
   }
@@ -500,22 +534,67 @@ async function installNetworkMocks(
       })
       return
     }
-    if (
-      functionName === 'manage-ai-activation-intent' &&
-      body.action === 'status'
-    ) {
+    if (functionName === 'manage-ai-activation-intent') {
       state.aiActivationIntentRequests.push(body)
+      if (body.action === 'set') {
+        aiActivationIntentArmed = body.enabled === true
+        aiActivationIntentVersion += 1
+      } else if (body.action !== 'status') {
+        await fulfillJson(
+          route,
+          { message: 'Unexpected action.', ok: false },
+          400,
+        )
+        return
+      }
       await fulfillJson(route, {
         activationExpiresAt: null,
-        armed: false,
-        armedAt: null,
+        armed: aiActivationIntentArmed,
+        armedAt: aiActivationIntentArmed ? new Date().toISOString() : null,
         consumedAt: null,
         idempotentReplay: false,
         ok: true,
         serverTime: new Date().toISOString(),
-        state: 'none',
-        version: 0,
+        state: aiActivationIntentArmed ? 'armed' : 'none',
+        version: aiActivationIntentVersion,
       })
+      if (body.action === 'status') {
+        state.aiActivationIntentStatusResponses += 1
+      }
+      return
+    }
+    if (functionName === 'admin-ai-unlock' && body.action === 'masterStatus') {
+      state.aiMasterStatusRequests.push(body)
+      const matchingRequestNumber = state.aiMasterStatusRequests.filter(
+        (request) => request.lectureSessionId === aiMasterStatusHoldLectureId,
+      ).length
+      if (
+        aiMasterStatusHoldPending &&
+        body.lectureSessionId === aiMasterStatusHoldLectureId &&
+        matchingRequestNumber === aiMasterStatusHoldRequestNumber
+      ) {
+        aiMasterStatusHoldPending = false
+        aiMasterStatusHoldLectureId = null
+        aiMasterStatusHoldRequestNumber = 0
+        const aiMasterStatusGate = new Promise<void>((resolve) => {
+          aiMasterStatusGateResolve = resolve
+        })
+        state.aiMasterStatusHoldsStarted += 1
+        await aiMasterStatusGate
+      }
+      await fulfillJson(route, {
+        admissionBlockedReason: 'lecture_not_open',
+        admissionEnabled: false,
+        allowedScopes: [],
+        authorization: null,
+        canUseAi: true,
+        lectureOpen: false,
+        ok: true,
+        policy: null,
+        reason: null,
+        serverTime: new Date().toISOString(),
+      })
+      state.aiMasterStatusResponses += 1
       return
     }
     const safeAiStatusRead =
@@ -759,6 +838,95 @@ test.describe('Phase 7.27 flag ON', () => {
       )
       .toBe(retryUserId)
     expect(state.anonymousSignupRequestFailures).toBeGreaterThanOrEqual(1)
+  })
+
+  test('keeps the activation intent armed when an older status read finishes after the mutation', async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    const state = await installNetworkMocks(page)
+
+    try {
+      await page.goto('/admin')
+      const preset = page.locator('.journal-club-preset')
+      await preset
+        .getByRole('button', { name: 'リハーサルを一覧に追加' })
+        .click()
+      await expect(preset).toContainText('リハーサルを選択中')
+
+      const settledMasterStatusCount = state.aiMasterStatusResponses
+      const intentStatusResponsesBeforeRace =
+        state.aiActivationIntentStatusResponses
+      const heldMasterStatusCount = state.aiMasterStatusHoldsStarted
+      const priorRehearsalMasterStatusRequests =
+        state.aiMasterStatusRequests.filter(
+          (request) => request.lectureSessionId === rehearsalLectureId,
+        ).length
+      state.holdAiMasterStatusRequest(
+        rehearsalLectureId,
+        priorRehearsalMasterStatusRequests + 2,
+      )
+      await page.locator('#teacher-workspace-ai-tab').click()
+      await expect
+        .poll(() => state.aiMasterStatusHoldsStarted)
+        .toBeGreaterThan(heldMasterStatusCount)
+      await expect
+        .poll(
+          () =>
+            state.aiActivationIntentRequests.filter(
+              (request) =>
+                request.action === 'status' &&
+                request.lectureSessionId === rehearsalLectureId,
+            ).length,
+        )
+        .toBeGreaterThanOrEqual(1)
+      await expect
+        .poll(() => state.aiActivationIntentStatusResponses)
+        .toBeGreaterThan(intentStatusResponsesBeforeRace)
+
+      const armButton = page.getByRole('button', {
+        name: '講義開始時にAI機能を有効にする',
+      })
+      const cancelButton = page.getByRole('button', {
+        name: '講義開始時のAI有効化を取り消す',
+      })
+      await expect(armButton).toBeVisible()
+      await armButton.click()
+      await expect(cancelButton).toBeVisible()
+
+      const armRequests = state.aiActivationIntentRequests.filter(
+        (request) => request.action === 'set' && request.enabled === true,
+      )
+      expect(armRequests).toHaveLength(1)
+      expect(armRequests[0]).toMatchObject({
+        lectureSessionId: rehearsalLectureId,
+      })
+
+      state.releaseAiMasterStatus()
+      await expect
+        .poll(() => state.aiMasterStatusResponses)
+        .toBeGreaterThan(settledMasterStatusCount)
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          }),
+      )
+
+      await expect(cancelButton).toBeVisible()
+      expect(
+        state.aiActivationIntentRequests.filter(
+          (request) => request.action === 'set' && request.enabled === true,
+        ),
+      ).toHaveLength(1)
+      expect(
+        state.aiActivationIntentRequests.filter(
+          (request) => request.action === 'set' && request.enabled === false,
+        ),
+      ).toHaveLength(0)
+    } finally {
+      state.releaseAiMasterStatus()
+    }
   })
 
   test('prepares isolated rehearsal and production drafts without starting paid or live work', async ({

@@ -258,13 +258,19 @@ export function LecturePage() {
               <span>3</span>気づきを送る
             </li>
           </ol>
-          <button
-            className="text-link-button muted"
-            onClick={resetDemoLecture}
-            type="button"
-          >
-            最初から試す
-          </button>
+          <div className="demo-journey-actions">
+            <Link className="text-link-button" to="/demo/display">
+              共有Displayを見る
+              <AppIcon name="display" size={17} />
+            </Link>
+            <button
+              className="text-link-button muted"
+              onClick={resetDemoLecture}
+              type="button"
+            >
+              最初から試す
+            </button>
+          </div>
         </section>
       ) : null}
 
@@ -400,7 +406,10 @@ export function LecturePage() {
         </div>
 
         {!isLectureClosed && openPolls.length > 0 ? (
-          <aside className="lecture-poll-focus lecture-area-poll" id="lecture-poll">
+          <aside
+            className="lecture-poll-focus lecture-area-poll"
+            id="lecture-poll"
+          >
             {openPolls.map((poll) => (
               <LivePoll
                 currentParticipantId={currentParticipantId}

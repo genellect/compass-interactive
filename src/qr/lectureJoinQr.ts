@@ -23,8 +23,16 @@ export function buildLectureJoinUrl(code: string, origin: string) {
   return url.toString()
 }
 
-export async function createLectureJoinQrSvg(code: string, origin: string) {
-  const joinUrl = buildLectureJoinUrl(code, origin)
+export function buildDemoLectureJoinUrl(origin: string) {
+  const base = new URL(origin)
+  if (!['http:', 'https:'].includes(base.protocol)) {
+    throw new Error('The lecture join origin must use HTTP or HTTPS.')
+  }
+
+  return new URL('/demo', base.origin).toString()
+}
+
+async function createQrSvg(joinUrl: string) {
   const svg = await QRCode.toString(joinUrl, {
     color: { dark: '#10243eff', light: '#ffffffff' },
     errorCorrectionLevel: 'M',
@@ -33,4 +41,13 @@ export async function createLectureJoinQrSvg(code: string, origin: string) {
     width: 256,
   })
   return { joinUrl, svg }
+}
+
+export async function createLectureJoinQrSvg(code: string, origin: string) {
+  const joinUrl = buildLectureJoinUrl(code, origin)
+  return createQrSvg(joinUrl)
+}
+
+export async function createDemoLectureJoinQrSvg(origin: string) {
+  return createQrSvg(buildDemoLectureJoinUrl(origin))
 }

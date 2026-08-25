@@ -210,6 +210,14 @@ type ManageLecturesResponse = {
   ok?: boolean
 }
 
+type ManageLecturesSuccessResponse = Omit<
+  ManageLecturesResponse,
+  'lectures' | 'ok'
+> & {
+  lectures: AdminLecture[]
+  ok: true
+}
+
 type ManageCommentsResponse = {
   comment?: unknown
   message?: string
@@ -555,6 +563,22 @@ type ManageLecturesRequest =
       runKind: 'production' | 'rehearsal'
     }
 
+type CreateLectureRequest = Omit<
+  Extract<ManageLecturesRequest, { action: 'create' }>,
+  'action'
+>
+
+type DuplicateLectureRequest = Omit<
+  Extract<ManageLecturesRequest, { action: 'duplicate' }>,
+  'action'
+>
+
+export type AdminLectureCreationResult = {
+  idempotentReplay: boolean
+  lectureSessionId: string
+  lectures: AdminLecture[]
+}
+
 type ManagePollsResponse = {
   hasMore?: boolean
   message?: string
@@ -585,6 +609,45 @@ export type ManagePollsRequest =
       lectureSessionId: string
       pollId: string
     }
+
+async function invokeManageLectures(
+  request: ManageLecturesRequest,
+): Promise<ManageLecturesSuccessResponse> {
+  let response = await invokeEdgeFunction<ManageLecturesResponse>(
+    'manage-lectures',
+    {
+      body: request,
+      timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+    },
+  )
+  if (
+    response.error &&
+    request.action !== 'list' &&
+    (await providerAttemptIsAmbiguous(response.error))
+  ) {
+    response = await invokeEdgeFunction<ManageLecturesResponse>(
+      'manage-lectures',
+      {
+        body: request,
+        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+      },
+    )
+  }
+  const { data, error } = response
+
+  if (error) {
+    throw new Error(
+      await getFunctionErrorMessage(error, '講義の操作に失敗しました。'),
+    )
+  }
+
+  if (!data?.ok || !Array.isArray(data.lectures)) {
+    throw new Error(data?.message ?? '講義の操作に失敗しました。')
+  }
+
+  return data as ManageLecturesSuccessResponse
+}
+
 export const supabaseAdminRepository = {
   ...aiActivationIntentRepository,
   ...aiMasterAuthorizationRepository,
@@ -722,39 +785,36 @@ export const supabaseAdminRepository = {
   async manageLectures(
     request: ManageLecturesRequest,
   ): Promise<AdminLecture[]> {
-    let response = await invokeEdgeFunction<ManageLecturesResponse>(
-      'manage-lectures',
-      {
-        body: request,
-        timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-      },
-    )
-    if (
-      response.error &&
-      request.action !== 'list' &&
-      (await providerAttemptIsAmbiguous(response.error))
-    ) {
-      response = await invokeEdgeFunction<ManageLecturesResponse>(
-        'manage-lectures',
-        {
-          body: request,
-          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
-        },
-      )
-    }
-    const { data, error } = response
-
-    if (error) {
-      throw new Error(
-        await getFunctionErrorMessage(error, '講義の操作に失敗しました。'),
-      )
-    }
-
-    if (!data?.ok || !data.lectures) {
-      throw new Error(data?.message ?? '講義の操作に失敗しました。')
-    }
-
+    const data = await invokeManageLectures(request)
     return data.lectures
+  },
+
+  async createLecture(
+    request: CreateLectureRequest,
+  ): Promise<AdminLectureCreationResult> {
+    const data = await invokeManageLectures({ action: 'create', ...request })
+    if (!data.createdLectureSessionId) {
+      throw new Error('作成した講義を確認できませんでした。')
+    }
+    return {
+      idempotentReplay: data.idempotentReplay === true,
+      lectureSessionId: data.createdLectureSessionId,
+      lectures: data.lectures,
+    }
+  },
+
+  async duplicateLecture(
+    request: DuplicateLectureRequest,
+  ): Promise<AdminLectureCreationResult> {
+    const data = await invokeManageLectures({ action: 'duplicate', ...request })
+    if (!data.createdLectureSessionId) {
+      throw new Error('複製した講義を確認できませんでした。')
+    }
+    return {
+      idempotentReplay: data.idempotentReplay === true,
+      lectureSessionId: data.createdLectureSessionId,
+      lectures: data.lectures,
+    }
   },
 
   async createJournalClubRun(request: {

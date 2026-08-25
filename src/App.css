@@ -2552,6 +2552,12 @@ input:disabled {
   width: 23px;
 }
 
+.demo-journey-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+}
+
 .lecture-live-grid {
   align-items: start;
   display: grid;
@@ -4235,6 +4241,10 @@ input:disabled {
     grid-row: auto;
     justify-content: space-between;
     overflow-x: auto;
+  }
+
+  .demo-journey-actions {
+    align-items: flex-start;
   }
 
   .demo-journey > .text-link-button {

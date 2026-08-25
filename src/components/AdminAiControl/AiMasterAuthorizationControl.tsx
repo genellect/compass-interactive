@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { AdminAiUnlockError } from '../../lib/adminAuth/adminAiUnlockApi'
 import type { RememberedBrowserIdentityScope } from '../../lib/adminAuth/rememberedBrowserCredential'
@@ -56,6 +62,14 @@ export function AiMasterAuthorizationControl({
   const [message, setMessage] = useState('')
   const [activationIntent, setActivationIntentState] = useState(false)
   const statusRequestVersionRef = useRef(0)
+  // masterStatus touches the current Admin session row. Keep reads serial and
+  // retain one trailing refresh so focus/status transitions cannot race it.
+  const refreshAttemptRef = useRef<(() => Promise<void>) | null>(null)
+  const refreshInFlightRef = useRef(false)
+  const refreshQueuedRef = useRef(false)
+  const activationIntentMutationEpochRef = useRef(0)
+  const activationIntentMutationInFlightRef = useRef(false)
+  const activationIntentMutationOperationRef = useRef(0)
   const automaticAttemptRef = useRef<string | null>(null)
   const consumeAttemptCountRef = useRef(0)
   const consumeInFlightRef = useRef(false)
@@ -66,51 +80,35 @@ export function AiMasterAuthorizationControl({
   const activationHandoffLectureRef = useRef<string | null>(null)
   const activationHandoffVersionRef = useRef<number | null>(null)
   const lectureSessionIdRef = useRef(lectureSessionId)
-  lectureSessionIdRef.current = lectureSessionId
-  if (activationIntentLectureRef.current !== lectureSessionId) {
+  const activationIntentScopeRef = useRef({
+    appSessionToken: adminToken.appSessionToken,
+    lectureSessionId,
+  })
+
+  useLayoutEffect(() => {
+    const previousScope = activationIntentScopeRef.current
+    lectureSessionIdRef.current = lectureSessionId
+    if (
+      previousScope.appSessionToken === adminToken.appSessionToken &&
+      previousScope.lectureSessionId === lectureSessionId
+    ) {
+      return
+    }
+    activationIntentScopeRef.current = {
+      appSessionToken: adminToken.appSessionToken,
+      lectureSessionId,
+    }
     activationIntentLectureRef.current = lectureSessionId
+    statusRequestVersionRef.current += 1
+    activationIntentMutationEpochRef.current += 1
+    activationIntentMutationInFlightRef.current = false
+    activationIntentMutationOperationRef.current += 1
     activationIntentRef.current = false
     activationIntentVersionRef.current = 0
     activationHandoffLectureRef.current = null
     activationHandoffVersionRef.current = null
-  }
-
-  const updateActivationIntent = useCallback(
-    async (enabled: boolean) => {
-      if (busy) return
-      const targetLectureSessionId = lectureSessionId
-      setBusy(true)
-      try {
-        const intent = await supabaseAdminRepository.setAiActivationIntent({
-          adminToken,
-          enabled,
-          lectureSessionId: targetLectureSessionId,
-        })
-        if (lectureSessionIdRef.current !== targetLectureSessionId) return
-        activationIntentRef.current = intent.armed
-        activationIntentVersionRef.current = intent.version
-        setActivationIntentState(intent.armed)
-        consumeAttemptCountRef.current = 0
-        setMessage(
-          intent.armed
-            ? '講義を開始するとAI機能を有効にします。開始前にAPIは呼び出されません。'
-            : '講義開始時のAI有効化を取り消しました。',
-        )
-      } catch (error) {
-        if (lectureSessionIdRef.current !== targetLectureSessionId) return
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : '講義開始時のAI有効化を変更できませんでした。',
-        )
-      } finally {
-        if (lectureSessionIdRef.current === targetLectureSessionId) {
-          setBusy(false)
-        }
-      }
-    },
-    [adminToken, busy, lectureSessionId],
-  )
+    setBusy(false)
+  }, [adminToken.appSessionToken, lectureSessionId])
 
   const applyAuthorization = useCallback(
     (next: AiMasterAuthorization | null) => {
@@ -120,12 +118,14 @@ export function AiMasterAuthorizationControl({
     [onAuthorizationChange],
   )
 
-  const refresh = useCallback(async () => {
+  const refreshAttempt = useCallback(async () => {
     const targetLectureSessionId = lectureSessionId
+    const activationIntentMutationEpoch =
+      activationIntentMutationEpochRef.current
     const requestVersion = ++statusRequestVersionRef.current
     onReadinessChange('checking')
     try {
-      const [status, intent] = await Promise.all([
+      const [statusResult, intentResult] = await Promise.allSettled([
         supabaseAdminRepository.getAiMasterAuthorization({
           adminToken,
           lectureSessionId: targetLectureSessionId,
@@ -135,8 +135,15 @@ export function AiMasterAuthorizationControl({
           lectureSessionId: targetLectureSessionId,
         }),
       ])
+      if (statusResult.status === 'rejected') throw statusResult.reason
+      if (intentResult.status === 'rejected') throw intentResult.reason
+      const status = statusResult.value
+      const intent = intentResult.value
       if (
         requestVersion === statusRequestVersionRef.current &&
+        activationIntentMutationEpoch ===
+          activationIntentMutationEpochRef.current &&
+        !activationIntentMutationInFlightRef.current &&
         lectureSessionIdRef.current === targetLectureSessionId
       ) {
         activationIntentRef.current = intent.armed
@@ -191,6 +198,9 @@ export function AiMasterAuthorizationControl({
     } catch (error) {
       if (
         requestVersion === statusRequestVersionRef.current &&
+        activationIntentMutationEpoch ===
+          activationIntentMutationEpochRef.current &&
+        !activationIntentMutationInFlightRef.current &&
         lectureSessionIdRef.current === targetLectureSessionId
       ) {
         applyAuthorization(null)
@@ -213,6 +223,95 @@ export function AiMasterAuthorizationControl({
     onReadinessChange,
   ])
 
+  refreshAttemptRef.current = refreshAttempt
+  const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true
+      statusRequestVersionRef.current += 1
+      return
+    }
+    refreshInFlightRef.current = true
+    try {
+      do {
+        refreshQueuedRef.current = false
+        await refreshAttemptRef.current?.()
+      } while (refreshQueuedRef.current)
+    } finally {
+      refreshInFlightRef.current = false
+    }
+  }, [])
+
+  const updateActivationIntent = useCallback(
+    async (enabled: boolean) => {
+      if (busy || activationIntentMutationInFlightRef.current) return
+      const targetLectureSessionId = lectureSessionId
+      const operationId = activationIntentMutationOperationRef.current + 1
+      activationIntentMutationOperationRef.current = operationId
+      activationIntentMutationInFlightRef.current = true
+      activationIntentMutationEpochRef.current += 1
+      statusRequestVersionRef.current += 1
+      setBusy(true)
+      let mutationSucceeded = false
+      try {
+        const intent = await supabaseAdminRepository.setAiActivationIntent({
+          adminToken,
+          enabled,
+          lectureSessionId: targetLectureSessionId,
+        })
+        if (
+          lectureSessionIdRef.current !== targetLectureSessionId ||
+          activationIntentMutationOperationRef.current !== operationId
+        ) {
+          return
+        }
+        activationIntentRef.current = intent.armed
+        activationIntentVersionRef.current = intent.version
+        setActivationIntentState(intent.armed)
+        consumeAttemptCountRef.current = 0
+        mutationSucceeded = true
+        setMessage(
+          intent.armed
+            ? '講義を開始するとAI機能を有効にします。開始前にAPIは呼び出されません。'
+            : '講義開始時のAI有効化を取り消しました。',
+        )
+      } catch (error) {
+        if (
+          lectureSessionIdRef.current !== targetLectureSessionId ||
+          activationIntentMutationOperationRef.current !== operationId
+        ) {
+          return
+        }
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : '講義開始時のAI有効化を変更できませんでした。',
+        )
+      } finally {
+        if (activationIntentMutationOperationRef.current === operationId) {
+          activationIntentMutationInFlightRef.current = false
+          activationIntentMutationEpochRef.current += 1
+          statusRequestVersionRef.current += 1
+          if (lectureSessionIdRef.current === targetLectureSessionId) {
+            setBusy(false)
+            if (mutationSucceeded) void refresh()
+          }
+        }
+      }
+    },
+    [adminToken, busy, lectureSessionId, refresh],
+  )
+
+  useEffect(
+    () => () => {
+      statusRequestVersionRef.current += 1
+      refreshQueuedRef.current = false
+      activationIntentMutationEpochRef.current += 1
+      activationIntentMutationInFlightRef.current = false
+      activationIntentMutationOperationRef.current += 1
+    },
+    [],
+  )
+
   useEffect(() => {
     setActivationIntentState(false)
     setBusy(false)
@@ -228,7 +327,14 @@ export function AiMasterAuthorizationControl({
     onReadinessChange('checking')
     setMessage('')
     void refresh()
-  }, [applyAuthorization, lectureSessionId, onReadinessChange, refresh])
+  }, [
+    adminToken.appSessionToken,
+    applyAuthorization,
+    lectureSessionId,
+    lectureStatus,
+    onReadinessChange,
+    refresh,
+  ])
 
   useEffect(() => {
     if (lectureStatus !== 'open') {
@@ -236,7 +342,6 @@ export function AiMasterAuthorizationControl({
       activationHandoffVersionRef.current = null
     }
     if (lectureStatus === 'open') {
-      void refresh()
       return
     }
     if (lectureStatus === 'closed') {

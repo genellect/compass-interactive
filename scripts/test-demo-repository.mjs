@@ -2,13 +2,33 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { demoRepository } from '../src/demo/demoRepository.ts'
 import { DEMO_STORAGE_KEY } from '../src/demo/demoStorage.ts'
+import { buildDemoLectureJoinUrl } from '../src/qr/lectureJoinQr.ts'
 
 const learningSupportSource = readFileSync(
-  new URL('../src/components/LearningSupport/LearningSupport.tsx', import.meta.url),
+  new URL(
+    '../src/components/LearningSupport/LearningSupport.tsx',
+    import.meta.url,
+  ),
   'utf8',
 )
 const lecturePageSource = readFileSync(
   new URL('../src/pages/LecturePage.tsx', import.meta.url),
+  'utf8',
+)
+const demoDisplayPageSource = readFileSync(
+  new URL('../src/pages/DemoDisplayPage.tsx', import.meta.url),
+  'utf8',
+)
+const displayPageSource = readFileSync(
+  new URL('../src/pages/DisplayPage.tsx', import.meta.url),
+  'utf8',
+)
+const appSource = readFileSync(
+  new URL('../src/App.tsx', import.meta.url),
+  'utf8',
+)
+const routeEntrypointsSource = readFileSync(
+  new URL('./create-route-entrypoints.mjs', import.meta.url),
   'utf8',
 )
 const adminPageSource = readFileSync(
@@ -52,7 +72,24 @@ assert.match(learningSupportSource, /みんなの反応/)
 assert.match(learningSupportSource, /MATERIAL SUMMARY/)
 assert.match(learningSupportSource, /講義資料の要点/)
 assert.match(lecturePageSource, /lecture-area-recap/)
+assert.match(lecturePageSource, /to="\/demo\/display"/)
+assert.match(appSource, /path="\/demo\/display"/)
+assert.match(appSource, /to: '\/demo\/display'/)
+assert.match(routeEntrypointsSource, /'demo\/display'/)
+assert.match(demoDisplayPageSource, /demoRepository\.getSnapshot\(\)/)
+assert.match(demoDisplayPageSource, /<DisplayView/)
+assert.match(demoDisplayPageSource, /lectureCode=\{DEMO_LECTURE_CODE\}/)
+assert.match(demoDisplayPageSource, /summary=\{demoDisplaySummary\}/)
+assert.match(displayPageSource, /to="\/demo\/display"/)
+assert.doesNotMatch(
+  demoDisplayPageSource,
+  /supabase|displayRealtime|useCompassState|\bfetch\s*\(/i,
+)
 assert.doesNotMatch(adminPageSource, /API接続待ち/)
+assert.equal(
+  buildDemoLectureJoinUrl('https://class.example.edu/display?ignored=1'),
+  'https://class.example.edu/demo',
+)
 
 const withComment = demoRepository.addComment(
   '端末内テストコメント',

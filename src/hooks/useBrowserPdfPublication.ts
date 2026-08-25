@@ -94,6 +94,7 @@ export function useBrowserPdfPublication({
     if (!pdfPublicationDraftId) setPdfPublicationDraftId(documentId)
     publishInFlightRef.current = true
     setPdfPublishing(true)
+    let finalizationRecoveryReady = false
 
     try {
       setPublisherMessage('PDFをブラウザ内で確認しています…')
@@ -167,6 +168,7 @@ export function useBrowserPdfPublication({
       }
       setPublisherMessage('講義画面への反映を確定しています…')
       const finalization = prepareBrowserPdfPublicationFinalization(publication)
+      finalizationRecoveryReady = true
       let finalized = await browserPdfPublicationClient.finalize({
         adminToken,
         finalizeRequestId: finalization.finalizeRequestId,
@@ -235,6 +237,13 @@ export function useBrowserPdfPublication({
         )}MB）。現在の講義資料として表示しています。${aiAvailabilityMessage}`,
       )
     } catch (error) {
+      if (finalizationRecoveryReady) {
+        setPublisherMessage(
+          '資料の送信は完了しました。公開の最終確定を再開しています。',
+        )
+        publicationRecoveryControlRef.current?.schedule()
+        return
+      }
       setPublisherMessage(
         error instanceof Error
           ? `資料を公開できませんでした。現在の資料は維持されています: ${error.message}`
