@@ -130,15 +130,16 @@ npm run dev
 
 バックエンドやsecretを使わずに主要UXを確認する場合は、`http://127.0.0.1:5173/demo`を開きます。Local SupabaseとCloud workspaceの構築手順は[`docs/CLOUD_DEVELOPMENT.md`](docs/CLOUD_DEVELOPMENT.md)を参照してください。
 
-| Route               | Purpose            |
-| ------------------- | ------------------ |
-| `/join`             | 講義コード入力     |
-| `/lecture`          | Student講義画面    |
-| `/lecture/comments` | コメント履歴       |
-| `/lecture/archive`  | 終了講義のReview   |
-| `/admin`            | Educator workspace |
-| `/display`          | Classroom Display  |
-| `/demo`             | 外部サービス非依存 |
+| Route               | Purpose                |
+| ------------------- | ---------------------- |
+| `/join`             | 講義コード入力         |
+| `/lecture`          | Student講義画面        |
+| `/lecture/comments` | コメント履歴           |
+| `/lecture/archive`  | 終了講義のReview       |
+| `/admin`            | Educator workspace     |
+| `/display`          | Classroom Display      |
+| `/demo`             | 外部サービス非依存     |
+| `/demo/display`     | Demo Classroom Display |
 
 ## 品質確認
 

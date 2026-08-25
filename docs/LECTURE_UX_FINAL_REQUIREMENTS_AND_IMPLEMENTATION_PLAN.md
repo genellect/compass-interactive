@@ -613,3 +613,20 @@ A local implementation, passing local tests, PR, merge, CI artifact, partial
 deployment, or deployed-but-untested route is not completion. Any missing,
 disabled, or unverified required path remains `HOLD`; only
 `PRODUCTION_VERIFIED` is terminal success.
+
+## 19. Pause and resume contract
+
+A pause does not relax Section 18 or convert any partial result into success.
+On resumption, the controller must:
+
+1. verify the latest clean local commit, the PR head, and the exact workflow
+   run before taking any write action;
+2. never rerun an obsolete failed head; reproduce and repair a source or
+   contract failure locally, then push one validated successor head;
+3. preserve the minimal-CI policy and avoid any duplicate paid or long-running
+   check that is not required by the release contract;
+4. continue through exact-head PR CI, protected merge, exact-main post-merge
+   validation, ordered Production rollout, and canonical browser verification;
+   and
+5. retain `HOLD` until every required path in Section 18 is directly verified
+   in Production and the state can truthfully become `PRODUCTION_VERIFIED`.
