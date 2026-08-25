@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AxeBuilder } from '@axe-core/playwright'
-import { expect, test, type Page, type Request } from '@playwright/test'
+import { errors, expect, test, type Page, type Request } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
@@ -655,11 +655,35 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // fresh page in this same browser context.
     await adminSafety.assertClean()
     await adminPage.close()
+    const featureDisabledStatusConflictPromise = displayPage
+      .waitForResponse(
+        (response) => {
+          const request = response.request()
+          return (
+            response.status() === 409 &&
+            request.method() === 'POST' &&
+            new URL(response.url()).pathname ===
+              '/functions/v1/display-session-status'
+          )
+        },
+        { timeout: 5_000 },
+      )
+      .catch((error: unknown) => {
+        if (error instanceof errors.TimeoutError) return null
+        throw error
+      })
     const disabled = await service.rpc('set_display_realtime_runtime_v1', {
       target_enabled: false,
     })
     expect(disabled.error).toBeNull()
     try {
+      await expect
+        .poll(
+          () =>
+            displayPage.locator('html').getAttribute('data-display-realtime'),
+          { timeout: 5_000 },
+        )
+        .not.toBe('connected')
       await expect
         .poll(
           async () =>
@@ -700,6 +724,20 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(bindingResult.data?.admin_session_id).toBeTruthy()
       expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
 
+      // Runtime disable closes the claimed session and keeps the signed
+      // snapshot/PDF fallback. A delivery heartbeat already in flight at that
+      // exact boundary may correctly receive one 409 before the reporter is
+      // disposed; classify only that observed response and keep every other
+      // browser error fatal.
+      const featureDisabledStatusConflict =
+        await featureDisabledStatusConflictPromise
+      if (featureDisabledStatusConflict) {
+        await displaySafety.expectConsoleErrorOnce({
+          message:
+            'Failed to load resource: the server responded with a status of 409 (Conflict)',
+          url: featureDisabledStatusConflict.url(),
+        })
+      }
       await displaySafety.assertClean()
       await displayPage.close()
       const displayProbePage = await displayContext.newPage()
