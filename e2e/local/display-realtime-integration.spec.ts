@@ -795,9 +795,30 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         return body.action === 'status'
       },
     )
+    const invalidRestoreResponsePromise = invalidAdminPage.waitForResponse(
+      (response) => {
+        const request = response.request()
+        if (
+          new URL(response.url()).pathname !==
+            '/functions/v1/admin-identity-session' ||
+          request.method() !== 'POST' ||
+          response.status() !== 401
+        ) {
+          return false
+        }
+
+        const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+        return body.action === 'restore'
+      },
+    )
     await invalidAdminPage.goto('/admin')
     const invalidSessionResponse = await invalidSessionResponsePromise
+    const invalidRestoreResponse = await invalidRestoreResponsePromise
     expect(await invalidSessionResponse.json()).toMatchObject({
+      code: 'app_session_invalid',
+      ok: false,
+    })
+    expect(await invalidRestoreResponse.json()).toMatchObject({
       code: 'app_session_invalid',
       ok: false,
     })
@@ -806,11 +827,14 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     ).toBeVisible()
     await expect(invalidAdminPage.locator('.admin-workflow')).toHaveCount(0)
 
-    await invalidAdminSafety.expectConsoleErrorOnce({
-      message:
-        'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
-      url: invalidSessionResponse.url(),
-    })
+    await invalidAdminSafety.expectConsoleErrors(
+      {
+        message:
+          'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
+        url: invalidSessionResponse.url(),
+      },
+      2,
+    )
     await displaySafety.assertClean()
     await invalidAdminSafety.assertClean()
   } finally {

@@ -534,6 +534,8 @@ try {
               TEST_ADMIN_ENVIRONMENT_ID: localFixtureEnvironmentId,
               TEST_GOOGLE_ADMIN_FIXTURE_RESET_RETAINED_MEMBERSHIPS:
                 googleAdminFixtureHandles.length === 0 ? 'true' : 'false',
+              TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI:
+                mode === 'local' || mode === 'local-ai' ? 'true' : 'false',
               TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:
                 mode === 'local-ai' ? '1357' : '',
             },

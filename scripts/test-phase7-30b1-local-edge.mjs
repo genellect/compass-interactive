@@ -31,11 +31,24 @@ assert.ok(
   !browserFixtureResetRetainedMemberships || browserFixtureRetainEnvironment,
   'Retained membership reset requires a retained browser fixture.',
 )
+const browserFixtureEnableAiValue =
+  process.env.TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI?.trim() ?? 'false'
+assert.ok(
+  browserFixtureEnableAiValue === 'true' ||
+    browserFixtureEnableAiValue === 'false',
+  'TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI must be true or false.',
+)
+const browserFixtureEnableAi =
+  browserFixtureMode && browserFixtureEnableAiValue === 'true'
 const browserFixtureAiPin =
   process.env.TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN?.trim() ?? ''
 assert.ok(
   !browserFixtureAiPin || /^\d{4}$/.test(browserFixtureAiPin),
   'TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN must be an optional synthetic 4-digit PIN.',
+)
+assert.ok(
+  !browserFixtureAiPin || browserFixtureEnableAi,
+  'The legacy AI PIN fixture requires TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI=true.',
 )
 const identityPepper = process.env.TEST_ADMIN_IDENTITY_PEPPER?.trim() ?? ''
 assert.ok(
@@ -674,7 +687,7 @@ try {
   }
 
   if (browserFixtureMode) {
-    if (browserFixtureAiPin) {
+    if (browserFixtureEnableAi) {
       await runSql(`
         update private.admin_environment_memberships
         set can_use_ai = true,
@@ -695,7 +708,7 @@ try {
           max_realtime_minutes_per_lecture, max_realtime_minutes_per_day,
           max_concurrency, valid_from, valid_until, version,
           created_by_membership_id, created_by_admin_session_id, request_id
-        ) values (
+        ) select
           ${sqlLiteral(randomUUID())}::uuid,
           ${sqlLiteral(environmentId)}::uuid,
           ${sqlLiteral(completed.session.membershipId)}::uuid,
@@ -708,8 +721,16 @@ try {
           ${sqlLiteral(completed.session.membershipId)}::uuid,
           ${sqlLiteral(completed.session.id)}::uuid,
           ${sqlLiteral(randomUUID())}::uuid
+        where not exists (
+          select 1
+          from private.admin_ai_policies
+          where environment_id = ${sqlLiteral(environmentId)}::uuid
+            and membership_id = ${sqlLiteral(completed.session.membershipId)}::uuid
+            and status = 'active'
         );
       `)
+    }
+    if (browserFixtureAiPin) {
       const pinRequestId = randomUUID()
       const pinPrepared = await invoke(
         status,

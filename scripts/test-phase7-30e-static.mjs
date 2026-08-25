@@ -663,6 +663,21 @@ assert.match(
   'local browser runs must share the create-only Edge environment and reset retained memberships exactly once before each Playwright run',
 )
 assert.match(
+  browserRunner,
+  /TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI:[\s\S]*mode === 'local' \|\| mode === 'local-ai' \? 'true' : 'false'[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_AI_PIN:[\s\S]*mode === 'local-ai' \? '1357' : ''/,
+  'the complete local lifecycle and AI browser suites must provision AI independently from the legacy local-ai PIN fixture',
+)
+assert.match(
+  localGoogleFixture,
+  /browserFixtureEnableAiValue[\s\S]*=== 'true' \|\|[\s\S]*=== 'false'[\s\S]*TEST_GOOGLE_ADMIN_FIXTURE_ENABLE_AI must be true or false[\s\S]*browserFixtureEnableAi =/,
+  'the local AI fixture enable flag must fail closed on every value except exact true or false',
+)
+assert.match(
+  localGoogleFixture,
+  /if \(browserFixtureEnableAi\) \{[\s\S]*set can_use_ai = true[\s\S]*google_ai_master_admission_enabled = true[\s\S]*google_ai_child_grant_enabled = true[\s\S]*remembered_browser_enabled = true[\s\S]*insert into private\.admin_ai_policies[\s\S]*\) select[\s\S]*array\['academic_answers', 'captions', 'material_analysis', 'poll_suggestions', 'summaries'\]::text\[\][\s\S]*where not exists \([\s\S]*private\.admin_ai_policies[\s\S]*status = 'active'[\s\S]*if \(browserFixtureAiPin\) \{[\s\S]*action: 'preparePinMutation'/,
+  'AI-capable browser fixtures must receive one full policy while legacy PIN enrollment remains in its explicit local-ai-only block',
+)
+assert.match(
   localGoogleFixture,
   /browserFixtureResetRetainedMemberships[\s\S]*role = 'instructor'[\s\S]*can_use_ai = false[\s\S]*id <> \$\{sqlLiteral\(completed\.session\.membershipId\)\}[\s\S]*activeAiMemberships[\s\S]*activeOwners[\s\S]*activePriorSessions[\s\S]*assert\.equal\(Number\(resetState\.activeAiMemberships\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activeOwners\), 1\)[\s\S]*assert\.equal\(Number\(resetState\.activePriorSessions\), 0\)/,
   'the first retained fixture must deprivilege stale memberships while preserving exactly one active AI Owner and no stale active session',
@@ -760,12 +775,12 @@ assert.match(
 assert.match(
   localGoogleFixture,
   /insert into private\.admin_ai_policies[\s\S]*?array\[[\s\S]*?'academic_answers',[\s\S]*?'captions',[\s\S]*?'material_analysis',[\s\S]*?'poll_suggestions',[\s\S]*?'summaries'[\s\S]*?\]::text\[\]/,
-  'the local AI-PIN fixture policy must cover every action required by the current master scopes',
+  'the local AI fixture policy must cover every action required by the current master scopes',
 )
 assert.match(
   localGoogleFixture,
-  /if \(browserFixtureAiPin\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
-  'the local AI fixture must enable master admission, child grants, and remembered-browser admission',
+  /if \(browserFixtureEnableAi\) \{[\s\S]*?set google_ai_master_admission_enabled = true,[\s\S]*?google_ai_child_grant_enabled = true,[\s\S]*?remembered_browser_enabled = true/,
+  'the PIN-independent local AI fixture must enable master admission, child grants, and remembered-browser admission',
 )
 assert.equal(
   (
@@ -828,13 +843,13 @@ assert.match(
 )
 assert.match(
   revokedDisplayBrowserPhase,
-  /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
-  'the final Display phase must prove the exact fail-closed Admin status response on a fresh page in the same browser context',
+  /adminContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(invalidAdminPage\)[\s\S]*installGoogleAdminSession\(invalidAdminPage, appSessionToken\)[\s\S]*invalidAdminPage\.waitForResponse[\s\S]*\/functions\/v1\/admin-identity-session[\s\S]*request\.method\(\) !== 'POST'[\s\S]*response\.status\(\) !== 401[\s\S]*request\.postDataJSON\(\)[\s\S]*body\.action === 'status'[\s\S]*invalidRestoreResponsePromise[\s\S]*body\.action === 'restore'[\s\S]*await invalidAdminPage\.goto\('\/admin'\)[\s\S]*invalidSessionResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*invalidRestoreResponse\.json\(\)[\s\S]*code: 'app_session_invalid'[\s\S]*ok: false/,
+  'the final Display phase must prove the bounded fail-closed Admin status and restore responses on a fresh page in the same browser context',
 )
 assert.match(
   revokedDisplayBrowserPhase,
-  /await invalidAdminSafety\.expectConsoleErrorOnce\(\{[\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
-  'the Display regression may consume only the proven status 401 before its final safety checks',
+  /await invalidAdminSafety\.expectConsoleErrors\([\s\S]*Failed to load resource: the server responded with a status of 401 \(Unauthorized\)[\s\S]*url: invalidSessionResponse\.url\(\)[\s\S]*\},[\s\S]*2,[\s\S]*\)[\s\S]*await displaySafety\.assertClean\(\)[\s\S]*await invalidAdminSafety\.assertClean\(\)/,
+  'the Display regression may consume only the proven status and single restore 401 responses before its final safety checks',
 )
 assert.match(
   ci,
