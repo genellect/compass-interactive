@@ -242,7 +242,7 @@ async function getPublicSnapshotV2({
     .rpc(rpcName, {
       comment_cursor_created_at: commentCursor?.createdAt,
       comment_cursor_id: commentCursor?.id,
-      comment_limit: isPhase66UxIntegrationEnabled ? 5 : 100,
+      comment_limit: isPhase66UxIntegrationEnabled ? 25 : 100,
       known_caption_version: versions.caption ?? undefined,
       known_comments_version: versions.comments ?? undefined,
       known_lecture_version: versions.lecture ?? undefined,

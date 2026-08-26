@@ -16,6 +16,7 @@ const aiPolicyPanel = read('src/components/AdminAiPolicyPanel.tsx')
 const aiUnlockEdge = read('supabase/functions/admin-ai-unlock/index.ts')
 const aiUnlockApi = read('src/lib/adminAuth/adminAiUnlockApi.ts')
 const adminRoute = read('src/pages/AdminRoute.tsx')
+const adminWorkspaceApp = read('src/pages/AdminWorkspaceApp.tsx')
 const adminPage = read('src/pages/AdminPage.tsx')
 const adminSettingsPage = read('src/pages/AdminSettingsPage.tsx')
 const adminStorage = read('src/lib/adminAuth/adminAuthStorage.ts')
@@ -328,8 +329,16 @@ assert.match(
   /adminPathname === '\/admin\/settings'[\s\S]*AdminSettingsPage[\s\S]*ledger=\{ownerLedger\}/,
 )
 assert.match(
+  adminRoute,
+  /AdminWorkspaceApp[\s\S]*canManageEducators=\{session\.role === 'owner'\}/,
+)
+assert.match(
+  adminWorkspaceApp,
+  /canManageEducators = false[\s\S]*canManageEducators\?: boolean[\s\S]*canManageEducators=\{canManageEducators\}/,
+)
+assert.match(
   adminPage,
-  /href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*教員管理/,
+  /canManageEducators: boolean[\s\S]*canManageEducators \? \([\s\S]*href="\/admin\/settings"[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"[\s\S]*教員管理/,
 )
 assert.match(
   adminPage,
@@ -354,6 +363,15 @@ assert.match(
 assert.match(
   adminSettingsPage,
   /href="\/admin"[\s\S]*event\.preventDefault\(\)[\s\S]*openAdminSurface\('\/admin'\)/,
+)
+assert.match(
+  browserSpec,
+  /keeps the settings route available to an Instructor without exposing Owner AI policy controls[\s\S]*role: 'instructor'[\s\S]*page\.goto\('\/admin'\)[\s\S]*name: '教員管理', exact: true[\s\S]*toHaveCount\(0\)[\s\S]*page\.goto\('\/admin\/settings'\)[\s\S]*name: 'AI PINの設定', exact: true/,
+)
+assert.match(
+  ledgerPanel,
+  /AdminIdentityError[\s\S]*error\.code === 'step_up_invalid'[\s\S]*clearPendingMutation\(\)[\s\S]*確認時間が終了しました/,
+  'an expired control step-up must release the stale pending mutation',
 )
 assert.match(
   adminSurfaceNavigation,

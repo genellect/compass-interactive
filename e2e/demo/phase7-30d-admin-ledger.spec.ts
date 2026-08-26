@@ -1427,9 +1427,17 @@ test('keeps the settings route available to an Instructor without exposing Owner
   await installStoredSessions(page, admin, student.storageValue)
   const state = await installMocks(page, admin, { role: 'instructor' })
 
+  await page.goto('/admin')
+  await expect(
+    page.getByRole('link', { name: '教員管理', exact: true }),
+  ).toHaveCount(0)
+
   await page.goto('/admin/settings')
   await expect(page).toHaveURL('/admin/settings')
   await expect(page.locator('main')).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'AI PINの設定', exact: true }),
+  ).toBeVisible()
   await expect(
     page.locator('summary').filter({ hasText: '講義AIの利用設定' }),
   ).toHaveCount(0)

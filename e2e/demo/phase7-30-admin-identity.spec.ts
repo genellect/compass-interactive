@@ -199,18 +199,23 @@ function anonymousStudentSession() {
   }
 }
 
-function trackedSession() {
+function trackedSession(
+  options: {
+    canUseAi?: boolean
+    role?: 'instructor' | 'owner'
+  } = {},
+) {
   const now = Date.now()
   const expiresAt = new Date(now + 8 * 60 * 60_000).toISOString()
   return {
-    canUseAi: true,
+    canUseAi: options.canUseAi ?? true,
     environmentId: '73000000-0000-4000-8000-000000000010',
     expiresAt,
     id: '73000000-0000-4000-8000-000000000011',
     idleExpiresAt: expiresAt,
     membershipId: '73000000-0000-4000-8000-000000000012',
     principalId: '73000000-0000-4000-8000-000000000013',
-    role: 'owner',
+    role: options.role ?? 'owner',
     stepUpVerifiedAt: new Date(now).toISOString(),
   }
 }
@@ -331,6 +336,8 @@ async function installNetworkMocks(
     includeAbandonedFactor?: boolean
     invalidStatusToken?: string
     initialVerified?: boolean
+    sessionCanUseAi?: boolean
+    sessionRole?: 'instructor' | 'owner'
     verifyRateLimited?: boolean
   } = {},
 ) {
@@ -341,6 +348,10 @@ async function installNetworkMocks(
   const aal2Session = authSession('aal2', {
     includeAbandonedFactor: options.includeAbandonedFactor,
     verified: true,
+  })
+  const googleAdminSession = trackedSession({
+    canUseAi: options.sessionCanUseAi,
+    role: options.sessionRole,
   })
   const state: MockState = {
     anonymousRequests: 0,
@@ -525,7 +536,7 @@ async function installNetworkMocks(
         await fulfillJson(route, {
           appSessionToken,
           ok: true,
-          session: trackedSession(),
+          session: googleAdminSession,
         })
         return
       }
@@ -542,7 +553,7 @@ async function installNetworkMocks(
         await fulfillJson(route, {
           appSessionToken,
           ok: true,
-          session: trackedSession(),
+          session: googleAdminSession,
         })
         return
       }
@@ -558,7 +569,7 @@ async function installNetworkMocks(
           )
           return
         }
-        await fulfillJson(route, { ok: true, session: trackedSession() })
+        await fulfillJson(route, { ok: true, session: googleAdminSession })
         return
       }
       if (action === 'logout') {
@@ -997,6 +1008,123 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   ).toEqual([])
   expect(state.unexpectedRequests).toEqual([])
   expect(pageErrors).toEqual([])
+})
+
+test('redeems one scrubbed invitation into an Instructor without exposing Owner controls', async ({
+  page,
+}) => {
+  const invitationToken = 'i'.repeat(43)
+  const student = anonymousStudentSession()
+  const { state } = await installNetworkMocks(page, student.accessToken, {
+    sessionCanUseAi: true,
+    sessionRole: 'instructor',
+  })
+
+  await page.goto(`/admin#invite=${invitationToken}`)
+  await expect(page).toHaveURL(/\/admin$/)
+  const storageBeforeOAuth = await page.evaluate(() => ({
+    hash: window.location.hash,
+    localValues: Array.from(
+      { length: window.localStorage.length },
+      (_, index) => {
+        const key = window.localStorage.key(index)
+        return key ? (window.localStorage.getItem(key) ?? '') : ''
+      },
+    ),
+    sessionValues: Array.from(
+      { length: window.sessionStorage.length },
+      (_, index) => {
+        const key = window.sessionStorage.key(index)
+        return key ? (window.sessionStorage.getItem(key) ?? '') : ''
+      },
+    ),
+  }))
+  expect(storageBeforeOAuth.hash).toBe('')
+  expect(storageBeforeOAuth.localValues.join('\n')).not.toContain(
+    invitationToken,
+  )
+  expect(storageBeforeOAuth.sessionValues.join('\n')).not.toContain(
+    invitationToken,
+  )
+
+  await page
+    .getByRole('button', { name: 'Googleで続ける', exact: true })
+    .click()
+  await expect
+    .poll(() => state.edgeCalls.map(({ action }) => action))
+    .toEqual(['admit'])
+  await expect(page).toHaveURL(/\/admin$/)
+  const storageAfterCallback = await page.evaluate(() => ({
+    hash: window.location.hash,
+    localValues: Array.from(
+      { length: window.localStorage.length },
+      (_, index) => {
+        const key = window.localStorage.key(index)
+        return key ? (window.localStorage.getItem(key) ?? '') : ''
+      },
+    ),
+    oauthAttempt: window.sessionStorage.getItem(
+      'compass-interactive-admin-oauth-attempt-v1',
+    ),
+    sessionValues: Array.from(
+      { length: window.sessionStorage.length },
+      (_, index) => {
+        const key = window.sessionStorage.key(index)
+        return key ? (window.sessionStorage.getItem(key) ?? '') : ''
+      },
+    ),
+  }))
+  expect(storageAfterCallback.hash).toBe('')
+  expect(storageAfterCallback.oauthAttempt).toBeNull()
+  expect(storageAfterCallback.localValues.join('\n')).not.toContain(
+    invitationToken,
+  )
+  expect(storageAfterCallback.sessionValues.join('\n')).not.toContain(
+    invitationToken,
+  )
+  expect(JSON.stringify(state.authorizeQueries)).not.toContain(invitationToken)
+  expect(JSON.stringify(state.authRequests)).not.toContain(invitationToken)
+
+  const admitCall = state.edgeCalls[0]
+  expect(admitCall?.body).toEqual({
+    action: 'admit',
+    invitationToken,
+    loginRequestId: expect.stringMatching(uuidPattern),
+  })
+  const loginRequestId = admitCall?.body.loginRequestId
+
+  const card = page.locator('main .admin-identity-card')
+  await card.locator('input[autocomplete="one-time-code"]').fill('123456')
+  await card.locator('button[type="submit"]').click()
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+    'admit',
+    'beginStepUp',
+    'completeStepUp',
+  ])
+  expect(state.edgeCalls[1]?.body).toEqual({
+    action: 'beginStepUp',
+    challengedFactorId: factorId,
+    invitationToken,
+    loginRequestId,
+  })
+  expect(state.edgeCalls[2]?.body).toMatchObject({
+    action: 'completeStepUp',
+    loginRequestId,
+  })
+  expect(state.edgeCalls[2]?.body).not.toHaveProperty('invitationToken')
+  await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+  await expect(
+    page.getByRole('link', { name: '教員管理', exact: true }),
+  ).toHaveCount(0)
+
+  await page.goto('/admin/settings')
+  await expect(
+    page.getByRole('heading', { name: 'AI PINの設定', exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('.admin-ledger-panel')).toHaveCount(0)
+  expect(state.ledgerCalls).toEqual([])
+  expect(state.unexpectedRequests).toEqual([])
 })
 
 test('restores the same app token only from its scoped live AAL2 Auth session', async ({

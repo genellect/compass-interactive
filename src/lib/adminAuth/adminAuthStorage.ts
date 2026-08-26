@@ -13,6 +13,8 @@ export const ADMIN_LEDGER_PENDING_STORAGE_KEY =
 export const ADMIN_AI_POLICY_PENDING_STORAGE_KEY =
   'compass-interactive-admin-ai-policy-pending-v1'
 
+const ADMIN_INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+
 const PROVIDER_TOKEN_FIELDS = new Set([
   'provider_token',
   'provider_refresh_token',
@@ -237,14 +239,51 @@ export function clearAdminAuthStorage() {
 
 const ADMIN_RETURN_PATHS = new Set(['/admin', '/admin/settings'])
 
-export function beginAdminOAuthAttempt(returnPath = '/admin') {
+export type AdminInvitationFragment =
+  | { kind: 'absent'; token: '' }
+  | { kind: 'invalid'; token: '' }
+  | { kind: 'valid'; token: string }
+
+export function parseAdminInvitationFragment(
+  hash: string,
+): AdminInvitationFragment {
+  if (!hash || hash === '#') return { kind: 'absent', token: '' }
+  if (!hash.startsWith('#invite')) return { kind: 'absent', token: '' }
+  const match = /^#invite=([A-Za-z0-9_-]{43})$/.exec(hash)
+  return match
+    ? { kind: 'valid', token: match[1]! }
+    : { kind: 'invalid', token: '' }
+}
+
+export function captureAdminInvitationFragment() {
+  const invitation = parseAdminInvitationFragment(window.location.hash)
+  if (invitation.kind !== 'absent') {
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    )
+  }
+  return invitation
+}
+
+export function beginAdminOAuthAttempt(
+  returnPath = '/admin',
+  invitationToken = '',
+) {
   const safeReturnPath = ADMIN_RETURN_PATHS.has(returnPath)
     ? returnPath
     : '/admin'
+  const safeInvitationToken = ADMIN_INVITATION_TOKEN_PATTERN.test(
+    invitationToken,
+  )
+    ? invitationToken
+    : ''
   const attempt = {
     callbackPath: '/admin/auth/callback',
     createdAt: Date.now(),
     id: crypto.randomUUID(),
+    ...(safeInvitationToken ? { invitationToken: safeInvitationToken } : {}),
     returnPath: safeReturnPath,
   }
   window.sessionStorage.setItem(
@@ -267,6 +306,7 @@ export function consumeAdminOAuthAttempt(now = Date.now()) {
       callbackPath?: unknown
       createdAt?: unknown
       id?: unknown
+      invitationToken?: unknown
       returnPath?: unknown
     }
     const returnPath =
@@ -281,11 +321,21 @@ export function consumeAdminOAuthAttempt(now = Date.now()) {
       Number.isSafeInteger(attempt.createdAt) &&
       attempt.createdAt <= now &&
       now - attempt.createdAt <= 10 * 60 * 1000 &&
+      (attempt.invitationToken === undefined ||
+        (typeof attempt.invitationToken === 'string' &&
+          ADMIN_INVITATION_TOKEN_PATTERN.test(attempt.invitationToken))) &&
       typeof returnPath === 'string' &&
       ADMIN_RETURN_PATHS.has(returnPath),
     )
     return valid
-      ? { id: attempt.id as string, returnPath: returnPath as string }
+      ? {
+          id: attempt.id as string,
+          invitationToken:
+            typeof attempt.invitationToken === 'string'
+              ? attempt.invitationToken
+              : '',
+          returnPath: returnPath as string,
+        }
       : null
   } catch {
     return null

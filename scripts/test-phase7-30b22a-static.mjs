@@ -723,8 +723,8 @@ assert.match(
 )
 assert.match(
   adminRoute,
-  /beginAdminOAuthAttempt\(adminPathname\)/,
-  'Google reauthentication must retain the current allowlisted Admin return path',
+  /beginAdminOAuthAttempt\(adminPathname, invitationTokenRef\.current\)/,
+  'Google reauthentication must retain the allowlisted Admin return path and any in-progress invitation',
 )
 assert.match(
   adminRoute,

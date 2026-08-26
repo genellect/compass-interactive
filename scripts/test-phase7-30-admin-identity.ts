@@ -14,8 +14,13 @@ import {
   sha256Hex,
 } from '../supabase/functions/_shared/adminIdentity.ts'
 import {
+  ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
+  beginAdminOAuthAttempt,
+  captureAdminInvitationFragment,
+  consumeAdminOAuthAttempt,
   createAdminAuthFetch,
   getAdminAuthRateLimitRemainingMs,
+  parseAdminInvitationFragment,
   sanitizeAdminAuthStorageValue,
 } from '../src/lib/adminAuth/adminAuthStorage.ts'
 
@@ -144,9 +149,23 @@ assert.equal(
 )
 
 const operationStorage = new Map<string, string>()
+const invitationToken = 'i'.repeat(43)
+const operationLocation = {
+  hash: `#invite=${invitationToken}`,
+  pathname: '/admin',
+  search: '',
+}
+const replacedHistoryUrls: string[] = []
 Object.defineProperty(globalThis, 'window', {
   configurable: true,
   value: {
+    history: {
+      replaceState: (_state: unknown, _title: string, url: string) => {
+        replacedHistoryUrls.push(url)
+        operationLocation.hash = ''
+      },
+    },
+    location: operationLocation,
     sessionStorage: {
       getItem: (key: string) => operationStorage.get(key) ?? null,
       removeItem: (key: string) => operationStorage.delete(key),
@@ -154,6 +173,71 @@ Object.defineProperty(globalThis, 'window', {
     },
   },
 })
+
+assert.deepEqual(parseAdminInvitationFragment(`#invite=${invitationToken}`), {
+  kind: 'valid',
+  token: invitationToken,
+})
+assert.equal(
+  parseAdminInvitationFragment(`invite=${invitationToken}`).kind,
+  'absent',
+  'an invitation is accepted only from the exact URL fragment form',
+)
+assert.equal(
+  parseAdminInvitationFragment(
+    `#invite=${invitationToken}&invite=${invitationToken}`,
+  ).kind,
+  'invalid',
+  'duplicate invitation parameters fail closed',
+)
+assert.equal(
+  parseAdminInvitationFragment(`#invite=${invitationToken.slice(0, -1)}%69`)
+    .kind,
+  'invalid',
+  'percent-encoded invitation tokens fail the exact fragment contract',
+)
+assert.deepEqual(captureAdminInvitationFragment(), {
+  kind: 'valid',
+  token: invitationToken,
+})
+assert.deepEqual(replacedHistoryUrls, ['/admin'])
+assert.equal(operationLocation.hash, '')
+assert.equal(
+  operationStorage.size,
+  0,
+  'capturing the fragment keeps the token in memory until OAuth starts',
+)
+
+const oauthAttemptId = beginAdminOAuthAttempt('/admin', invitationToken)
+const persistedOAuthAttempt = operationStorage.get(
+  ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
+)
+assert.ok(persistedOAuthAttempt?.includes(invitationToken))
+const consumedOAuthAttempt = consumeAdminOAuthAttempt()
+assert.deepEqual(consumedOAuthAttempt, {
+  id: oauthAttemptId,
+  invitationToken,
+  returnPath: '/admin',
+})
+assert.equal(operationStorage.has(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY), false)
+assert.equal(
+  consumeAdminOAuthAttempt(),
+  null,
+  'the OAuth invitation handoff is one-shot',
+)
+
+beginAdminOAuthAttempt('/admin', invitationToken)
+const tamperedOAuthAttempt = JSON.parse(
+  operationStorage.get(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)!,
+) as Record<string, unknown>
+tamperedOAuthAttempt.invitationToken = 'invalid-token'
+operationStorage.set(
+  ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
+  JSON.stringify(tamperedOAuthAttempt),
+)
+assert.equal(consumeAdminOAuthAttempt(), null)
+assert.equal(operationStorage.has(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY), false)
+
 const operationBody = {
   action: 'update',
   rawText: 'PRIVATE LECTURE RAW BODY',
@@ -239,6 +323,22 @@ const app = read('src/App.tsx')
 const config = read('supabase/config.toml')
 const workflow = read('.github/workflows/ci.yml')
 const localIntegration = read('scripts/test-phase7-30b1-local-edge.mjs')
+
+assert.match(
+  adminRoute,
+  /useLayoutEffect\(\(\) => \{[\s\S]*captureAdminInvitationFragment\(\)/,
+  'the invitation fragment is scrubbed before the Admin route paints',
+)
+assert.match(
+  adminRoute,
+  /admitGoogleAdmin\([\s\S]*loginRequestIdRef\.current,[\s\S]*invitationTokenRef\.current[\s\S]*beginGoogleAdminStepUp\([\s\S]*loginRequestIdRef\.current,[\s\S]*invitationTokenRef\.current/,
+  'the same in-memory invitation token reaches admission and TOTP step-up',
+)
+assert.match(
+  adminRoute,
+  /completeGoogleAdminStepUp\(\s*stepUpNonce,\s*loginRequestIdRef\.current,?\s*\)/,
+  'invitation tokens never enter the completed AAL2 session request',
+)
 
 for (const table of [
   'admin_identity_runtime_gate',

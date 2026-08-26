@@ -121,7 +121,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(operatorSnapshot, /admin_get_lecture_operator_access_v1/)
 assert.match(operatorSnapshot, /admin_get_lecture_operator_comment_history_v1/)
 assert.match(operatorSnapshot, /Math\.min\(Math\.max\(body\.limit, 1\), 50\)/)
-assert.match(operatorSnapshot, /comment_limit: 5/)
+assert.match(operatorSnapshot, /comment_limit: 25/)
 assert.doesNotMatch(operatorSnapshot, /VITE_|OPENAI_API_KEY/)
 
 assert.match(issuePdfAccess, /getDisplayTokenClaims/)

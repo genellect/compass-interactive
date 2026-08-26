@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -24,6 +25,7 @@ import {
   clearAdminAuthStorage,
   clearAdminAppSessionToken,
   clearAdminOAuthAttempt,
+  captureAdminInvitationFragment,
   beginAdminOAuthAttempt,
   consumeAdminOAuthAttempt,
   getAdminAuthRateLimitRemainingMs,
@@ -137,6 +139,8 @@ export function AdminRoute() {
   const bootStarted = useRef(false)
   const enrollmentSecretRef = useRef<EnrollmentSecret | null>(null)
   const forcedSessionInvalidRef = useRef(false)
+  const invitationFragmentInvalidRef = useRef(false)
+  const invitationTokenRef = useRef('')
   const loginRequestIdRef = useRef('')
   const [phase, setPhase] = useState<IdentityPhase>('booting')
   const [errorMessage, setErrorMessage] = useState('')
@@ -154,6 +158,14 @@ export function AdminRoute() {
   const [transitionRecoveryScope, setTransitionRecoveryScope] =
     useState<AdminTotpTransitionRecoveryScope | null>(null)
   const [transitionCandidateCode, setTransitionCandidateCode] = useState('')
+
+  useLayoutEffect(() => {
+    const invitation = captureAdminInvitationFragment()
+    invitationFragmentInvalidRef.current = invitation.kind === 'invalid'
+    if (invitation.kind === 'valid') {
+      invitationTokenRef.current = invitation.token
+    }
+  }, [])
 
   useEffect(() => {
     purgeLegacyAdminSessionStorage()
@@ -216,6 +228,13 @@ export function AdminRoute() {
 
   const prepareIdentity = useCallback(
     async (skipTransitionRecovery = false) => {
+      if (invitationFragmentInvalidRef.current) {
+        setErrorMessage(
+          '招待リンクが正しくありません。Ownerから新しい招待リンクを受け取ってください。',
+        )
+        setPhase('denied')
+        return
+      }
       if (adminSupabaseConfigError) {
         setErrorMessage(adminSupabaseConfigError)
         setPhase('error')
@@ -223,6 +242,27 @@ export function AdminRoute() {
       }
       const { data, error } = await adminSupabase.auth.getSession()
       if (error) throw error
+      if (
+        data.session &&
+        invitationTokenRef.current &&
+        !loginRequestIdRef.current
+      ) {
+        const previousAppSessionToken = restoreAdminAppSessionToken()
+        await adminSupabase.auth
+          .signOut({ scope: 'local' })
+          .catch(() => undefined)
+        if (previousAppSessionToken) {
+          forgetGoogleAdminOperationSession(previousAppSessionToken)
+        }
+        clearAdminAuthStorage()
+        clearAdminPdfExtractionCache()
+        setAppSessionToken('')
+        setSession(null)
+        setTransitionRecoveryScope(null)
+        setErrorMessage('招待された教員アカウントを選択してください。')
+        setPhase('signed_out')
+        return
+      }
       if (!data.session) {
         const staleAppSessionToken = restoreAdminAppSessionToken()
         clearAdminAuthStorage()
@@ -354,7 +394,24 @@ export function AdminRoute() {
         }
       }
 
-      await admitGoogleAdmin(loginRequestIdRef.current)
+      try {
+        await admitGoogleAdmin(
+          loginRequestIdRef.current,
+          invitationTokenRef.current,
+        )
+      } catch (error) {
+        if (
+          invitationTokenRef.current &&
+          error instanceof AdminIdentityError &&
+          error.code === 'membership_unavailable'
+        ) {
+          throw new AdminIdentityError(
+            'membership_unavailable',
+            'この招待リンクは対象アカウントと一致しないか、期限切れまたは使用済みです。',
+          )
+        }
+        throw error
+      }
       const { data: factors, error: factorsError } =
         await adminSupabase.auth.mfa.listFactors()
       if (factorsError) throw factorsError
@@ -411,6 +468,9 @@ export function AdminRoute() {
       const parameters = new URLSearchParams(location.search)
       const codes = parameters.getAll('code')
       const oauthAttempt = consumeAdminOAuthAttempt()
+      if (oauthAttempt?.invitationToken) {
+        invitationTokenRef.current = oauthAttempt.invitationToken
+      }
       window.history.replaceState({}, '', '/admin/auth/callback')
       const allowedKeys = new Set(['code'])
       const hasUnexpectedParameter = Array.from(parameters.keys()).some(
@@ -486,7 +546,7 @@ export function AdminRoute() {
     }
     forcedSessionInvalidRef.current = false
     setErrorMessage('')
-    beginAdminOAuthAttempt(adminPathname)
+    beginAdminOAuthAttempt(adminPathname, invitationTokenRef.current)
     const { error } = await adminSupabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -522,6 +582,7 @@ export function AdminRoute() {
       const { stepUpNonce } = await beginGoogleAdminStepUp(
         factorId,
         loginRequestIdRef.current,
+        invitationTokenRef.current,
       )
       const { error } = await adminSupabase.auth.mfa.challengeAndVerify({
         code: totpCode,
@@ -536,6 +597,7 @@ export function AdminRoute() {
         throw new Error('The Google session recovery scope is invalid.')
       }
       loginRequestIdRef.current = ''
+      invitationTokenRef.current = ''
       forcedSessionInvalidRef.current = false
       persistAdminAppSessionToken(completed.appSessionToken)
       persistAdminAppSessionRestoreSeed(stepUpNonce, transitionRecoveryScope)
@@ -997,6 +1059,7 @@ export function AdminRoute() {
         ) : isPhase730GoogleAdminOperationsEnabled ? (
           <AdminWorkspaceApp
             adminCredential={googleAdminCredential}
+            canManageEducators={session.role === 'owner'}
             identityScope={rememberedBrowserIdentityScope!}
             onAdminLogout={logout}
           />

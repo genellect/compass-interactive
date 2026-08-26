@@ -69,10 +69,12 @@ import './AdminPage.css'
 
 export function AdminPage({
   adminCredential,
+  canManageEducators,
   identityScope,
   onAdminLogout,
 }: {
   adminCredential: AdminOperationCredential
+  canManageEducators: boolean
   identityScope: RememberedBrowserIdentityScope
   onAdminLogout: () => Promise<void>
 }) {
@@ -1103,18 +1105,20 @@ export function AdminPage({
           >
             ログアウト
           </button>
-          <a
-            className="secondary-button"
-            href="/admin/settings"
-            onClick={(event) => {
-              event.preventDefault()
-              openAdminSurface('/admin/settings')
-            }}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            教員管理
-          </a>
+          {canManageEducators ? (
+            <a
+              className="secondary-button"
+              href="/admin/settings"
+              onClick={(event) => {
+                event.preventDefault()
+                openAdminSurface('/admin/settings')
+              }}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              教員管理
+            </a>
+          ) : null}
         </div>
       </section>
       <AdminDisplayLaunchInstructions

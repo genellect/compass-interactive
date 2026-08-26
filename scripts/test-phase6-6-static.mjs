@@ -7,6 +7,7 @@ const [
   env,
   flags,
   migration,
+  capacityMigration,
   context,
   archiveResume,
   liveRepository,
@@ -44,6 +45,9 @@ const [
   read('src/lib/featureFlags.ts'),
   read(
     'supabase/migrations/20260716140920_phase6_6_ux_archive_metrics_digest.sql',
+  ),
+  read(
+    'supabase/migrations/20260826085622_single_lecture_300_capacity_hardening.sql',
   ),
   read('src/context/CompassStateContext.tsx'),
   read('src/context/compass/useArchiveResume.ts'),
@@ -116,10 +120,33 @@ assert.doesNotMatch(
 assert.match(migration, /enable row level security/g)
 assert.doesNotMatch(migration, /alter publication|supabase_realtime/i)
 
+assert.match(
+  capacityMigration,
+  /create or replace function private\.join_lecture_by_code_v2/,
+)
+assert.match(capacityMigration, /for share of lecture;/)
+assert.doesNotMatch(capacityMigration, /for update of lecture;/)
+assert.match(
+  capacityMigration,
+  /create or replace function private\.get_lecture_public_snapshot_v5/,
+)
+assert.match(
+  capacityMigration,
+  /create or replace function private\.get_lecture_operator_snapshot_v1/,
+)
+assert.equal(
+  capacityMigration.match(/comment_limit integer default 25,/g)?.length,
+  2,
+)
+assert.equal(
+  capacityMigration.match(/least\(greatest\(comment_limit, 1\), 25\)/g)?.length,
+  2,
+)
+
 assert.match(liveRepository, /get_lecture_public_snapshot_v5/)
 assert.match(
   liveRepository,
-  /comment_limit: isPhase66UxIntegrationEnabled \? 5 : 100/,
+  /comment_limit: isPhase66UxIntegrationEnabled \? 25 : 100/,
 )
 assert.match(liveRepository, /known_metrics_version/)
 assert.match(liveRepository, /participantCountMode: 'active_90s'/)

@@ -5,10 +5,12 @@ import { AdminPage } from './AdminPage'
 
 export default function AdminWorkspaceApp({
   adminCredential,
+  canManageEducators = false,
   identityScope,
   onAdminLogout,
 }: {
   adminCredential: AdminOperationCredential
+  canManageEducators?: boolean
   identityScope: RememberedBrowserIdentityScope
   onAdminLogout: () => Promise<void>
 }) {
@@ -16,6 +18,7 @@ export default function AdminWorkspaceApp({
     <CompassStateProvider>
       <AdminPage
         adminCredential={adminCredential}
+        canManageEducators={canManageEducators}
         identityScope={identityScope}
         onAdminLogout={onAdminLogout}
       />
