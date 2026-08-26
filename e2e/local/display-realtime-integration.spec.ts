@@ -849,11 +849,16 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       await displayProbeSafety.assertClean()
     } finally {
       releaseHeartbeat()
-      await displayPage.unroute(displayStatusRoute)
-      const enabled = await service.rpc('set_display_realtime_runtime_v1', {
-        target_enabled: true,
-      })
-      expect(enabled.error).toBeNull()
+      try {
+        if (!displayPage.isClosed()) {
+          await displayPage.unroute(displayStatusRoute)
+        }
+      } finally {
+        const enabled = await service.rpc('set_display_realtime_runtime_v1', {
+          target_enabled: true,
+        })
+        expect(enabled.error).toBeNull()
+      }
     }
     await studentContext.close()
 
