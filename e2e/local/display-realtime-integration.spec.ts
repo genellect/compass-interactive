@@ -655,8 +655,9 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // fresh page in this same browser context.
     await adminSafety.assertClean()
     await adminPage.close()
-    // The reporter heartbeat runs every 10 seconds. Keep the exact 409
-    // observer alive through one full interval plus local response latency.
+    // The reporter heartbeat runs every 10 seconds and an already-started
+    // delivery request may use its full 15-second timeout. Keep the exact 409
+    // observer alive through both windows plus CI scheduling margin.
     const featureDisabledStatusConflictPromise = displayPage
       .waitForResponse(
         (response) => {
@@ -668,7 +669,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
               '/functions/v1/display-session-status'
           )
         },
-        { timeout: 20_000 },
+        { timeout: 30_000 },
       )
       .catch((error: unknown) => {
         if (error instanceof errors.TimeoutError) return null

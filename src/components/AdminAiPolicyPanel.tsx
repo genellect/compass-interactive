@@ -408,7 +408,7 @@ export function AdminAiPolicyPanel({
         </p>
 
         {!pending ? (
-          <form onSubmit={beginPolicy}>
+          <form noValidate onSubmit={beginPolicy}>
             <label className="field">
               <span>対象の教員</span>
               <select
