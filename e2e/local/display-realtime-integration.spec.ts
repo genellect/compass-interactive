@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { AxeBuilder } from '@axe-core/playwright'
-import { errors, expect, test, type Page, type Request } from '@playwright/test'
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
@@ -381,6 +387,44 @@ test('claimed cross-browser Display receives private page/caption acceleration a
 
     displayContext = await browser.newContext(contextOptions)
     const displayPage = await displayContext.newPage()
+    const pendingDisplayStatusRequests = new Set<Request>()
+    const featureDisabledStatusConflicts: string[] = []
+    let captureFeatureDisabledStatusConflicts = false
+    let resolveDisplayStatusIdle: (() => void) | null = null
+    const isDisplayStatusRequest = (request: Request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/functions/v1/display-session-status'
+    const trackDisplayStatusRequest = (request: Request) => {
+      if (isDisplayStatusRequest(request)) {
+        pendingDisplayStatusRequests.add(request)
+      }
+    }
+    const settleDisplayStatusRequest = (request: Request) => {
+      pendingDisplayStatusRequests.delete(request)
+      if (pendingDisplayStatusRequests.size === 0 && resolveDisplayStatusIdle) {
+        resolveDisplayStatusIdle()
+        resolveDisplayStatusIdle = null
+      }
+    }
+    const waitForDisplayStatusIdle = () => {
+      if (pendingDisplayStatusRequests.size === 0) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        resolveDisplayStatusIdle = resolve
+      })
+    }
+    const captureDisplayStatusConflict = (response: Response) => {
+      if (
+        captureFeatureDisabledStatusConflicts &&
+        response.status() === 409 &&
+        isDisplayStatusRequest(response.request())
+      ) {
+        featureDisabledStatusConflicts.push(response.url())
+      }
+    }
+    displayPage.on('request', trackDisplayStatusRequest)
+    displayPage.on('requestfinished', settleDisplayStatusRequest)
+    displayPage.on('requestfailed', settleDisplayStatusRequest)
+    displayPage.on('response', captureDisplayStatusConflict)
     const realtimeFrames: string[] = []
     displayPage.on('websocket', (socket) => {
       socket.on('framesent', (event) =>
@@ -655,26 +699,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // fresh page in this same browser context.
     await adminSafety.assertClean()
     await adminPage.close()
-    // The reporter heartbeat runs every 10 seconds and an already-started
-    // delivery request may use its full 15-second timeout. Keep the exact 409
-    // observer alive through both windows plus CI scheduling margin.
-    const featureDisabledStatusConflictPromise = displayPage
-      .waitForResponse(
-        (response) => {
-          const request = response.request()
-          return (
-            response.status() === 409 &&
-            request.method() === 'POST' &&
-            new URL(response.url()).pathname ===
-              '/functions/v1/display-session-status'
-          )
-        },
-        { timeout: 30_000 },
-      )
-      .catch((error: unknown) => {
-        if (error instanceof errors.TimeoutError) return null
-        throw error
-      })
+    captureFeatureDisabledStatusConflicts = true
     const disabled = await service.rpc('set_display_realtime_runtime_v1', {
       target_enabled: false,
     })
@@ -686,7 +711,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
             displayPage.locator('html').getAttribute('data-display-realtime'),
           { timeout: 5_000 },
         )
-        .not.toBe('connected')
+        .toBeNull()
       await expect
         .poll(
           async () =>
@@ -728,17 +753,26 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
 
       // Runtime disable closes the claimed session and keeps the signed
-      // snapshot/PDF fallback. A delivery heartbeat already in flight at that
-      // exact boundary may correctly receive one 409 before the reporter is
-      // disposed; classify only that observed response and keep every other
-      // browser error fatal.
-      const featureDisabledStatusConflict =
-        await featureDisabledStatusConflictPromise
-      if (featureDisabledStatusConflict) {
+      // snapshot/PDF fallback. Drain the reporter's actual request lifetime
+      // instead of guessing a timeout: after the React cleanup removes the
+      // Realtime marker, no new heartbeat can start, but one already in flight
+      // may correctly receive a single 409.
+      await waitForDisplayStatusIdle()
+      await displayPage.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() =>
+              window.requestAnimationFrame(() => resolve()),
+            )
+          }),
+      )
+      captureFeatureDisabledStatusConflicts = false
+      expect(featureDisabledStatusConflicts.length).toBeLessThanOrEqual(1)
+      if (featureDisabledStatusConflicts.length === 1) {
         await displaySafety.expectConsoleErrorOnce({
           message:
             'Failed to load resource: the server responded with a status of 409 (Conflict)',
-          url: featureDisabledStatusConflict.url(),
+          url: featureDisabledStatusConflicts[0],
         })
       }
       await displaySafety.assertClean()
@@ -907,3 +941,4 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await adminContext.close()
   }
 })
+
