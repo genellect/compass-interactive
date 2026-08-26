@@ -24,6 +24,7 @@ import {
   ADMIN_LEDGER_PENDING_STORAGE_KEY,
 } from '../lib/adminAuth/adminAuthStorage'
 import {
+  AdminIdentityError,
   beginAdminControlStepUp,
   completeAdminControlStepUp,
   createAdminControlStepUpNonce,
@@ -381,7 +382,20 @@ export function AdminLedgerPanel({
       }
       await refresh()
     } catch (error) {
-      if (error instanceof AdminLedgerError && error.code === 'state_changed') {
+      if (
+        error instanceof AdminIdentityError &&
+        error.code === 'step_up_invalid'
+      ) {
+        clearPendingMutation()
+        setTotpCode('')
+        setMessage(
+          '確認時間が終了しました。操作をもう一度開始し、新しい6桁コードで確認してください。',
+        )
+        return
+      } else if (
+        error instanceof AdminLedgerError &&
+        error.code === 'state_changed'
+      ) {
         clearPendingMutation()
         await refresh().catch(() => undefined)
       } else if (

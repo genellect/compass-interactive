@@ -4,8 +4,7 @@ const lectureMinutes = 90
 const snapshotIntervalSeconds = 5
 const presenceWriteIntervalSeconds = 45
 const presenceCountCacheSeconds = 15
-const snapshotsPerParticipant =
-  (lectureMinutes * 60) / snapshotIntervalSeconds
+const snapshotsPerParticipant = (lectureMinutes * 60) / snapshotIntervalSeconds
 const heartbeatWritesPerParticipant =
   (lectureMinutes * 60) / presenceWriteIntervalSeconds
 
@@ -21,6 +20,12 @@ function lectureLoad(participants) {
 
 const freeMvp = lectureLoad(20)
 const proLecture = lectureLoad(300)
+const pollBurstParticipants = 300
+const pollBurst = {
+  liveVersionUpdates: pollBurstParticipants,
+  optionTotalUpdates: pollBurstParticipants,
+  voteWrites: pollBurstParticipants,
+}
 
 assert.equal(snapshotsPerParticipant, 1_080)
 assert.deepEqual(freeMvp, {
@@ -35,22 +40,24 @@ assert.deepEqual(proLecture, {
   participantJoinWrites: 300,
   snapshotCalls: 324_000,
 })
+assert.deepEqual(pollBurst, {
+  liveVersionUpdates: 300,
+  optionTotalUpdates: 300,
+  voteWrites: 300,
+})
 
 // Presence is refreshed inside the already-existing snapshot RPC. A
 // participant causes at most one indexed write every 45 seconds and expires
 // from the approximate active count after 90 seconds.
 assert.equal(heartbeatWritesPerParticipant, 120)
-assert.ok(
-  proLecture.participantHeartbeatWrites <
-    proLecture.snapshotCalls / 8,
-)
+assert.ok(proLecture.participantHeartbeatWrites < proLecture.snapshotCalls / 8)
 
 const previousInitialCommentLimit = 100
-const phase66InitialCommentLimit = 5
+const phase66InitialCommentLimit = 25
 assert.equal(
   previousInitialCommentLimit / phase66InitialCommentLimit,
-  20,
-  'initial comment row cap should be reduced twenty-fold',
+  4,
+  'initial comment row cap should remain four-fold below the legacy payload',
 )
 
 // A no-change snapshot carries versions plus a few metric integers. This
@@ -81,6 +88,7 @@ console.log(
     {
       freeMvp,
       phase66InitialCommentLimit,
+      pollBurst,
       proLecture,
       snapshotsPerParticipant,
       weeklyProSnapshotBytes,

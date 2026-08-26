@@ -287,7 +287,7 @@ Deno.serve(async (request) => {
           {
             comment_cursor_created_at: body.commentCursorCreatedAt ?? null,
             comment_cursor_id: body.commentCursorId ?? null,
-            comment_limit: 5,
+            comment_limit: 25,
             include_hidden: credentialKind === 'admin',
             known_caption_version: boundedVersion(body.knownCaptionVersion),
             known_comments_version: boundedVersion(body.knownCommentsVersion),

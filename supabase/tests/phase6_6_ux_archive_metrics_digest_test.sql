@@ -1622,7 +1622,7 @@ SELECT
   fixture.participant_a,
   'Bounded snapshot comment ' || item::text
 FROM p66_fixture AS fixture
-CROSS JOIN generate_series(1, 6) AS item;
+CROSS JOIN generate_series(1, 30) AS item;
 SELECT is(
   (
     SELECT
@@ -1657,21 +1657,22 @@ SELECT is(
     FROM p66_fixture AS fixture
   ),
   (
-    SELECT '7'::text
+    SELECT '31'::text
   ),
   'v5 snapshot returns the trigger-maintained visible-comment count'
 );
-SELECT ok(
+SELECT is(
   (
     SELECT jsonb_array_length(
       public.get_lecture_public_snapshot_v5(
         fixture.lecture_id,
         comment_limit => 50
       ) #> '{changed,comments,items}'
-    ) <= 5
+    )
     FROM p66_fixture AS fixture
   ),
-  'v5 snapshot caps the live comment payload at five items'
+  25,
+  'v5 snapshot caps the live comment transport payload at twenty-five items'
 );
 SELECT ok(
   (

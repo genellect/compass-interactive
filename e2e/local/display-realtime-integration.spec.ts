@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { AxeBuilder } from '@axe-core/playwright'
-import { errors, expect, test, type Page, type Request } from '@playwright/test'
+import { expect, test, type Page, type Request } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '../../src/types/database.js'
 import { installBrowserSafetyMonitor } from '../helpers/browserSafety.js'
@@ -381,6 +381,9 @@ test('claimed cross-browser Display receives private page/caption acceleration a
 
     displayContext = await browser.newContext(contextOptions)
     const displayPage = await displayContext.newPage()
+    const isDisplayStatusRequest = (request: Request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/functions/v1/display-session-status'
     const realtimeFrames: string[] = []
     displayPage.on('websocket', (socket) => {
       socket.on('framesent', (event) =>
@@ -655,37 +658,67 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     // fresh page in this same browser context.
     await adminSafety.assertClean()
     await adminPage.close()
-    // The reporter heartbeat runs every 10 seconds. Keep the exact 409
-    // observer alive through one full interval plus local response latency.
-    const featureDisabledStatusConflictPromise = displayPage
-      .waitForResponse(
-        (response) => {
-          const request = response.request()
-          return (
-            response.status() === 409 &&
-            request.method() === 'POST' &&
-            new URL(response.url()).pathname ===
-              '/functions/v1/display-session-status'
-          )
-        },
-        { timeout: 20_000 },
-      )
-      .catch((error: unknown) => {
-        if (error instanceof errors.TimeoutError) return null
-        throw error
-      })
-    const disabled = await service.rpc('set_display_realtime_runtime_v1', {
-      target_enabled: false,
+    const displayStatusRoute = '**/functions/v1/display-session-status'
+    let heartbeatReleased = false
+    let releaseHeartbeat = () => {}
+    const heartbeatRelease = new Promise<void>((resolve) => {
+      releaseHeartbeat = () => {
+        if (heartbeatReleased) return
+        heartbeatReleased = true
+        resolve()
+      }
     })
-    expect(disabled.error).toBeNull()
+    let resolveGatedHeartbeatRequest!: (request: Request) => void
+    const gatedHeartbeatRequestPromise = new Promise<Request>((resolve) => {
+      resolveGatedHeartbeatRequest = resolve
+    })
+    let heartbeatGated = false
+    await displayPage.route(displayStatusRoute, async (route) => {
+      const request = route.request()
+      const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
+      if (
+        !heartbeatGated &&
+        isDisplayStatusRequest(request) &&
+        body.action === 'heartbeat'
+      ) {
+        heartbeatGated = true
+        resolveGatedHeartbeatRequest(request)
+        await heartbeatRelease
+      }
+      await route.fallback()
+    })
+    const gatedHeartbeatRequest = await gatedHeartbeatRequestPromise
+    const featureDisabledStatusConflictPromise = displayPage.waitForResponse(
+      (response) => response.request() === gatedHeartbeatRequest,
+      { timeout: 15_000 },
+    )
     try {
+      const disabled = await service.rpc('set_display_realtime_runtime_v1', {
+        target_enabled: false,
+      })
+      expect(disabled.error).toBeNull()
       await expect
         .poll(
           () =>
             displayPage.locator('html').getAttribute('data-display-realtime'),
           { timeout: 5_000 },
         )
-        .not.toBe('connected')
+        .toBeNull()
+
+      // Runtime disable closes the claimed session and keeps the signed
+      // snapshot/PDF fallback. Release one deliberately gated heartbeat as
+      // soon as the cleanup is visible, then classify its exact 409. The
+      // reporter cannot start another heartbeat after that cleanup.
+      releaseHeartbeat()
+      const featureDisabledStatusConflict =
+        await featureDisabledStatusConflictPromise
+      expect(featureDisabledStatusConflict.status()).toBe(409)
+      await displaySafety.expectConsoleErrorOnce({
+        message:
+          'Failed to load resource: the server responded with a status of 409 (Conflict)',
+        url: featureDisabledStatusConflict.url(),
+      })
+
       await expect
         .poll(
           async () =>
@@ -725,21 +758,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(bindingResult.error).toBeNull()
       expect(bindingResult.data?.admin_session_id).toBeTruthy()
       expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
-
-      // Runtime disable closes the claimed session and keeps the signed
-      // snapshot/PDF fallback. A delivery heartbeat already in flight at that
-      // exact boundary may correctly receive one 409 before the reporter is
-      // disposed; classify only that observed response and keep every other
-      // browser error fatal.
-      const featureDisabledStatusConflict =
-        await featureDisabledStatusConflictPromise
-      if (featureDisabledStatusConflict) {
-        await displaySafety.expectConsoleErrorOnce({
-          message:
-            'Failed to load resource: the server responded with a status of 409 (Conflict)',
-          url: featureDisabledStatusConflict.url(),
-        })
-      }
       await displaySafety.assertClean()
       await displayPage.close()
       const displayProbePage = await displayContext.newPage()
@@ -830,10 +848,17 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       )
       await displayProbeSafety.assertClean()
     } finally {
-      const enabled = await service.rpc('set_display_realtime_runtime_v1', {
-        target_enabled: true,
-      })
-      expect(enabled.error).toBeNull()
+      releaseHeartbeat()
+      try {
+        if (!displayPage.isClosed()) {
+          await displayPage.unroute(displayStatusRoute)
+        }
+      } finally {
+        const enabled = await service.rpc('set_display_realtime_runtime_v1', {
+          target_enabled: true,
+        })
+        expect(enabled.error).toBeNull()
+      }
     }
     await studentContext.close()
 
