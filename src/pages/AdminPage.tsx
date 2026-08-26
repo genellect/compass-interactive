@@ -334,7 +334,16 @@ export function AdminPage({
       return
     }
 
-    if (!selectedViewIsAvailable || !workspaceSelectionTouchedRef.current) {
+    if (!selectedViewIsAvailable) {
+      // A publication refresh can briefly hide the active PDF document. Let
+      // the workspace follow its default again when that state converges so a
+      // teacher is not stranded on Setup after explicitly opening Slides.
+      workspaceSelectionTouchedRef.current = false
+      setWorkspaceView(workspacePresentation.defaultView)
+      return
+    }
+
+    if (!workspaceSelectionTouchedRef.current) {
       setWorkspaceView(workspacePresentation.defaultView)
     }
   }, [

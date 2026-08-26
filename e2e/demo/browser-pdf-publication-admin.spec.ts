@@ -1064,13 +1064,17 @@ test('PDF viewer never exposes a signed delivery URL after its retry is exhauste
   const viewer = page.locator(
     '#admin-live .admin-current-pdf-preview .synced-pdf-viewer',
   )
+  await expect.poll(() => state.pdfDocumentFailureCount).toBe(2)
+  await expect(page.locator('#teacher-workspace-slides-tab')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
   await expect(viewer.getByText('PDFの読み込みに失敗しました。')).toBeVisible({
     timeout: 35_000,
   })
-  await expect.poll(() => state.pdfDocumentFailureCount).toBe(2)
-  await expect(page.locator('body')).not.toContainText(
-    'test-signed-ticket-must-not-reach-dom',
-  )
+  expect(
+    await page.locator('html').evaluate((element) => element.outerHTML),
+  ).not.toContain('test-signed-ticket-must-not-reach-dom')
   await stopAdminOperatorPolling(page)
 })
 
