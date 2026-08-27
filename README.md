@@ -49,16 +49,16 @@ flowchart TB
     Worker --> R2
 ```
 
-| Layer                 | Technology                                                       | Responsibility                           |
+| 区分                 | 採用スタック                                                       | 役割                           |
 | --------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| **Frontend**          | React 19 · TypeScript 6 · Vite 8 · React Router 8                | Educator、Student、Display、Review、Demo |
-| **Identity**          | Supabase Auth · Google OAuth · TOTP AAL2                         | Surface別sessionと教員本人確認           |
-| **Data**              | Supabase PostgreSQL · RPC · RLS · Realtime                       | 講義状態、所有権、同期version、監査      |
-| **Server operations** | Supabase Edge Functions · Deno                                   | 管理操作、AI認可、外部API調整            |
-| **Documents**         | Cloudflare Workers · Private R2 · PDF.js                         | PDF検証、公開、Range配信、Archive        |
-| **AI**                | OpenAI Realtime / text generation · PubMed · Crossref · OpenAlex | 字幕、分析、要約、根拠付き回答           |
-| **Presenter**         | Node.js Publisher · .NET/C# bridge                               | PDF公開の復旧経路とPowerPoint連携        |
-| **Quality**           | Playwright · axe-core · pgTAP · oxlint · Prettier                | ブラウザ、DB、accessibility、静的品質    |
+| **フロントエンド**          | React 19 · TypeScript 6 · Vite 8 · React Router 8                | 教員画面、学生画面、画面共有ディスプレイ、講義後アーカイブ、デモ画面 |
+| **認証・認可**          | Supabase Auth · Google OAuth · TOTP AAL2                         | ユーザー認証、セッション管理、教員本人確認   |
+| **データベース**              | Supabase PostgreSQL · RPC · RLS · Realtime                       | 講義状態、所有権、状態同期・バージョン管理、監査      |
+| **バックエンド** | Supabase Edge Functions · Deno                                   | 管理操作、AI認可、外部API連携            |
+| **PDF配信**         | Cloudflare Workers · Private R2 · PDF.js                         | PDF検証、公開、Range配信、アーカイブ        |
+| **AI**                | OpenAI Realtime / OpenAI Responses API · PubMed · Crossref · OpenAlex | 字幕、分析、要約、根拠付き回答           |
+| **PowerPoint連携**         | Node.js Publisher · .NET/C# bridge                               | PDF公開の復旧経路とPowerPoint連携        |
+| **品質保証**           | Playwright · axe-core · pgTAP · oxlint · Prettier                |  ブラウザ動作、データベーステスト、アクセシビリティ、コード品質   |
 
 ## リポジトリ構成
 
