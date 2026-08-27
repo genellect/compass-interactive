@@ -27,12 +27,14 @@ function matchesPublication(
 
 export function usePublicationDisplayReadback({
   activeLectureSessionId,
+  canReadLiveDisplayState,
   liveDisplayState,
   refreshDisplayState,
   refreshLectures,
   setPublisherMessage,
 }: {
   activeLectureSessionId: string | null
+  canReadLiveDisplayState: boolean
   liveDisplayState: DisplayState | null
   refreshDisplayState: () => Promise<DisplayState | null>
   refreshLectures: () => Promise<void>
@@ -40,9 +42,14 @@ export function usePublicationDisplayReadback({
 }) {
   const [pending, setPending] = useState<PendingPublicationDisplay | null>(null)
   const onPublicationActivated = useCallback(
-    (lectureSessionId: string, activation: BrowserPdfPublicationActivation) =>
-      setPending({ ...activation, lectureSessionId }),
-    [],
+    (lectureSessionId: string, activation: BrowserPdfPublicationActivation) => {
+      if (!canReadLiveDisplayState) {
+        setPending(null)
+        return
+      }
+      setPending({ ...activation, lectureSessionId })
+    },
+    [canReadLiveDisplayState],
   )
 
   useEffect(() => {
@@ -93,7 +100,9 @@ export function usePublicationDisplayReadback({
   async function refreshAdminWorkspace() {
     const [, displayResult] = await Promise.allSettled([
       refreshLectures(),
-      activeLectureSessionId ? refreshDisplayState() : Promise.resolve(null),
+      activeLectureSessionId && canReadLiveDisplayState
+        ? refreshDisplayState()
+        : Promise.resolve(null),
     ])
     if (
       pending &&

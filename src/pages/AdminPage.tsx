@@ -219,6 +219,7 @@ export function AdminPage({
   const { onPublicationActivated, refreshAdminWorkspace } =
     usePublicationDisplayReadback({
       activeLectureSessionId,
+      canReadLiveDisplayState: activeAdminLecture?.status === 'open',
       liveDisplayState,
       refreshDisplayState,
       refreshLectures,

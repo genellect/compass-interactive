@@ -189,6 +189,7 @@ async function installNetworkMocks(
     pdfDeliveryFailures?: number
     pdfDeliveryFailureStatus?: 401 | 403 | 416
     delayInitialLectureListUntilCreate?: boolean
+    draftSnapshotNotFound?: boolean
     finalizeStatus?: 'active' | 'committed'
     initialLectureStatus?: 'closed' | 'open'
     postActivationSnapshotFailures?: number
@@ -543,6 +544,14 @@ async function installNetworkMocks(
     if (functionName === 'operator-live-snapshot') {
       if (state.active) {
         state.postActivationSnapshotCount += 1
+        if (options.draftSnapshotNotFound) {
+          await fulfillJson(
+            route,
+            { message: 'Lecture was not found.', ok: false },
+            404,
+          )
+          return
+        }
         if (state.postActivationSnapshotFailuresRemaining > 0) {
           state.postActivationSnapshotFailuresRemaining -= 1
           await fulfillJson(
@@ -1186,6 +1195,7 @@ test('Admin creates a draft and publishes a preselected PDF with one CTA', async
   await installAdminState(page, false, false)
   const state = await installNetworkMocks(page, {
     delayInitialLectureListUntilCreate: true,
+    draftSnapshotNotFound: true,
     startWithoutLecture: true,
   })
 
@@ -1219,6 +1229,29 @@ test('Admin creates a draft and publishes a preselected PDF with one CTA', async
   await expect(
     page.locator(`#admin-live select option[value="${documentId}"]`),
   ).toHaveCount(1)
+  await page.waitForTimeout(1_500)
+  expect(state.postActivationSnapshotCount).toBe(0)
+  await expect(
+    page.locator('.lecture-admin-row').getByRole('button', {
+      name: '操作対象',
+    }),
+  ).toBeVisible()
+  await expect(
+    page.locator('#teacher-workspace-participation-tab'),
+  ).toBeEnabled()
+  await expect(page.locator('#teacher-workspace-ai-tab')).toBeEnabled()
+
+  const lectureListRequestCount = state.lectureListIncludeHistory.length
+  await page.getByRole('button', { name: '再読み込み' }).click()
+  await expect
+    .poll(() => state.lectureListIncludeHistory.length)
+    .toBeGreaterThan(lectureListRequestCount)
+  expect(state.postActivationSnapshotCount).toBe(0)
+  await expect(
+    page.locator('.lecture-admin-row').getByRole('button', {
+      name: '操作対象',
+    }),
+  ).toBeVisible()
   await stopAdminOperatorPolling(page)
 })
 
