@@ -333,6 +333,9 @@ async function installNetworkMocks(
   studentAccessToken: string,
   options: {
     beginStepUpReauthenticationRequired?: boolean
+    holdAdminLogout?: boolean
+    holdAuthorize?: boolean
+    holdTokenExchange?: boolean
     includeAbandonedFactor?: boolean
     invalidStatusToken?: string
     initialVerified?: boolean
@@ -366,6 +369,24 @@ async function installNetworkMocks(
     unexpectedRequests: [],
     verified: options.initialVerified ?? false,
   }
+  let releaseAuthorize: () => void = () => undefined
+  const authorizeRelease = options.holdAuthorize
+    ? new Promise<void>((resolve) => {
+        releaseAuthorize = resolve
+      })
+    : Promise.resolve()
+  let releaseTokenExchange: () => void = () => undefined
+  const tokenExchangeRelease = options.holdTokenExchange
+    ? new Promise<void>((resolve) => {
+        releaseTokenExchange = resolve
+      })
+    : Promise.resolve()
+  let releaseAdminLogout: () => void = () => undefined
+  const adminLogoutRelease = options.holdAdminLogout
+    ? new Promise<void>((resolve) => {
+        releaseAdminLogout = resolve
+      })
+    : Promise.resolve()
 
   const context = page.context()
   await context.route('https://example.supabase.co/**', async (route) => {
@@ -383,6 +404,7 @@ async function installNetworkMocks(
 
       if (url.pathname === '/auth/v1/authorize' && request.method() === 'GET') {
         state.authorizeQueries.push(Object.fromEntries(url.searchParams))
+        await authorizeRelease
         const redirectTo = url.searchParams.get('redirect_to')
         if (!redirectTo) {
           state.unexpectedRequests.push('authorize redirect_to missing')
@@ -415,6 +437,7 @@ async function installNetworkMocks(
         state.pkceBodies.push(
           (request.postDataJSON() ?? {}) as Record<string, unknown>,
         )
+        await tokenExchangeRelease
         await fulfillJson(route, {
           ...aal1Session,
           provider_refresh_token: 'phase730-google-provider-refresh-token',
@@ -573,6 +596,7 @@ async function installNetworkMocks(
         return
       }
       if (action === 'logout') {
+        await adminLogoutRelease
         await fulfillJson(route, { ok: true })
         return
       }
@@ -616,6 +640,9 @@ async function installNetworkMocks(
   return {
     aal1AccessToken: aal1Session.access_token,
     aal2AccessToken: aal2Session.access_token,
+    releaseAdminLogout,
+    releaseAuthorize,
+    releaseTokenExchange,
     state,
     studentAuthorization: `Bearer ${studentAccessToken}`,
   }
@@ -705,7 +732,10 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   const storageAfterCallback = await page.evaluate(
     ({ adminAuthStorageKey, studentAuthStorageKey }) => ({
       admin: window.localStorage.getItem(adminAuthStorageKey),
-      codeVerifier: window.localStorage.getItem(
+      localCodeVerifier: window.localStorage.getItem(
+        `${adminAuthStorageKey}-code-verifier`,
+      ),
+      sessionCodeVerifier: window.sessionStorage.getItem(
         `${adminAuthStorageKey}-code-verifier`,
       ),
       localValues: Array.from(
@@ -723,7 +753,8 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     { adminAuthStorageKey, studentAuthStorageKey },
   )
   expect(storageAfterCallback.admin).toBeTruthy()
-  expect(storageAfterCallback.codeVerifier).toBeNull()
+  expect(storageAfterCallback.localCodeVerifier).toBeNull()
+  expect(storageAfterCallback.sessionCodeVerifier).toBeNull()
   expect(storageAfterCallback.oauthAttempt).toBeNull()
   expect(storageAfterCallback.student).toBe(student.storageValue)
   expect(storageAfterCallback.localValues.join('\n')).not.toContain(
@@ -1127,6 +1158,200 @@ test('redeems one scrubbed invitation into an Instructor without exposing Owner 
   expect(state.unexpectedRequests).toEqual([])
 })
 
+test('preserves an invitation PKCE transaction when an older Admin tab signs out late', async ({
+  page: ownerPage,
+}) => {
+  const invitationToken = 'm'.repeat(43)
+  const student = anonymousStudentSession()
+  const { releaseAuthorize, releaseTokenExchange, state } =
+    await installNetworkMocks(ownerPage, student.accessToken, {
+      holdAuthorize: true,
+      holdTokenExchange: true,
+      initialVerified: true,
+    })
+  const storedSession = authSession('aal2', { verified: true })
+  await ownerPage.addInitScript(
+    ({ adminAuthStorageKey, restoreSeedKey, restoreSeed, storedSession }) => {
+      window.localStorage.setItem(
+        adminAuthStorageKey,
+        JSON.stringify(storedSession),
+      )
+      window.localStorage.setItem(
+        restoreSeedKey,
+        JSON.stringify({
+          authSessionId: '73000000-0000-4000-8000-000000000002',
+          authUserId: '73000000-0000-4000-8000-000000000001',
+          seed: restoreSeed,
+          version: 1,
+        }),
+      )
+    },
+    {
+      adminAuthStorageKey,
+      restoreSeed,
+      restoreSeedKey: adminAppSessionRestoreSeedStorageKey,
+      storedSession,
+    },
+  )
+  await ownerPage.goto('/admin')
+  await expect(ownerPage.locator('.admin-workflow')).toBeVisible()
+
+  const invitePage = await ownerPage.context().newPage()
+  const raceObservationKey = 'phase730-invitation-race-observation'
+  const raceAcknowledgementChannel = 'phase730-invitation-race-acknowledgement'
+  await invitePage.addInitScript(
+    ({
+      acknowledgementChannel,
+      adminAuthStorageKey,
+      adminOAuthAttemptStorageKey,
+      observationKey,
+    }) => {
+      const channel = new BroadcastChannel(adminAuthStorageKey)
+      channel.addEventListener('message', (event) => {
+        if (event.data?.event !== 'SIGNED_OUT') return
+        const readVerifier = () => {
+          const raw = window.sessionStorage.getItem(
+            `${adminAuthStorageKey}-code-verifier`,
+          )
+          if (!raw) return null
+          try {
+            const value = JSON.parse(raw)
+            return typeof value === 'string' ? value : raw
+          } catch {
+            return raw
+          }
+        }
+        const observe = () => ({
+          attempt: window.sessionStorage.getItem(adminOAuthAttemptStorageKey),
+          localVerifier: window.localStorage.getItem(
+            `${adminAuthStorageKey}-code-verifier`,
+          ),
+          sessionVerifier: readVerifier(),
+        })
+        const before = observe()
+        window.setTimeout(() => {
+          let observations: Record<string, unknown> = {}
+          try {
+            const raw = window.sessionStorage.getItem(observationKey)
+            observations = raw ? JSON.parse(raw) : {}
+          } catch {
+            observations = {}
+          }
+          const stage =
+            typeof event.data?.stage === 'string' ? event.data.stage : 'unknown'
+          window.sessionStorage.setItem(
+            observationKey,
+            JSON.stringify({
+              ...observations,
+              [stage]: { after: observe(), before },
+            }),
+          )
+          const acknowledgement = new BroadcastChannel(acknowledgementChannel)
+          acknowledgement.postMessage({ stage })
+          acknowledgement.close()
+        }, 0)
+      })
+    },
+    {
+      acknowledgementChannel: raceAcknowledgementChannel,
+      adminAuthStorageKey,
+      adminOAuthAttemptStorageKey,
+      observationKey: raceObservationKey,
+    },
+  )
+  await invitePage.goto(`/admin#invite=${invitationToken}`)
+  const inviteCard = invitePage.locator('main .admin-identity-card')
+  await expect(inviteCard.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  await expect(
+    ownerPage.locator('main .admin-identity-card .eyebrow'),
+  ).toHaveText('EDUCATOR PORTAL')
+
+  const loginPromise = inviteCard
+    .getByRole('button', { name: 'Googleで続ける', exact: true })
+    .click()
+  const postSignedOutAndWaitForObservation = (stage: string) =>
+    ownerPage.evaluate(
+      async ({ acknowledgementChannel, stage, storageKey }) => {
+        await new Promise<void>((resolve, reject) => {
+          const acknowledgement = new BroadcastChannel(acknowledgementChannel)
+          const timeout = window.setTimeout(() => {
+            acknowledgement.close()
+            reject(new Error(`Invitation race observation timed out: ${stage}`))
+          }, 5_000)
+          acknowledgement.addEventListener('message', (event) => {
+            if (event.data?.stage !== stage) return
+            window.clearTimeout(timeout)
+            acknowledgement.close()
+            resolve()
+          })
+          const channel = new BroadcastChannel(storageKey)
+          channel.postMessage({
+            event: 'SIGNED_OUT',
+            session: null,
+            stage,
+          })
+          channel.close()
+        })
+      },
+      {
+        acknowledgementChannel: raceAcknowledgementChannel,
+        stage,
+        storageKey: adminAuthStorageKey,
+      },
+    )
+
+  try {
+    await expect.poll(() => state.authorizeQueries.length).toBe(1)
+    await postSignedOutAndWaitForObservation('authorize')
+
+    releaseAuthorize()
+    await expect.poll(() => state.pkceBodies.length).toBe(1)
+    await postSignedOutAndWaitForObservation('callback')
+    releaseTokenExchange()
+    await loginPromise
+  } finally {
+    releaseAuthorize()
+    releaseTokenExchange()
+  }
+  await expect
+    .poll(() => state.edgeCalls.filter(({ action }) => action === 'admit'))
+    .toHaveLength(1)
+  await expect(inviteCard.locator('.eyebrow')).toHaveText(
+    'TWO-STEP VERIFICATION',
+  )
+  await postSignedOutAndWaitForObservation('totp')
+  await expect(inviteCard.locator('.eyebrow')).toHaveText('EDUCATOR PORTAL')
+  const raceObservation = await invitePage.evaluate((observationKey) => {
+    const raw = window.sessionStorage.getItem(observationKey)
+    return raw ? JSON.parse(raw) : null
+  }, raceObservationKey)
+  expect(raceObservation?.authorize.before.attempt).toContain(invitationToken)
+  expect(raceObservation?.authorize.before.localVerifier).toBeNull()
+  expect(raceObservation?.authorize.before.sessionVerifier).toMatch(
+    /^[A-Za-z0-9._~-]{43,128}($|\/PASSWORD_RECOVERY$)/,
+  )
+  expect(raceObservation?.authorize.after).toEqual(
+    raceObservation?.authorize.before,
+  )
+  expect(raceObservation?.callback.before.attempt).toBeNull()
+  expect(raceObservation?.callback.before.localVerifier).toBeNull()
+  expect(raceObservation?.callback.before.sessionVerifier).toMatch(
+    /^[A-Za-z0-9._~-]{43,128}($|\/PASSWORD_RECOVERY$)/,
+  )
+  expect(raceObservation?.callback.after).toEqual(
+    raceObservation?.callback.before,
+  )
+  expect(raceObservation?.totp).toBeTruthy()
+  expect(
+    state.edgeCalls.find(({ action }) => action === 'admit')?.body,
+  ).toEqual({
+    action: 'admit',
+    invitationToken,
+    loginRequestId: expect.stringMatching(uuidPattern),
+  })
+  expect(state.unexpectedRequests).toEqual([])
+})
+
 test('restores the same app token only from its scoped live AAL2 Auth session', async ({
   page,
 }) => {
@@ -1182,6 +1407,105 @@ test('restores the same app token only from its scoped live AAL2 Auth session', 
     ),
   ).toBe(appSessionToken)
   expect(state.edgeCalls[0]?.body).toEqual({ action: 'restore', restoreSeed })
+  expect(state.unexpectedRequests).toEqual([])
+})
+
+test('a stale Owner tab cannot sign out a newer Admin identity while logout is in flight', async ({
+  page,
+}) => {
+  const student = anonymousStudentSession()
+  const { aal2AccessToken, releaseAdminLogout, state } =
+    await installNetworkMocks(page, student.accessToken, {
+      holdAdminLogout: true,
+      initialVerified: true,
+    })
+  const ownerSession = {
+    ...authSession('aal2', { verified: true }),
+    access_token: aal2AccessToken,
+  }
+  await page.addInitScript(
+    ({
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      ownerSession,
+      restoreSeed,
+    }) => {
+      window.localStorage.setItem(
+        adminAuthStorageKey,
+        JSON.stringify(ownerSession),
+      )
+      window.localStorage.setItem(
+        adminAppSessionRestoreSeedStorageKey,
+        JSON.stringify({
+          authSessionId: '73000000-0000-4000-8000-000000000002',
+          authUserId: '73000000-0000-4000-8000-000000000001',
+          seed: restoreSeed,
+          version: 1,
+        }),
+      )
+    },
+    {
+      adminAppSessionRestoreSeedStorageKey,
+      adminAuthStorageKey,
+      ownerSession,
+      restoreSeed,
+    },
+  )
+  await page.goto('/admin')
+  await expect(page.locator('.admin-workflow')).toBeVisible()
+
+  const replacementUserId = '73000000-0000-4000-8000-000000000007'
+  const replacementSession = authSession('aal2', { verified: true })
+  replacementSession.access_token = sessionJwt('aal2', replacementUserId)
+  replacementSession.refresh_token = 'phase730-replacement-refresh-token'
+  replacementSession.user.id = replacementUserId
+  replacementSession.user.email = 'replacement-educator@example.test'
+  replacementSession.user.identities[0].user_id = replacementUserId
+  const logoutPromise = page
+    .getByRole('button', { name: 'ログアウト', exact: true })
+    .click()
+  try {
+    await expect
+      .poll(() => state.edgeCalls.filter(({ action }) => action === 'logout'))
+      .toHaveLength(1)
+    await page.evaluate(
+      ({ adminAuthStorageKey, replacementSession }) => {
+        window.localStorage.setItem(
+          adminAuthStorageKey,
+          JSON.stringify(replacementSession),
+        )
+      },
+      { adminAuthStorageKey, replacementSession },
+    )
+    releaseAdminLogout()
+    await logoutPromise
+  } finally {
+    releaseAdminLogout()
+  }
+  await expect(page.locator('main .admin-identity-card .eyebrow')).toHaveText(
+    'EDUCATOR PORTAL',
+  )
+  expect(
+    state.edgeCalls.filter(({ action }) => action === 'logout'),
+  ).toHaveLength(1)
+  expect(
+    state.authRequests.filter(
+      ({ method, pathname }) =>
+        method === 'POST' && pathname === '/auth/v1/logout',
+    ),
+  ).toHaveLength(0)
+  expect(
+    await page.evaluate(
+      ({ adminAppSessionStorageKey, adminAuthStorageKey }) => {
+        const rawSession = window.localStorage.getItem(adminAuthStorageKey)
+        return {
+          appSession: window.sessionStorage.getItem(adminAppSessionStorageKey),
+          authUserId: rawSession ? JSON.parse(rawSession).user?.id : null,
+        }
+      },
+      { adminAppSessionStorageKey, adminAuthStorageKey },
+    ),
+  ).toEqual({ appSession: null, authUserId: replacementUserId })
   expect(state.unexpectedRequests).toEqual([])
 })
 
@@ -1323,7 +1647,7 @@ test('honors Auth Retry-After before another TOTP submission', async ({
   expect(state.unexpectedRequests).toEqual([])
 })
 
-test('an expired or missing backing Auth session clears Admin state and preserves the settings return path for Google reauthentication', async ({
+test('an expired application session releases only its Admin tab and preserves the settings return path for Google reauthentication', async ({
   page,
 }) => {
   const student = anonymousStudentSession()
@@ -1371,7 +1695,10 @@ test('an expired or missing backing Auth session clears Admin state and preserve
     }) => ({
       adminAppSession: window.sessionStorage.getItem(adminAppSessionStorageKey),
       adminAuth: window.localStorage.getItem(adminAuthStorageKey),
-      adminVerifier: window.localStorage.getItem(
+      adminLocalVerifier: window.localStorage.getItem(
+        `${adminAuthStorageKey}-code-verifier`,
+      ),
+      adminSessionVerifier: window.sessionStorage.getItem(
         `${adminAuthStorageKey}-code-verifier`,
       ),
       oauthAttempt: window.sessionStorage.getItem(adminOAuthAttemptStorageKey),
@@ -1384,19 +1711,18 @@ test('an expired or missing backing Auth session clears Admin state and preserve
       studentAuthStorageKey,
     },
   )
-  expect(clearedStorage).toEqual({
-    adminAppSession: null,
-    adminAuth: null,
-    adminVerifier: null,
-    oauthAttempt: null,
-    studentAuth: student.storageValue,
-  })
+  expect(clearedStorage.adminAppSession).toBeNull()
+  expect(clearedStorage.adminAuth).toBeTruthy()
+  expect(clearedStorage.adminLocalVerifier).toBeNull()
+  expect(clearedStorage.adminSessionVerifier).toBeNull()
+  expect(clearedStorage.oauthAttempt).toBeNull()
+  expect(clearedStorage.studentAuth).toBe(student.storageValue)
   expect(
     state.authRequests.filter(
       ({ method, pathname }) =>
         method === 'POST' && pathname === '/auth/v1/logout',
     ),
-  ).toHaveLength(1)
+  ).toHaveLength(0)
 
   await card.getByRole('button', { name: 'Googleで続ける' }).click()
   await expect(page).toHaveURL('/admin/settings')

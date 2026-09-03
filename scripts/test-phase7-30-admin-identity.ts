@@ -14,9 +14,17 @@ import {
   sha256Hex,
 } from '../supabase/functions/_shared/adminIdentity.ts'
 import {
+  ADMIN_AI_POLICY_PENDING_STORAGE_KEY,
+  ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY,
+  ADMIN_APP_SESSION_STORAGE_KEY,
+  ADMIN_AUTH_STORAGE_KEY,
+  ADMIN_LEDGER_PENDING_STORAGE_KEY,
   ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
+  adminAuthStorage,
   beginAdminOAuthAttempt,
   captureAdminInvitationFragment,
+  clearAdminAuthStorage,
+  clearAdminTabWorkspaceStorage,
   consumeAdminOAuthAttempt,
   createAdminAuthFetch,
   getAdminAuthRateLimitRemainingMs,
@@ -149,6 +157,12 @@ assert.equal(
 )
 
 const operationStorage = new Map<string, string>()
+const authLocalStorage = new Map<string, string>()
+const storageAdapter = (storage: Map<string, string>) => ({
+  getItem: (key: string) => storage.get(key) ?? null,
+  removeItem: (key: string) => storage.delete(key),
+  setItem: (key: string, value: string) => storage.set(key, value),
+})
 const invitationToken = 'i'.repeat(43)
 const operationLocation = {
   hash: `#invite=${invitationToken}`,
@@ -166,11 +180,8 @@ Object.defineProperty(globalThis, 'window', {
       },
     },
     location: operationLocation,
-    sessionStorage: {
-      getItem: (key: string) => operationStorage.get(key) ?? null,
-      removeItem: (key: string) => operationStorage.delete(key),
-      setItem: (key: string, value: string) => operationStorage.set(key, value),
-    },
+    localStorage: storageAdapter(authLocalStorage),
+    sessionStorage: storageAdapter(operationStorage),
   },
 })
 
@@ -262,6 +273,61 @@ assert.equal(
   'a reload must reuse the pending request ID without persisting raw body text',
 )
 reloadedOperationModule.clearAdminOperationRequestIds()
+
+const verifierStorageKey = `${ADMIN_AUTH_STORAGE_KEY}-code-verifier`
+adminAuthStorage.setItem(ADMIN_AUTH_STORAGE_KEY, '{"access_token":"safe"}')
+adminAuthStorage.setItem(
+  verifierStorageKey,
+  JSON.stringify('tab-only-pkce-verifier'),
+)
+authLocalStorage.set(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY, 'restore-seed')
+operationStorage.set(ADMIN_APP_SESSION_STORAGE_KEY, 'app-session')
+operationStorage.set(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY, 'oauth-attempt')
+operationStorage.set(ADMIN_LEDGER_PENDING_STORAGE_KEY, 'ledger-pending')
+operationStorage.set(ADMIN_AI_POLICY_PENDING_STORAGE_KEY, 'policy-pending')
+
+assert.equal(authLocalStorage.has(ADMIN_AUTH_STORAGE_KEY), true)
+assert.equal(authLocalStorage.has(verifierStorageKey), false)
+assert.equal(
+  adminAuthStorage.getItem(verifierStorageKey),
+  JSON.stringify('tab-only-pkce-verifier'),
+)
+
+clearAdminTabWorkspaceStorage()
+assert.equal(
+  authLocalStorage.has(ADMIN_AUTH_STORAGE_KEY),
+  true,
+  'passive tab cleanup must preserve the shared Supabase Auth session',
+)
+assert.equal(
+  authLocalStorage.has(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY),
+  true,
+  'passive tab cleanup must preserve the scoped restore seed',
+)
+assert.equal(
+  operationStorage.get(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY),
+  'oauth-attempt',
+  'passive tab cleanup must preserve an in-flight OAuth attempt',
+)
+assert.equal(
+  operationStorage.get(verifierStorageKey),
+  JSON.stringify('tab-only-pkce-verifier'),
+  'passive tab cleanup must preserve this tab PKCE verifier',
+)
+assert.equal(operationStorage.has(ADMIN_APP_SESSION_STORAGE_KEY), false)
+assert.equal(operationStorage.has(ADMIN_LEDGER_PENDING_STORAGE_KEY), false)
+assert.equal(operationStorage.has(ADMIN_AI_POLICY_PENDING_STORAGE_KEY), false)
+
+authLocalStorage.set(verifierStorageKey, 'legacy-shared-verifier')
+clearAdminAuthStorage()
+assert.equal(authLocalStorage.has(ADMIN_AUTH_STORAGE_KEY), false)
+assert.equal(authLocalStorage.has(verifierStorageKey), false)
+assert.equal(
+  authLocalStorage.has(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY),
+  false,
+)
+assert.equal(operationStorage.has(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY), false)
+assert.equal(operationStorage.has(verifierStorageKey), false)
 Reflect.deleteProperty(globalThis, 'window')
 
 const adminAuthFetch = createAdminAuthFetch(

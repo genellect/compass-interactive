@@ -393,7 +393,56 @@ assert.match(
 assert.match(adminRoute, /claimAdminSurfaceWindow\(adminPathname\)/)
 assert.match(
   adminRoute,
-  /onAuthStateChange\(\(event\) => \{[\s\S]*event !== 'SIGNED_OUT'[\s\S]*clearGoogleAdminWorkspace/,
+  /onAuthStateChange\(\(event\) => \{\s*if \(event !== 'SIGNED_OUT' \|\| oauthCallbackInFlightRef\.current\) return/,
+  'only the active OAuth callback may suppress a cross-tab SIGNED_OUT event',
+)
+assert.match(
+  adminRoute,
+  /oauthCallbackInFlightRef\.current = true[\s\S]*?exchangeCodeForSession[\s\S]*?\.finally\(\(\) => \{\s*oauthCallbackInFlightRef\.current = false/,
+  'the SIGNED_OUT suppression must end before the educator uses the TOTP screen',
+)
+assert.match(
+  adminRoute,
+  /if \(!data\.session\) \{[\s\S]*?clearAdminTabWorkspaceStorage\(\)[\s\S]*?setPhase\('signed_out'\)/,
+  'a stale Admin tab without a session must not clear shared Auth written by another tab',
+)
+assert.match(
+  adminStorage,
+  /ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY[\s\S]*?key === ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY[\s\S]*?window\.sessionStorage[\s\S]*?window\.localStorage/,
+  'Admin PKCE verification must be isolated to the initiating tab',
+)
+assert.match(
+  adminRoute,
+  /async function isCurrentAdminAuthScope\([\s\S]*?currentScope\.authUserId === expectedScope\.authUserId[\s\S]*?currentScope\.authSessionId === expectedScope\.authSessionId/,
+  'shared Auth ownership must bind both user and session IDs',
+)
+assert.match(
+  adminRoute,
+  /if \(!\(await ownsCurrentSharedAuth\(\)\)\)[\s\S]*?revokeGoogleAdminSession\(appSessionToken\)[\s\S]*?if \(!\(await ownsCurrentSharedAuth\(\)\)\)[\s\S]*?adminSupabase\.auth\.signOut/,
+  'a stale Admin tab must not sign out a newer identity from shared Auth storage',
+)
+assert.equal(
+  [
+    ...adminRoute.matchAll(
+      /const ownsSharedAuth = await isCurrentAdminAuthScope\(/g,
+    ),
+  ].length,
+  2,
+  'both TOTP recovery completion paths must recheck shared Auth ownership',
+)
+assert.equal(
+  [
+    ...adminRoute.matchAll(
+      /if \(ownsSharedAuth\) clearAdminAuthStorage\(\)\s*else clearAdminTabWorkspaceStorage\(\)/g,
+    ),
+  ].length,
+  2,
+  'TOTP recovery must fall back to tab-only cleanup after an identity change',
+)
+assert.match(
+  adminStorage,
+  /clearAdminTabWorkspaceStorage\(\)[\s\S]*?clearAdminAppSessionToken\(\)[\s\S]*?ADMIN_LEDGER_PENDING_STORAGE_KEY[\s\S]*?ADMIN_AI_POLICY_PENDING_STORAGE_KEY/,
+  'passive Admin cleanup must preserve any in-flight OAuth transaction',
 )
 assert.match(
   adminStorage,

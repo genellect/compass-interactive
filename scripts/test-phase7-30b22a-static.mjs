@@ -728,13 +728,25 @@ assert.match(
 )
 assert.match(
   adminRoute,
-  /const returnToGoogleReauthentication = useCallback\([\s\S]*?signOut\(\{ scope: 'local' \}\)[\s\S]*?clearGoogleAdminWorkspace\(message, invalidatedAppSessionToken\)/,
-  'reauthentication must clear the local Supabase Auth session before returning to the CTA',
+  /const returnToGoogleReauthentication = useCallback\([\s\S]*?clearGoogleAdminWorkspace\(message, invalidatedAppSessionToken\)/,
+  'passive reauthentication must release only the stale Admin tab before returning to the CTA',
 )
 assert.match(
   adminRoute,
-  /const clearGoogleAdminWorkspace = useCallback\([\s\S]*?clearEnrollmentSecret\(\)[\s\S]*?clearAdminAuthStorage\(\)[\s\S]*?setAppSessionToken\(''\)/,
-  'reauthentication must clear provider-bearing Auth storage and the old app token',
+  /const clearGoogleAdminWorkspace = useCallback\([\s\S]*?clearAdminTabWorkspaceStorage\(\)[\s\S]*?setAppSessionToken\(''\)/,
+  'passive workspace cleanup must be unconditionally tab-scoped',
+)
+assert.doesNotMatch(
+  adminRoute.match(
+    /const clearGoogleAdminWorkspace = useCallback\([\s\S]*?\n  \)/,
+  )?.[0] ?? '',
+  /clearAdminAuthStorage\(\)/,
+  'passive workspace cleanup must never delete shared Auth storage',
+)
+assert.match(
+  adminRoute,
+  /if \(!data\.session\) \{[\s\S]*?clearAdminTabWorkspaceStorage\(\)[\s\S]*?setPhase\('signed_out'\)/,
+  'a no-session boot must release only its own Admin tab',
 )
 assert.match(
   adminRoute,
@@ -1006,7 +1018,7 @@ assert.match(
 )
 assert.match(
   adminIdentityE2e,
-  /expired or missing backing Auth session clears Admin state and preserves the settings return path for Google reauthentication/,
+  /expired application session releases only its Admin tab and preserves the settings return path for Google reauthentication/,
 )
 assert.match(
   adminIdentityE2e,
@@ -1015,8 +1027,8 @@ assert.match(
 )
 assert.match(
   adminIdentityE2e,
-  /adminAppSession: null,[\s\S]*?adminAuth: null,[\s\S]*?adminVerifier: null,[\s\S]*?oauthAttempt: null/,
-  'the browser regression must prove old app, provider Auth and OAuth-attempt state are cleared',
+  /clearedStorage\.adminAppSession\)\.toBeNull\(\)[\s\S]*?clearedStorage\.adminAuth\)\.toBeTruthy\(\)[\s\S]*?clearedStorage\.adminLocalVerifier\)\.toBeNull\(\)[\s\S]*?clearedStorage\.adminSessionVerifier\)\.toBeNull\(\)/,
+  'the browser regression must prove stale tab state is cleared while shared Auth survives',
 )
 assert.match(
   pgTap,

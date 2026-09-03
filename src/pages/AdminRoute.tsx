@@ -25,6 +25,7 @@ import {
   clearAdminAuthStorage,
   clearAdminAppSessionToken,
   clearAdminOAuthAttempt,
+  clearAdminTabWorkspaceStorage,
   captureAdminInvitationFragment,
   beginAdminOAuthAttempt,
   consumeAdminOAuthAttempt,
@@ -131,6 +132,24 @@ function normalizeAdminPathname(pathname: string) {
   return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 }
 
+async function isCurrentAdminAuthScope(
+  expectedScope: AdminTotpTransitionRecoveryScope,
+) {
+  const { data, error } = await adminSupabase.auth.getSession()
+  if (error) throw error
+  const currentScope = data.session
+    ? getAdminTotpTransitionRecoveryScope(
+        data.session.user.id,
+        data.session.access_token,
+      )
+    : null
+  return Boolean(
+    currentScope &&
+    currentScope.authUserId === expectedScope.authUserId &&
+    currentScope.authSessionId === expectedScope.authSessionId,
+  )
+}
+
 export function AdminRoute() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -142,6 +161,7 @@ export function AdminRoute() {
   const invitationFragmentInvalidRef = useRef(false)
   const invitationTokenRef = useRef('')
   const loginRequestIdRef = useRef('')
+  const oauthCallbackInFlightRef = useRef(false)
   const [phase, setPhase] = useState<IdentityPhase>('booting')
   const [errorMessage, setErrorMessage] = useState('')
   const [factorId, setFactorId] = useState('')
@@ -187,7 +207,7 @@ export function AdminRoute() {
       }
       clearEnrollmentSecret()
       loginRequestIdRef.current = ''
-      clearAdminAuthStorage()
+      clearAdminTabWorkspaceStorage()
       clearAdminPdfExtractionCache()
       setAppSessionToken('')
       setSession(null)
@@ -204,9 +224,6 @@ export function AdminRoute() {
 
   const returnToGoogleReauthentication = useCallback(
     async (message: string, invalidatedAppSessionToken = '') => {
-      await adminSupabase.auth
-        .signOut({ scope: 'local' })
-        .catch(() => undefined)
       clearGoogleAdminWorkspace(message, invalidatedAppSessionToken)
       // Keep the current safe Admin pathname. startGoogleLogin records that
       // pathname as the next OAuth return path when the educator uses the CTA.
@@ -218,7 +235,7 @@ export function AdminRoute() {
     const {
       data: { subscription },
     } = adminSupabase.auth.onAuthStateChange((event) => {
-      if (event !== 'SIGNED_OUT') return
+      if (event !== 'SIGNED_OUT' || oauthCallbackInFlightRef.current) return
       clearGoogleAdminWorkspace(
         'Googleログインが終了しました。もう一度ログインしてください。',
       )
@@ -265,7 +282,7 @@ export function AdminRoute() {
       }
       if (!data.session) {
         const staleAppSessionToken = restoreAdminAppSessionToken()
-        clearAdminAuthStorage()
+        clearAdminTabWorkspaceStorage()
         if (staleAppSessionToken) {
           forgetGoogleAdminOperationSession(staleAppSessionToken)
         }
@@ -294,10 +311,16 @@ export function AdminRoute() {
               recovery,
             )
             if (finalized) {
+              const ownsSharedAuth = await isCurrentAdminAuthScope(
+                currentRecoveryScope,
+              ).catch(() => false)
               try {
-                await adminSupabase.auth.signOut({ scope: 'local' })
+                if (ownsSharedAuth) {
+                  await adminSupabase.auth.signOut({ scope: 'local' })
+                }
               } finally {
-                clearAdminAuthStorage()
+                if (ownsSharedAuth) clearAdminAuthStorage()
+                else clearAdminTabWorkspaceStorage()
                 clearAdminPdfExtractionCache()
                 setAppSessionToken('')
                 setSession(null)
@@ -401,13 +424,14 @@ export function AdminRoute() {
         )
       } catch (error) {
         if (
-          invitationTokenRef.current &&
           error instanceof AdminIdentityError &&
           error.code === 'membership_unavailable'
         ) {
           throw new AdminIdentityError(
             'membership_unavailable',
-            'この招待リンクは対象アカウントと一致しないか、期限切れまたは使用済みです。',
+            invitationTokenRef.current
+              ? 'この招待リンクは対象アカウントと一致しないか、期限切れまたは使用済みです。'
+              : '教員権限を確認できません。新規招待の場合は、Ownerが発行した最新の招待リンクからログインしてください。',
           )
         }
         throw error
@@ -489,6 +513,7 @@ export function AdminRoute() {
         return
       }
       loginRequestIdRef.current = oauthAttempt.id
+      oauthCallbackInFlightRef.current = true
 
       void adminSupabase.auth
         .exchangeCodeForSession(codes[0])
@@ -501,7 +526,10 @@ export function AdminRoute() {
         })
         .catch((error) => {
           setErrorMessage(getSafeMessage(error))
-          setPhase('error')
+          setPhase(error instanceof AdminIdentityError ? 'denied' : 'error')
+        })
+        .finally(() => {
+          oauthCallbackInFlightRef.current = false
         })
       return
     }
@@ -530,7 +558,6 @@ export function AdminRoute() {
     if (!appSessionToken) return
     return subscribeGoogleAdminSessionInvalid(appSessionToken, () => {
       const invalidatedToken = appSessionToken
-      void adminSupabase.auth.signOut({ scope: 'local' }).catch(() => undefined)
       clearGoogleAdminWorkspace(
         '管理者セッションの有効期限が切れました。Googleログインからやり直してください。',
         invalidatedToken,
@@ -679,10 +706,37 @@ export function AdminRoute() {
     setIsSubmitting(true)
     const appSessionToken = restoreAdminAppSessionToken()
     let logoutError = false
+    const ownsCurrentSharedAuth = async () => {
+      try {
+        return transitionRecoveryScope
+          ? await isCurrentAdminAuthScope(transitionRecoveryScope)
+          : false
+      } catch {
+        logoutError = true
+        return false
+      }
+    }
+    const finishTabOnlyLogout = () => {
+      if (appSessionToken) forgetGoogleAdminOperationSession(appSessionToken)
+      clearGoogleAdminWorkspace(
+        logoutError
+          ? 'ログアウトの通信を完了できませんでした。この管理タブだけを終了しました。'
+          : '',
+      )
+    }
+    if (!(await ownsCurrentSharedAuth())) {
+      finishTabOnlyLogout()
+      return
+    }
     try {
       if (appSessionToken) await revokeGoogleAdminSession(appSessionToken)
     } catch {
       logoutError = true
+    }
+    if (finishForcedSessionInvalidation()) return
+    if (!(await ownsCurrentSharedAuth())) {
+      finishTabOnlyLogout()
+      return
     }
     try {
       const { error } = await adminSupabase.auth.signOut({ scope: 'local' })
@@ -807,10 +861,16 @@ export function AdminRoute() {
           }
         }
       }
+      const ownsSharedAuth = await isCurrentAdminAuthScope(
+        transitionRecoveryScope,
+      ).catch(() => false)
       try {
-        await adminSupabase.auth.signOut({ scope: 'local' })
+        if (ownsSharedAuth) {
+          await adminSupabase.auth.signOut({ scope: 'local' })
+        }
       } finally {
-        clearAdminAuthStorage()
+        if (ownsSharedAuth) clearAdminAuthStorage()
+        else clearAdminTabWorkspaceStorage()
         clearAdminPdfExtractionCache()
         setAppSessionToken('')
         setSession(null)
