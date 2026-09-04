@@ -7,6 +7,9 @@ const migration = read(
   'supabase/migrations/20260812043000_phase7_30d_admin_ledger_authority.sql',
 )
 const edge = read('supabase/functions/manage-admin-ledger/index.ts')
+const edgeRpcFailure = read(
+  'supabase/functions/_shared/adminLedgerRpcFailure.ts',
+)
 const identityEdge = read('supabase/functions/admin-identity-session/index.ts')
 const identityApi = read('src/lib/adminAuth/adminIdentityApi.ts')
 const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
@@ -194,6 +197,26 @@ assert.match(edge, /PHASE730_GOOGLE_ADMIN_LEDGER_ENABLED/)
 assert.match(edge, /readSecret\('ADMIN_INVITATION_SECRET'\)/)
 assert.match(edge, /deriveAdminInvitationToken/)
 assert.match(edge, /EMAIL_PATTERN\.test\(normalizedEmail\)/)
+assert.match(
+  edgeRpcFailure,
+  /PENDING_INVITATION_CONSTRAINT\s*=\s*'unique constraint "admin_invitations_pending_email_idx"'/,
+  'the recoverable conflict must use the quoted pending-email constraint token',
+)
+assert.match(
+  edgeRpcFailure,
+  /action === 'issueInvitation'[\s\S]*error\?\.code === '23505'[\s\S]*value\?\.includes\(PENDING_INVITATION_CONSTRAINT\)[\s\S]*code: 'invitation_pending', status: 409/,
+  'only the exact pending-email constraint may become a recoverable invitation conflict',
+)
+assert.match(
+  edge,
+  /classifyAdminLedgerRpcFailure\(error, action\)/,
+  'the mutation error classifier must receive the exact ledger action',
+)
+assert.match(
+  ledgerApi,
+  /invitation_pending:[\s\S]*受諾待ちの招待があります/,
+  'the client must explain an existing pending invitation without exposing database details',
+)
 assert.doesNotMatch(
   migration,
   /invitation_token(?!_hash)/,
@@ -307,6 +330,26 @@ assert.doesNotMatch(
 )
 assert.match(ledgerPanel, /persistPendingMutation/)
 assert.match(ledgerPanel, /restorePendingMutation/)
+assert.match(
+  ledgerPanel,
+  /pendingInvitationsForInviteEmail[\s\S]*invitation\.status === 'pending'[\s\S]*pendingInvitationsForInviteEmail\.length > 1[\s\S]*この教員には受諾待ちの招待があります。[\s\S]*この招待を取り消す/,
+  'duplicate pending invitations must be stopped before owner step-up starts',
+)
+assert.match(
+  ledgerPanel,
+  /onSubmit=\{\(event\)[\s\S]*pendingInvitationsForInviteEmail\.length > 0[\s\S]*action: 'issueInvitation'/,
+  'the invite form handler must fail closed even when submission bypasses its disabled button',
+)
+assert.match(
+  ledgerPanel,
+  /本人確認は完了しています[\s\S]*6桁コードの再入力は不要です。[\s\S]*認証済みの処理を続ける[\s\S]*変更の完了を確認する/,
+  'post-TOTP recovery must state that another code is unnecessary and expose one phase-specific action',
+)
+assert.match(
+  ledgerPanel,
+  /phase === 'control'[\s\S]*isRejectedTotpCode\(error\)[\s\S]*認証コードを確認できませんでした。新しい6桁コードを入力して、もう一度実行してください。[\s\S]*認証サービスとの通信に失敗しました。コードの正誤は確認されていません。/,
+  'TOTP rejection and authentication transport failure must expose different retry guidance',
+)
 assert.match(
   ledgerPanel,
   /membershipExpiresAt: null[\s\S]*role: 'instructor'/,
@@ -526,6 +569,11 @@ assert.equal(
   'node scripts/test-phase7-30d-concurrency.mjs',
 )
 assert.match(
+  packageJson.scripts['test:phase7-30d-static'],
+  /test-phase7-30d-edge\.ts/,
+  'the non-live Phase 7.30D gate must execute the RPC error classifier tests',
+)
+assert.match(
   concurrency,
   /'admin-ledger-environment'[\s\S]*cross-demote-b[\s\S]*P7310/,
 )
@@ -554,7 +602,7 @@ assert.match(
 assert.doesNotMatch(browserRunner, /VITE_PHASE7_30_LEGACY_ADMIN_PIN/)
 assert.match(
   browserSpec,
-  /ledgerAdmissionEnabled[\s\S]*idempotentReplay[\s\S]*更新結果を再確認/,
+  /ledgerAdmissionEnabled[\s\S]*idempotentReplay[\s\S]*この教員には受諾待ちの招待があります。[\s\S]*変更の完了を確認する/,
 )
 assert.match(browserSpec, /AxeBuilder/)
 assert.match(browserSpec, /scrollWidth/)

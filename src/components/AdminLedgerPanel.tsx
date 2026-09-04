@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -159,6 +160,39 @@ function safeMessage(error: unknown) {
     : '教員管理の操作を完了できませんでした。'
 }
 
+function isRejectedTotpCode(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'mfa_verification_failed'
+  )
+}
+
+function pendingRecoveryMessage(
+  error: unknown,
+  phase: PendingMutation['phase'],
+) {
+  if (phase === 'control') {
+    return isRejectedTotpCode(error)
+      ? '認証コードを確認できませんでした。新しい6桁コードを入力して、もう一度実行してください。'
+      : '認証サービスとの通信に失敗しました。コードの正誤は確認されていません。通信状態を確認して、もう一度実行してください。'
+  }
+  const identityConfirmed = phase === 'completing' || phase === 'authorized'
+  if (
+    identityConfirmed &&
+    (error instanceof AdminIdentityError || error instanceof AdminLedgerError)
+  ) {
+    if (error.code === 'service_unavailable') {
+      return '通信が一時的に失敗しました。本人確認は完了しています。'
+    }
+    if (error.code === 'rate_limited') {
+      return '操作が集中しています。少し待ってから続けてください。本人確認は完了しています。'
+    }
+  }
+  return safeMessage(error)
+}
+
 export function AdminLedgerPanel({
   adminCredential,
   appSessionToken,
@@ -193,6 +227,21 @@ export function AdminLedgerPanel({
   const [invitationLink, setInvitationLink] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteCanUseAi, setInviteCanUseAi] = useState(false)
+
+  const pendingConfirmationRef = useRef<HTMLFormElement>(null)
+  const pendingInvitationsForInviteEmail = useMemo(() => {
+    const normalizedEmail = inviteEmail.trim().toLowerCase()
+    if (!normalizedEmail || !snapshot) return []
+    return snapshot.invitations.filter(
+      (invitation) =>
+        invitation.status === 'pending' &&
+        invitation.normalizedEmail === normalizedEmail,
+    )
+  }, [inviteEmail, snapshot])
+  const pendingInvitationForInviteEmail =
+    pendingInvitationsForInviteEmail.length === 1
+      ? pendingInvitationsForInviteEmail[0]
+      : null
 
   const admissionEnabled = Boolean(
     clientAdmissionEnabled && snapshot?.ledgerAdmissionEnabled,
@@ -254,6 +303,25 @@ export function AdminLedgerPanel({
     }
   }, [refresh])
 
+  useEffect(() => {
+    if (!pending || busy) return
+    const frame = window.requestAnimationFrame(() => {
+      const form = pendingConfirmationRef.current
+      if (!form) return
+      form.scrollIntoView({ block: 'nearest' })
+      const nextControl =
+        pending.phase === 'control'
+          ? form.querySelector<HTMLInputElement>(
+              'input[autocomplete="one-time-code"]',
+            )
+          : form.querySelector<HTMLButtonElement>(
+              'button.primary-button:not(:disabled)',
+            )
+      nextControl?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [busy, pending])
+
   async function preparePending(attempt: PendingMutation) {
     setBusy(true)
     setMessage('')
@@ -286,7 +354,6 @@ export function AdminLedgerPanel({
         phase: 'control',
       })
       setTotpCode('')
-      setMessage('認証アプリの6桁コードで、この変更だけを確認してください。')
     } catch (error) {
       rememberPendingMutation(attempt)
       setMessage(safeMessage(error))
@@ -318,6 +385,7 @@ export function AdminLedgerPanel({
     )
       return
     if (pending.phase === 'control' && !/^\d{6}$/.test(totpCode)) return
+    let recoveryPhase = pending.phase
     setBusy(true)
     setMessage('')
     try {
@@ -336,6 +404,7 @@ export function AdminLedgerPanel({
         })
         if (error) throw error
         nextPending = { ...nextPending, phase: 'completing' }
+        recoveryPhase = 'completing'
         rememberPendingMutation(nextPending)
         setTotpCode('')
       }
@@ -349,6 +418,7 @@ export function AdminLedgerPanel({
           nextPending.intent.operationKey,
         )
         nextPending = { ...nextPending, phase: 'authorized' }
+        recoveryPhase = 'authorized'
         rememberPendingMutation(nextPending)
       }
       const result = await commitAdminLedgerMutation({
@@ -382,6 +452,9 @@ export function AdminLedgerPanel({
       }
       await refresh()
     } catch (error) {
+      if (recoveryPhase === 'control' && isRejectedTotpCode(error)) {
+        setTotpCode('')
+      }
       if (
         error instanceof AdminIdentityError &&
         error.code === 'step_up_invalid'
@@ -394,7 +467,7 @@ export function AdminLedgerPanel({
         return
       } else if (
         error instanceof AdminLedgerError &&
-        error.code === 'state_changed'
+        ['invitation_pending', 'state_changed'].includes(error.code)
       ) {
         clearPendingMutation()
         await refresh().catch(() => undefined)
@@ -404,7 +477,7 @@ export function AdminLedgerPanel({
       ) {
         clearPendingMutation()
       }
-      setMessage(safeMessage(error))
+      setMessage(pendingRecoveryMessage(error, recoveryPhase))
     } finally {
       setBusy(false)
     }
@@ -563,18 +636,58 @@ export function AdminLedgerPanel({
       ) : null}
 
       {pending ? (
-        <form className="admin-ledger-confirmation" onSubmit={finishPending}>
-          <h3>変更を確認</h3>
-          <p>対象操作: {MUTATION_LABELS[pending.action]}</p>
+        <form
+          aria-describedby="admin-ledger-confirmation-instruction"
+          aria-labelledby="admin-ledger-confirmation-title"
+          className="admin-ledger-confirmation"
+          onSubmit={finishPending}
+          ref={pendingConfirmationRef}
+        >
+          <h3 id="admin-ledger-confirmation-title">
+            {pending.phase === 'preparing'
+              ? busy
+                ? '変更を準備しています'
+                : '変更を準備できませんでした'
+              : pending.phase === 'control'
+                ? busy
+                  ? '変更を確認しています'
+                  : '変更を確認'
+                : pending.phase === 'completing'
+                  ? busy
+                    ? '本人確認が完了しました'
+                    : '本人確認は完了しています'
+                  : busy
+                    ? '変更を反映しています'
+                    : '変更の承認は完了しています'}
+          </h3>
+          <p>{MUTATION_LABELS[pending.action]}</p>
+          <p className="helper-note" id="admin-ledger-confirmation-instruction">
+            {pending.phase === 'preparing'
+              ? busy
+                ? 'そのままお待ちください。'
+                : '通信を確認して、もう一度準備してください。'
+              : pending.phase === 'control'
+                ? busy
+                  ? '認証アプリのコードを確認しています。'
+                  : '認証アプリの6桁コードを入力してください。'
+                : pending.phase === 'completing'
+                  ? busy
+                    ? '変更を処理しています。'
+                    : '6桁コードの再入力は不要です。処理を続けてください。'
+                  : busy
+                    ? 'そのままお待ちください。'
+                    : '6桁コードの再入力は不要です。反映結果を確認してください。'}
+          </p>
           {pending.phase === 'preparing' ? (
-            <button
-              className="secondary-button"
-              disabled={busy}
-              onClick={() => void preparePending(pending)}
-              type="button"
-            >
-              準備を再試行
-            </button>
+            busy ? null : (
+              <button
+                className="secondary-button"
+                onClick={() => void preparePending(pending)}
+                type="button"
+              >
+                準備を再試行
+              </button>
+            )
           ) : pending.phase === 'control' ? (
             <>
               <label className="field">
@@ -601,6 +714,7 @@ export function AdminLedgerPanel({
                 <span>6桁コード</span>
                 <input
                   autoComplete="one-time-code"
+                  disabled={busy}
                   inputMode="numeric"
                   maxLength={6}
                   onChange={(event) =>
@@ -611,35 +725,49 @@ export function AdminLedgerPanel({
                   value={totpCode}
                 />
               </label>
+              {busy ? null : (
+                <button
+                  className="primary-button"
+                  disabled={totpCode.length !== 6}
+                  type="submit"
+                >
+                  この変更を実行
+                </button>
+              )}
+            </>
+          ) : pending.phase === 'completing' ? (
+            busy ? null : (
               <button
                 className="primary-button"
-                disabled={busy || totpCode.length !== 6}
-                type="submit"
+                onClick={() => void finishPending()}
+                type="button"
               >
-                この変更を実行
+                認証済みの処理を続ける
               </button>
-            </>
-          ) : (
+            )
+          ) : busy ? null : (
             <button
               className="primary-button"
-              disabled={busy}
               onClick={() => void finishPending()}
               type="button"
             >
-              更新結果を再確認
+              変更の完了を確認する
             </button>
           )}
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={() => {
-              clearPendingMutation()
-              setTotpCode('')
-            }}
-            type="button"
-          >
-            キャンセル
-          </button>
+          {!busy &&
+          (pending.phase === 'preparing' || pending.phase === 'control') ? (
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => {
+                clearPendingMutation()
+                setTotpCode('')
+              }}
+              type="button"
+            >
+              キャンセル
+            </button>
+          ) : null}
         </form>
       ) : null}
 
@@ -880,7 +1008,11 @@ export function AdminLedgerPanel({
           className="admin-ledger-form"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!admissionEnabled) return
+            if (
+              !admissionEnabled ||
+              pendingInvitationsForInviteEmail.length > 0
+            )
+              return
             startMutation({
               action: 'issueInvitation',
               payload: {
@@ -914,9 +1046,44 @@ export function AdminLedgerPanel({
             <span>AI利用を許可</span>
           </label>
           <p className="helper-note">招待リンクは作成から48時間有効です。</p>
+          {pendingInvitationsForInviteEmail.length > 1 ? (
+            <p className="helper-note" role="alert">
+              招待状態を確認できません。新しい招待を作成せず、最新状態を確認してください。
+            </p>
+          ) : pendingInvitationForInviteEmail ? (
+            <div className="admin-ledger-existing-invitation">
+              <p className="helper-note" role="status">
+                この教員には受諾待ちの招待があります。
+              </p>
+              <button
+                className="secondary-button"
+                disabled={busy || mutationBlocked}
+                onClick={() =>
+                  startMutation({
+                    action: 'revokeInvitation',
+                    payload: {
+                      expectedStatus: 'pending',
+                      expectedUpdatedAt:
+                        pendingInvitationForInviteEmail.updatedAt,
+                      invitationId:
+                        pendingInvitationForInviteEmail.invitationId,
+                    },
+                  })
+                }
+                type="button"
+              >
+                この招待を取り消す
+              </button>
+            </div>
+          ) : null}
           <button
             className="primary-button"
-            disabled={busy || mutationBlocked || !admissionEnabled}
+            disabled={
+              busy ||
+              mutationBlocked ||
+              !admissionEnabled ||
+              pendingInvitationsForInviteEmail.length > 0
+            }
             type="submit"
           >
             招待リンクを作成

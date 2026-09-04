@@ -27,6 +27,7 @@ const resultInvitationId = '730d0000-0000-4000-8000-00000000000d'
 const aiInstructorPrincipalId = '730d0000-0000-4000-8000-00000000000e'
 const aiInstructorMembershipId = '730d0000-0000-4000-8000-00000000000f'
 const lectureSessionId = '730d0000-0000-4000-8000-000000000010'
+const duplicateInvitationId = '730d0000-0000-4000-8000-000000000011'
 const intentDigest = 'd'.repeat(64)
 const policyIntentDigest = 'e'.repeat(64)
 const policyId = '730d0000-0000-4000-8000-000000000012'
@@ -49,6 +50,9 @@ type MockState = {
   }>
   commitBodies: Record<string, unknown>[]
   functionCalls: FunctionCall[]
+  ledgerCompleteBodies: Record<string, unknown>[]
+  ledgerCompleteAttempts: number
+  ledgerGrantIssues: number
   openLecture: boolean
   pinControlBeganAtSeconds: number
   pinGrantAvailable: boolean
@@ -204,7 +208,11 @@ function trackedAdminSession(role: AdminRole = 'owner') {
   }
 }
 
-function ledgerSnapshot(ledgerAdmissionEnabled: boolean, openLecture: boolean) {
+function ledgerSnapshot(
+  ledgerAdmissionEnabled: boolean,
+  openLecture: boolean,
+  duplicatePendingInvitations = false,
+) {
   const now = Date.now()
   const createdAt = new Date(now - 24 * 60 * 60_000).toISOString()
   const updatedAt = new Date(now - 60_000).toISOString()
@@ -232,6 +240,24 @@ function ledgerSnapshot(ledgerAdmissionEnabled: boolean, openLecture: boolean) {
         status: 'pending',
         updatedAt,
       },
+      ...(duplicatePendingInvitations
+        ? [
+            {
+              canUseAi: false,
+              createdAt,
+              expiredAt: null,
+              expiresAt,
+              invitationId: duplicateInvitationId,
+              membershipExpiresAt: null,
+              normalizedEmail: 'pending@example.test',
+              revocationReason: null,
+              revokedAt: null,
+              role: 'instructor',
+              status: 'pending',
+              updatedAt,
+            },
+          ]
+        : []),
     ],
     ledgerAdmissionEnabled,
     memberships: [
@@ -386,14 +412,26 @@ async function installMocks(
   page: Page,
   admin: ReturnType<typeof adminSession>,
   options: {
+    duplicatePendingInvitations?: boolean
+    failFirstInvitationCommit?: boolean
     failFirstPolicySet?: boolean
+    failFirstTotpVerification?: boolean
+    failFirstTotpVerificationWithServiceUnavailable?: boolean
+    invitationConflictOnCommit?: boolean
+    loseFirstLedgerCompletionResponse?: boolean
     loseFirstPolicyCompletionResponse?: boolean
     refreshSessionOnTotp?: boolean
     role?: AdminRole
   } = {},
 ) {
   const {
+    duplicatePendingInvitations = false,
+    failFirstInvitationCommit = true,
     failFirstPolicySet = false,
+    failFirstTotpVerification = false,
+    failFirstTotpVerificationWithServiceUnavailable = false,
+    invitationConflictOnCommit = false,
+    loseFirstLedgerCompletionResponse = false,
     loseFirstPolicyCompletionResponse = false,
     refreshSessionOnTotp = false,
     role = 'owner',
@@ -405,6 +443,9 @@ async function installMocks(
     authRequests: [],
     commitBodies: [],
     functionCalls: [],
+    ledgerCompleteBodies: [],
+    ledgerCompleteAttempts: 0,
+    ledgerGrantIssues: 0,
     openLecture: true,
     pinControlBeganAtSeconds: 0,
     pinGrantAvailable: false,
@@ -417,6 +458,11 @@ async function installMocks(
     unexpectedRequests: [],
   }
   let commitAttempts = 0
+  let ledgerControlIntentDigest = ''
+  let ledgerControlNonce = ''
+  let ledgerControlRequestId = ''
+  let ledgerGrantAvailable = false
+  let totpVerifyAttempts = 0
   let pinControlIntentDigest = ''
   let pinControlNonce = ''
   let pinControlRequestId = ''
@@ -466,6 +512,33 @@ async function installMocks(
         url.pathname === `/auth/v1/factors/${factorId}/verify` &&
         request.method() === 'POST'
       ) {
+        totpVerifyAttempts += 1
+        if (failFirstTotpVerification && totpVerifyAttempts === 1) {
+          await fulfillJson(
+            route,
+            {
+              code: 'mfa_verification_failed',
+              error_code: 'mfa_verification_failed',
+              message: 'mocked verification failure',
+            },
+            422,
+          )
+          return
+        }
+        if (
+          failFirstTotpVerificationWithServiceUnavailable &&
+          totpVerifyAttempts === 1
+        ) {
+          await fulfillJson(
+            route,
+            {
+              code: 'service_unavailable',
+              message: 'mocked authentication service failure',
+            },
+            503,
+          )
+          return
+        }
         if (refreshSessionOnTotp) {
           verifiedAdmin = adminSession({
             issuedAgeSeconds: 0,
@@ -498,6 +571,11 @@ async function installMocks(
         if (action === 'beginControlStepUp') {
           const controlStepUpNonce =
             body.controlStepUpNonce ?? `n.${'b'.repeat(41)}`
+          if (body.controlAction === 'admin_invitation_change') {
+            ledgerControlIntentDigest = String(body.controlIntentDigest)
+            ledgerControlNonce = String(controlStepUpNonce)
+            ledgerControlRequestId = String(body.controlRequestId)
+          }
           if (body.controlAction === 'ai_pin_enroll') {
             state.pinControlBeganAtSeconds = Math.floor(Date.now() / 1_000)
             pinControlIntentDigest = String(body.controlIntentDigest)
@@ -516,6 +594,39 @@ async function installMocks(
           return
         }
         if (action === 'completeControlStepUp') {
+          if (body.controlAction === 'admin_invitation_change') {
+            state.ledgerCompleteAttempts += 1
+            state.ledgerCompleteBodies.push(JSON.parse(JSON.stringify(body)))
+            if (
+              authorization !== `Bearer ${verifiedAdmin.access_token}` ||
+              body.controlIntentDigest !== ledgerControlIntentDigest ||
+              body.controlRequestId !== ledgerControlRequestId ||
+              body.controlStepUpNonce !== ledgerControlNonce
+            ) {
+              state.unexpectedRequests.push('invalid ledger control proof')
+              await fulfillJson(
+                route,
+                { code: 'request_invalid', ok: false },
+                400,
+              )
+              return
+            }
+            if (!ledgerGrantAvailable) {
+              ledgerGrantAvailable = true
+              state.ledgerGrantIssues += 1
+            }
+            if (
+              loseFirstLedgerCompletionResponse &&
+              state.ledgerCompleteAttempts === 1
+            ) {
+              await fulfillJson(
+                route,
+                { code: 'service_unavailable', ok: false },
+                503,
+              )
+              return
+            }
+          }
           if (body.controlAction === 'ai_pin_enroll') {
             if (
               authorization !== `Bearer ${verifiedAdmin.access_token}` ||
@@ -755,7 +866,11 @@ async function installMocks(
         if (body.action === 'snapshot') {
           await fulfillJson(
             route,
-            ledgerSnapshot(state.admissionEnabled, state.openLecture),
+            ledgerSnapshot(
+              state.admissionEnabled,
+              state.openLecture,
+              duplicatePendingInvitations,
+            ),
           )
           return
         }
@@ -790,7 +905,15 @@ async function installMocks(
         if (body.stage === 'commit' && body.action === 'issueInvitation') {
           state.commitBodies.push(JSON.parse(JSON.stringify(body)))
           commitAttempts += 1
-          if (commitAttempts === 1) {
+          if (invitationConflictOnCommit) {
+            await fulfillJson(
+              route,
+              { code: 'invitation_pending', ok: false },
+              409,
+            )
+            return
+          }
+          if (failFirstInvitationCommit && commitAttempts === 1) {
             await fulfillJson(
               route,
               { code: 'service_unavailable', ok: false },
@@ -944,24 +1067,82 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
 
   state.admissionEnabled = true
   await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  const intentCountBeforeDuplicate = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'manage-admin-ledger' && body.stage === 'intent',
+  ).length
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill(' PENDING@example.test ')
+  await expect(
+    panel.getByText('この教員には受諾待ちの招待があります。', {
+      exact: true,
+    }),
+  ).toBeVisible()
   await expect(
     panel.getByRole('button', { name: '招待リンクを作成' }),
+  ).toBeDisabled()
+  await expect(
+    panel.getByRole('button', { name: 'この招待を取り消す' }),
   ).toBeEnabled()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  expect(
+    state.functionCalls.filter(
+      ({ body, functionName }) =>
+        functionName === 'manage-admin-ledger' && body.stage === 'intent',
+    ),
+  ).toHaveLength(intentCountBeforeDuplicate)
   await panel
     .getByLabel('Googleアカウントのメールアドレス')
     .fill('new-admin@example.test')
+  await expect(
+    panel.getByText('この教員には受諾待ちの招待があります。', {
+      exact: true,
+    }),
+  ).toHaveCount(0)
+  await expect(
+    panel.getByRole('button', { name: '招待リンクを作成' }),
+  ).toBeEnabled()
   await panel.getByRole('button', { name: '招待リンクを作成' }).click()
   await expect(
+    panel.getByRole('heading', { name: '変更を確認', exact: true }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText('認証アプリの6桁コードを入力してください。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  const invitationTotp = panel.getByLabel('6桁コード')
+  await expect(invitationTotp).toBeFocused()
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toBeVisible()
+  await expect(panel.locator('.admin-ledger-confirmation')).toHaveAttribute(
+    'aria-describedby',
+    'admin-ledger-confirmation-instruction',
+  )
+  await invitationTotp.fill('123456')
+  await panel.getByRole('button', { name: 'この変更を実行' }).click()
+  await expect(
+    panel.getByRole('heading', {
+      name: '変更の承認は完了しています',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText('通信が一時的に失敗しました。本人確認は完了しています。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
     panel.getByText(
-      '認証アプリの6桁コードで、この変更だけを確認してください。',
+      '6桁コードの再入力は不要です。反映結果を確認してください。',
       { exact: true },
     ),
   ).toBeVisible()
-  await panel.getByLabel('6桁コード').fill('123456')
-  await panel.getByRole('button', { name: 'この変更を実行' }).click()
   await expect(
-    panel.getByRole('button', { name: '更新結果を再確認' }),
+    panel.getByRole('button', { name: '変更の完了を確認する' }),
   ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toHaveCount(0)
 
   await expect
     .poll(() =>
@@ -983,7 +1164,21 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
 
   await page.reload()
   panel = await openLedger(page)
-  await panel.getByRole('button', { name: '更新結果を再確認' }).click()
+  await expect(
+    panel.getByRole('heading', {
+      name: '変更の承認は完了しています',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText(
+      '6桁コードの再入力は不要です。反映結果を確認してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toHaveCount(0)
+  await panel.getByRole('button', { name: '変更の完了を確認する' }).click()
   await expect(
     panel.getByText('今回だけ表示される招待リンク', { exact: true }),
   ).toBeVisible()
@@ -1100,6 +1295,276 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
       )
       .toBe(true)
   }
+})
+
+test('fails closed when an inconsistent snapshot contains duplicate pending invitations', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    duplicatePendingInvitations: true,
+  })
+
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByText('教員を追加', { exact: true }).click()
+  const emailInput = panel.getByLabel('Googleアカウントのメールアドレス')
+  await emailInput.fill('pending@example.test')
+
+  await expect(
+    panel.getByText(
+      '招待状態を確認できません。新しい招待を作成せず、最新状態を確認してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    panel.getByRole('button', { name: '招待リンクを作成' }),
+  ).toBeDisabled()
+  await expect(
+    panel.getByRole('button', { name: 'この招待を取り消す' }),
+  ).toHaveCount(0)
+
+  const intentCountBeforeSubmit = state.functionCalls.filter(
+    ({ body, functionName }) =>
+      functionName === 'manage-admin-ledger' && body.stage === 'intent',
+  ).length
+  await emailInput.press('Enter')
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  expect(
+    state.functionCalls.filter(
+      ({ body, functionName }) =>
+        functionName === 'manage-admin-ledger' && body.stage === 'intent',
+    ),
+  ).toHaveLength(intentCountBeforeSubmit)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('explains an invitation conflict and clears the stale confirmation', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstInvitationCommit: false,
+    invitationConflictOnCommit: true,
+  })
+
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByText('教員を追加', { exact: true }).click()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('conflict@example.test')
+  await panel.getByRole('button', { name: '招待リンクを作成' }).click()
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel.getByRole('button', { name: 'この変更を実行' }).click()
+
+  await expect(
+    panel.getByText(
+      'この教員には受諾待ちの招待があります。取り消してから、新しい招待リンクを作成してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(panel.locator('.admin-ledger-confirmation')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      page.evaluate((key) => sessionStorage.getItem(key), pendingStorageKey),
+    )
+    .toBeNull()
+  expect(state.commitBodies).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) =>
+      pathname.includes('/challenge'),
+    ),
+  ).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('keeps the intended change and gives one clear next step after a rejected TOTP code', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstTotpVerification: true,
+  })
+
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByText('教員を追加', { exact: true }).click()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('totp-retry@example.test')
+  await panel.getByRole('button', { name: '招待リンクを作成' }).click()
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel.getByRole('button', { name: 'この変更を実行' }).click()
+
+  await expect(
+    panel.getByText(
+      '認証コードを確認できませんでした。新しい6桁コードを入力して、もう一度実行してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    panel.getByRole('heading', { name: '変更を確認', exact: true }),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveValue('')
+  await expect(panel.getByLabel('6桁コード')).toBeFocused()
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toBeVisible()
+  await expect
+    .poll(() =>
+      page.evaluate((key) => {
+        const raw = sessionStorage.getItem(key)
+        return raw ? JSON.parse(raw).pending?.phase : null
+      }, pendingStorageKey),
+    )
+    .toBe('control')
+  expect(state.ledgerCompleteAttempts).toBe(0)
+  expect(state.commitBodies).toHaveLength(0)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('does not blame the TOTP code when the authentication service is unavailable', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstTotpVerificationWithServiceUnavailable: true,
+  })
+
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByText('教員を追加', { exact: true }).click()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('totp-network@example.test')
+  await panel.getByRole('button', { name: '招待リンクを作成' }).click()
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel.getByRole('button', { name: 'この変更を実行' }).click()
+
+  await expect(
+    panel.getByText(
+      '認証サービスとの通信に失敗しました。コードの正誤は確認されていません。通信状態を確認して、もう一度実行してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveValue('123456')
+  await expect(panel.getByLabel('6桁コード')).toBeFocused()
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toBeVisible()
+  expect(state.ledgerCompleteAttempts).toBe(0)
+  expect(state.commitBodies).toHaveLength(0)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('resumes a verified invitation change without another TOTP challenge', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  const student = studentSession()
+  await installStoredSessions(page, admin, student.storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstInvitationCommit: false,
+    loseFirstLedgerCompletionResponse: true,
+  })
+
+  let panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByText('教員を追加', { exact: true }).click()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('recovery-instructor@example.test')
+  await panel.getByRole('button', { name: '招待リンクを作成' }).click()
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel.getByRole('button', { name: 'この変更を実行' }).click()
+
+  await expect(
+    panel.getByRole('heading', {
+      name: '本人確認は完了しています',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText('通信が一時的に失敗しました。本人確認は完了しています。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText('6桁コードの再入力は不要です。処理を続けてください。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    panel.getByRole('button', { name: '認証済みの処理を続ける' }),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toHaveCount(0)
+  await expect
+    .poll(() =>
+      page.evaluate((key) => {
+        const raw = window.sessionStorage.getItem(key)
+        return raw ? JSON.parse(raw).pending?.phase : null
+      }, pendingStorageKey),
+    )
+    .toBe('completing')
+
+  await page.reload()
+  panel = await openLedger(page)
+  await expect(
+    panel.getByRole('heading', {
+      name: '本人確認は完了しています',
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'キャンセル' })).toHaveCount(0)
+  await panel.getByRole('button', { name: '認証済みの処理を続ける' }).click()
+
+  await expect(
+    panel.getByText('今回だけ表示される招待リンク', { exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => state.ledgerCompleteAttempts).toBe(2)
+  expect(state.ledgerCompleteBodies).toHaveLength(2)
+  expect(state.ledgerCompleteBodies[1]).toEqual(state.ledgerCompleteBodies[0])
+  expect(state.ledgerGrantIssues).toBe(1)
+  expect(state.commitBodies).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) =>
+      pathname.includes('/challenge'),
+    ),
+  ).toHaveLength(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(pageErrors).toEqual([])
 })
 
 test('completes one AI PIN enrollment with one Authenticator challenge and the same request', async ({
