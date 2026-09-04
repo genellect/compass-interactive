@@ -73,8 +73,13 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - if: needs.classify.outputs.docs_only != 'true'
-        run: npm ci
+      - name: Install exact dependencies and run security:audit once
+        if: needs.classify.outputs.docs_only != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --json --audit --color=false |
+            node scripts/ci/verify-npm-ci-audit.mjs
       - if: needs.classify.outputs.docs_only != 'true'
         run: npm run cloud:doctor
       - run: npm run security:secrets
@@ -83,8 +88,6 @@ jobs:
         run: npm run test:phase6-7-docs
       - if: needs.classify.outputs.docs_only != 'true'
         run: node scripts/cloud-handoff-doctor.mjs --contract-only
-      - if: needs.classify.outputs.docs_only != 'true'
-        run: npm run security:audit
       - if: needs.classify.outputs.docs_only != 'true'
         run: npm run typecheck
       - if: needs.classify.outputs.docs_only != 'true'
@@ -155,7 +158,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e:demo:triple
       - run: npm run test:e2e:phase7-26
@@ -196,7 +199,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit
 
       - name: Install Chromium and WebKit
         run: npx playwright install --with-deps chromium webkit
@@ -468,9 +471,8 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    # GitHub Dependency Review requires the dependency graph and GitHub
-    # Advanced Security for private repositories. npm audit remains the
-    # fail-closed dependency gate unless this repository becomes public.
+    # Public pull requests add a diff-specific review to the full-lockfile
+    # fail-closed audit performed once during the quality install.
     needs: classify
     if: ${{ needs.classify.outputs.docs_only != 'true' && github.event_name == 'pull_request' && github.event.repository.visibility == 'public' }}
     permissions:

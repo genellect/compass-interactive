@@ -14,6 +14,7 @@ export const ADMIN_AI_POLICY_PENDING_STORAGE_KEY =
   'compass-interactive-admin-ai-policy-pending-v1'
 
 const ADMIN_INVITATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY = `${ADMIN_AUTH_STORAGE_KEY}-code-verifier`
 
 const PROVIDER_TOKEN_FIELDS = new Set([
   'provider_token',
@@ -141,17 +142,29 @@ export function createAdminAuthFetch(
 
 export const adminAuthStorage = {
   getItem(key: string) {
-    const value = window.localStorage.getItem(key)
+    const storage =
+      key === ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY
+        ? window.sessionStorage
+        : window.localStorage
+    const value = storage.getItem(key)
     if (value === null) return null
     const sanitized = sanitizeAdminAuthStorageValue(value)
-    if (sanitized !== value) window.localStorage.setItem(key, sanitized)
+    if (sanitized !== value) storage.setItem(key, sanitized)
     return sanitized
   },
   removeItem(key: string) {
-    window.localStorage.removeItem(key)
+    const storage =
+      key === ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY
+        ? window.sessionStorage
+        : window.localStorage
+    storage.removeItem(key)
   },
   setItem(key: string, value: string) {
-    window.localStorage.setItem(key, sanitizeAdminAuthStorageValue(value))
+    const storage =
+      key === ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY
+        ? window.sessionStorage
+        : window.localStorage
+    storage.setItem(key, sanitizeAdminAuthStorageValue(value))
   },
 }
 
@@ -226,15 +239,21 @@ export function handoffAdminAppSessionToken(target: Window) {
   return { changed: previousToken !== token, handedOff: true }
 }
 
-export function clearAdminAuthStorage() {
+export function clearAdminTabWorkspaceStorage() {
   clearAdminOperationRequestIds()
-  window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY)
-  window.localStorage.removeItem(`${ADMIN_AUTH_STORAGE_KEY}-code-verifier`)
-  window.localStorage.removeItem(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY)
-  window.sessionStorage.removeItem(ADMIN_APP_SESSION_STORAGE_KEY)
-  window.sessionStorage.removeItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
+  clearAdminAppSessionToken()
   window.sessionStorage.removeItem(ADMIN_LEDGER_PENDING_STORAGE_KEY)
   window.sessionStorage.removeItem(ADMIN_AI_POLICY_PENDING_STORAGE_KEY)
+}
+
+export function clearAdminAuthStorage() {
+  clearAdminTabWorkspaceStorage()
+  window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY)
+  window.localStorage.removeItem(`${ADMIN_AUTH_STORAGE_KEY}-user`)
+  window.localStorage.removeItem(ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY)
+  window.sessionStorage.removeItem(ADMIN_AUTH_CODE_VERIFIER_STORAGE_KEY)
+  window.localStorage.removeItem(ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY)
+  window.sessionStorage.removeItem(ADMIN_OAUTH_ATTEMPT_STORAGE_KEY)
 }
 
 const ADMIN_RETURN_PATHS = new Set(['/admin', '/admin/settings'])

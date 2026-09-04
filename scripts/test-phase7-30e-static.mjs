@@ -744,8 +744,8 @@ assert.doesNotMatch(
 )
 assert.match(
   adminRoute,
-  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*await adminSupabase\.auth[\s\S]*\.signOut\(\{ scope: 'local' \}\)[\s\S]*\.catch\(\(\) => undefined\)[\s\S]*clearGoogleAdminWorkspace\([\s\S]*appSessionToken[\s\S]*return/,
-  'boot-time invalid Google identity state must sign out locally and clear the workspace',
+  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*returnToGoogleReauthentication\([\s\S]*appSessionToken[\s\S]*return/,
+  'boot-time invalid Google identity state must release only the stale Admin tab',
 )
 assert.match(
   browserRunner,

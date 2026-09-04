@@ -1394,18 +1394,18 @@ assert.match(
 )
 assert.match(
   adminRoute,
-  /subscribeGoogleAdminSessionInvalid\(appSessionToken[\s\S]*auth\.signOut\(\{ scope: 'local' \}\)[\s\S]*clearGoogleAdminWorkspace/,
-  'the workspace subscribes once and returns invalid Google sessions to sign-in',
+  /subscribeGoogleAdminSessionInvalid\(appSessionToken[\s\S]*clearGoogleAdminWorkspace\([\s\S]*?invalidatedToken/,
+  'the workspace subscribes once and releases only the invalidated Admin tab',
 )
 assert.match(
   adminRoute,
-  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*auth[\s\S]*\.signOut\(\{ scope: 'local' \}\)[\s\S]*clearGoogleAdminWorkspace\([\s\S]*appSessionToken[\s\S]*return/,
-  'boot-time identity invalidation must also clear Google Auth before sign-in',
+  /restoreGoogleAdminSession\(appSessionToken\)[\s\S]*'aal2_required',[\s\S]*'app_session_invalid',[\s\S]*'identity_invalid',[\s\S]*\.includes\(error\.code\)[\s\S]*returnToGoogleReauthentication\([\s\S]*appSessionToken[\s\S]*return/,
+  'boot-time identity invalidation must release the stale tab before sign-in',
 )
 assert.match(
   adminRoute,
-  /clearGoogleAdminWorkspace[\s\S]*clearAdminAuthStorage\(\)[\s\S]*clearAdminPdfExtractionCache\(\)[\s\S]*setPhase\('signed_out'\)/,
-  'session invalidation clears auth, idempotency and private PDF state locally',
+  /clearGoogleAdminWorkspace[\s\S]*clearAdminTabWorkspaceStorage\(\)[\s\S]*clearAdminPdfExtractionCache\(\)[\s\S]*setPhase\('signed_out'\)/,
+  'session invalidation clears tab state without deleting another tab OAuth transaction',
 )
 assert.match(
   adminRoute,
