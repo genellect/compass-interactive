@@ -15,6 +15,7 @@ const liveRepository = read('src/repositories/supabaseLiveStateRepository.ts')
 const adminRepository = read('src/repositories/supabaseAdminRepository.ts')
 const adminMappers = read('src/repositories/supabase/adminMappers.ts')
 const workflow = read('.github/workflows/ci.yml')
+const npmCiAuditGate = read('scripts/ci/verify-npm-ci-audit.mjs')
 const packageJson = JSON.parse(read('package.json'))
 
 for (const component of [
@@ -111,6 +112,25 @@ for (const required of [
     workflow,
     new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
   )
+}
+assert.match(
+  workflow,
+  /Install exact dependencies and run security:audit once[\s\S]*npm ci --json --audit --color=false \|[\s\S]*node scripts\/ci\/verify-npm-ci-audit\.mjs/,
+  'CI must install and enforce the full-lockfile audit from one registry response',
+)
+assert.equal(
+  [...workflow.matchAll(/npm ci(?:\s+[^\n]*)?/g)]
+    .map(([command]) => command)
+    .filter((command) => !command.includes('--no-audit')).length,
+  1,
+  'CI must not repeat the registry audit after the quality gate',
+)
+for (const required of [
+  /report\?\.audit\?\.vulnerabilities/,
+  /high \+ critical > 0/,
+  /Number\.isInteger/,
+]) {
+  assert.match(npmCiAuditGate, required)
 }
 
 const internalSourceCondition =
