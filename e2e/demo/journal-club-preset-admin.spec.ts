@@ -1198,7 +1198,7 @@ test.describe('Phase 7.27 flag ON', () => {
     expect(pageErrors).toEqual([])
   })
 
-  test('expires an invalid saved Admin session instead of leaving stale controls active', async ({
+  test('expires an invalid saved Admin app session without clearing shared Auth or leaving stale controls active', async ({
     page,
   }) => {
     await installAdminState(page)
@@ -1209,8 +1209,12 @@ test.describe('Phase 7.27 flag ON', () => {
     await expect(
       page.getByRole('heading', { name: '教員ポータル' }),
     ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Googleで続ける' }),
+    ).toBeVisible()
     await expect(page.locator('input[type="password"]')).toHaveCount(0)
     await expect(page.locator('#admin-live')).toHaveCount(0)
+    await expect(page.locator('.admin-workflow')).toHaveCount(0)
     await expect(
       page.getByText(
         '管理者セッションの有効期限が切れました。もう一度ログインしてください。',
@@ -1229,7 +1233,7 @@ test.describe('Phase 7.27 flag ON', () => {
           ),
         })),
       )
-      .toEqual({ appSessionToken: null, authPresent: false })
+      .toEqual({ appSessionToken: null, authPresent: true })
   })
 
   test('explains the shared PDF start guard in teacher-facing language', async ({
