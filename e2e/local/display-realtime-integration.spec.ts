@@ -398,6 +398,9 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       action: string
       url: string
     }> = []
+    const featureDisabledStatusConsoleMessage =
+      'Failed to load resource: the server responded with a status of 409 (Conflict)'
+    const featureDisabledStatusConsoleErrors: string[] = []
     let captureFeatureDisabledStatusConflicts = false
     displayPage.on('request', (request) => {
       if (displayStatusAction(request) !== null)
@@ -416,6 +419,15 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         response.status() === 409
       ) {
         featureDisabledStatusConflicts.push({ action, url: response.url() })
+      }
+    })
+    displayPage.on('console', (message) => {
+      if (
+        captureFeatureDisabledStatusConflicts &&
+        message.type() === 'error' &&
+        message.text() === featureDisabledStatusConsoleMessage
+      ) {
+        featureDisabledStatusConsoleErrors.push(message.location().url)
       }
     })
     const realtimeFrames: string[] = []
@@ -784,13 +796,25 @@ test('claimed cross-browser Display receives private page/caption acceleration a
           (conflict) => conflict.url === featureDisabledStatusConflict.url(),
         ),
       ).toBe(true)
+      // Mobile Chromium can surface one failed fetch twice in the console.
+      // Bound that browser-only duplication to the exact observed responses.
+      expect(featureDisabledStatusConsoleErrors.length).toBeGreaterThanOrEqual(
+        featureDisabledStatusConflicts.length,
+      )
+      expect(featureDisabledStatusConsoleErrors.length).toBeLessThanOrEqual(
+        featureDisabledStatusConflicts.length * 2,
+      )
+      expect(
+        featureDisabledStatusConsoleErrors.every(
+          (url) => url === featureDisabledStatusConflict.url(),
+        ),
+      ).toBe(true)
       await displaySafety.expectConsoleErrors(
         {
-          message:
-            'Failed to load resource: the server responded with a status of 409 (Conflict)',
+          message: featureDisabledStatusConsoleMessage,
           url: featureDisabledStatusConflict.url(),
         },
-        featureDisabledStatusConflicts.length,
+        featureDisabledStatusConsoleErrors.length,
       )
 
       await expect
