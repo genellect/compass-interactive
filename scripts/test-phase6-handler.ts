@@ -352,7 +352,8 @@ test('a finalized preflight replay returns without authorization or paid dispatc
       data: {
         accepted: true,
         resultStatus: 'final',
-        windowStatus: 'published',
+        windowId: uuid(6),
+        windowStatus: 'succeeded',
       },
       error: null,
     },
@@ -362,4 +363,80 @@ test('a finalized preflight replay returns without authorization or paid dispatc
   assert.equal((await response.json()).idempotentReplay, true)
   assert.equal(h.providerCalls.length, 0)
   assert.equal(h.rpcCalls.length, 2)
+})
+
+for (const windowStatus of ['succeeded', 'skipped', 'discarded']) {
+  test(`prepared receipt replay for ${windowStatus} returns an ACK without paid dispatch`, async () => {
+    const h = harness({
+      preflight: {
+        data: {
+          accepted: true,
+          idempotentReplay: true,
+          refreshRequired: true,
+          resultStatus: 'prepared',
+          windowId: uuid(6),
+          windowStatus,
+        },
+        error: null,
+      },
+    })
+    const response = await h.invoke()
+    const body = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(body))
+    assert.equal(body.idempotentReplay, true)
+    assert.equal(body.refreshRequired, true)
+    assert.equal(body.results, null)
+    assert.equal(body.skipped, windowStatus === 'skipped')
+    assert.equal(body.windowId, uuid(6))
+    assert.equal(h.providerCalls.length, 0)
+    assert.deepEqual(
+      h.rpcCalls.map((call) => call.name),
+      [
+        'reap_stale_google_ai_provider_dispatches_v1',
+        'prepare_google_admin_summary_window_v1',
+      ],
+    )
+  })
+}
+
+for (const windowStatus of ['failed', 'running', 'pending']) {
+  test(`${windowStatus} refresh is not a terminal success or a new paid attempt`, async () => {
+    const h = harness({
+      preflight: {
+        data: {
+          accepted: true,
+          idempotentReplay: true,
+          refreshRequired: true,
+          resultStatus: 'prepared',
+          windowStatus,
+        },
+        error: null,
+      },
+    })
+    const response = await h.invoke()
+    assert.equal(response.status, 409)
+    assert.equal(
+      (await response.json()).code,
+      'summary_preflight_refresh_required',
+    )
+    assert.equal(h.providerCalls.length, 0)
+    assert.equal(h.rpcCalls.length, 2)
+  })
+}
+
+test('context refresh without a replay remains rejected', async () => {
+  const h = harness({
+    preflight: {
+      data: {
+        accepted: true,
+        idempotentReplay: false,
+        refreshRequired: true,
+        resultStatus: 'prepared',
+        windowStatus: 'succeeded',
+      },
+      error: null,
+    },
+  })
+  assert.equal((await h.invoke()).status, 409)
+  assert.equal(h.providerCalls.length, 0)
 })

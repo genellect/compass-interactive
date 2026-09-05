@@ -445,9 +445,11 @@ type SummaryFunctionResponse = {
   ok?: boolean
   published?: boolean
   reason?: string
+  refreshRequired?: boolean
   results?: RawSummaryResults
   runToken?: string
   skipped?: boolean
+  windowId?: string
 }
 
 type ManagePdfDocumentsResponse = {
@@ -1019,6 +1021,58 @@ export const supabaseAdminRepository = {
     }
     if (!data?.ok) {
       throw new Error(data?.message ?? '講義要約の生成に失敗しました。')
+    }
+    if (data.refreshRequired) {
+      // A terminal receipt acknowledges the same attempt; never regenerate it.
+      const refreshed = await invokeEdgeFunction<SummaryFunctionResponse>(
+        'manage-lecture-summaries',
+        {
+          body: {
+            action: 'status',
+            adminToken: request.adminToken,
+            lectureSessionId: request.lectureSessionId,
+          },
+          timeout: ADMIN_FUNCTION_TIMEOUT_MS,
+        },
+      )
+      const recoveryMessage =
+        '作成済みの要約を確認できませんでした。同じ処理の結果を再確認します。'
+      if (refreshed.error || !refreshed.data?.ok || !refreshed.data.results) {
+        throw new Error(recoveryMessage)
+      }
+      const results = toAdminSummaryResults(refreshed.data.results)
+      const targetWindow = results.windows.find(
+        (window) =>
+          window.id === data.windowId &&
+          window.windowIndex === request.windowIndex,
+      )
+      const rawSummary = refreshed.data.results.summaries?.find(
+        (item) => item.window_id === data.windowId,
+      )
+      const summary = results.summaries.find(
+        (item) =>
+          item.id === rawSummary?.id &&
+          item.windowIndex === request.windowIndex,
+      )
+      if (
+        results.run?.id !== request.runToken.split('.')[0] ||
+        !targetWindow ||
+        !['succeeded', 'skipped', 'discarded'].includes(targetWindow.status) ||
+        (targetWindow.status === 'succeeded' && !summary)
+      ) {
+        throw new Error(recoveryMessage)
+      }
+      return {
+        actualMicrousd: Number(data.actualMicrousd ?? 0),
+        published: summary?.publication?.visibility === 'public',
+        results,
+        skipped: targetWindow.status === 'skipped',
+      }
+    }
+    if (!data.results) {
+      throw new Error(
+        '要約の結果を受信できませんでした。同じ処理の結果を再確認します。',
+      )
     }
     return {
       actualMicrousd: Number(data.actualMicrousd ?? 0),
