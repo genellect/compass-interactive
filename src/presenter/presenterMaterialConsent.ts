@@ -88,3 +88,12 @@ export function rememberPresenterMaterialConsent(key: string): void {
     // Storage restrictions only require another material check next time.
   }
 }
+
+export function clearPresenterMaterialPreferences(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(MANUAL_MODE_KEY)
+  } catch {
+    /* No Presenter preference is required for a safe manual workflow. */
+  }
+}

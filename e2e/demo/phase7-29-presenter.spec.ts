@@ -26,6 +26,8 @@ const documentVersion = 'a'.repeat(64)
 const lecturePublicId = 'phase729-public'
 const pairingTicket = `eyJhbGciOiJIUzI1NiJ9.${'b'.repeat(43)}`
 const workerAccessToken = `eyJhbGciOiJIUzI1NiJ9.${'c'.repeat(43)}`
+const privacyConsentStorageKey = 'compass-presenter-privacy-consent-v1'
+const privacyPolicyVersion = '2026-09-06'
 
 type PresenterAction = 'confirm' | 'issue' | 'revoke' | 'status'
 
@@ -233,14 +235,25 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   })
 }
 
-async function installAdminState(page: Page) {
+async function installAdminState(
+  page: Page,
+  privacyConsent: 'accepted' | 'missing' | 'outdated' = 'accepted',
+) {
+  const localStorage: Record<string, string> = {
+    'compass-interactive-lecture-runtime-mode': 'live',
+    'compass-interactive-lecture-session-id': lectureSessionId,
+    'compass-interactive-lecture-status': 'open',
+    'compass-interactive-lecture-title': 'Phase 7.29 Presenter E2E',
+  }
+  if (privacyConsent !== 'missing') {
+    localStorage[privacyConsentStorageKey] = JSON.stringify({
+      acceptedAt: '2026-09-06T00:00:00.000Z',
+      policyVersion:
+        privacyConsent === 'accepted' ? privacyPolicyVersion : '2026-09-05',
+    })
+  }
   await installMockGoogleAdminSession(page, googleAdmin, {
-    localStorage: {
-      'compass-interactive-lecture-runtime-mode': 'live',
-      'compass-interactive-lecture-session-id': lectureSessionId,
-      'compass-interactive-lecture-status': 'open',
-      'compass-interactive-lecture-title': 'Phase 7.29 Presenter E2E',
-    },
+    localStorage,
   })
 }
 
@@ -734,6 +747,117 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
       .map((violation) => violation.id),
   ).toEqual([])
 }
+
+test('first use explains data handling, blocks ticket and inspect, then resumes from one keyboard action', async ({
+  page,
+}) => {
+  const loopbackRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackRequests.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page, 'outdated')
+  const state = await installNetworkMocks(page)
+
+  await page.goto('/admin')
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  await expect(disclosure).toContainText(
+    'PPTX本体、本文、文字、ノート、画像、動画は送信しません',
+  )
+  await expect(
+    disclosure.getByRole('link', { name: 'プライバシー情報を確認' }),
+  ).toHaveAttribute('href', '/presenter-bridge/privacy/')
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await page.waitForTimeout(250)
+  expect(state.presenterActions).toEqual([])
+  expect(loopbackRequests).toEqual([])
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth + 1,
+      ),
+    )
+    .toBe(true)
+  await expectNoSeriousAccessibilityViolations(page)
+
+  const accept = disclosure.getByRole('button', {
+    name: '同意してPowerPoint連携を開始',
+  })
+  await accept.focus()
+  await expect(accept).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  expect(loopbackRequests).toContain('/v1/connect')
+  const stored = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    privacyConsentStorageKey,
+  )
+  const parsed = JSON.parse(stored ?? 'null') as Record<string, unknown> | null
+  expect(parsed).toEqual({
+    acceptedAt: expect.stringMatching(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    ),
+    policyVersion: privacyPolicyVersion,
+  })
+})
+
+test('revoking privacy consent disconnects before clearing every PowerPoint browser preference', async ({
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.evaluate(() => {
+    localStorage.setItem('compass-presenter-manual-mode-v1', 'f'.repeat(64))
+  })
+
+  await page
+    .getByRole('button', { name: '同意を取り消して保存情報を削除' })
+    .click()
+
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+  )
+  expect(state.presenterActions.at(-1)).toBe('revoke')
+  expect(loopbackActions).toContain('/v1/disconnect')
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  expect(
+    await page.evaluate(() => ({
+      manualMode: localStorage.getItem('compass-presenter-manual-mode-v1'),
+      material: localStorage.getItem('compass-presenter-material-consent-v1'),
+      privacy: localStorage.getItem('compass-presenter-privacy-consent-v1'),
+    })),
+  ).toEqual({ manualMode: null, material: null, privacy: null })
+  await page.waitForTimeout(1_100)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await page
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(2)
+})
 
 test('reviews, explicitly confirms, locks manual PDF controls, and hands back safely', async ({
   page,

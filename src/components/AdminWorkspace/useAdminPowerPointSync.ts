@@ -15,6 +15,7 @@ import type {
   PresenterPresentation,
 } from '../../presenter/presenterBridgeProtocol'
 import {
+  clearPresenterMaterialPreferences,
   getPresenterMaterialConsentKey,
   getPresenterManualModeKey,
   hasPresenterManualMode,
@@ -22,11 +23,17 @@ import {
   rememberPresenterMaterialConsent,
   setPresenterManualMode,
 } from '../../presenter/presenterMaterialConsent'
+import {
+  clearPresenterPrivacyConsent,
+  readPresenterPrivacyConsent,
+  rememberPresenterPrivacyConsent,
+} from '../../presenter/presenterPrivacyConsent'
 
 export type PowerPointSyncPhase =
   | 'active'
   | 'activating'
   | 'checking'
+  | 'consent'
   | 'error'
   | 'idle'
   | 'recovery'
@@ -173,6 +180,9 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const epochRef = useRef(0)
   const lastCommittedPageRef = useRef<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [privacyConsentAccepted, setPrivacyConsentAccepted] = useState(
+    () => readPresenterPrivacyConsent() !== null,
+  )
   const [waitingForReadiness, setWaitingForReadiness] = useState(false)
   const [pageVisible, setPageVisible] = useState(
     () => document.visibilityState === 'visible',
@@ -197,6 +207,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const autoConfirmRef = useRef(false)
   const autoAttemptedRef = useRef<string | null>(null)
   const previousLectureRef = useRef<string | null>(null)
+  const consentResumeRef = useRef<'automatic' | 'manual' | null>(null)
   const credentialRef = useRef(adminToken)
   const mountedRef = useRef(true)
 
@@ -574,6 +585,14 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         materialConsentScope,
       } = inputRef.current
       const display = displayState
+      const privacyConsent = readPresenterPrivacyConsent()
+      setPrivacyConsentAccepted(privacyConsent !== null)
+      if (enabled && activeLectureSessionId && !privacyConsent) {
+        consentResumeRef.current = automatic ? 'automatic' : 'manual'
+        setMessage('')
+        setPhase('consent')
+        return
+      }
       if (enabled && activeLectureSessionId && lectureStatus === 'draft') {
         const epoch = ++epochRef.current
         operationRef.current = true
@@ -927,6 +946,25 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     [startAttempt],
   )
 
+  const acceptPrivacyConsent = useCallback(() => {
+    const consent = rememberPresenterPrivacyConsent()
+    if (!consent) {
+      setPrivacyConsentAccepted(false)
+      setPhase('consent')
+      setMessage(
+        '同意をブラウザに保存できませんでした。ブラウザのサイトデータ設定を確認してください。',
+      )
+      return
+    }
+    setPrivacyConsentAccepted(true)
+    setMessage('')
+    manualPausedRef.current = false
+    const resume = consentResumeRef.current
+    consentResumeRef.current = null
+    if (resume) void start(resume === 'automatic')
+    else setPhase('idle')
+  }, [start])
+
   const confirmConnection = useCallback(async () => {
     if (
       manualModeKeyRef.current &&
@@ -1173,8 +1211,8 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     return () => window.clearTimeout(timer)
   }, [busy, observedNativeFault, readyKey, start])
 
-  const stop = useCallback(async () => {
-    if (operationRef.current) return
+  const stop = useCallback(async (): Promise<boolean> => {
+    if (operationRef.current) return false
     reconnectFaultedRef.current = false
     setObservedNativeFault(false)
     setWaitingForReadiness(false)
@@ -1188,7 +1226,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     if (!connectionId) {
       clearLocalState()
       setPhase('idle')
-      return
+      return true
     }
     operationRef.current = true
     setBusy(true)
@@ -1198,20 +1236,20 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         adminToken,
         connectionId,
       })
-      if (epoch !== epochRef.current || !mountedRef.current) return
+      if (epoch !== epochRef.current || !mountedRef.current) return false
       if (localSession) {
         await presenterBridgeClient
           .disconnect(localSession)
           .catch(() => undefined)
       }
-      if (epoch !== epochRef.current || !mountedRef.current) return
+      if (epoch !== epochRef.current || !mountedRef.current) return false
       epochRef.current += 1
       clearLocalState()
       completed = true
       setMessage('手動操作へ切り替えました。')
       setPhase('idle')
     } catch {
-      if (epoch !== epochRef.current || !mountedRef.current) return
+      if (epoch !== epochRef.current || !mountedRef.current) return false
       setMessage(
         '同期を停止できませんでした。状態を維持しているため、もう一度お試しください。',
       )
@@ -1221,7 +1259,20 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         setBusy(false)
       }
     }
+    return completed
   }, [adminToken, clearLocalState])
+
+  const revokePrivacyConsent = useCallback(async () => {
+    if (operationRef.current) return
+    if (connectionIdRef.current && !(await stop())) return
+    manualPausedRef.current = true
+    consentResumeRef.current = 'manual'
+    clearPresenterMaterialPreferences()
+    clearPresenterPrivacyConsent()
+    setPrivacyConsentAccepted(false)
+    setMessage('')
+    setPhase('consent')
+  }, [stop])
 
   const manualNavigationLocked =
     phase === 'active' ||
@@ -1230,6 +1281,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
 
   return {
     confirm,
+    acceptPrivacyConsent,
     busy,
     watchingConnection,
     manualCode,
@@ -1239,6 +1291,8 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     message,
     phase,
     presentation,
+    privacyConsentAccepted,
+    revokePrivacyConsent,
     serverConnection,
     start,
     stop,
