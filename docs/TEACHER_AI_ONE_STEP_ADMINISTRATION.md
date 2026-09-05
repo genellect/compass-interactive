@@ -1,6 +1,6 @@
 # One-step teacher and AI administration
 
-Status: Implementation in progress; not yet deployed
+Status: One-step administration deployed; live summary acceptance in progress
 Approved: 2026-09-05
 Baseline: `3354582eb8b17a510a27422cdfb356944d400237`
 
@@ -65,3 +65,16 @@ both child-grant and operation-start RPCs. The reservation's
 `estimatedOutputTokens` is the bounded provider maximum; a missing property must
 not silently disappear from serialized RPC arguments and appear as an
 authorization failure. Test the wire binding as well as helper calculations.
+
+Execute the actual summary handler and its shared modules in the non-live gate.
+Mock only remote authentication, RPC and provider boundaries; helper-only or
+source-pattern tests cannot prove that the request reaches dispatch and saves
+its result. Cover successful publication, an in-progress replay, HTTP429,
+ambiguous timeout, malformed output and a finalized replay without paid retry.
+
+A failed request that did not receive dispatch ownership must not zero-settle
+another retry's dispatched operation. Enforce this atomically in the existing
+summary failure RPC under the start-request serialization lock. Preserve
+undispatched reservation release, claim-ID-backed HTTP429 settlement, reserved
+timeout accounting and immutable already-settled replay. No new scheduler,
+permission or UI confirmation is required for this correction.

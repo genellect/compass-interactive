@@ -3,6 +3,48 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 SELECT no_plan();
 
+-- Probe settlement without consuming the fixture needed by the successful
+-- completion below. The subtransaction rolls back data, not the TAP counter.
+CREATE FUNCTION pg_temp.probe_summary_failure(
+  dispatched boolean,
+  unknown_usage boolean DEFAULT false
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  result jsonb;
+  operation uuid := current_setting('compass.test.c2_summary_operation_e')::uuid;
+  reserved public.ai_usage_ledger%ROWTYPE;
+BEGIN
+  BEGIN
+    SELECT * INTO STRICT reserved FROM public.ai_usage_ledger WHERE id = operation;
+    result := public.fail_google_admin_summary_window_operation_v1(
+      repeat('1',64),
+      '00000000-0000-4000-8000-00000000e202'::uuid,
+      '00000000-0000-4000-8000-00000000e203'::uuid,
+      'https://accounts.google.com', repeat('a',64), 1,
+      '00000000-0000-4000-8000-00000000e27f'::uuid, operation, 'failed',
+      CASE WHEN unknown_usage THEN reserved.reserved_microusd ELSE 0 END,
+      CASE WHEN unknown_usage THEN reserved.reserved_input_tokens ELSE 0 END,
+      CASE WHEN unknown_usage THEN reserved.reserved_output_tokens ELSE 0 END,
+      CASE WHEN dispatched THEN '00000000-0000-4000-8000-00000000e27f' ELSE NULL END,
+      CASE WHEN unknown_usage THEN 'provider_timeout_ambiguous' ELSE 'provider_http_429' END
+    );
+    SELECT result || jsonb_build_object(
+      'settled', accounting_settled_at IS NOT NULL,
+      'operationStatus', status,
+      'actualCost', actual_microusd,
+      'expectedCost', CASE WHEN unknown_usage THEN reserved.reserved_microusd ELSE 0 END
+    ) INTO result FROM public.ai_usage_ledger WHERE id = operation;
+    RAISE EXCEPTION 'rollback synthetic settlement probe' USING ERRCODE = 'ZX001';
+  EXCEPTION WHEN SQLSTATE 'ZX001' THEN
+    NULL;
+  END;
+  RETURN result;
+END;
+$$;
+
 CREATE FUNCTION pg_temp.seed_c2_admin_control_grant(
   target_admin_session_id uuid,
   target_action text,
@@ -2923,6 +2965,15 @@ SELECT ok(
   ),
   'the replacement child starts exactly one retry operation'
 );
+RESET ROLE;
+SELECT ok(
+  (SELECT result ->> 'operationStatus' = 'failed'
+    AND result ->> 'settled' = 'true'
+    AND result ->> 'actualCost' = '0'
+   FROM pg_temp.probe_summary_failure(false) AS result),
+  'a summary failure before dispatch releases its unused reservation'
+);
+SET ROLE service_role;
 SELECT is(
   public.claim_google_ai_provider_dispatch_v1(
     repeat('1',64),
@@ -2938,6 +2989,42 @@ SELECT is(
   'true',
   'only the recovered retry receives provider dispatch authority'
 );
+SELECT throws_ok(
+  $$SELECT public.fail_google_admin_summary_window_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e27f'::uuid,
+    current_setting('compass.test.c2_summary_operation_e')::uuid,
+    'failed', 0, 0, 0, NULL, 'summary_provider_failed'
+  )$$,
+  'P7335',
+  'Google summary failure lacks dispatch ownership',
+  'a lost claim response cannot zero-settle a concurrent authorized dispatch'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT status = 'running' AND accounting_settled_at IS NULL
+   FROM public.ai_usage_ledger
+   WHERE id = current_setting('compass.test.c2_summary_operation_e')::uuid),
+  'rejected late failure leaves the live operation unmodified'
+);
+SELECT ok(
+  (SELECT result ->> 'operationStatus' = 'failed'
+    AND result ->> 'settled' = 'true'
+    AND result ->> 'actualCost' = '0'
+   FROM pg_temp.probe_summary_failure(true) AS result),
+  'a real dispatched HTTP429 can still settle zero usage with its claim ID'
+);
+SELECT ok(
+  (SELECT result ->> 'operationStatus' = 'failed'
+    AND result ->> 'settled' = 'true'
+    AND result ->> 'actualCost' = result ->> 'expectedCost'
+   FROM pg_temp.probe_summary_failure(true, true) AS result),
+  'ambiguous provider timeout still settles the conservative reservation'
+);
+SET ROLE service_role;
 SELECT ok(
   (
     SELECT result ->> 'accepted' = 'true'
@@ -2965,6 +3052,19 @@ SELECT ok(
     ) AS completed
   ),
   'a recovered authorized retry saves its result without another MFA prompt'
+);
+SELECT is(
+  public.fail_google_admin_summary_window_operation_v1(
+    repeat('1',64),
+    '00000000-0000-4000-8000-00000000e202'::uuid,
+    '00000000-0000-4000-8000-00000000e203'::uuid,
+    'https://accounts.google.com', repeat('a',64), 1,
+    '00000000-0000-4000-8000-00000000e27f'::uuid,
+    current_setting('compass.test.c2_summary_operation_e')::uuid,
+    'failed', 0, 0, 0, NULL, 'summary_provider_failed'
+  ) ->> 'idempotentReplay',
+  'true',
+  'a late failure replay cannot alter already settled summary output'
 );
 RESET ROLE;
 SELECT ok(
