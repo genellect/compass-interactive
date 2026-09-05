@@ -18,7 +18,7 @@ Everything below is derived from the implementation — the job composition in `
 | `security:audit`                                   | **no**                          | yes                                                         |
 | `typecheck` / `typecheck:phase3` / `typecheck:e2e` | yes                             | yes                                                         |
 | `lint`                                             | yes                             | yes                                                         |
-| `test:ci:nonlive` (75 groups)                      | yes                             | yes                                                         |
+| `test:ci:nonlive` (77 groups)                      | yes                             | yes                                                         |
 | `build`                                            | yes, with the local environment | yes, with the full production feature-topology `VITE_*` set |
 | `test:phase6-9-bundle`                             | **no**                          | yes                                                         |
 | `git diff --check`                                 | **no**                          | yes                                                         |
@@ -151,16 +151,16 @@ documentation and committed-diff whitespace checks; browser, local Supabase,
 Dependency Review and CodeQL jobs are skipped successfully, while the two
 Presenter contexts complete as lightweight Ubuntu jobs without native work.
 
-## 5. What the 116 `test:*` scripts actually divide into
+## 5. What the 119 `test:*` scripts actually divide into
 
-| Count | Kind                               | Where it runs                                                                                                                                                                                         |
-| ----: | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|    75 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                        |
-|    21 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 9 concurrency / lock-order suites, 5 `*-upgrade` suites, 3 local Edge suites and 4 local E2E entries                                                   |
-|    11 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29/7.30 flag-ON/OFF suites and the bounded Phase 7.30D Chromium/WebKit recovery gate                                                   |
-|     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                         |
-|     2 | **forbidden**                      | `test:phase5-openai-live`, `test:phase6-openai-live`. `scripts/test-pdf-sync-hosted.mjs` has no npm script and is forbidden for the same reason                                                       |
-|     6 | entrypoint variants and duplicates | `test:ci:nonlive` (the aggregator), `test:e2e:demo`, `test:e2e:demo:direct`, `test:e2e:local`, `test:e2e:local:direct`, and `test:phase6-6-operator-edge` (already invoked by `test:phase6-6-static`) |
+| Count | Kind                               | Where it runs                                                                                                                                                                                                                                                               |
+| ----: | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|    77 | in `safeTestScripts`               | automatically inside `npm run test:ci:nonlive`; no need to invoke individually                                                                                                                                                                                              |
+|    21 | needs the local Supabase stack     | invoked directly by CI's `local-supabase` job: 9 concurrency / lock-order suites, 5 `*-upgrade` suites, 3 local Edge suites and 4 local E2E entries                                                                                                                         |
+|    11 | demo browser                       | CI's `demo-e2e` job: `test:e2e:demo:triple`, Phase 7.26/7.27/7.29/7.30 flag-ON/OFF suites and the bounded Phase 7.30D Chromium/WebKit recovery gate                                                                                                                         |
+|     1 | post-build                         | `test:phase6-9-bundle`, after the production-topology `build`                                                                                                                                                                                                               |
+|     2 | **forbidden**                      | `test:phase5-openai-live`, `test:phase6-openai-live`. `scripts/test-pdf-sync-hosted.mjs` has no npm script and is forbidden for the same reason                                                                                                                             |
+|     7 | entrypoint variants and duplicates | `test:ci:nonlive` (the aggregator), `test:e2e:demo`, `test:e2e:demo:direct`, `test:e2e:local`, `test:e2e:local:direct`, `test:phase6-6-operator-edge` (already invoked by `test:phase6-6-static`), and `test:phase7-30d-edge` (already invoked by `test:phase7-30d-static`) |
 
 The phase-numbered names describe _when a suite was written_, not what it covers today. Route by the surface you changed, using the table in §2, not by matching a phase number to a directory.
 

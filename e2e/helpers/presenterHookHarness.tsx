@@ -1,5 +1,6 @@
 /* oxlint-disable react/only-export-components -- Browser-only harness needs imperative mount/update controls. */
 import { useState } from 'react'
+import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { useAdminPowerPointSync } from '../../src/components/AdminWorkspace/useAdminPowerPointSync'
 
@@ -49,6 +50,13 @@ export function mountPresenterHookHarness(initial: Input) {
   const element = document.createElement('div')
   document.body.append(element)
   createRoot(element).render(<Harness initial={initial} />)
+}
+
+export function mountPresenterHookHarnessSynchronously(initial: Input) {
+  const element = document.createElement('div')
+  document.body.append(element)
+  const root = createRoot(element)
+  flushSync(() => root.render(<Harness initial={initial} />))
 }
 
 export function updatePresenterHookHarness(patch: Partial<Input>) {

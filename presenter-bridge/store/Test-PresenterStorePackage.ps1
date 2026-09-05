@@ -10,7 +10,7 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{40}$')][string] $SourceCommit,
     [Parameter(Mandatory)][ValidateSet('PARTNER_CENTER_SUBMISSION_INPUT_UNSIGNED', 'UNSIGNED_DEVELOPMENT_ONLY')]
     [string] $ExpectedStatus,
-    [Parameter(Mandatory)][ValidateSet('MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS', 'ADDITIONAL_LICENSE_TERMS', 'NOT_SELECTED_UNSIGNED_DEVELOPMENT_ONLY')]
+    [Parameter(Mandatory)][ValidateSet('MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS', 'NOT_SELECTED_UNSIGNED_DEVELOPMENT_ONLY')]
     [string] $ExpectedLicenseTermsMode,
     [Parameter(Mandatory)][object[]] $ExpectedNoticeFiles,
     [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string] $ExpectedPublishedFilesManifestSha256
@@ -53,6 +53,12 @@ function Get-PublishedFilesManifestSha256([object[]] $Entries) {
 }
 
 Assert-StoreVersion $Version
+if (($ExpectedStatus -eq 'PARTNER_CENTER_SUBMISSION_INPUT_UNSIGNED' -and
+        $ExpectedLicenseTermsMode -cne 'MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS') -or
+    ($ExpectedStatus -eq 'UNSIGNED_DEVELOPMENT_ONLY' -and
+        $ExpectedLicenseTermsMode -cne 'NOT_SELECTED_UNSIGNED_DEVELOPMENT_ONLY')) {
+    throw 'The expected license-terms mode does not match the Store build status.'
+}
 if ($PublisherDisplayName -match '[\r\n]' -or
     $PublisherDisplayName -notmatch '^\S.*\S$|^\S$') {
     throw 'PublisherDisplayName must be non-empty and cannot contain CR or LF.'
@@ -143,6 +149,11 @@ try {
     Assert-Exact $metadata.LicenseTermsMode $ExpectedLicenseTermsMode 'License terms mode'
     Assert-Exact $metadata.MakeAppxVersion $makeAppxVersion.ToString() 'MakeAppx version'
     Assert-Exact $metadata.MakeAppxSha256.ToUpperInvariant() $makeAppxSha256 'MakeAppx hash'
+    Assert-Exact $metadata.BuildIsolation 'NEW_OUTPUT_ROOT_ONLY' 'Build isolation status'
+    Assert-Exact $metadata.OutputRootBoundary 'NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT' 'Output root boundary'
+    Assert-Exact $metadata.DotnetArtifactsPath 'work/dotnet-artifacts' 'Isolated .NET artifacts path'
+    Assert-Exact $metadata.RestorePackagesPath 'work/nuget-packages' 'Isolated restore packages path'
+    Assert-Exact $metadata.PublishPath 'work/publish' 'Isolated publish path'
     Assert-Exact $metadata.MinimumOsBuild 26100 'Minimum accepted OS build'
     Assert-Exact $metadata.UpdateContinuityAcceptedMinimumOsBuild 26100 'Accepted update-continuity OS build'
 
@@ -180,10 +191,6 @@ try {
     foreach ($requiredNoticeKind in @('COMPASS_BINARY_NOTICE', 'COMPASS_THIRD_PARTY_NOTICES', 'DOTNET_LICENSE', 'DOTNET_THIRD_PARTY_NOTICES')) {
         if (!$expectedByKind.ContainsKey($requiredNoticeKind)) { throw "Required notice input is missing: $requiredNoticeKind" }
     }
-    if ($ExpectedLicenseTermsMode -eq 'ADDITIONAL_LICENSE_TERMS' -and !$expectedByKind.ContainsKey('ADDITIONAL_LICENSE_TERMS')) {
-        throw 'Additional license terms mode requires the exact terms file in the package.'
-    }
-
     $allowedPackageFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($path in $publishedPaths) { $null = $allowedPackageFiles.Add($path) }
     foreach ($path in @(

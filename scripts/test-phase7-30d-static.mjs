@@ -246,8 +246,8 @@ assert.match(
 )
 assert.match(
   presenterRelease,
-  /new Google account used only by the Microsoft Store certification[\s\S]*synthetic 12-page lecture[\s\S]*Never place an owner password[\s\S]*TOTP seed[\s\S]*recovery code[\s\S]*Presenter capability[\s\S]*fourteen-day absolute membership expiry/,
-  'the Store runbook must define isolated reviewer data and revocation boundaries',
+  /publisher-controlled Google test account only for Microsoft Store[\s\S]*synthetic 12-page lecture[\s\S]*temporary username and[\s\S]*password directly in protected Partner Center[\s\S]*reviewer enrolls the app's normal TOTP factor[\s\S]*fourteen-day\s+absolute membership expiry/,
+  'the Store runbook must define the isolated account, protected credentials, reviewer-enrolled TOTP and bounded expiry',
 )
 assert.match(
   migration,

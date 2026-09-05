@@ -1,8 +1,20 @@
 # Phase 7.29 Cloud Rescue and Dormant Rollout
 
-Status: Production
+Status: Historical 7.29A/B dormant-placement record; not a current production
+runbook
 Scope: Phase 7.29A canonical rescue and Phase 7.29B default-OFF hosted placement
 Last verified: 2026-08-09
+
+> **Historical boundary:** This document records the 2026-08-09 rescue and
+> dormant baseline. Its `.invalid` endpoint, undeployed machine endpoint,
+> absent Gateway route, Direct/Velopack signing and update-feed statements
+> describe that point in time. Do not use them as the current publication
+> sequence. Version 1 now uses the fixed
+> `presenter-api.yuto-matsui.com` Gateway and Microsoft Store x64 MSIX only.
+> Follow
+> [`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+> [`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+> for current Store placement, certification, canary, publication and rollback.
 
 ## Release meaning
 
@@ -36,8 +48,10 @@ The rescued implementation keeps these boundaries:
 - server pairing and bearer capabilities are short-lived, lecture/deck bound,
   replay-fenced and never placed in a URL or browser storage; the installation
   digest is mismatch metadata, not proof of possession;
-- the native remote endpoint is pinned to the canonical Supabase host, and
-  slideshow/COM observation loss faults and revokes within a bounded grace;
+- the recovered native endpoint was pinned directly to the canonical Supabase
+  host at that historical stage; the current fixed Cloudflare Gateway route
+  supersedes that transport, while slideshow/COM observation loss still faults
+  and revokes within a bounded grace;
 - public Presenter tables have RLS, no anon/authenticated grants and no Realtime
   publication; service RPCs are invoker-security and service-role only;
 - one active connection per lecture, server-time expiry, sequence/idempotency,
@@ -122,15 +136,22 @@ Rollback is operational and non-destructive:
 Dropping tables or down-migrating during an incident is prohibited. The old
 manual PDF path is the recovery path.
 
-## Activation HOLD
+## Historical activation HOLD
 
-Actual feature activation remains HOLD until a signed per-user installer,
-safe update/rollback/uninstall, SmartScreen, Office x86/x64/build coverage, at
-least 500 real next/back/jump transitions, restart/COM-release behavior,
-Edge/Chrome production HTTPS-to-loopback/PNA, hostile-origin rejection, usable
-manual recovery, venue Extend display and teacher UX approval are recorded.
+The conditions below record the 7.29B/C decision at that time. The current
+equivalents are Partner Center identity, WACK, `runFullTrust` approval, Store
+certification/signing, no-added-auth Store acquisition and the final
+Office/browser/venue/rendered-latency gates in the Store runbooks.
 
-The 7.29C source adds asymmetric per-install proof of possession, a dedicated
+At that time, feature activation remained HOLD until a Direct signed per-user
+installer, safe update/rollback/uninstall, SmartScreen, Office x86/x64/build
+coverage, at least 500 real next/back/jump transitions, restart/COM-release
+behavior, Edge/Chrome production HTTPS-to-loopback/PNA, hostile-origin
+rejection, usable manual recovery, venue Extend display and teacher UX approval
+were recorded. The Direct distribution conditions have since been superseded
+by the Store conditions above.
+
+The 7.29C source added asymmetric per-install proof of possession, a dedicated
 fixed-upstream Cloudflare Gateway, application/database rate protection,
 bounded cleanup and native recovery input. These controls remain unaccepted
 until the final candidate passes local integration plus Hosted, Device and
@@ -141,14 +162,18 @@ The `presenter-bridge-session` machine endpoint remains undeployed throughout
 7.29C activation sequence after the rate, proof-of-possession and abuse gates
 above are satisfied.
 
-Native tray recovery input is now present in the 7.29C source. The automatic
+Native tray recovery input was present in the 7.29C source. The automatic
 ticket remains 55 seconds (at most 60 seconds), while the separately
 rate-limited manual recovery code is bounded to five minutes. Positive and
 negative signed requests use one-time database receipts and only the
 domain-separated code HMAC is stored. Signed-device behavior remains
-Device/Human HOLD. Dormant placement stays safe because the release endpoint is the
-fail-closed `.invalid` placeholder, the Gateway has no route, and UI/server/DB
-admission remains OFF.
+Device/Human HOLD. Dormant placement stayed safe at the time because the release
+endpoint was the fail-closed `.invalid` placeholder, the Gateway had no route,
+and UI/server/DB admission remained OFF. Current source instead contains the
+fixed Gateway hostname and production route configuration; that source presence
+is not proof of Hosted deployment or activation.
 
-The authoritative activation details and owner decisions are recorded in
+The historical activation design is recorded in
 [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).
+Its Direct/Velopack distribution instructions are superseded by the current
+Store runbooks linked above.

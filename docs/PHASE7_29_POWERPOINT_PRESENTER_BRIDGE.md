@@ -1,13 +1,24 @@
 # Phase 7.29 - PowerPoint Presenter Bridge
 
-Status: Dormant 7.29B placement complete; 7.29C local activation source under verification
+Status: Implemented, verification pending; historical 7.29A/B rollout evidence
+is retained, and Hosted, Store, Device and Human gates remain HOLD
 Scope: optional Windows PowerPoint-to-PDF Presenter Bridge contract
-Last verified: 2026-08-09
+Last reconciled with the Store release decision: 2026-09-06
+
+This document remains the technical contract for reconciliation, trust,
+authorization, failure and load boundaries. It is not the current publication
+runbook. Microsoft Store MSIX is the only production native distribution path
+for version 1. Follow
+[`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+[`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+for the current release order. The Direct Velopack EXE and anonymous update
+feed are historical/development material and must not be published for this
+release.
 
 The 2026-08-01 automated web/database result is historical evidence from the
 former local branch. The rescued GitHub implementation must pass its current
-Cloud/CI/DB gates independently. All flags default OFF. Native activation,
-signed installer, Device, Human and activation Production gates remain HOLD.
+Cloud/CI/DB gates independently. All flags default OFF. Store certification and
+signing, Device, Human and activation Production gates remain HOLD.
 
 ## 1. Outcome and boundary
 
@@ -137,9 +148,11 @@ at least 32 bytes and independent of Admin, Billing, Display and PDF secrets.
 never enters the native app. Only public proof-key material, HMAC/SHA-256
 digests and bounded replay metadata are stored at rest.
 
-The complete Gateway, signed Velopack delivery, five-minute manual recovery-code
-TTL and activation evidence contract is
+The historical Gateway, proof-of-possession and five-minute manual
+recovery-code design is recorded in
 [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).
+Its Direct/Velopack delivery and publication sections are superseded by the
+Store release documents above and are not operator instructions for version 1.
 
 ## 6. Database and authorization
 
@@ -214,29 +227,23 @@ Presenter metadata is a few bounded rows per lecture. Revoked connections and
 their audit events are eligible for idempotent bounded deletion after 30 days.
 The feature makes no OpenAI request and has no OpenAI cost.
 
-## 9. Rollout and rollback
+## 9. Historical rollout and current Store handoff
 
-Rollout is split between dormant 7.29B placement and a separately authorized
-7.29C activation:
+Phase 7.29B established an additive, fail-closed dormant baseline: the database
+runtime gate stayed OFF, only the named JWT-protected browser functions were in
+scope, the public machine endpoint and its secret were excluded, and the
+frontend flag stayed OFF. That sequence is historical evidence, not the
+version 1 activation procedure.
 
-1. preserve the current production deployment and database evidence;
-2. apply the additive migration with DB gate OFF;
-3. run hosted Advisor, grants/RLS and populated-upgrade checks;
-4. for 7.29B, deploy only the JWT-protected
-   `manage-presenter-connection` and compatible `update-display-state` by
-   explicit function name, with server admission OFF;
-5. leave the `verify_jwt=false` `presenter-bridge-session` machine endpoint
-   undeployed and do not provision its dedicated secret in 7.29B;
-6. deploy the frontend with its flag OFF and verify the existing manual path;
-7. only after the 7.29C Gateway, rate-protection, proof-of-possession, signed installer,
-   device and Human gates pass, deploy the machine endpoint and secret;
-8. verify Edge/Chrome HTTPS-to-loopback and real PowerPoint, then enable server
-   admission, DB runtime and one controlled frontend cohort in that order;
-9. verify Display and manual handover before expansion.
-
-An entry in `supabase/config.toml` is a source contract, not proof that the
-function exists in Hosted Supabase. Unscoped all-function deployment is
-prohibited for 7.29B.
+Current source pins the native client to the fixed Presenter Gateway hostname
+and contains production Worker route/upstream configuration. Source presence
+does not prove that the schema, named Edge functions, secrets, DNS or Worker are
+deployed or correct in Hosted production. The Store runbooks above define the
+required expand-first placement, certification interval, Store publication
+hold, device acceptance and final activation order. Certification
+uses the separately accepted global eligible-educator interval because reviewer
+timing is unpredictable; the later classroom canary remains bounded. An
+unscoped all-function deployment remains prohibited.
 
 Rollback starts by disabling the DB runtime gate, which drains active sessions.
 Then disable Edge admission and frontend. Manual controls and student five-
@@ -255,14 +262,17 @@ rescued branch. The exact former evidence is recorded in
 
 It cannot approve the following external boundaries:
 
-- trusted code-signing certificate, installer and SmartScreen reputation;
+- exact Partner Center identity, WACK, `runFullTrust` approval, Store
+  certification/signing and Store acquisition without added authentication;
 - Office x86/x64 and multiple supported Office build matrix;
 - real HTTPS production Origin Local Network permission in Edge and Chrome;
 - 500 physical PowerPoint transitions, restart and venue Extend-display drill;
 - Hosted Supabase/Cloudflare rollout, Advisor and cleanup scheduling;
 - teacher human confirmation of the PowerPoint/PDF binding UX.
 
-Those remain Device/Human/Hosted/Production Gate HOLD until recorded
-separately. The release endpoint remains the fail-closed
-`presenter-api.invalid` placeholder and no Gateway route exists until the owner
-approves the exact FQDN, signing identity and update feed.
+Those remain Store/Device/Human/Hosted/Production Gate HOLD until recorded
+separately. The current release source uses the fixed
+`presenter-api.yuto-matsui.com` Gateway endpoint and includes a production route
+configuration. Hosted DNS, Worker, Edge, secret and end-to-end evidence remain
+separate HOLD items; the old `.invalid` endpoint and update-feed decision were
+the historical 7.29B/C state, not the current Store distribution contract.

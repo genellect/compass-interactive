@@ -24,11 +24,28 @@ const safeEnvironment = {
 for (const name of productionFeatureFlags) {
   safeEnvironment[name] = 'false'
 }
+const presenterProductionEnvironment = {
+  ...safeEnvironment,
+  VITE_PDF_WORKER_BASE_URL: 'https://pdf-worker.example.test',
+  VITE_PHASE1_SYNC_PROTOCOL: 'true',
+  VITE_PHASE2_LECTURE_LIFECYCLE: 'true',
+  VITE_PHASE3_PRIVATE_PDF: 'true',
+  VITE_PHASE4_REALTIME_CAPTIONS: 'true',
+  VITE_PHASE5_MATERIAL_ANALYSIS: 'true',
+  VITE_PHASE6_5_COMMENT_NICKNAMES: 'true',
+  VITE_PHASE6_6_UX_INTEGRATION: 'true',
+  VITE_PHASE6_8_SECURITY: 'true',
+  VITE_PHASE6_SUMMARIES: 'true',
+  VITE_PHASE7_1_CLASSROOM_EXTENSIONS: 'true',
+  VITE_PHASE7_28_DISPLAY_REALTIME: 'true',
+  VITE_PHASE7_29_POWERPOINT_SYNC: 'true',
+}
 
 assert.deepEqual(validateProductionEnvironment(safeEnvironment), [])
 const legacyEnvironment = { ...safeEnvironment }
 delete legacyEnvironment.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION
 delete legacyEnvironment.VITE_PHASE7_29_POWERPOINT_SYNC
+delete legacyEnvironment.VITE_PRESENTER_CERTIFICATION_MODE
 assert.deepEqual(
   validateProductionEnvironment(legacyEnvironment),
   [],
@@ -86,10 +103,40 @@ assert.match(
 )
 assert.match(
   validateProductionEnvironment({
-    ...safeEnvironment,
-    VITE_PHASE7_29_POWERPOINT_SYNC: 'true',
+    ...presenterProductionEnvironment,
   }).join('\n'),
-  /requires a valid VITE_PRESENTER_STORE_URL/,
+  /requires an exact VITE_PRESENTER_STORE_URL unless VITE_PRESENTER_CERTIFICATION_MODE=true/,
+  'a general Presenter build must include its exact Store listing',
+)
+assert.deepEqual(
+  validateProductionEnvironment({
+    ...presenterProductionEnvironment,
+    VITE_PRESENTER_CERTIFICATION_MODE: 'true',
+  }),
+  [],
+  'a bounded certification build may enable Presenter without a public Store listing',
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_CERTIFICATION_MODE: 'true',
+  }).join('\n'),
+  /requires VITE_PHASE7_29_POWERPOINT_SYNC=true/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...presenterProductionEnvironment,
+    VITE_PRESENTER_CERTIFICATION_MODE: 'true',
+    VITE_PRESENTER_STORE_URL: 'https://apps.microsoft.com/detail/9TESTONLY729',
+  }).join('\n'),
+  /requires VITE_PRESENTER_STORE_URL to be empty/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_CERTIFICATION_MODE: 'yes',
+  }).join('\n'),
+  /VITE_PRESENTER_CERTIFICATION_MODE must be true, false or omitted/,
 )
 assert.match(
   validateProductionEnvironment({
@@ -115,7 +162,7 @@ assert.match(
 )
 assert.deepEqual(
   validateProductionEnvironment({
-    ...safeEnvironment,
+    ...presenterProductionEnvironment,
     VITE_PRESENTER_STORE_URL: 'https://apps.microsoft.com/detail/9TESTONLY729',
   }),
   [],

@@ -19,6 +19,114 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if (-not ('Compass.Presenter.StorePathCanonicalizerV1' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace Compass.Presenter
+{
+    public static class StorePathCanonicalizerV1
+    {
+        private const uint FileFlagBackupSemantics = 0x02000000;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string path,
+            uint access,
+            FileShare share,
+            IntPtr security,
+            FileMode creation,
+            uint flags,
+            IntPtr template);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetFinalPathNameByHandleW(
+            SafeFileHandle file,
+            StringBuilder path,
+            uint length,
+            uint flags);
+
+        public static string ResolveExistingDirectory(string path)
+        {
+            using SafeFileHandle handle = CreateFileW(
+                path,
+                0,
+                FileShare.ReadWrite | FileShare.Delete,
+                IntPtr.Zero,
+                FileMode.Open,
+                FileFlagBackupSemantics,
+                IntPtr.Zero);
+            if (handle.IsInvalid)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            StringBuilder value = new StringBuilder(512);
+            uint length = GetFinalPathNameByHandleW(
+                handle,
+                value,
+                checked((uint)value.Capacity),
+                0);
+            if (length == 0)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            if (length >= value.Capacity)
+            {
+                value.Capacity = checked((int)length + 1);
+                length = GetFinalPathNameByHandleW(
+                    handle,
+                    value,
+                    checked((uint)value.Capacity),
+                    0);
+                if (length == 0)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+            }
+
+            string result = value.ToString();
+            if (result.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            {
+                return @"\\" + result.Substring(8);
+            }
+            return result.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)
+                ? result.Substring(4)
+                : result;
+        }
+    }
+}
+'@
+}
+
+function Get-PhysicalPathForNewDirectory([string] $Path) {
+    $missingSegments = [Collections.Generic.List[string]]::new()
+    $cursor = $Path
+    while (!(Test-Path -LiteralPath $cursor -PathType Container)) {
+        if (Test-Path -LiteralPath $cursor) {
+            throw "OutputRoot ancestor must be a directory: $cursor"
+        }
+        $leaf = Split-Path -Leaf $cursor
+        $parent = Split-Path -Parent $cursor
+        if (!$leaf -or !$parent -or $parent -eq $cursor) {
+            throw 'Unable to resolve the physical OutputRoot parent.'
+        }
+        $missingSegments.Insert(0, $leaf)
+        $cursor = $parent
+    }
+
+    $physical = [Compass.Presenter.StorePathCanonicalizerV1]::ResolveExistingDirectory($cursor)
+    foreach ($segment in $missingSegments) {
+        $physical = Join-Path $physical $segment
+    }
+    return [IO.Path]::GetFullPath($physical)
+}
+
 function Assert-StoreVersion([string] $Value) {
     $numbers = @()
     foreach ($part in $Value.Split('.')) {
@@ -35,15 +143,44 @@ function Assert-StoreVersion([string] $Value) {
 }
 
 Assert-StoreVersion $Version
+if ($AdditionalLicenseTermsPath) {
+    throw 'AdditionalLicenseTermsPath is prohibited for the version 1 Store package. Leave Partner Center additional terms blank.'
+}
+if ($UnsignedDevelopmentOnly -and $UseMicrosoftStandardApplicationLicenseTerms) {
+    throw 'UNSIGNED_DEVELOPMENT_ONLY builds must not attest to Microsoft Standard Application License Terms.'
+}
+if (!$UnsignedDevelopmentOnly -and !$UseMicrosoftStandardApplicationLicenseTerms) {
+    throw 'UseMicrosoftStandardApplicationLicenseTerms is required for every version 1 Partner Center submission input.'
+}
 $bridgeRoot = Split-Path -Parent $PSScriptRoot
 $repositoryRoot = Split-Path -Parent $bridgeRoot
 $output = [IO.Path]::GetFullPath($OutputRoot)
+if ($output -notmatch '^[A-Za-z]:\\') {
+    throw 'OutputRoot must resolve to a normal local drive path; device and network path aliases are prohibited.'
+}
 $trimSeparators = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
 $checkout = [IO.Path]::GetFullPath($repositoryRoot).TrimEnd($trimSeparators)
 $outputBoundary = $output.TrimEnd($trimSeparators)
 if ($outputBoundary.Equals($checkout, [StringComparison]::OrdinalIgnoreCase) -or
     $outputBoundary.StartsWith($checkout + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'OutputRoot must be outside the source checkout so release output cannot invalidate clean-source evidence.'
+}
+$physicalCheckout = [Compass.Presenter.StorePathCanonicalizerV1]::ResolveExistingDirectory($checkout).TrimEnd($trimSeparators)
+$physicalOutputBoundary = (Get-PhysicalPathForNewDirectory $outputBoundary).TrimEnd($trimSeparators)
+if ($physicalOutputBoundary -notmatch '^[A-Za-z]:\\') {
+    throw 'OutputRoot must remain on a normal local drive after physical resolution; mapped network drives and network reparse targets are prohibited.'
+}
+if ($physicalOutputBoundary.Equals($physicalCheckout, [StringComparison]::OrdinalIgnoreCase) -or
+    $physicalOutputBoundary.StartsWith($physicalCheckout + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'OutputRoot must be physically outside the source checkout; path aliases and reparse points cannot bypass release isolation.'
+}
+# Some Windows SDK/MSBuild copy paths still fail at the legacy MAX_PATH
+# boundary even when PowerShell and the .NET host can create the file. Reserve
+# headroom for SDK-generated names and fail before restore rather than leaving a
+# partial package build.
+$longestKnownBuildPath = Join-Path $outputBoundary 'work\dotnet-artifacts\obj\Compass.Presenter.PowerPoint.External\release_win-x64\refint\Compass.Presenter.PowerPoint.External.dll'
+if ($longestKnownBuildPath.Length -ge 240) {
+    throw 'OutputRoot is too long for deterministic Windows package tooling. Use a short external path such as C:\COMPASS\presenter-1.0.0.0.'
 }
 if (Test-Path -LiteralPath $output) { throw 'OutputRoot must be new; Store artifacts are never overwritten.' }
 $makeAppx = (Resolve-Path -LiteralPath $MakeAppxPath).Path
@@ -59,18 +196,6 @@ if ($makeAppxSignature.Status -ne [Management.Automation.SignatureStatus]::Valid
     throw 'MakeAppx must have a valid Microsoft Corporation Authenticode signature.'
 }
 $makeAppxSha256 = (Get-FileHash -LiteralPath $makeAppx -Algorithm SHA256).Hash.ToLowerInvariant()
-$additionalLicenseTerms = if ($AdditionalLicenseTermsPath) { (Resolve-Path -LiteralPath $AdditionalLicenseTermsPath).Path } else { $null }
-$additionalLicenseTermsFileName = if ($additionalLicenseTerms) { Split-Path -Leaf $additionalLicenseTerms } else { $null }
-$additionalLicenseTermsSha256 = if ($additionalLicenseTerms) { (Get-FileHash -LiteralPath $additionalLicenseTerms -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
-if ($UseMicrosoftStandardApplicationLicenseTerms -and $additionalLicenseTerms) {
-    throw 'Choose either Microsoft Standard Application License Terms or AdditionalLicenseTermsPath, never both.'
-}
-if (!$UnsignedDevelopmentOnly -and !$UseMicrosoftStandardApplicationLicenseTerms -and !$additionalLicenseTerms) {
-    throw 'Select UseMicrosoftStandardApplicationLicenseTerms or supply AdditionalLicenseTermsPath for a Partner Center submission input.'
-}
-if ($additionalLicenseTerms -and (Get-Item -LiteralPath $additionalLicenseTerms).Length -eq 0) {
-    throw 'AdditionalLicenseTermsPath must identify a non-empty approved terms file.'
-}
 if ($Publisher -notmatch '^CN=\S' -or $Publisher -match '[\r\n]' -or
     $PublisherDisplayName -match '[\r\n]' -or
     $PublisherDisplayName -notmatch '^\S.*\S$|^\S$') {
@@ -138,12 +263,10 @@ function New-StoreAsset([string] $Path, [int] $Size) {
 }
 
 $buildStatus = if ($UnsignedDevelopmentOnly) { 'UNSIGNED_DEVELOPMENT_ONLY' } else { 'PARTNER_CENTER_SUBMISSION_INPUT_UNSIGNED' }
-$licenseTermsMode = if ($UseMicrosoftStandardApplicationLicenseTerms) {
-    'MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS'
-} elseif ($additionalLicenseTerms) {
-    'ADDITIONAL_LICENSE_TERMS'
-} else {
+$licenseTermsMode = if ($UnsignedDevelopmentOnly) {
     'NOT_SELECTED_UNSIGNED_DEVELOPMENT_ONLY'
+} else {
+    'MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS'
 }
 $compassBinaryNotice = Join-Path $PSScriptRoot 'COMPASS-BINARY-NOTICE.txt'
 $repositoryThirdPartyNotices = Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md'
@@ -165,20 +288,92 @@ try {
     if ($dirty -and !$AllowDirtyDevelopmentCheckout) { throw 'A clean reviewed source checkout is required.' }
 
     $sdk = (& $dotnet --version).Trim()
-    if ($LASTEXITCODE -ne 0 -or $sdk -notmatch '^10\.0\.30\d+$') { throw 'The pinned .NET 10.0.302 feature band is required.' }
+    $sdkExitCode = $LASTEXITCODE
+    try {
+        $sdkPolicy = Get-Content -Raw -LiteralPath 'global.json' | ConvertFrom-Json
+        $requestedSdkVersion = [version]::Parse([string] $sdkPolicy.sdk.version)
+        $actualSdkVersion = [version]::Parse($sdk)
+    } catch {
+        throw 'Unable to parse the repository .NET SDK policy or active SDK version.'
+    }
+    $requestedFeatureBand = [Math]::Floor($requestedSdkVersion.Build / 100) * 100
+    $actualFeatureBand = [Math]::Floor($actualSdkVersion.Build / 100) * 100
+    if ($sdkExitCode -ne 0 -or
+        $sdkPolicy.sdk.rollForward -cne 'latestPatch' -or
+        $actualSdkVersion.Major -ne $requestedSdkVersion.Major -or
+        $actualSdkVersion.Minor -ne $requestedSdkVersion.Minor -or
+        $actualFeatureBand -ne $requestedFeatureBand -or
+        $actualSdkVersion.Build -lt $requestedSdkVersion.Build) {
+        throw "The repository .NET SDK $($sdkPolicy.sdk.version) latestPatch feature band is required. Found $sdk."
+    }
 
     $null = New-Item -ItemType Directory -Path $output
+    try {
+        $createdPhysicalOutput = [Compass.Presenter.StorePathCanonicalizerV1]::ResolveExistingDirectory($output).TrimEnd($trimSeparators)
+    } catch {
+        throw 'OutputRoot physical resolution failed immediately after creation. No restore or build started. The new path is intentionally left intact because its physical identity cannot be proven; inspect it before removal.'
+    }
+    if (!$createdPhysicalOutput.Equals($physicalOutputBoundary, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'OutputRoot physical resolution changed during creation; release isolation cannot be proven. No restore or build started. The new path is intentionally left intact because deleting an untrusted replacement could affect another target; inspect it before removal.'
+    }
     $work = Join-Path $output 'work'
+    $dotnetArtifacts = Join-Path $work 'dotnet-artifacts'
+    $restorePackages = Join-Path $work 'nuget-packages'
     $publish = Join-Path $work 'publish'
     $packageRoot = Join-Path $work 'package-root'
     $assets = Join-Path $packageRoot 'Assets'
     $metadataDirectory = Join-Path $packageRoot 'BuildMetadata'
     $licenseDirectory = Join-Path $packageRoot 'Licenses'
-    $null = New-Item -ItemType Directory -Path $work, $publish, $packageRoot, $assets, $metadataDirectory, $licenseDirectory
+    $null = New-Item -ItemType Directory -Path $work, $dotnetArtifacts, $restorePackages, $publish, $packageRoot, $assets, $metadataDirectory, $licenseDirectory
 
     $project = 'src/Compass.Presenter.App/Compass.Presenter.App.csproj'
-    Invoke-Dotnet @('restore', $project, '--runtime', 'win-x64', '--locked-mode', '-p:PresenterDistribution=Store', '-p:SelfContained=true')
-    Invoke-Dotnet @('publish', $project, '--configuration', 'Release', '--runtime', 'win-x64', '--self-contained', 'true', '--no-restore', '-p:PresenterDistribution=Store', '-p:PlatformTarget=x64', '-p:DebugSymbols=false', '-p:DebugType=None', "-p:Version=$Version", '--output', $publish)
+    # --artifacts-path is the SDK-supported multi-project mapping for
+    # BaseIntermediateOutputPath, MSBuildProjectExtensionsPath and
+    # BaseOutputPath. Passing the same global properties to restore and publish
+    # keeps every obj/bin/project.assets file and every restored package below
+    # this new OutputRoot. Existing ignored checkout bin/obj files are neither
+    # trusted nor read as build inputs.
+    $isolatedBuildArguments = @(
+        '--artifacts-path', $dotnetArtifacts,
+        "-p:RestorePackagesPath=$restorePackages",
+        '-p:UseArtifactsOutput=true',
+        '-p:ContinuousIntegrationBuild=true',
+        '--disable-build-servers'
+    )
+    $restoreArguments = @(
+        'restore', $project,
+        '--runtime', 'win-x64',
+        '--locked-mode',
+        '-p:PresenterDistribution=Store',
+        '-p:SelfContained=true'
+    ) + $isolatedBuildArguments
+    $publishArguments = @(
+        'publish', $project,
+        '--configuration', 'Release',
+        '--runtime', 'win-x64',
+        '--self-contained', 'true',
+        '--no-restore',
+        '-p:PresenterDistribution=Store',
+        '-p:PlatformTarget=x64',
+        '-p:DebugSymbols=false',
+        '-p:DebugType=None',
+        "-p:Version=$Version",
+        '--output', $publish
+    ) + $isolatedBuildArguments
+    Invoke-Dotnet $restoreArguments
+    Invoke-Dotnet $publishArguments
+
+    foreach ($requiredBuildRoot in @($dotnetArtifacts, $restorePackages, $publish)) {
+        $isolatedPath = [Compass.Presenter.StorePathCanonicalizerV1]::ResolveExistingDirectory($requiredBuildRoot).TrimEnd($trimSeparators)
+        if (!$isolatedPath.StartsWith($createdPhysicalOutput + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Every .NET build and restore root must remain below the new OutputRoot.'
+        }
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $dotnetArtifacts 'obj') -PathType Container) -or
+        !(Test-Path -LiteralPath (Join-Path $dotnetArtifacts 'bin') -PathType Container) -or
+        !(Test-Path -LiteralPath $restorePackages -PathType Container)) {
+        throw 'The isolated .NET artifact or restore-package roots were not created.'
+    }
 
     $publishedFiles = @(Get-ChildItem -LiteralPath $publish -Recurse -File)
     if (!($publishedFiles | Where-Object { [IO.Path]::GetRelativePath($publish, $_.FullName) -ceq 'COMPASS.PresenterBridge.exe' })) { throw 'Published Presenter executable is missing.' }
@@ -221,19 +416,6 @@ try {
             Sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
         })
     }
-    if ($additionalLicenseTerms) {
-        $termsExtension = [IO.Path]::GetExtension($additionalLicenseTerms)
-        if (!$termsExtension) { $termsExtension = '.txt' }
-        $termsPackagePath = "Licenses/AdditionalLicenseTerms$termsExtension"
-        $termsDestination = Join-Path $packageRoot $termsPackagePath
-        Copy-Item -LiteralPath $additionalLicenseTerms -Destination $termsDestination
-        $noticeFiles.Add([pscustomobject]@{
-            Kind = 'ADDITIONAL_LICENSE_TERMS'
-            PackagePath = $termsPackagePath
-            Sha256 = (Get-FileHash -LiteralPath $termsDestination -Algorithm SHA256).Hash.ToLowerInvariant()
-        })
-    }
-
     [xml] $manifest = Get-Content -Raw -LiteralPath 'store/AppxManifest.template.xml'
     $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
     $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
@@ -259,6 +441,11 @@ try {
         DotnetSdkVersion = $sdk
         MakeAppxVersion = $makeAppxVersion.ToString()
         MakeAppxSha256 = $makeAppxSha256
+        BuildIsolation = 'NEW_OUTPUT_ROOT_ONLY'
+        OutputRootBoundary = 'NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT'
+        DotnetArtifactsPath = 'work/dotnet-artifacts'
+        RestorePackagesPath = 'work/nuget-packages'
+        PublishPath = 'work/publish'
         PublishedFiles = $publishedFilesManifest
         PublishedFilesManifestSha256 = $publishedFilesManifestSha256
         LicenseTermsMode = $licenseTermsMode
@@ -302,11 +489,14 @@ try {
         DotnetSdkVersion = $sdk
         MakeAppxVersion = $makeAppxVersion.ToString()
         MakeAppxSha256 = $makeAppxSha256
+        BuildIsolation = 'NEW_OUTPUT_ROOT_ONLY'
+        OutputRootBoundary = 'NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT'
+        DotnetArtifactsPath = 'work/dotnet-artifacts'
+        RestorePackagesPath = 'work/nuget-packages'
+        PublishPath = 'work/publish'
         PublishedFiles = $publishedFilesManifest.Count
         PublishedFilesManifestSha256 = $publishedFilesManifestSha256
         LicenseTermsMode = $licenseTermsMode
-        AdditionalLicenseTermsFileName = $additionalLicenseTermsFileName
-        AdditionalLicenseTermsSha256 = $additionalLicenseTermsSha256
         NoticeFiles = $noticeFiles
         PackagePreflight = $preflight.Status
         StoreSigning = 'NOT_YET_SIGNED: Microsoft Store certification/ingestion must sign this package before teacher distribution.'

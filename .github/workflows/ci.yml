@@ -514,11 +514,27 @@ jobs:
             Select-Object -First 1
           if ($null -eq $makeAppx) { throw 'Windows SDK 10.0.26100+ x64 MakeAppx was not found.' }
 
+          & ./store/Test-PresenterStoreBuildPolicy.ps1 -MakeAppxPath $makeAppx.FullName
+
           $storeOutput = Join-Path $env:RUNNER_TEMP 'presenter-store-msix'
           $sourceCommit = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
             throw 'Unable to resolve the exact source commit for the Store package.'
           }
+
+          # The preceding Direct build populated ignored checkout bin/obj.
+          # Poison both canonical inputs so this Store build proves it uses
+          # only the new external OutputRoot paths.
+          $checkoutAssets = 'src/Compass.Presenter.App/obj/project.assets.json'
+          $checkoutBinary = 'src/Compass.Presenter.App/bin/Release/net10.0-windows/win-x64/COMPASS.PresenterBridge.exe'
+          if (!(Test-Path -LiteralPath $checkoutAssets) -or !(Test-Path -LiteralPath $checkoutBinary)) {
+            throw 'The Direct build did not create the checkout isolation-test inputs.'
+          }
+          $assetsSentinel = 'COMPASS_STORE_ISOLATION_SENTINEL_ASSETS'
+          $binarySentinel = 'COMPASS_STORE_ISOLATION_SENTINEL_BINARY'
+          Set-Content -LiteralPath $checkoutAssets -Value $assetsSentinel -NoNewline -Encoding utf8NoBOM
+          Set-Content -LiteralPath $checkoutBinary -Value $binarySentinel -NoNewline -Encoding utf8NoBOM
+
           & ./store/Build-PresenterStorePackage.ps1 `
             -Version '1.0.0.0' `
             -OutputRoot $storeOutput `
@@ -526,10 +542,32 @@ jobs:
             -IdentityName 'CompassPresenterBridge.Development' `
             -Publisher 'CN=COMPASS Presenter Bridge Development' `
             -PublisherDisplayName 'COMPASS Development' `
-            -UseMicrosoftStandardApplicationLicenseTerms `
             -MakeAppxPath $makeAppx.FullName `
             -DotnetPath (Get-Command dotnet).Source `
             -UnsignedDevelopmentOnly
+
+          if ((Get-Content -Raw -LiteralPath $checkoutAssets) -cne $assetsSentinel) {
+            throw 'The Store restore consumed or changed checkout obj output.'
+          }
+          if ((Get-Content -Raw -LiteralPath $checkoutBinary) -cne $binarySentinel) {
+            throw 'The Store publish consumed or changed checkout bin output.'
+          }
+          $storeBinary = "$storeOutput/work/publish/COMPASS.PresenterBridge.exe"
+          $storeBinaryText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($storeBinary))
+          if ($storeBinaryText.Contains($assetsSentinel, [StringComparison]::Ordinal) -or
+              $storeBinaryText.Contains($binarySentinel, [StringComparison]::Ordinal)) {
+            throw 'A poisoned checkout build output reached the isolated Store publish payload.'
+          }
+          $storeReceipt = Get-Content -Raw -LiteralPath "$storeOutput/ready/store-build-receipt.json" | ConvertFrom-Json
+          if (
+            $storeReceipt.BuildIsolation -cne 'NEW_OUTPUT_ROOT_ONLY' -or
+            $storeReceipt.OutputRootBoundary -cne 'NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT' -or
+            $storeReceipt.DotnetArtifactsPath -cne 'work/dotnet-artifacts' -or
+            $storeReceipt.RestorePackagesPath -cne 'work/nuget-packages' -or
+            $storeReceipt.PublishPath -cne 'work/publish'
+          ) {
+            throw 'The Store receipt did not preserve isolated build provenance.'
+          }
 
           $directDependencies = Get-Content -Raw -LiteralPath "$env:RUNNER_TEMP/presenter-unsigned-payload/COMPASS.PresenterBridge.deps.json"
           $storeDependencies = Get-Content -Raw -LiteralPath "$storeOutput/work/publish/COMPASS.PresenterBridge.deps.json"

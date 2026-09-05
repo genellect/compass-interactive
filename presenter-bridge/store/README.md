@@ -12,8 +12,12 @@ user-facing string and listing asset has been localized and device-tested.
 
 `PresenterDistribution=Store` removes the Velopack package reference, startup
 bootstrap, feed client, update menu and update coordinator at compile time.
-The ordinary `Direct` build remains the default and keeps the existing signed
-Velopack behavior.
+The ordinary `Direct` build remains the compile-time default only to preserve
+historical development and regression coverage. Its EXE and anonymous update
+feed are not public release channels and must not be published, linked or
+distributed. This Store README and
+[`../../docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](../../docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+are authoritative for version 1 distribution.
 
 ## Partner Center submission input
 
@@ -22,12 +26,57 @@ Reserve the product first, then copy the exact package `Identity/Name`,
 Partner Center Product ID is a separate value and is intentionally not an input
 to this MakeAppx script. Never infer or fabricate any of these values.
 
-Run from the repository root with PowerShell 7.4+ and the pinned .NET 10.0.302
-SDK. Choose the Microsoft Standard Application License Terms, which correspond
-to leaving Partner Center's additional-terms field blank, or supply separately
-approved additional terms. The switch records the operator's selection; it is
-not legal approval. `OutputRoot` must be a new directory outside the source
-checkout so package output cannot change the clean exact-commit evidence.
+### Required public-CI preflight
+
+After the frozen release SHA has landed on reviewed `main`, run **Presenter
+Store submission preflight** from the repository's Actions page with branch
+`main`. Enter that exact lowercase 40-character SHA as `source_commit`, then
+copy the exact Partner Center values into `version`, `identity_name`, `publisher`
+and `publisher_display_name`. These are public package-identity fields; never
+enter a credential or secret as a workflow input.
+
+`.github/workflows/presenter-store-package.yml` rejects every ref except
+`refs/heads/main` and requires `source_commit`, the dispatched `github.sha` and
+the checked-out HEAD to match exactly. It installs the pinned .NET SDK feature
+band, selects a Microsoft-signed x64 MakeAppx from Windows SDK 26100 or later,
+runs the Store static policy, and builds and preflights an ephemeral production
+unsigned MSIX. The builder routes NuGet packages and the SDK's project-separated
+`obj`, `bin` and publish artifacts below the new external `OutputRoot`; existing
+ignored checkout outputs are never build inputs. Because the repository is
+public, it uploads no MSIX, `ready/`
+directory, receipt or other package artifact. The step summary records only the
+source commit, package basename, package SHA-256, status and the instruction to
+reproduce the package on the owner-controlled release host. It does not access
+Partner Center, run WACK, submit, sign or publish the package.
+
+Record the successful workflow run ID, exact source SHA and summary. This CI
+result proves the reviewed source can pass the production builder/preflight on
+the runner; it is not a downloadable or submittable package.
+
+### Owner-controlled production submission build
+
+On an owner-controlled Windows release host, check out that same reviewed SHA
+with a clean worktree. Use PowerShell 7.4+, the pinned .NET 10.0.302 SDK and a
+Microsoft-signed Windows SDK 26100-or-later MakeAppx to run the same builder and
+preflight locally with the same version and Partner Center identity values.
+Version 1 is fixed to the Microsoft Standard Application License Terms: use the
+Standard terms switch and leave Partner Center's **Additional license terms**
+field blank. `OutputRoot` must be a new directory outside the source checkout so
+package output cannot change the clean exact-commit evidence. Restore packages,
+SDK artifacts/intermediates and publish output are all generated below that new
+root, so a clean Git status cannot mask reuse of ignored checkout `bin/obj`.
+Use a normal local drive path. The builder rejects device and network aliases,
+mapped network drives and network reparse targets,
+resolves the checkout and nearest existing output parent through Windows file
+handles before creation, then verifies the created root and every isolated build
+root resolve physically outside the checkout. A junction, short-name alias or
+other reparse path therefore cannot turn an apparently external root into a
+checkout path. If the root's physical identity changes during creation, the
+builder stops before restore and leaves that untrusted path untouched for manual
+inspection instead of deleting through it.
+Keep the absolute root short (for example,
+`C:\COMPASS\presenter-1.0.0.0`); the builder fails before restore when the
+longest known SDK intermediate would approach the legacy Windows path limit.
 
 ```powershell
 presenter-bridge/store/Build-PresenterStorePackage.ps1 `
@@ -46,15 +95,19 @@ presenter-bridge/store/Build-PresenterStorePackage.ps1 `
 The resulting unsigned MSIX is only a Partner Center submission input.
 `ready/store-build-receipt.json` records
 `PARTNER_CENTER_SUBMISSION_INPUT_UNSIGNED`, package/source/notice hashes, the
-license-terms selection and exact identity. Microsoft Store ingestion,
+license-terms selection, exact identity and `NEW_OUTPUT_ROOT_ONLY` provenance
+with `NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT` and relative isolated
+build roots. The receipt does not retain the absolute host path. Microsoft Store ingestion,
 certification and signing must finish before distribution. Do not sideload or
-host this unsigned input.
+host this unsigned input. Preserve the local receipt and use its package
+SHA-256—not the ephemeral CI package hash—for WACK and the exact Partner Center
+upload.
 
-Use `-AdditionalLicenseTermsPath C:\approved\terms.txt` instead of the Standard
-Terms switch only when those additional terms have been separately approved.
-The file is copied byte-for-byte into the MSIX and hash-bound to the receipt.
-The receipt and stdout retain only its basename and SHA-256, never its absolute
-source path.
+Do not pass `-AdditionalLicenseTermsPath` and do not upload or link a custom
+terms document. The version 1 builder rejects that parameter in every mode.
+Every Partner Center submission input requires
+`-UseMicrosoftStandardApplicationLicenseTerms`; development-only builds reject
+that attestation and record `NOT_SELECTED_UNSIGNED_DEVELOPMENT_ONLY` instead.
 The build always copies and hash-verifies `COMPASS-BINARY-NOTICE.txt`, the
 repository's exact `THIRD_PARTY_NOTICES.md`, and the .NET distribution's exact
 `LICENSE.txt` and `ThirdPartyNotices.txt` next to the selected `dotnet.exe`.
@@ -65,7 +118,7 @@ license.
 
 `-UnsignedDevelopmentOnly` creates an inspection artifact whose file name,
 embedded metadata and receipt all say `UNSIGNED_DEVELOPMENT_ONLY`. It may use
-explicit development identity values and may omit both license-terms options.
+explicit development identity values and must omit both license-terms options.
 `-AllowDirtyDevelopmentCheckout` is accepted only with this switch. This output
 is never a Store submission or general-distribution artifact.
 
@@ -115,7 +168,11 @@ device testing is complete.
 checks the exact identity, source and notice/license hashes, x64 self-contained
 runtime, Japan-only `ja-JP` resource declaration, `StartupTask Enabled=true`,
 the sole `runFullTrust` capability and the absence of Velopack/feed/update
-payloads. The build recursively preserves every
+payloads. It also requires the embedded `NEW_OUTPUT_ROOT_ONLY` provenance.
+Normal native CI poisons existing ignored checkout `obj/project.assets.json`
+and the prior checkout `bin` executable before invoking the Store builder, then
+proves both sentinels remained untouched and absent from the Store payload. The
+build recursively preserves every
 published file, including localized satellite-resource directories, and embeds
 an exact relative-path/size/SHA-256 manifest. Preflight verifies every entry and
 rejects missing or unexpected runtime payload files. Build and preflight also
@@ -136,6 +193,43 @@ pairing or active lecture owns the bridge, then stops loopback intake,
 disconnects, disposes the key handle, deletes the persisted identity and exits.
 Canceling or losing the idle race performs no deletion. The next launch creates
 a fresh non-exportable P-256 identity and requires fresh pairing.
+
+## Publishing, canary and rollback
+
+For the first Partner Center submission, select the manual Publishing hold
+**Don't publish this submission until I select Publish now**. Microsoft does not
+provide a predictable reviewer test time. Before submission, the owner and
+release operator must accept or reject keeping Presenter globally ON for all
+eligible educators throughout certification, with continuous monitoring and
+immediate rollback. If that exposure is not acceptable, keep submission HOLD
+until a reviewer-only cohort exists. If accepted, build, verify, hash and deploy
+the exact Presenter-ON frontend with
+`VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL before submission.
+Certification must complete while the manual hold remains in place and does not
+imply general availability.
+
+After certification, retain the hold until the release operator explicitly
+selects **Publish now**. The resulting listing must remain **Public audience**,
+**available but not discoverable**, and **Direct link only**. Keep advertising
+and the general educator installation CTA off. Re-promote and reverify the exact
+frontend built with Presenter ON, `VITE_PRESENTER_CERTIFICATION_MODE=true` and
+no Store URL for the classroom canary, then turn server admission ON with DB OFF
+and DB admission ON last. Give the Partner Center Direct link only to named
+acquisition operators, complete the canary, and close DB, server and frontend
+afterward. Use that listing to prove Store acquisition, Store signing and the
+clean-device canary. A Store flight is only for testing an
+update to a product that is already published; it does not prove the first
+public acquisition path and must not replace this initial canary. Before the
+canary stage ends, build, verify and hash the same-SHA general artifact with
+Presenter ON, `VITE_PRESENTER_CERTIFICATION_MODE=false` and the exact Store URL.
+Enable the general CTA only by promoting that artifact after every Store, device,
+Office, browser, hosted and classroom gate passes.
+
+If certification, acquisition, install, update, authentication, PowerPoint,
+loopback, CNG, latency or classroom acceptance fails, keep or restore the CTA
+to off, stop Presenter admission, and use Partner Center **Stop acquisition**
+or **Make unavailable** as applicable. Treat every release gate as rolled back
+to HOLD until the corrected exact package passes the complete sequence again.
 
 ## OS and device acceptance
 

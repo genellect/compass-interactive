@@ -112,7 +112,6 @@ function PrivacyConsentManagement({
       </a>
       <button
         className="text-button"
-        disabled={sync.busy}
         onClick={() => void sync.revokePrivacyConsent()}
         type="button"
       >

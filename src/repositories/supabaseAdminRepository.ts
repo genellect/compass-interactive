@@ -14,6 +14,7 @@ import {
 } from './supabase/adminContentAiRepository'
 import {
   toAdminDisplayState,
+  toAdminRecoveredSummaryResponse,
   toAdminSummaryResults,
   type DisplayStateRow,
   type RawSummaryResults,
@@ -1035,39 +1036,16 @@ export const supabaseAdminRepository = {
           timeout: ADMIN_FUNCTION_TIMEOUT_MS,
         },
       )
-      const recoveryMessage =
-        '作成済みの要約を確認できませんでした。同じ処理の結果を再確認します。'
       if (refreshed.error || !refreshed.data?.ok || !refreshed.data.results) {
-        throw new Error(recoveryMessage)
+        throw new Error(
+          '作成済みの要約を確認できませんでした。同じ処理の結果を再確認します。',
+        )
       }
-      const results = toAdminSummaryResults(refreshed.data.results)
-      const targetWindow = results.windows.find(
-        (window) =>
-          window.id === data.windowId &&
-          window.windowIndex === request.windowIndex,
+      return toAdminRecoveredSummaryResponse(
+        data,
+        refreshed.data.results,
+        request,
       )
-      const rawSummary = refreshed.data.results.summaries?.find(
-        (item) => item.window_id === data.windowId,
-      )
-      const summary = results.summaries.find(
-        (item) =>
-          item.id === rawSummary?.id &&
-          item.windowIndex === request.windowIndex,
-      )
-      if (
-        results.run?.id !== request.runToken.split('.')[0] ||
-        !targetWindow ||
-        !['succeeded', 'skipped', 'discarded'].includes(targetWindow.status) ||
-        (targetWindow.status === 'succeeded' && !summary)
-      ) {
-        throw new Error(recoveryMessage)
-      }
-      return {
-        actualMicrousd: Number(data.actualMicrousd ?? 0),
-        published: summary?.publication?.visibility === 'public',
-        results,
-        skipped: targetWindow.status === 'skipped',
-      }
     }
     if (!data.results) {
       throw new Error(

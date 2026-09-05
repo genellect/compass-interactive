@@ -22,6 +22,7 @@ const optionalFeatureFlags = [
   'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
   'VITE_PHASE7_28_DISPLAY_REALTIME',
   'VITE_PHASE7_29_POWERPOINT_SYNC',
+  'VITE_PRESENTER_CERTIFICATION_MODE',
   'VITE_PHASE7_30_ADMIN_IDENTITY',
   'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
   'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
@@ -221,6 +222,25 @@ export function validateProductionEnvironment(environment) {
   }
 
   const enabled = (name) => value(environment, name) === 'true'
+  const presenterEnabled = enabled('VITE_PHASE7_29_POWERPOINT_SYNC')
+  const presenterCertificationMode = enabled(
+    'VITE_PRESENTER_CERTIFICATION_MODE',
+  )
+  if (presenterCertificationMode && !presenterEnabled) {
+    errors.push(
+      'VITE_PRESENTER_CERTIFICATION_MODE=true requires VITE_PHASE7_29_POWERPOINT_SYNC=true.',
+    )
+  }
+  if (presenterCertificationMode && presenterStoreUrl) {
+    errors.push(
+      'VITE_PRESENTER_CERTIFICATION_MODE=true requires VITE_PRESENTER_STORE_URL to be empty.',
+    )
+  }
+  if (presenterEnabled && !presenterCertificationMode && !presenterStoreUrl) {
+    errors.push(
+      'VITE_PHASE7_29_POWERPOINT_SYNC=true requires an exact VITE_PRESENTER_STORE_URL unless VITE_PRESENTER_CERTIFICATION_MODE=true.',
+    )
+  }
   const requireFlag = (feature, dependency) => {
     if (enabled(feature) && !enabled(dependency)) {
       errors.push(`${feature}=true requires ${dependency}=true.`)
@@ -275,14 +295,6 @@ export function validateProductionEnvironment(environment) {
     'VITE_PHASE7_29_POWERPOINT_SYNC',
     'VITE_PHASE7_28_DISPLAY_REALTIME',
   )
-  if (
-    enabled('VITE_PHASE7_29_POWERPOINT_SYNC') &&
-    !validPresenterStoreUrl(presenterStoreUrl)
-  ) {
-    errors.push(
-      'VITE_PHASE7_29_POWERPOINT_SYNC=true requires a valid VITE_PRESENTER_STORE_URL.',
-    )
-  }
   requireFlag('VITE_PHASE7_30_ADMIN_AI_UNLOCK', 'VITE_PHASE7_30_ADMIN_IDENTITY')
   requireFlag(
     'VITE_PHASE7_30_ADMIN_AI_UNLOCK',

@@ -317,9 +317,9 @@
           its own settings and privacy terms; the publisher may receive the
           reports Partner Center makes available. Store distribution uses
           Microsoft, the Presenter gateway and global network edge use
-          Cloudflare, and the Edge Function and Tokyo-region PostgreSQL service
-          use Supabase. Network-edge and provider operations may process data
-          outside Japan.
+          Cloudflare, and the Edge Function and PostgreSQL service in the
+          configured production region use Supabase. Network-edge and provider
+          operations may process data outside Japan.
         </p>
 
         <h3>Data on the Windows device</h3>
@@ -328,11 +328,15 @@
           material in the current Windows user's CNG key store. Only the public
           key is sent. A connection capability is kept in process memory and is
           not restored after the app restarts. The browser locally stores the
-          privacy-decision version and date, one manual-mode digest, and up to
-          32 material-consent digests. These digests contain no presentation
-          text and have no fixed expiry. They remain until the educator uses the
-          PowerPoint control to clear local Presenter data or clears this site's
-          browser data.
+          privacy-decision version and date for up to one year, one manual-mode
+          digest, and up to 32 material-consent digests. These digests contain
+          no presentation text. The manual and material digests remain until the
+          educator uses the PowerPoint control to clear local Presenter data or
+          clears this site's browser data. If that deletion cannot be completed,
+          a content-free withdrawal safety marker is kept for up to one year in
+          local or session storage and a Strict same-site first-party cookie so
+          another tab cannot reconnect with the withdrawn decision. Clearing
+          this site's browser data removes that marker.
         </p>
 
         <h3>Security</h3>
@@ -445,13 +449,15 @@
           事業者のセキュリティログ、バックアップ、法令上必要な複製には別の保存期間が適用される場合があります。Microsoftは自社の設定とプライバシー条件に従ってStoreでの取得情報を処理し、利用状況、クラッシュ、停止診断を処理する場合があります。発行者はPartner
           Centerが提供する範囲でレポートを参照できます。Store配布にはMicrosoft、Presenter
           GatewayとグローバルなネットワークエッジにはCloudflare、Edge
-          Functionと東京リージョンのPostgreSQLサービスにはSupabaseを利用します。ネットワークエッジや事業者の運用により、日本国外で処理される場合があります。
+          Functionと設定済みの本番リージョンで稼働するPostgreSQLサービスにはSupabaseを利用します。ネットワークエッジや事業者の運用により、日本国外で処理される場合があります。
         </p>
 
         <h3>Windows端末内のデータ</h3>
         <p>
-          署名専用のP-256秘密鍵を、現在のWindows利用者のCNGキーストアへエクスポート不可の鍵として保存します。送信するのは公開鍵だけです。接続資格情報はプロセスのメモリに保持し、アプリ再起動後には復元しません。ブラウザには、プライバシー同意の版と日時、手動モードのdigest
-          1件、資料同意のdigest最大32件を保存します。これらにプレゼンテーション本文は含まず、固定の有効期限はありません。PowerPoint連携画面でローカルPresenterデータを削除するか、このサイトのブラウザデータを消去するまで保持します。
+          署名専用のP-256秘密鍵を、現在のWindows利用者のCNGキーストアへエクスポート不可の鍵として保存します。送信するのは公開鍵だけです。接続資格情報はプロセスのメモリに保持し、アプリ再起動後には復元しません。ブラウザには、最長1年間のプライバシー同意の版と日時、手動モードのdigest
+          1件、資料同意のdigest最大32件を保存します。これらにプレゼンテーション本文は含みません。手動モードと資料同意のdigestは、PowerPoint連携画面でローカルPresenterデータを削除するか、このサイトのブラウザデータを消去するまで保持します。削除を完了できない場合は、取り消した同意による別タブからの再接続を防ぐため、内容を含まない取消安全マーカーをlocal/session
+          storageとStrictのsame-site first-party
+          cookieに最長1年間保持します。このサイトのブラウザデータを消去すると、そのマーカーも削除されます。
         </p>
 
         <h3>安全管理</h3>

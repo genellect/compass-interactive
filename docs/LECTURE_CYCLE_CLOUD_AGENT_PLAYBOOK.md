@@ -67,7 +67,7 @@ remaining HOLD items. Commit intentionally, push the private branch and open a
 Draft PR. A lane agent hands off and never merges independently. Under the
 standing task authorization, the controller may Squash merge without another
 prompt only after fixing the expected head SHA and verifying intended scope,
-private boundaries, all five required contexts green, zero unresolved threads,
+private boundaries, all eight required contexts green, zero unresolved threads,
 mergeability and no head drift. Any missing or failing gate, scope drift, or
 Hosted/Human/secret/paid-provider/Production approval boundary remains HOLD.
 After merge, record the returned SHA and inspect automatic main workflows; do

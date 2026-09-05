@@ -4,12 +4,12 @@
 
 ## C0 source admission
 
-| Evidence | Value |
-| --- | --- |
-| Exact `origin/main` base SHA | |
-| Latest completed CI for that SHA | |
-| Dedicated branch / environment | |
-| Recovery-source commit, if any | none / SHA |
+| Evidence                         | Value      |
+| -------------------------------- | ---------- |
+| Exact `origin/main` base SHA     |            |
+| Latest completed CI for that SHA |            |
+| Dedicated branch / environment   |            |
+| Recovery-source commit, if any   | none / SHA |
 
 - [ ] `origin` is `genellect/compass-interactive`
 - [ ] No local-only branch, generated database type or old README was treated as canonical
@@ -42,7 +42,7 @@ Record the actual outcome of each gate. Every row must be one of **PASS**, **FAI
 | Gate                                             | Result | Notes                                                                                  |
 | ------------------------------------------------ | ------ | -------------------------------------------------------------------------------------- |
 | `npm run cloud:check`                            |        |                                                                                        |
-| `npm run cloud:doctor`                           |        | required for cloud/environment or canonicalization changes                            |
+| `npm run cloud:doctor`                           |        | required for cloud/environment or canonicalization changes                             |
 | `npm run security:audit`                         |        | required when `package.json` or `package-lock.json` changed; not part of `cloud:check` |
 | `npm run build` + `npm run test:phase6-9-bundle` |        | required when bundling, lazy-loading or feature-flag gating changed                    |
 
@@ -70,12 +70,14 @@ Required for any change to `supabase/migrations/`, `supabase/functions/`, or `su
 
 ## Windows Presenter gate
 
-| Gate | Result | Notes |
-| --- | --- | --- |
-| CI x64/x86 solution build | | no unsigned artifact uploaded |
-| CI deterministic Core/loopback tests | | x64 |
-| Signed installer / SmartScreen / update / rollback | | Device Gate; dormant PR may record `not executed` |
-| Real Office, 500 transitions, Edge/Chrome PNA, venue | | Device/Human Gate; dormant PR may record `not executed` |
+| Gate                                                           | Result | Notes                                                                                            |
+| -------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
+| CI x64/x86 solution build                                      |        | no unsigned artifact uploaded                                                                    |
+| CI deterministic Core/loopback tests                           |        | x64                                                                                              |
+| Exact-SHA Store builder / package preflight                    |        | isolated build roots; no package artifact uploaded from public CI                                |
+| Partner Center identity / WACK / certification / Store signing |        | Store Gate; record the exact package SHA-256                                                     |
+| Store acquisition / update / repair / uninstall / rollback     |        | Device Gate; clean local-account and school-account profiles; no added Microsoft-account sign-in |
+| Real Office, 500 transitions, Edge/Chrome PNA, venue           |        | Device/Human Gate; dormant PR may record `not executed`                                          |
 
 ## Dev Container gate
 

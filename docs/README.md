@@ -1,8 +1,8 @@
 # COMPASS Interactive Documentation Index
 
 Status: Operationally verified
-Scope: entrypoint and status vocabulary for the 110 documents in `docs/`
-Last verified: 2026-08-25
+Scope: entrypoint and status vocabulary for the 113 documents in `docs/`
+Last reconciled: 2026-09-06
 
 This directory holds design records, gate evidence, and operational runbooks accumulated across Phase 0 through the Phase 7.30F source/local readiness candidate. Most of those files are **dated records of a past decision**, not statements of current behavior. This index exists so that a reader arriving cold does not mistake one for the other.
 
@@ -19,6 +19,10 @@ When two sources disagree, the higher one wins.
    controlled by
    [`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md).
    Within that scope it supersedes contrary older phase text.
+   Presenter Store version 1 distribution and activation are controlled by
+   [`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+   [`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md),
+   which supersede that plan's earlier Work package G publication assumptions.
 5. Approved current future contracts: [`ROADMAP.md`](ROADMAP.md) controls phase
    order and gates; [`PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`](PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md)
    and [`PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`](PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md)
@@ -66,7 +70,7 @@ A document dated in the past is not automatically `Historical` — `architecture
 | [`RUNBOOK_INDEX.md`](RUNBOOK_INDEX.md)                                                                                   | Operationally verified            | Entrypoint for setup, verification, deployment, rollback, incidents                                |
 | [`ROADMAP.md`](ROADMAP.md)                                                                                               | Planned                           | Future phases, cross-phase invariants, stop-the-line gates                                         |
 | [`AGENT_EXECUTION_ROUTING.md`](AGENT_EXECUTION_ROUTING.md)                                                               | Planned                           | Reasoning budget and internal/external agent responsibility                                        |
-| [`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md)   | Planned                           | Final lecture UX requirements, implementation work packages and fast Production release contract  |
+| [`LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md`](LECTURE_UX_FINAL_REQUIREMENTS_AND_IMPLEMENTATION_PLAN.md)   | Planned                           | Final lecture UX requirements, implementation work packages and fast Production release contract   |
 | [`LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md`](LECTURE_CYCLE_PRODUCTION_CANDIDATE_PLAN.md)                               | Planned                           | Private-source, no-regression lecture-cycle candidate and 50-hour bounded release plan             |
 | [`LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md`](LECTURE_CYCLE_CLOUD_AGENT_PLAYBOOK.md)                                         | Planned                           | Copy-ready parallel cloud task instructions, ownership and handoff contract                        |
 | [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)                                       | Implemented, verification pending | Direct Production topology, UI canary, stop conditions and repair-forward release contract         |
@@ -84,17 +88,19 @@ A document dated in the past is not automatically `Historical` — `architecture
 
 ## Setup and deployment
 
-| Document                                                                                         | Status                            | Scope                                              |
-| ------------------------------------------------------------------------------------------------ | --------------------------------- | -------------------------------------------------- |
-| [`supabase_setup.md`](supabase_setup.md)                                                         | Operationally verified            | Supabase project and local stack setup             |
-| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                       | Operationally verified            | Cloudflare Pages delivery                          |
-| [`gas_integration.md`](gas_integration.md)                                                       | Implemented, verification pending | Google Apps Script integration boundary            |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)           | Historical                        | Rollout procedure as of Phase 6.5                  |
-| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)               | Historical                        | Rollout procedure as of Phase 6.6                  |
-| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md) | Production                        | PPT rescue, dormant deploy and rollback            |
-| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)         | Local source; activation HOLD     | Gateway, signed delivery and activation contract   |
-| [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)   | Historical                        | Dated Hosted evidence for the default-OFF release  |
-| [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)               | Implemented, verification pending | Current direct Production lecture-cycle activation |
+| Document                                                                                           | Status                            | Scope                                              |
+| -------------------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------- |
+| [`supabase_setup.md`](supabase_setup.md)                                                           | Operationally verified            | Supabase project and local stack setup             |
+| [`cloudflare_pages_deploy.md`](cloudflare_pages_deploy.md)                                         | Operationally verified            | Cloudflare Pages delivery                          |
+| [`gas_integration.md`](gas_integration.md)                                                         | Implemented, verification pending | Google Apps Script integration boundary            |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE0_6_5.md)             | Historical                        | Rollout procedure as of Phase 6.5                  |
+| [`PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md`](PRODUCTION_ROLLOUT_RUNBOOK_PHASE6_6.md)                 | Historical                        | Rollout procedure as of Phase 6.6                  |
+| [`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md)                               | Implemented, verification pending | Current Store release and classroom gate sequence  |
+| [`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md) | Implemented, verification pending | Store v1 submission, certification and publication |
+| [`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)   | Historical                        | Dated 7.29A/B rescue and dormant placement         |
+| [`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)           | Implemented, verification pending | Current Gateway and Store activation contract      |
+| [`PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md`](PHASE7_29B_HOSTED_DORMANT_GATE_2026-08-09.md)     | Historical                        | Dated Hosted evidence for the default-OFF release  |
+| [`LECTURE_CYCLE_PRODUCTION_ACTIVATION.md`](LECTURE_CYCLE_PRODUCTION_ACTIVATION.md)                 | Implemented, verification pending | Current direct Production lecture-cycle activation |
 
 A runbook records the contract in source and the operational procedure. External state — Cloudflare dashboard, hosted secrets, real mail delivery — is not proven current by the document's date. The operator confirms it.
 
@@ -118,7 +124,7 @@ A runbook records the contract in source and the operational procedure. External
 | [`journal_club_sync_strategy.md`](journal_club_sync_strategy.md)                       | Implemented, verification pending | Synchronization strategy                           |
 | [`journal_club_admin_gate.md`](journal_club_admin_gate.md)                             | Implemented, verification pending | Admin gate for Journal Club                        |
 | [`journal_club_realtime_check.md`](journal_club_realtime_check.md)                     | Historical                        | Realtime behavior check record                     |
-| [`PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`](PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md) | Implemented, verification pending | Optional Windows Presenter boundary                |
+| [`PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`](PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md) | Implemented, verification pending | Current Presenter architecture and trust boundary  |
 
 The Journal Club documents predate the Phase 7.27 integration. Where they conflict with `PHASE7_27_JOURNAL_CLUB_INTEGRATION.md` and the code, the code wins.
 
