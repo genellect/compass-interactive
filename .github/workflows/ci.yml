@@ -236,7 +236,10 @@ jobs:
         run: npm run test:phase7-29-concurrency
 
       - name: Run Presenter bound authority and terminal lease concurrency regression
-        run: npm exec -- node scripts/test-presenter-authority-concurrency.mjs
+        # Earlier concurrency tests retain terminal Admin/AI audit fixtures.
+        run: |
+          npx supabase db reset --local --no-seed
+          npm exec -- node scripts/test-presenter-authority-concurrency.mjs
 
       - name: Run Admin AI unlock replay and lock-order concurrency regression
         run: npm run test:phase7-30b2-concurrency
