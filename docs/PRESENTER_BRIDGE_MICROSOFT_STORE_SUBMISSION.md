@@ -1,7 +1,7 @@
 # COMPASS Presenter Bridge Microsoft Store submission runbook
 
 Decision date: 2026-09-06. Source baseline:
-`fa99e4e9d822f2bbf75e08194c19bb0eb3a37931`.
+`71def0b2abc48d68df8e00d40e2c45cc91109ac9`.
 
 COMPASS Presenter Bridge version 1 uses Microsoft Store ingestion, signing,
 delivery and update of a packaged MSIX. It is not distributed through the old
