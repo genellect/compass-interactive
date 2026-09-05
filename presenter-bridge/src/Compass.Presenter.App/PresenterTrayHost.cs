@@ -12,8 +12,12 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         CancellationToken,
         Task> recover;
     private readonly Action requestShutdown;
+    private readonly Func<CancellationToken, Task<bool>>
+        removeInstallationIdentity;
+#if !PRESENTER_STORE
     private readonly Func<CancellationToken, Task<bool>>? checkUpdate;
     private readonly Func<CancellationToken, Task<bool>>? installUpdate;
+#endif
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -23,14 +27,24 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
     private ApplicationContext? applicationContext;
     private Form? activeDialog;
     private Task recoveryTask = Task.CompletedTask;
+    private Task identityRemovalTask = Task.CompletedTask;
+#if !PRESENTER_STORE
     private Task updateTask = Task.CompletedTask;
+#endif
     private NotifyIcon? notifyIcon;
     private ToolStripMenuItem? recoveryItem;
+    private ToolStripMenuItem? identityRemovalItem;
+#if !PRESENTER_STORE
     private ToolStripMenuItem? updateItem;
+#endif
     private ToolStripMenuItem? statusItem;
     private int presenterSessionState;
     private int recoveryRunning;
+    private int identityRemovalRunning;
+#if !PRESENTER_STORE
     private int updateAvailable;
+    private int updateRunning;
+#endif
     private int disposed;
     private SynchronizationContext? uiContext;
 
@@ -41,13 +55,17 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             CancellationToken,
             Task> recover,
         Action requestShutdown,
+        Func<CancellationToken, Task<bool>> removeInstallationIdentity,
         Func<CancellationToken, Task<bool>>? checkUpdate,
         Func<CancellationToken, Task<bool>>? installUpdate)
     {
         this.recover = recover;
         this.requestShutdown = requestShutdown;
+        this.removeInstallationIdentity = removeInstallationIdentity;
+#if !PRESENTER_STORE
         this.checkUpdate = checkUpdate;
         this.installUpdate = installUpdate;
+#endif
         thread = new Thread(Run)
         {
             IsBackground = true,
@@ -63,10 +81,16 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             CancellationToken,
             Task> recover,
         Action requestShutdown,
+        Func<CancellationToken, Task<bool>> removeInstallationIdentity,
         Func<CancellationToken, Task<bool>>? checkUpdate = null,
         Func<CancellationToken, Task<bool>>? installUpdate = null)
     {
-        var host = new PresenterTrayHost(recover, requestShutdown, checkUpdate, installUpdate);
+        var host = new PresenterTrayHost(
+            recover,
+            requestShutdown,
+            removeInstallationIdentity,
+            checkUpdate,
+            installUpdate);
         host.thread.Start();
         try
         {
@@ -86,10 +110,17 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         {
             using var menu = new ContextMenuStrip();
             using var recoveryItem = new ToolStripMenuItem("復旧コードを入力");
+            using var localIdentityRemovalItem =
+                new ToolStripMenuItem("ローカル接続IDを削除")
+                {
+                    Enabled = false,
+                };
+#if !PRESENTER_STORE
             using var localUpdateItem = new ToolStripMenuItem("更新を確認")
             {
                 Enabled = checkUpdate is not null && installUpdate is not null,
             };
+#endif
             using var localStatusItem = new ToolStripMenuItem("状態: 待機中")
             {
                 Enabled = false,
@@ -97,7 +128,10 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             using var exitItem = new ToolStripMenuItem("終了");
             menu.Items.Add(localStatusItem);
             menu.Items.Add(recoveryItem);
+            menu.Items.Add(localIdentityRemovalItem);
+#if !PRESENTER_STORE
             menu.Items.Add(localUpdateItem);
+#endif
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(exitItem);
             using var icon = new NotifyIcon
@@ -111,9 +145,20 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             applicationContext = context;
             notifyIcon = icon;
             this.recoveryItem = recoveryItem;
+            identityRemovalItem = localIdentityRemovalItem;
+#if !PRESENTER_STORE
             updateItem = localUpdateItem;
+#endif
             statusItem = localStatusItem;
             recoveryItem.Click += (_, _) => StartRecovery(icon);
+            localIdentityRemovalItem.Click += (_, _) =>
+            {
+                if (identityRemovalTask.IsCompleted)
+                {
+                    identityRemovalTask = BeginIdentityRemovalAsync();
+                }
+            };
+#if !PRESENTER_STORE
             localUpdateItem.Click += (_, _) =>
             {
                 if (updateTask.IsCompleted)
@@ -121,11 +166,15 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                     updateTask = BeginUpdateAsync();
                 }
             };
+#endif
             exitItem.Click += (_, _) =>
             {
                 exitItem.Enabled = false;
                 recoveryItem.Enabled = false;
+                localIdentityRemovalItem.Enabled = false;
+#if !PRESENTER_STORE
                 localUpdateItem.Enabled = false;
+#endif
                 SetStatus("状態: 終了しています…");
                 requestShutdown();
             };
@@ -152,7 +201,10 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             applicationContext = null;
             notifyIcon = null;
             this.recoveryItem = null;
+            identityRemovalItem = null;
+#if !PRESENTER_STORE
             updateItem = null;
+#endif
             statusItem = null;
             uiContext = null;
             stopped.TrySetResult();
@@ -161,7 +213,8 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
 
     private void StartRecovery(NotifyIcon icon)
     {
-        if (lifetime.IsCancellationRequested)
+        if (lifetime.IsCancellationRequested ||
+            Volatile.Read(ref identityRemovalRunning) != 0)
         {
             return;
         }
@@ -179,6 +232,10 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         if (recoveryItem is not null)
         {
             recoveryItem.Enabled = false;
+        }
+        if (identityRemovalItem is not null)
+        {
+            identityRemovalItem.Enabled = false;
         }
         recoveryTask = BeginRecoveryAsync(icon);
     }
@@ -232,12 +289,60 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         finally
         {
             Volatile.Write(ref recoveryRunning, 0);
-            if (recoveryItem is not null &&
-                !lifetime.IsCancellationRequested &&
-                (PresenterSessionState)Volatile.Read(
-                    ref presenterSessionState) != PresenterSessionState.Active)
+            RefreshActionAvailability();
+        }
+    }
+
+    private async Task BeginIdentityRemovalAsync()
+    {
+        await Task.Yield();
+        if (lifetime.IsCancellationRequested ||
+            (PresenterSessionState)Volatile.Read(ref presenterSessionState) !=
+                PresenterSessionState.Idle ||
+            Volatile.Read(ref recoveryRunning) != 0 ||
+            Interlocked.Exchange(ref identityRemovalRunning, 1) != 0)
+        {
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            "ローカル接続IDを削除すると、現在の接続情報は使えなくなり、次回起動時に新しいIDが作成されます。アプリを終了して削除しますか？",
+            "COMPASS Presenter Bridge",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (!confirmed)
+        {
+            Volatile.Write(ref identityRemovalRunning, 0);
+            RefreshActionAvailability();
+            return;
+        }
+
+        var accepted = false;
+        RefreshActionAvailability();
+        try
+        {
+            SetStatus("状態: ローカル接続IDを削除して終了しています…");
+            accepted = await removeInstallationIdentity(lifetime.Token)
+                .ConfigureAwait(true);
+            if (!accepted)
             {
-                recoveryItem.Enabled = true;
+                SetStatus("状態: 接続中はローカル接続IDを削除できません");
+            }
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            SetStatus("状態: ローカル接続IDを削除できませんでした");
+        }
+        finally
+        {
+            if (!accepted)
+            {
+                Volatile.Write(ref identityRemovalRunning, 0);
+                RefreshActionAvailability();
             }
         }
     }
@@ -252,18 +357,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                 {
                     return;
                 }
-                if (recoveryItem is not null)
-                {
-                    recoveryItem.Enabled =
-                        state != PresenterSessionState.Active &&
-                        Volatile.Read(ref recoveryRunning) == 0;
-                }
-                if (updateItem is not null)
-                {
-                    updateItem.Enabled = checkUpdate is not null && installUpdate is not null &&
-                        state != PresenterSessionState.Active &&
-                        Volatile.Read(ref recoveryRunning) == 0;
-                }
+                RefreshActionAvailability();
                 switch (state)
                 {
                     case PresenterSessionState.Active:
@@ -285,6 +379,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             null);
     }
 
+#if !PRESENTER_STORE
     public void ReportUpdateAvailability(bool available)
     {
         Volatile.Write(ref updateAvailable, available ? 1 : 0);
@@ -300,13 +395,18 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
     private async Task BeginUpdateAsync()
     {
         var update = Volatile.Read(ref updateAvailable) == 1 ? installUpdate : checkUpdate;
-        if (update is null || lifetime.IsCancellationRequested)
+        if (update is null || lifetime.IsCancellationRequested ||
+            Interlocked.Exchange(ref updateRunning, 1) != 0)
         {
             return;
         }
         if (updateItem is not null)
         {
             updateItem.Enabled = false;
+        }
+        if (identityRemovalItem is not null)
+        {
+            identityRemovalItem.Enabled = false;
         }
         try
         {
@@ -325,12 +425,57 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         }
         finally
         {
-            if (updateItem is not null && !lifetime.IsCancellationRequested)
-            {
-                updateItem.Enabled = (PresenterSessionState)Volatile.Read(
-                    ref presenterSessionState) != PresenterSessionState.Active;
-            }
+            Volatile.Write(ref updateRunning, 0);
+            RefreshActionAvailability();
         }
+    }
+
+#endif
+
+    private void RefreshActionAvailability()
+    {
+        if (lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        var state = (PresenterSessionState)Volatile.Read(
+            ref presenterSessionState);
+        var recoveryIsRunning = Volatile.Read(ref recoveryRunning) != 0;
+        var identityRemovalIsRunning =
+            Volatile.Read(ref identityRemovalRunning) != 0;
+#if !PRESENTER_STORE
+        var updateIsRunning = Volatile.Read(ref updateRunning) != 0;
+#else
+        const bool updateIsRunning = false;
+#endif
+        if (recoveryItem is not null)
+        {
+            recoveryItem.Enabled =
+                state != PresenterSessionState.Active &&
+                !recoveryIsRunning &&
+                !identityRemovalIsRunning &&
+                !updateIsRunning;
+        }
+        if (identityRemovalItem is not null)
+        {
+            identityRemovalItem.Enabled =
+                state == PresenterSessionState.Idle &&
+                !recoveryIsRunning &&
+                !identityRemovalIsRunning &&
+                !updateIsRunning;
+        }
+#if !PRESENTER_STORE
+        if (updateItem is not null)
+        {
+            updateItem.Enabled =
+                checkUpdate is not null &&
+                installUpdate is not null &&
+                state != PresenterSessionState.Active &&
+                !recoveryIsRunning &&
+                !identityRemovalIsRunning &&
+                !updateIsRunning;
+        }
+#endif
     }
 
     private void ReportRecoveryStage(ManualRecoveryStage stage)
@@ -474,7 +619,13 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             null);
         try
         {
-            await Task.WhenAll(recoveryTask, updateTask).ConfigureAwait(false);
+#if PRESENTER_STORE
+            await Task.WhenAll(recoveryTask, identityRemovalTask)
+                .ConfigureAwait(false);
+#else
+            await Task.WhenAll(recoveryTask, identityRemovalTask, updateTask)
+                .ConfigureAwait(false);
+#endif
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {

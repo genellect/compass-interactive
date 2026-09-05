@@ -90,6 +90,50 @@ hosted synchronization acceptance remain separate gates.
 
 ## Installation and updates
 
+### Microsoft Store MSIX lane
+
+The free-certificate distribution lane packages the same bridge as a
+Microsoft Store x64 MSIX. Build with `PresenterDistribution=Store` to remove
+Velopack, its startup bootstrap, anonymous feed, update coordinator and tray
+update UI at compile time. WinForms, PowerPoint COM observation, HTTPS-to-
+loopback pairing, server authority checks and the per-user non-exportable CNG
+P-256 installation proof remain unchanged. `Direct` is still the default build
+and retains the behavior below.
+
+The Store manifest uses a packaged classic app at `mediumIL` and declares only
+the restricted `runFullTrust` capability needed by that desktop process. It
+enables the packaged desktop startup task; after the app's first launch,
+Windows sign-in starts the tray without a teacher CLI step. The Store build
+script requires the exact reserved Partner Center identity, publisher,
+publisher display name and clean source commit. The release operator must
+explicitly select the Microsoft Standard Application License Terms or supply
+separately approved additional terms; the build does not claim legal approval.
+Its new output directory must be outside the source checkout. The build and
+preflight require a Microsoft-signed Windows SDK 26100-or-later MakeAppx and
+record its exact version and SHA-256. It does not accept or fabricate a Partner
+Center Product ID. See
+[`store/README.md`](store/README.md) for packaging and preflight commands.
+
+The initial Store package requires Windows 11 24H2, build 26100 or later. Its
+v1 Store language and native UI acceptance matrix is Japan-only (`ja-JP`).
+Update-in-use deferral is declared through `uap17:UpdateWhileInUse=defer`, which
+starts at the same build. Windows builds 19041 through 26099 are outside the v1
+Store eligibility matrix and may be added only after real update-in-use device
+testing proves safe behavior. Publication also remains blocked until a Store-installed exact
+candidate proves PowerPoint COM/loopback/CNG behavior and that a teacher can
+install and use it without an additional account login.
+
+An unsigned development package is always marked
+`UNSIGNED_DEVELOPMENT_ONLY` in its file name, embedded metadata and receipt.
+It is not a Store submission and must never be generally distributed.
+
+Because package uninstall may retain a per-user CNG key, the tray exposes
+`ローカル接続IDを削除` only while idle. It requires an explicit confirmation,
+then shuts down and deletes the local identity after disconnecting. The next
+launch creates a fresh identity and requires fresh pairing.
+
+### Direct signed lane
+
 The signed per-user Velopack installer starts the bridge after installation and
 creates `Startup,StartMenuRoot` shortcuts. Windows sign-in then starts the tray
 without a terminal or additional account. Browser pairing and current deck

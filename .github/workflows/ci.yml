@@ -490,11 +490,52 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Release runtime restore failed.' }
           dotnet publish src/Compass.Presenter.App/Compass.Presenter.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore -p:PlatformTarget=x64 --output "$env:RUNNER_TEMP/presenter-unsigned-payload"
           if ($LASTEXITCODE -ne 0) { throw 'Self-contained payload build failed.' }
-          foreach ($file in Get-ChildItem -LiteralPath scripts -File -Filter '*.ps1') {
+          foreach ($file in Get-ChildItem -Path scripts, store -File -Filter '*.ps1') {
             $tokens = $null
             $parseErrors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count -ne 0) { throw "Invalid release script: $($file.Name)" }
+          }
+      - name: Build and preflight the Store-managed MSIX lane
+        if: env.RUN_NATIVE == 'true' && matrix.platform == 'x64'
+        shell: pwsh
+        working-directory: presenter-bridge
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+          $makeAppx = Get-ChildItem -LiteralPath $sdkBin -Recurse -File -Filter 'makeappx.exe' |
+            Where-Object {
+              $_.FullName -match '[\\/]x64[\\/]makeappx\.exe$' -and
+              ([Version]$_.VersionInfo.ProductVersion).Build -ge 26100
+            } |
+            Sort-Object { [Version]$_.VersionInfo.ProductVersion } -Descending |
+            Select-Object -First 1
+          if ($null -eq $makeAppx) { throw 'Windows SDK 10.0.26100+ x64 MakeAppx was not found.' }
+
+          $storeOutput = Join-Path $env:RUNNER_TEMP 'presenter-store-msix'
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
+            throw 'Unable to resolve the exact source commit for the Store package.'
+          }
+          & ./store/Build-PresenterStorePackage.ps1 `
+            -Version '1.0.0.0' `
+            -OutputRoot $storeOutput `
+            -SourceCommit $sourceCommit `
+            -IdentityName 'CompassPresenterBridge.Development' `
+            -Publisher 'CN=COMPASS Presenter Bridge Development' `
+            -PublisherDisplayName 'COMPASS Development' `
+            -UseMicrosoftStandardApplicationLicenseTerms `
+            -MakeAppxPath $makeAppx.FullName `
+            -DotnetPath (Get-Command dotnet).Source `
+            -UnsignedDevelopmentOnly
+
+          $directDependencies = Get-Content -Raw -LiteralPath "$env:RUNNER_TEMP/presenter-unsigned-payload/COMPASS.PresenterBridge.deps.json"
+          $storeDependencies = Get-Content -Raw -LiteralPath "$storeOutput/work/publish/COMPASS.PresenterBridge.deps.json"
+          if ($directDependencies -notmatch 'Velopack/1\.2\.0') {
+            throw 'Direct distribution lost its pinned Velopack dependency.'
+          }
+          if ($storeDependencies -match 'Velopack|PresenterUpdateCoordinator|presenter-updates\.yuto-matsui\.com') {
+            throw 'Store distribution contains a Direct self-update dependency or feed marker.'
           }
       - if: env.RUN_NATIVE == 'true'
         run: git diff --check

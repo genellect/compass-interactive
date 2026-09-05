@@ -1,0 +1,11 @@
+COMPASS Presenter Bridge
+Copyright (c) 2026 Yuto Matsui. All rights reserved.
+
+This file identifies copyright ownership and the intended distribution channel.
+It does not itself grant a license or state that a Store submission was approved.
+
+A production binary may be distributed to teachers only after the matching
+Microsoft Store submission has completed certification and Store signing. The
+license terms configured in Partner Center govern use of that Store
+distribution. An artifact marked UNSIGNED_DEVELOPMENT_ONLY is for development
+inspection only and may not be submitted, sideloaded, or generally distributed.

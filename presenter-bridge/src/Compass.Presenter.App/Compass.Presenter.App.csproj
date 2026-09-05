@@ -6,10 +6,20 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>COMPASS.PresenterBridge</AssemblyName>
     <RootNamespace>Compass.Presenter.App</RootNamespace>
+    <PresenterDistribution Condition="'$(PresenterDistribution)' == ''">Direct</PresenterDistribution>
+    <DefineConstants Condition="'$(PresenterDistribution)' == 'Store'">$(DefineConstants);PRESENTER_STORE</DefineConstants>
+    <NuGetLockFilePath Condition="'$(PresenterDistribution)' == 'Store'">packages.store.lock.json</NuGetLockFilePath>
   </PropertyGroup>
-  <ItemGroup>
+  <ItemGroup Condition="'$(PresenterDistribution)' != 'Store'">
     <PackageReference Include="Velopack" Version="[1.2.0]" />
   </ItemGroup>
+  <ItemGroup Condition="'$(PresenterDistribution)' == 'Store'">
+    <Compile Remove="VelopackPresenterUpdater.cs;PresenterUpdateTrust.cs;PresenterUpdateCoordinator.cs" />
+  </ItemGroup>
+  <Target Name="ValidatePresenterDistribution" BeforeTargets="PrepareForBuild;CollectPackageReferences">
+    <Error Condition="'$(PresenterDistribution)' != 'Direct' and '$(PresenterDistribution)' != 'Store'"
+           Text="PresenterDistribution must be Direct or Store." />
+  </Target>
   <ItemGroup>
     <ProjectReference Include="../Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
     <ProjectReference Include="../Compass.Presenter.Core/Compass.Presenter.Core.csproj" />
