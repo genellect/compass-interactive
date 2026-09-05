@@ -581,7 +581,6 @@ Deno.serve(async (request) => {
           409,
         )
       }
-      actorId = started.actorId
       operationId = started.operationId
       ownsNewOperation = !started.idempotentReplay
 

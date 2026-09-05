@@ -124,6 +124,8 @@ const presenterBoundAuthorityMigrationName =
   '20260905074220_presenter_bound_authority_and_terminal_lease.sql'
 const teacherAiOneStepAdministrationMigrationName =
   '20260905105753_teacher_ai_one_step_administration.sql'
+const summaryDispatchFailureGuardMigrationName =
+  '20260905161526_summary_dispatch_failure_guard.sql'
 const baselinePath = join(migrationsDir, baselineName)
 const configPath = join(supabaseDir, 'config.toml')
 const anonymousAuthPath = join(root, 'src', 'lib', 'anonymousAuth.ts')
@@ -197,6 +199,7 @@ assert.deepEqual(
     singleLecture300CapacityHardeningMigrationName,
     presenterBoundAuthorityMigrationName,
     teacherAiOneStepAdministrationMigrationName,
+    summaryDispatchFailureGuardMigrationName,
   ],
   'The immutable baseline must be followed by additive milestone migrations.',
 )

@@ -32,7 +32,7 @@
     "test:phase5-static": "node scripts/test-phase5-static.mjs",
     "test:phase5-load": "node scripts/test-phase5-load.mjs",
     "test:phase5-openai-live": "node --experimental-strip-types scripts/test-phase5-openai-live.ts",
-    "test:phase6-edge": "node --experimental-strip-types scripts/test-phase6-edge.ts",
+    "test:phase6-edge": "node --experimental-strip-types scripts/test-phase6-edge.ts && node --experimental-strip-types scripts/test-phase6-handler.ts",
     "test:phase6-static": "node scripts/test-phase6-static.mjs",
     "test:phase6-load": "node scripts/test-phase6-load.mjs",
     "test:phase6-openai-live": "node --experimental-strip-types scripts/test-phase6-openai-live.ts",
