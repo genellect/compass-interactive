@@ -18,6 +18,41 @@ export type RawAcademicResults = {
   control?: null | Record<string, unknown>
 }
 
+export function toAdminRecoveredSummaryResponse(
+  data: { actualMicrousd?: number; windowId?: string },
+  raw: RawSummaryResults,
+  request: { runToken: string; windowIndex: number },
+) {
+  const results = toAdminSummaryResults(raw)
+  const targetWindow = results.windows.find(
+    (window) =>
+      window.id === data.windowId && window.windowIndex === request.windowIndex,
+  )
+  const rawSummary = raw.summaries?.find(
+    (item) => item.window_id === data.windowId,
+  )
+  const summary = results.summaries.find(
+    (item) =>
+      item.id === rawSummary?.id && item.windowIndex === request.windowIndex,
+  )
+  if (
+    results.run?.id !== request.runToken.split('.')[0] ||
+    !targetWindow ||
+    !['succeeded', 'skipped', 'discarded'].includes(targetWindow.status) ||
+    (targetWindow.status === 'succeeded' && !summary)
+  ) {
+    throw new Error(
+      '作成済みの要約を確認できませんでした。同じ処理の結果を再確認します。',
+    )
+  }
+  return {
+    actualMicrousd: Number(data.actualMicrousd ?? 0),
+    published: summary?.publication?.visibility === 'public',
+    results,
+    skipped: targetWindow.status === 'skipped',
+  }
+}
+
 export type DisplayStateRow = {
   current_pdf_page: number
   display_mode: AdminDisplayState['displayMode']

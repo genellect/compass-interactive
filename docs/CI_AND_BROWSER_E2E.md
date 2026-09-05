@@ -42,11 +42,12 @@ to the full matrix.
 
 ## GitHub Actions jobs
 
-`.github/workflows/ci.yml` contains five mandatory gates plus conditional
-Dependency Review and CodeQL jobs:
+`.github/workflows/ci.yml` contains five application/native gates plus the
+Dependency Review and CodeQL jobs. The separate Dev Container workflow provides
+the eighth required context:
 
 1. **Quality and non-live regression** runs TypeScript checks, oxlint, the
-   explicit allowlist of 75 non-live Phase 0-7.30 test groups, documentation
+   explicit allowlist of 77 non-live Phase 0-7.30 test groups, documentation
    consistency, the production build and `git diff --check`.
 2. **Demo browser E2E** runs desktop and 390 px mobile Chromium against the
    Supabase-independent `/demo` flow, plus the Phase 7.30 Admin identity gate
@@ -102,6 +103,16 @@ collects nor independently proves them.
    build and deterministic test suite with the x86 runtime. Neither job uploads
    an unsigned executable. They do not claim real PowerPoint, installer,
    SmartScreen, browser PNA or venue acceptance.
+6. **Dependency review** rejects newly introduced vulnerable or forbidden
+   dependency changes. A documentation-only classification reports the context
+   without running dependency work.
+7. **CodeQL JavaScript and TypeScript** analyzes source changes. A
+   documentation-only classification reports the context without starting the
+   analysis.
+8. **Build and verify the cloud workspace** comes from
+   `.github/workflows/devcontainer-contract.yml` and validates the Dev Container
+   contract for matching source paths; other paths still report the required
+   context without a container build.
 
 Both browser suites block every non-local HTTP(S) request. Browser console
 errors, uncaught page errors and horizontal overflow fail the suite. On
@@ -225,11 +236,11 @@ the workflow for production migration, deployment and paid-live commands.
 
 ## Repository setup after push
 
-No repository secret is required by this workflow. Main ruleset `20600565` is
-active and requires the five job results above, a Pull Request and resolved
-review conversations; force-push and branch deletion are blocked. Required
+No repository secret is required by these workflows. Main rulesets `20600565`
+and `21259111` are active; the stricter `21259111` requires the eight contexts
+above, a Pull Request, resolved review conversations, current `main`, linear
+history and Squash merge. Force-push and branch deletion are blocked. Required
 approvals remain zero for the solo owner, no administrator bypass is configured,
-and `strict_required_status_checks_policy=false` avoids forcing every open PR to
-update and repeat the full matrix after an unrelated `main` change. The five
-checks still must pass for the candidate PR head. Keep workflow permissions
-read-only and do not add production credentials to this workflow.
+and `strict_required_status_checks_policy=true` means any base or head change
+requires all eight contexts on the resulting candidate head. Keep workflow
+permissions read-only and do not add production credentials to these workflows.

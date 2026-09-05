@@ -65,7 +65,7 @@ reviewed compile-time channel rather than a teacher-machine override.
 Do not put a pairing ticket, capability, Admin token, API key, or service-role
 key in either value.
 
-The complete Gateway, signing, update-feed, five-minute manual recovery-code TTL
+The complete fixed-Gateway, Store delivery, five-minute manual recovery-code TTL
 and activation gate is documented in
 `../docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`.
 
@@ -75,10 +75,12 @@ Source is retained in the canonical GitHub repository for cross-platform review
 and Windows CI compile/testing. Windows Application Control blocked an unsigned
 generated test assembly on the former development workstation on 2026-08-01;
 do not disable or bypass that control. CI does not distribute its unsigned
-outputs. Exact Gateway FQDN/route, code signing, per-user installer/update
-behavior, SmartScreen reputation, PowerPoint 32/64-bit Office-build coverage,
-500-transition real-PowerPoint testing, and Edge/Chrome HTTPS-to-loopback
-device testing remain Device/Human/Hosted Gate requirements.
+outputs. The release FQDN is fixed in source, while Hosted DNS/Worker/Edge and
+secret evidence, exact Partner Center identity, WACK, `runFullTrust` approval,
+Store certification/signing, Store update/acquisition without added login,
+PowerPoint 32/64-bit Office-build coverage, 500-transition real-PowerPoint
+testing, and Edge/Chrome HTTPS-to-loopback device testing remain
+Hosted/Store/Device/Human Gate requirements.
 
 An unsigned Office 16 / 32-bit Office, x64 bridge, single-monitor probe on
 2026-09-05 verified raw slide identity in windowed and ordinary Speaker shows.
@@ -89,6 +91,84 @@ View session; that mode is still rejected. Signed installation, browser and
 hosted synchronization acceptance remain separate gates.
 
 ## Installation and updates
+
+### Microsoft Store MSIX lane
+
+The free-certificate distribution lane packages the same bridge as a
+Microsoft Store x64 MSIX. Build with `PresenterDistribution=Store` to remove
+Velopack, its startup bootstrap, anonymous feed, update coordinator and tray
+update UI at compile time. WinForms, PowerPoint COM observation, HTTPS-to-
+loopback pairing, server authority checks and the per-user non-exportable CNG
+P-256 installation proof remain unchanged. `Direct` is still the default build
+and retains the behavior below.
+
+The Store manifest uses a packaged classic app at `mediumIL` and declares only
+the restricted `runFullTrust` capability needed by that desktop process. It
+enables the packaged desktop startup task; after the app's first launch,
+Windows sign-in starts the tray without a teacher CLI step. The Store build
+script requires the exact reserved Partner Center identity, publisher,
+publisher display name and clean source commit. The release operator must
+use the Microsoft Standard Application License Terms and leave Partner Center's
+**Additional license terms** field blank for version 1. A custom terms file or
+URL is outside the version 1 contract.
+Its new output directory must be outside the source checkout. The build and
+preflight require a Microsoft-signed Windows SDK 26100-or-later MakeAppx and
+record its exact version and SHA-256. It does not accept or fabricate a Partner
+Center Product ID. See
+[`store/README.md`](store/README.md) for packaging and preflight commands.
+
+The initial Store package requires Windows 11 24H2, build 26100 or later. Its
+v1 Store language and native UI acceptance matrix is Japan-only (`ja-JP`).
+Update-in-use deferral is declared through `uap17:UpdateWhileInUse=defer`, which
+starts at the same build. Windows builds 19041 through 26099 are outside the v1
+Store eligibility matrix and may be added only after real update-in-use device
+testing proves safe behavior. Publication also remains blocked until a Store-installed exact
+candidate proves PowerPoint COM/loopback/CNG behavior and that a teacher can
+install and use it without an additional account login.
+
+The initial submission must select Partner Center's manual Publishing hold
+**Don't publish this submission until I select Publish now**. Microsoft does not
+provide a predictable reviewer test time, so submission requires an explicit
+go/no-go on keeping Presenter globally ON for eligible educators throughout
+certification, with continuous monitoring and immediate rollback. If that is
+not acceptable, keep submission HOLD until reviewer-only admission exists. The
+certification artifact sets `VITE_PRESENTER_CERTIFICATION_MODE=true`, enables
+Presenter and omits the Store URL so the CTA is mechanically hidden. After
+certification, keep the hold until an explicit **Publish now** creates the
+Public-audience, available-but-not-discoverable, Direct-link-only listing.
+Re-promote and reverify the certification artifact for the classroom canary,
+turn server admission ON with DB OFF and DB admission ON last, then close DB,
+server and frontend afterward. Share the Store link only with named acquisition
+operators. Before that stage ends, freeze, verify and hash the same-SHA general
+artifact with `VITE_PRESENTER_CERTIFICATION_MODE=false`, Presenter ON and the
+exact Store URL.
+A Store flight applies only to later updates of an already published product
+and cannot replace initial acquisition proof. Enable the general CTA only after
+all release gates pass. On any failure, turn the CTA and Presenter admission
+off, use **Stop acquisition** or **Make unavailable** as applicable, and return
+all gates to HOLD.
+
+An unsigned development package is always marked
+`UNSIGNED_DEVELOPMENT_ONLY` in its file name, embedded metadata and receipt.
+It is not a Store submission and must never be generally distributed.
+For installation testing only, the Store helper can create a
+`SIGNED_LOCAL_DEVICE_TEST_ONLY` copy from that exact preflight-valid development
+package using a matching current-user Code Signing certificate. The signed copy
+and its receipt remain prohibited from distribution and Partner Center upload.
+
+Because package uninstall may retain a per-user CNG key, the tray exposes
+`ローカル接続IDを削除` only while idle. It requires an explicit confirmation,
+then shuts down and deletes the local identity after disconnecting. The next
+launch creates a fresh identity and requires fresh pairing.
+
+### Historical Direct signed lane
+
+The Direct EXE and anonymous update feed are retained only for historical
+development and regression testing. They must not be published, linked or
+distributed for version 1. The Store documentation in
+[`store/README.md`](store/README.md) and
+[`../docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](../docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+is authoritative for production distribution.
 
 The signed per-user Velopack installer starts the bridge after installation and
 creates `Startup,StartMenuRoot` shortcuts. Windows sign-in then starts the tray
@@ -124,19 +204,24 @@ to the feed's package ID/version. A changed publisher requires a separately
 reviewed installer migration. Unsigned installations cannot establish update
 trust. Certificates are never added to a trust store by the bridge.
 
-Detached CMS timestamps are not implemented. The signer must be valid at update
-time; the PE Authenticode timestamp does not extend CMS validity. Publish a new
-package signed by the renewed certificate with the same approved Subject before
-the current certificate expires, and retain an available trusted installer.
-This contract supports an existing CSP-backed certificate without private-key
-export. It is not proof that a signing provider, certificate or feed exists.
+Detached CMS timestamps are not implemented. The historical design requires a
+signer that is valid at update time; the PE Authenticode timestamp does not
+extend CMS validity. Its renewal model expected a new package with the same
+approved Subject before certificate expiry. This contract supports an existing
+CSP-backed certificate without private-key export. It is not proof that a
+signing provider, certificate or feed exists, and it does not authorize Direct
+publication.
 
-## Release operator contract
+## Historical Direct release operator contract
 
-Initial package ID/version/channel are `CompassPresenterBridge` / `0.1.0` /
-`win-x64`. The initial installer URL is
+This section preserves regression and provenance details only. Do not use it to
+upload, host or publicly distribute the Direct installer, package, signature or
+feed; version 1 production follows the Store runbook.
+
+The historical package ID/version/channel are `CompassPresenterBridge` /
+`0.1.0` / `win-x64`. The historical installer URL is
 `https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe`.
-Do not expose that link until its signed artifact is published and verified.
+Keep that link unexposed and unused for version 1.
 
 Run `scripts/Build-PresenterRelease.ps1` in PowerShell 7.4+ on the Windows release
 operator machine with the existing approved CSP certificate in `CurrentUser/My`,
@@ -157,11 +242,11 @@ SHA-256 CMS with the same certificate, without generating or exporting keys.
 No `ready/` output is created until these checks pass. If verification or the
 provider fails, do not upload the intermediate `work/` files.
 
-The staging result is `ready/feed/` (original versioned full package, `.p7s`,
-`releases.win-x64.json`), `ready/versions/<version>/` (immutable installer,
-package and `.p7s`) and `ready/release-manifest.json` (source SHA, publisher,
-signature expiry, file hashes and verification evidence). The script does not
-upload anything. Publish immutable files, package and `.p7s` first, verify their
-public hashes, then publish `releases.win-x64.json` last. Preserve prior signed
-versions; never rewrite an existing immutable version path. An unsigned CI
-self-contained payload is only an operator input and cannot clear this gate.
+The historical staging result is `ready/feed/` (original versioned full package,
+`.p7s`, `releases.win-x64.json`), `ready/versions/<version>/` (immutable
+installer, package and `.p7s`) and `ready/release-manifest.json` (source SHA,
+publisher, signature expiry, file hashes and verification evidence). The script
+does not upload anything. For version 1, do not publish any of these Direct
+files or the feed. Preserve any approved historical evidence without exposing a
+download path. An unsigned CI self-contained payload is only a regression input
+and cannot clear a Store release gate.

@@ -22,6 +22,7 @@ const optionalFeatureFlags = [
   'VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION',
   'VITE_PHASE7_28_DISPLAY_REALTIME',
   'VITE_PHASE7_29_POWERPOINT_SYNC',
+  'VITE_PRESENTER_CERTIFICATION_MODE',
   'VITE_PHASE7_30_ADMIN_IDENTITY',
   'VITE_PHASE7_30_ADMIN_AI_UNLOCK',
   'VITE_PHASE7_30_ADMIN_TOTP_FACTOR_MUTATION',
@@ -157,11 +158,30 @@ function validHttpsUrl(candidate) {
   }
 }
 
+function validPresenterStoreUrl(candidate) {
+  try {
+    const url = new URL(candidate)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'apps.microsoft.com' &&
+      !url.port &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      /^\/detail\/[A-Z0-9]{12}$/i.test(url.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
 export function validateProductionEnvironment(environment) {
   const errors = []
   const supabaseUrl = value(environment, 'VITE_SUPABASE_URL')
   const publishableKey = value(environment, 'VITE_SUPABASE_PUBLISHABLE_KEY')
   const turnstileSiteKey = value(environment, 'VITE_TURNSTILE_SITE_KEY')
+  const presenterStoreUrl = value(environment, 'VITE_PRESENTER_STORE_URL')
 
   if (isPlaceholder(supabaseUrl) || !validHttpsUrl(supabaseUrl)) {
     errors.push('VITE_SUPABASE_URL must be a non-placeholder HTTPS URL.')
@@ -195,7 +215,32 @@ export function validateProductionEnvironment(environment) {
     }
   }
 
+  if (presenterStoreUrl && !validPresenterStoreUrl(presenterStoreUrl)) {
+    errors.push(
+      'VITE_PRESENTER_STORE_URL must be an exact HTTPS apps.microsoft.com listing URL.',
+    )
+  }
+
   const enabled = (name) => value(environment, name) === 'true'
+  const presenterEnabled = enabled('VITE_PHASE7_29_POWERPOINT_SYNC')
+  const presenterCertificationMode = enabled(
+    'VITE_PRESENTER_CERTIFICATION_MODE',
+  )
+  if (presenterCertificationMode && !presenterEnabled) {
+    errors.push(
+      'VITE_PRESENTER_CERTIFICATION_MODE=true requires VITE_PHASE7_29_POWERPOINT_SYNC=true.',
+    )
+  }
+  if (presenterCertificationMode && presenterStoreUrl) {
+    errors.push(
+      'VITE_PRESENTER_CERTIFICATION_MODE=true requires VITE_PRESENTER_STORE_URL to be empty.',
+    )
+  }
+  if (presenterEnabled && !presenterCertificationMode && !presenterStoreUrl) {
+    errors.push(
+      'VITE_PHASE7_29_POWERPOINT_SYNC=true requires an exact VITE_PRESENTER_STORE_URL unless VITE_PRESENTER_CERTIFICATION_MODE=true.',
+    )
+  }
   const requireFlag = (feature, dependency) => {
     if (enabled(feature) && !enabled(dependency)) {
       errors.push(`${feature}=true requires ${dependency}=true.`)

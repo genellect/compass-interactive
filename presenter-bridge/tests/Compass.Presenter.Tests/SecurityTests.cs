@@ -335,6 +335,75 @@ internal static class SecurityTests
         return Task.CompletedTask;
     }
 
+    public static Task WindowsInstallationProofDeletesRecreatesAndReportsFailure()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+        {
+            return Task.CompletedTask;
+        }
+
+        var keyName =
+            $"COMPASS Interactive/PresenterBridge/Test/{Guid.NewGuid():N}";
+        var provider = CngProvider.MicrosoftSoftwareKeyStorageProvider;
+        try
+        {
+            string previousKeyId;
+            var original = WindowsInstallationProof.GetOrCreate(keyName);
+            try
+            {
+                previousKeyId = original.KeyId;
+                original.DeletePersistedIdentity();
+            }
+            finally
+            {
+                original.Dispose();
+            }
+            Assert.False(CngKey.Exists(
+                keyName,
+                provider,
+                CngKeyOpenOptions.UserKey));
+
+            using (var recreated =
+                WindowsInstallationProof.GetOrCreate(keyName))
+            {
+                Assert.False(
+                    string.Equals(
+                        previousKeyId,
+                        recreated.KeyId,
+                        StringComparison.Ordinal),
+                    "Expected a fresh local connection identity.");
+            }
+
+            var failureReported = false;
+            try
+            {
+                WindowsInstallationProof.DeletePersistedIdentity(
+                    keyName,
+                    _ => throw new CryptographicException(
+                        "Simulated deletion failure."));
+            }
+            catch (InstallationProofException error)
+            {
+                failureReported =
+                    error.Code == "installation_proof_invalid";
+            }
+            Assert.True(
+                failureReported,
+                "Expected deletion failure to use the safe installation-proof error.");
+            Assert.True(
+                CngKey.Exists(
+                    keyName,
+                    provider,
+                    CngKeyOpenOptions.UserKey),
+                "A failed deletion must leave the persisted identity available.");
+        }
+        finally
+        {
+            WindowsInstallationProof.DeletePersistedIdentity(keyName);
+        }
+        return Task.CompletedTask;
+    }
+
     private static readonly string[] ProofHeaderNames =
     [
         "X-Compass-Presenter-Key-Id",

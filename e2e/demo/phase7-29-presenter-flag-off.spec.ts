@@ -328,5 +328,10 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
   await page.waitForTimeout(250)
   expect(presenterRequests).toEqual([])
   expect(presenterModules).toEqual([])
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem('compass-presenter-privacy-consent-v1'),
+    ),
+  ).toBeNull()
   expect(pageErrors).toEqual([])
 })

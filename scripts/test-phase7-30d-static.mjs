@@ -10,6 +10,9 @@ const edge = read('supabase/functions/manage-admin-ledger/index.ts')
 const edgeRpcFailure = read(
   'supabase/functions/_shared/adminLedgerRpcFailure.ts',
 )
+const microsoftStoreReview = read(
+  'supabase/functions/_shared/adminMicrosoftStoreReview.ts',
+)
 const identityEdge = read('supabase/functions/admin-identity-session/index.ts')
 const identityApi = read('src/lib/adminAuth/adminIdentityApi.ts')
 const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
@@ -69,6 +72,10 @@ const b2UpgradeProbe = read(
 )
 const c2UpgradeProbe = read(
   'scripts/fixtures/phase7-30c2-c1-head-upgrade-probe-test.sql',
+)
+const presenterRelease = read('docs/PRESENTER_PRODUCTION_RELEASE.md')
+const presenterAuthorityPgTap = read(
+  'supabase/tests/presenter_bound_authority_test.sql',
 )
 
 const operationKeys = [
@@ -203,6 +210,56 @@ assert.match(edge, /readSecret\('ADMIN_INVITATION_SECRET'\)/)
 assert.match(edge, /deriveAdminInvitationToken/)
 assert.match(edge, /EMAIL_PATTERN\.test\(normalizedEmail\)/)
 assert.match(
+  edge,
+  /normalizeMicrosoftStoreReviewRequest\(body\.payload\)[\s\S]*microsoftStoreReviewContract[\s\S]*createMicrosoftStoreReviewContract[\s\S]*verifyMicrosoftStoreReviewContract/,
+  'Store reviewer requests must be expanded and verified at the Edge boundary',
+)
+assert.match(
+  microsoftStoreReview,
+  /MICROSOFT_STORE_REVIEW_INVITATION_SECONDS = 7 \* 24 \* 60 \* 60[\s\S]*MICROSOFT_STORE_REVIEW_MEMBERSHIP_SECONDS = 14 \* 24 \* 60 \* 60/,
+  'the signed reviewer contract must own both fixed expiries',
+)
+assert.match(
+  microsoftStoreReview,
+  /keys\.length !== 2[\s\S]*keys\[0\] !== 'normalizedEmail'[\s\S]*keys\[1\] !== 'purpose'/,
+  'the reviewer request must expose no client-controlled role, AI or expiry field',
+)
+assert.match(
+  microsoftStoreReview,
+  /function termsFromIssuedAt[\s\S]*canUseAi: false[\s\S]*MICROSOFT_STORE_REVIEW_INVITATION_SECONDS[\s\S]*MICROSOFT_STORE_REVIEW_MEMBERSHIP_SECONDS[\s\S]*role: 'instructor'/,
+  'reviewer authority and expiries must be derived only from the signed issuance time',
+)
+assert.match(
+  ledgerPanel,
+  /INVITATION_LIFETIME_MS = 48 \* 60 \* 60 \* 1_000[\s\S]*expiresAt: new Date\([\s\S]*Date\.now\(\) \+ INVITATION_LIFETIME_MS/,
+  'ordinary invitations must retain the existing 48-hour behavior',
+)
+assert.match(
+  adminRoute,
+  /session\?\.role === 'owner'[\s\S]*<AdminLedgerPanel/,
+  'the Microsoft Store reviewer action remains inside the Owner-only ledger',
+)
+assert.match(
+  ledgerPanel,
+  /Microsoft Store審査用アクセスを発行[\s\S]*normalizedEmail: inviteEmail\.trim\(\)\.toLowerCase\(\)[\s\S]*purpose: 'microsoftStoreReview'/,
+  'the dedicated UI submits only the reviewer email and fixed purpose',
+)
+assert.match(
+  presenterRelease,
+  /publisher-controlled Google test account only for Microsoft Store[\s\S]*synthetic 12-page lecture[\s\S]*temporary username and[\s\S]*password directly in protected Partner Center[\s\S]*reviewer enrolls the app's normal TOTP factor[\s\S]*fourteen-day\s+absolute membership expiry/,
+  'the Store runbook must define the isolated account, protected credentials, reviewer-enrolled TOTP and bounded expiry',
+)
+assert.match(
+  migration,
+  /membership_row\.expires_at is not null[\s\S]*membership_row\.expires_at <= effective_now[\s\S]*return jsonb_build_object\('eligible', false\)/,
+  'invitation acceptance must reject an already-expired membership term',
+)
+assert.match(
+  presenterAuthorityPgTap,
+  /membership expired: page cannot advance and capability is terminal[\s\S]*membership expired: heartbeat cannot refresh the capability/,
+  'presenter authority tests must keep enforcing membership expiry after acceptance',
+)
+assert.match(
   edgeRpcFailure,
   /PENDING_INVITATION_CONSTRAINT\s*=\s*'unique constraint "admin_invitations_pending_email_idx"'/,
   'the recoverable conflict must use the quoted pending-email constraint token',
@@ -315,7 +372,8 @@ assert.doesNotMatch(
 )
 assert.doesNotMatch(
   ledgerPanel,
-  /招待リンクの期限|利用期限|Owner解除後の利用期限/,
+  /<span>(?:招待リンクの期限|利用期限|Owner解除後の利用期限)<\/span>/,
+  'ordinary teacher management must not expose editable expiry controls',
 )
 assert.match(
   ledgerPanel,

@@ -12,6 +12,14 @@ This document is the canonical contract for the approved lecture UX correction
 and Production-completion lane. Every agent that plans, implements, reviews,
 tests, integrates, or releases any part of this lane must read it before acting.
 
+Presenter Store version 1 distribution and activation were approved after this
+baseline. For that bounded native release,
+[`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+[`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+supersede Section 13's earlier Direct-installer, new-gateway and
+separate-approval assumptions. This document continues to control the simple
+teacher flow, manual fallback and synchronization requirements.
+
 For this bounded lane, this document supersedes contrary older design text about:
 
 - a two-minute Display link, pairing code, CLI, PWA, native launcher, automatic
@@ -128,8 +136,9 @@ Stop with `COMPLEXITY_APPROVAL_REQUIRED` before any of the following:
 - storing a long-lived Admin bearer in ordinary `localStorage`;
 - replacing the Cloudflare PDF delivery protocol rather than adding bounded
   recovery around it;
-- signed native installer distribution, code-signing purchase, PowerPoint
-  device activation, or a new Presenter gateway;
+- Presenter distribution outside the approved Store version 1 contract, a paid
+  code-signing purchase, a different Gateway/FQDN, or a broader supported-device
+  scope than the current Store runbooks;
 - weakening the main ruleset, required checks, RLS, ownership, AAL2, lifecycle,
   paid-operation limits, or audit boundary;
 - a new CI or cloud charge, or a budget-ceiling increase; or
@@ -450,13 +459,19 @@ Chromium/WebKit behavior.
 
 ## 13. Work package G — optional PowerPoint Presenter boundary
 
-Profile: `xhigh` for frontend hiding/onboarding; full activation is
-`COMPLEXITY_APPROVAL_REQUIRED` and `ultra + subagent`.
+Profile: `xhigh` for frontend hiding/onboarding; Store activation uses
+`ultra + subagent` under the current Presenter production runbooks.
 
-The current native bridge is not a Production-ready user path. Until a signed,
-immutable installer, real endpoint, update/rollback owner, supported Office
-matrix, and device/human evidence exist, hide the dead Presenter CTA and keep
-manual slide controls fully functional.
+The native Bridge and Store-specific build path exist in source, but general
+Production remains HOLD until the exact Partner Center identity, WACK,
+`runFullTrust` approval, Store certification/signing, no-added-auth acquisition,
+fixed Gateway Hosted state, supported Office matrix, rendered-latency evidence,
+and device/human acceptance pass. Keep the general Store CTA and Presenter
+admission off outside the explicitly accepted certification-wide global
+interval and bounded acquisition canary, and keep manual slide controls fully
+functional. Because Microsoft does not provide a predictable reviewer time,
+submission remains HOLD unless the owner accepts global eligible-educator
+exposure with continuous monitoring or a reviewer-only cohort is implemented.
 
 The later approved onboarding sequence is:
 
@@ -465,9 +480,18 @@ The later approved onboarding sequence is:
 ```
 
 Health-check loopback before issuing a server connection. Do not present a
-pairing/recovery code when no installed bridge exists. A signed installer,
-code-signing or device activation requires separate explicit approval and is
-not a blocker for releasing the corrected core lecture UX.
+pairing/recovery code when no installed bridge exists. Version 1 uses only the
+Microsoft Store x64 MSIX and fixed
+`presenter-api.yuto-matsui.com` Gateway; the Direct Velopack EXE/feed is
+historical and must not be published. The already authorized Store reservation,
+submission, certification-wide global interval, explicit publication, device
+canary and activation follow the two current runbooks linked above. The
+certification and classroom-canary artifact enables Presenter with
+`VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL; the same-SHA general
+artifact uses `VITE_PRESENTER_CERTIFICATION_MODE=false` and the exact Store URL. Microsoft sign-in,
+identity verification, agreement acceptance and sensitive identity entry remain
+owner-controlled. A paid certificate, outside-Store distribution, different
+Gateway or expanded device scope requires a new decision.
 
 ## 14. Verification and CI economy
 

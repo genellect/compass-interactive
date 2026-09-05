@@ -38,6 +38,7 @@ internal static class Program
             (nameof(SecurityTests.RateLimitIsTransientAndPreservesRetryAfter), SecurityTests.RateLimitIsTransientAndPreservesRetryAfter),
             (nameof(SecurityTests.ManualRecoveryRejectsLocalEligibilityBeforeHostedInspect), SecurityTests.ManualRecoveryRejectsLocalEligibilityBeforeHostedInspect),
             (nameof(SecurityTests.WindowsInstallationProofRejectsAndRepairsInvalidUserKey), SecurityTests.WindowsInstallationProofRejectsAndRepairsInvalidUserKey),
+            (nameof(SecurityTests.WindowsInstallationProofDeletesRecreatesAndReportsFailure), SecurityTests.WindowsInstallationProofDeletesRecreatesAndReportsFailure),
             (nameof(LoopbackTests.CorsPnaAndHostAreStrict), LoopbackTests.CorsPnaAndHostAreStrict),
             (nameof(LoopbackTests.PairActivateStatusAndDisconnectAreOriginBound), LoopbackTests.PairActivateStatusAndDisconnectAreOriginBound),
             (nameof(LoopbackTests.InvalidBodiesFailBeforePairing), LoopbackTests.InvalidBodiesFailBeforePairing),

@@ -21,11 +21,22 @@ test.skip(
 const googleAdmin = createMockGoogleAdminSession()
 const lectureSessionId = '72900000-0000-4000-8000-000000000001'
 const connectionId = '72900000-0000-4000-8000-000000000002'
+const replacementConnectionIds = [
+  '72900000-0000-4000-8000-000000000003',
+  '72900000-0000-4000-8000-000000000004',
+  '72900000-0000-4000-8000-000000000005',
+  '72900000-0000-4000-8000-000000000006',
+] as const
+const replacementConnectionId = replacementConnectionIds[0]
 const documentId = 'phase729-presenter-e2e'
 const documentVersion = 'a'.repeat(64)
 const lecturePublicId = 'phase729-public'
 const pairingTicket = `eyJhbGciOiJIUzI1NiJ9.${'b'.repeat(43)}`
 const workerAccessToken = `eyJhbGciOiJIUzI1NiJ9.${'c'.repeat(43)}`
+const privacyConsentStorageKey = 'compass-presenter-privacy-consent-v1'
+const privacyWithdrawalSessionKey = 'compass-presenter-privacy-withdrawal-v1'
+const privacyPolicyVersion = '2026-09-06'
+const privacyRetentionMs = 365 * 24 * 60 * 60 * 1_000
 
 type PresenterAction = 'confirm' | 'issue' | 'revoke' | 'status'
 
@@ -48,6 +59,7 @@ type MockState = {
   maximumStatusConcurrency: number
   statusConcurrency: number
   currentConnectionId: string
+  failStatus: boolean
   revokedConnectionIds: string[]
   currentLectureSessionId: string
 }
@@ -56,6 +68,9 @@ type NetworkMockOptions = {
   expiredAutomaticTicket?: boolean
   localActivationFailure?: boolean
   manualRecovery?: boolean
+  replaceConnectionAfterFirstRevoke?: boolean
+  replacementConnectionIdsAfterRevoke?: readonly string[]
+  revokeFailure?: boolean
   staleInspectedAfterConfirm?: boolean
   statusDelayMs?: number
   lectureStatus?: 'draft' | 'open'
@@ -233,15 +248,52 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   })
 }
 
-async function installAdminState(page: Page) {
+async function installAdminState(
+  page: Page,
+  privacyConsent:
+    'accepted' | 'expired' | 'future' | 'missing' | 'outdated' = 'accepted',
+) {
+  const localStorage: Record<string, string> = {
+    'compass-interactive-lecture-runtime-mode': 'live',
+    'compass-interactive-lecture-session-id': lectureSessionId,
+    'compass-interactive-lecture-status': 'open',
+    'compass-interactive-lecture-title': 'Phase 7.29 Presenter E2E',
+  }
+  if (privacyConsent !== 'missing') {
+    const acceptedAtOffset =
+      privacyConsent === 'expired'
+        ? -privacyRetentionMs - 24 * 60 * 60 * 1_000
+        : privacyConsent === 'future'
+          ? 24 * 60 * 60 * 1_000
+          : 0
+    localStorage[privacyConsentStorageKey] = JSON.stringify({
+      acceptedAt: new Date(Date.now() + acceptedAtOffset).toISOString(),
+      policyVersion:
+        privacyConsent === 'outdated' ? '2026-09-05' : privacyPolicyVersion,
+    })
+  }
   await installMockGoogleAdminSession(page, googleAdmin, {
-    localStorage: {
-      'compass-interactive-lecture-runtime-mode': 'live',
-      'compass-interactive-lecture-session-id': lectureSessionId,
-      'compass-interactive-lecture-status': 'open',
-      'compass-interactive-lecture-title': 'Phase 7.29 Presenter E2E',
-    },
+    localStorage,
   })
+}
+
+async function installPrivacyWithdrawalTombstones(
+  page: Page,
+  value: Record<string, string>,
+) {
+  await installAdminState(page, 'missing')
+  await page.addInitScript(
+    ({ localKey, sessionKey, value }) => {
+      const tombstone = JSON.stringify(value)
+      localStorage.setItem(localKey, tombstone)
+      sessionStorage.setItem(sessionKey, tombstone)
+    },
+    {
+      localKey: privacyConsentStorageKey,
+      sessionKey: privacyWithdrawalSessionKey,
+      value,
+    },
+  )
 }
 
 async function installNetworkMocks(
@@ -279,6 +331,7 @@ async function installNetworkMocks(
     maximumStatusConcurrency: 0,
     statusConcurrency: 0,
     currentConnectionId: connectionId,
+    failStatus: false,
     revokedConnectionIds: [],
     currentLectureSessionId: lectureSessionId,
   }
@@ -397,6 +450,7 @@ async function installNetworkMocks(
       })
       if (action === 'issue') {
         expect(body.lectureSessionId).toBe(state.currentLectureSessionId)
+        state.currentConnectionId = connectionId
         state.connectionIssued = true
         state.revoked = false
         state.confirmed = false
@@ -445,6 +499,11 @@ async function installNetworkMocks(
           await new Promise((resolve) =>
             setTimeout(resolve, options.statusDelayMs),
           )
+        if (state.failStatus) {
+          await fulfillJson(route, { message: 'Unavailable.', ok: false }, 503)
+          state.statusConcurrency -= 1
+          return
+        }
         expect(body.lectureSessionId).toBe(state.currentLectureSessionId)
         let connection = null
         if (state.connectionIssued && state.revoked) {
@@ -498,13 +557,40 @@ async function installNetworkMocks(
         return
       }
       if (action === 'revoke') {
-        expect(body.connectionId).toBe(state.currentConnectionId)
-        state.revokedConnectionIds.push(String(body.connectionId))
-        state.presenterActive = false
-        state.revoked = true
-        state.revokeReason = 'manual_handover'
+        const revokedConnectionId = String(body.connectionId)
+        expect(revokedConnectionId).toBe(state.currentConnectionId)
+        state.revokedConnectionIds.push(revokedConnectionId)
+        if (options.revokeFailure) {
+          await fulfillJson(
+            route,
+            {
+              code: 'presenter_unavailable',
+              message: 'Unavailable.',
+              ok: false,
+            },
+            503,
+          )
+          return
+        }
+        const replacementConnection =
+          options.replacementConnectionIdsAfterRevoke?.[
+            state.revokedConnectionIds.length - 1
+          ] ??
+          (options.replaceConnectionAfterFirstRevoke &&
+          state.revokedConnectionIds.length === 1
+            ? replacementConnectionId
+            : null)
+        if (replacementConnection) {
+          state.currentConnectionId = replacementConnection
+          state.presenterActive = true
+          state.revoked = false
+        } else {
+          state.presenterActive = false
+          state.revoked = true
+          state.revokeReason = 'manual_handover'
+        }
         await fulfillJson(route, {
-          connectionId: state.currentConnectionId,
+          connectionId: revokedConnectionId,
           ok: true,
           revokeReason: 'manual_handover',
           revokedAt: new Date().toISOString(),
@@ -597,6 +683,39 @@ async function holdLoopbackDisconnect(page: Page) {
   }
 }
 
+async function holdNextPresenterStatus(page: Page) {
+  const started = createDeferred()
+  const release = createDeferred()
+  const completed = createDeferred()
+  let held = false
+  await page.route(
+    'https://example.supabase.co/functions/v1/manage-presenter-connection',
+    async (route) => {
+      const body = (route.request().postDataJSON() ?? {}) as Record<
+        string,
+        unknown
+      >
+      if (held || body.action !== 'status') {
+        await route.fallback()
+        return
+      }
+      held = true
+      started.resolve()
+      try {
+        await release.promise
+        await route.fallback()
+      } finally {
+        completed.resolve()
+      }
+    },
+  )
+  return {
+    completed: completed.promise,
+    release: release.resolve,
+    started: started.promise,
+  }
+}
+
 async function startRecoveryPanelObserver(page: Page) {
   await page.evaluate(() => {
     document.documentElement.dataset.presenterRecoveryReappeared = 'false'
@@ -671,39 +790,83 @@ async function confirmPresenterMaterial(page: Page) {
   await button.click()
 }
 
+async function renderHookHarness(
+  page: Page,
+  options: { denyStorageDuringMount?: boolean } = {},
+) {
+  await page.evaluate(
+    async ({ adminToken, denyStorageDuringMount }) => {
+      const path = '/e2e/helpers/presenterHookHarness.tsx'
+      const harness = await import(path)
+      const windowWithStorageGate = window as Window & {
+        __presenterStorageDenied?: boolean
+      }
+      if (denyStorageDuringMount) {
+        const originalLocalStorage = window.localStorage
+        const originalSessionStorage = window.sessionStorage
+        windowWithStorageGate.__presenterStorageDenied = true
+        const guardedStorage = (storage: Storage) => () => {
+          if (windowWithStorageGate.__presenterStorageDenied) {
+            throw new DOMException('Storage access blocked', 'SecurityError')
+          }
+          return storage
+        }
+        Object.defineProperties(window, {
+          localStorage: {
+            configurable: true,
+            get: guardedStorage(originalLocalStorage),
+          },
+          sessionStorage: {
+            configurable: true,
+            get: guardedStorage(originalSessionStorage),
+          },
+        })
+      }
+      const input = {
+        activeLectureSessionId: '72900000-0000-4000-8000-000000000001',
+        adminToken: { kind: 'google' as const, appSessionToken: adminToken },
+        enabled: true,
+        lectureStatus: 'open' as const,
+        materialConsentScope: 'test-owner',
+        displayState: {
+          lectureSessionId: '72900000-0000-4000-8000-000000000001',
+          currentPdfPage: 1,
+          displayMode: 'normal' as const,
+          pdfDocumentId: 'phase729-presenter-e2e',
+          pdfDocumentVersion: 'a'.repeat(64),
+          pdfPageCount: 3,
+          pdfManifestVersion: 1,
+          pdfVisible: true,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+      if (denyStorageDuringMount) {
+        try {
+          harness.mountPresenterHookHarnessSynchronously(input)
+        } finally {
+          windowWithStorageGate.__presenterStorageDenied = false
+        }
+      } else harness.mountPresenterHookHarness(input)
+    },
+    {
+      adminToken: googleAdmin.appSessionToken,
+      denyStorageDuringMount: options.denyStorageDuringMount === true,
+    },
+  )
+}
+
 async function mountHookHarness(page: Page, expectedPhase = 'active') {
   await page.goto('/demo')
-  await page.evaluate(async (adminToken) => {
-    const path = '/e2e/helpers/presenterHookHarness.tsx'
-    const harness = await import(path)
-    harness.mountPresenterHookHarness({
-      activeLectureSessionId: '72900000-0000-4000-8000-000000000001',
-      adminToken: { kind: 'google', appSessionToken: adminToken },
-      enabled: true,
-      lectureStatus: 'open',
-      materialConsentScope: 'test-owner',
-      displayState: {
-        lectureSessionId: '72900000-0000-4000-8000-000000000001',
-        currentPdfPage: 1,
-        displayMode: 'normal',
-        pdfDocumentId: 'phase729-presenter-e2e',
-        pdfDocumentVersion: 'a'.repeat(64),
-        pdfPageCount: 3,
-        pdfManifestVersion: 1,
-        pdfVisible: true,
-        updatedAt: new Date().toISOString(),
-      },
-    })
-  }, googleAdmin.appSessionToken)
+  await renderHookHarness(page)
   await expect(page.getByTestId('presenter-hook-phase')).toHaveText(
     expectedPhase,
   )
 }
 
 async function fulfillReadiness(route: Route, ready: boolean) {
-  const response = await route.fetch()
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
   await route.fulfill({
-    response,
     json: {
       ok: true,
       protocolVersion: 1,
@@ -711,6 +874,12 @@ async function fulfillReadiness(route: Route, ready: boolean) {
       powerpointReady: ready,
       powerpointIssue: ready ? null : 'powerpoint_not_running',
     },
+    headers: {
+      'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+      'Cache-Control': 'no-store',
+      Vary: 'Origin',
+    },
+    status: 200,
   })
 }
 
@@ -734,6 +903,959 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
       .map((violation) => violation.id),
   ).toEqual([])
 }
+
+test('first use explains data handling, blocks ticket and inspect, then resumes from one keyboard action', async ({
+  page,
+}) => {
+  const loopbackRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackRequests.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page, 'outdated')
+  const state = await installNetworkMocks(page)
+
+  await page.goto('/admin')
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  await expect(disclosure).toContainText(
+    'PPTX本体、本文、文字、ノート、画像、動画は送信しません',
+  )
+  await expect(
+    disclosure.getByRole('link', { name: 'プライバシー情報を確認' }),
+  ).toHaveAttribute('href', '/presenter-bridge/privacy/')
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await page.waitForTimeout(250)
+  expect(state.presenterActions).toEqual([])
+  expect(loopbackRequests).toEqual([])
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth + 1,
+      ),
+    )
+    .toBe(true)
+  await expectNoSeriousAccessibilityViolations(page)
+
+  const accept = disclosure.getByRole('button', {
+    name: '同意してPowerPoint連携を開始',
+  })
+  await accept.focus()
+  await expect(accept).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  expect(loopbackRequests).toContain('/v1/connect')
+  const stored = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    privacyConsentStorageKey,
+  )
+  const parsed = JSON.parse(stored ?? 'null') as Record<string, unknown> | null
+  expect(parsed).toEqual({
+    acceptedAt: expect.stringMatching(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    ),
+    policyVersion: privacyPolicyVersion,
+  })
+})
+
+test('privacy consent older than one year requires one fresh acceptance before issuance', async ({
+  page,
+}) => {
+  await installAdminState(page, 'expired')
+  const state = await installNetworkMocks(page)
+  await page.goto('/admin')
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  expect(
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      privacyConsentStorageKey,
+    ),
+  ).toBeNull()
+  await page.waitForTimeout(250)
+  expect(state.presenterActions).toEqual([])
+
+  await disclosure
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+})
+
+test('future-dated privacy consent is removed and requires fresh acceptance before issuance', async ({
+  page,
+}) => {
+  await installAdminState(page, 'future')
+  const state = await installNetworkMocks(page)
+  await page.goto('/admin')
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  expect(
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      privacyConsentStorageKey,
+    ),
+  ).toBeNull()
+  expect(state.presenterActions).toEqual([])
+
+  await disclosure
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+})
+
+for (const markerCase of [
+  {
+    label: 'expired',
+    markedAtOffset: -privacyRetentionMs - 24 * 60 * 60 * 1_000,
+  },
+  { label: 'future-dated', markedAtOffset: 24 * 60 * 60 * 1_000 },
+  { label: 'legacy malformed', markedAtOffset: null },
+]) {
+  test(`${markerCase.label} withdrawal tombstones do not permanently block fresh consent`, async ({
+    page,
+  }) => {
+    await installPrivacyWithdrawalTombstones(
+      page,
+      markerCase.markedAtOffset === null
+        ? { status: 'withdrawn' }
+        : {
+            markedAt: new Date(
+              Date.now() + markerCase.markedAtOffset,
+            ).toISOString(),
+            status: 'withdrawn',
+          },
+    )
+    const state = await installNetworkMocks(page)
+    await page.goto('/admin')
+
+    const disclosure = page.getByTestId('powerpoint-sync-control')
+    await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+    expect(
+      await page.evaluate(
+        ({ localKey, sessionKey }) => ({
+          local: localStorage.getItem(localKey),
+          session: sessionStorage.getItem(sessionKey),
+        }),
+        {
+          localKey: privacyConsentStorageKey,
+          sessionKey: privacyWithdrawalSessionKey,
+        },
+      ),
+    ).toEqual({ local: null, session: null })
+
+    await disclosure
+      .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+      .click()
+    await expect(page.locator('.admin-presenter-review')).toBeVisible()
+    expect(
+      state.presenterActions.filter((action) => action === 'issue'),
+    ).toHaveLength(1)
+  })
+}
+
+test('an expired consent becomes a timestamped tombstone when browser removal is denied', async ({
+  page,
+}) => {
+  await installAdminState(page, 'missing')
+  const state = await installNetworkMocks(page)
+  await page.goto('/demo')
+  await page.evaluate(
+    ({ key, policyVersion, retentionMs }) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          acceptedAt: new Date(
+            Date.now() - retentionMs - 24 * 60 * 60 * 1_000,
+          ).toISOString(),
+          policyVersion,
+        }),
+      )
+      const originalRemoveItem = Storage.prototype.removeItem
+      Object.defineProperty(Storage.prototype, 'removeItem', {
+        configurable: true,
+        value(this: Storage, candidate: string) {
+          if (this === localStorage && candidate === key) {
+            throw new DOMException('Storage removal blocked', 'SecurityError')
+          }
+          return originalRemoveItem.call(this, candidate)
+        },
+      })
+    },
+    {
+      key: privacyConsentStorageKey,
+      policyVersion: privacyPolicyVersion,
+      retentionMs: privacyRetentionMs,
+    },
+  )
+
+  await renderHookHarness(page)
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText('consent')
+  const stored = await page.evaluate(
+    ({ localKey, sessionKey }) => ({
+      local: localStorage.getItem(localKey),
+      session: sessionStorage.getItem(sessionKey),
+    }),
+    {
+      localKey: privacyConsentStorageKey,
+      sessionKey: privacyWithdrawalSessionKey,
+    },
+  )
+  for (const raw of [stored.local, stored.session]) {
+    expect(JSON.parse(raw ?? 'null')).toEqual({
+      markedAt: expect.stringMatching(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      ),
+      status: 'withdrawn',
+    })
+  }
+  await page.getByRole('button', { name: 'Harness accept privacy' }).click()
+  await expect(page.getByTestId('presenter-hook-message')).toHaveText(
+    '保存情報を削除できませんでした。ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。',
+  )
+  expect(state.presenterActions).toEqual([])
+})
+
+test('privacy storage getter denial stays fail-closed without crashing the hook', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await installAdminState(page, 'missing')
+  const state = await installNetworkMocks(page)
+  await page.goto('/demo')
+  await renderHookHarness(page, { denyStorageDuringMount: true })
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText('consent')
+  await page.evaluate(() => {
+    const windowWithStorageGate = window as Window & {
+      __presenterStorageDenied?: boolean
+    }
+    windowWithStorageGate.__presenterStorageDenied = true
+    try {
+      const button = [...document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent === 'Harness accept privacy',
+      )
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('Harness privacy button was not found.')
+      }
+      button.click()
+    } finally {
+      windowWithStorageGate.__presenterStorageDenied = false
+    }
+  })
+  await expect(page.getByTestId('presenter-hook-message')).toHaveText(
+    '同意をブラウザに保存できませんでした。ブラウザのサイトデータ設定を確認してください。',
+  )
+  expect(state.presenterActions).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
+test('an active Presenter connection withdraws within one status interval when consent expires', async ({
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  const expiryStartedAt = Date.now()
+  await page.evaluate(
+    ({ key, policyVersion, retentionMs }) => {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          acceptedAt: new Date(
+            Date.now() - retentionMs - 24 * 60 * 60 * 1_000,
+          ).toISOString(),
+          policyVersion,
+        }),
+      )
+    },
+    {
+      key: privacyConsentStorageKey,
+      policyVersion: privacyPolicyVersion,
+      retentionMs: privacyRetentionMs,
+    },
+  )
+
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+    { timeout: 6_000 },
+  )
+  expect(Date.now() - expiryStartedAt).toBeLessThan(5_750)
+  expect(state.presenterActions).toContain('revoke')
+  expect(loopbackActions).toContain('/v1/disconnect')
+  expect(
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      privacyConsentStorageKey,
+    ),
+  ).toBeNull()
+})
+
+test('privacy withdrawal disconnects locally and revokes a hosted replacement before clearing preferences', async ({
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    replaceConnectionAfterFirstRevoke: true,
+  })
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.evaluate(() => {
+    localStorage.setItem('compass-presenter-manual-mode-v1', 'f'.repeat(64))
+  })
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+  )
+  expect(state.presenterActions).toContain('revoke')
+  await expect
+    .poll(() => state.revokedConnectionIds)
+    .toEqual([connectionId, replacementConnectionId])
+  expect(loopbackActions).toContain('/v1/disconnect')
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  expect(
+    await page.evaluate(() => ({
+      manualMode: localStorage.getItem('compass-presenter-manual-mode-v1'),
+      material: localStorage.getItem('compass-presenter-material-consent-v1'),
+      privacy: localStorage.getItem('compass-presenter-privacy-consent-v1'),
+    })),
+  ).toEqual({ manualMode: null, material: null, privacy: null })
+  await page.waitForTimeout(1_100)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await page
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(2)
+})
+
+test('privacy withdrawal attempts the final observed hosted connection at the replacement bound', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    replacementConnectionIdsAfterRevoke: replacementConnectionIds,
+  })
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+
+  await expect
+    .poll(() => state.revokedConnectionIds)
+    .toEqual([connectionId, ...replacementConnectionIds])
+  expect(state.presenterActive).toBe(false)
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'サーバー側の停止確認に失敗しました。',
+  )
+})
+
+test('privacy withdrawal clears local state when the hosted revoke fails', async ({
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, { revokeFailure: true })
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+  )
+  expect(state.presenterActions).toContain('revoke')
+  expect(loopbackActions).toContain('/v1/disconnect')
+  expect(
+    await page.evaluate(() => ({
+      material: localStorage.getItem('compass-presenter-material-consent-v1'),
+      privacy: localStorage.getItem('compass-presenter-privacy-consent-v1'),
+    })),
+  ).toEqual({ material: null, privacy: null })
+  await page.waitForTimeout(1_100)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+})
+
+test('privacy withdrawal fails closed when browser storage cannot be cleared', async ({
+  context,
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  const issuesBeforeWithdrawal = state.presenterActions.filter(
+    (action) => action === 'issue',
+  ).length
+
+  await page.evaluate(() => {
+    const originalRemoveItem = Storage.prototype.removeItem
+    Object.defineProperty(Storage.prototype, 'removeItem', {
+      configurable: true,
+      value(this: Storage, key: string) {
+        if (key.startsWith('compass-presenter-')) {
+          throw new DOMException('Storage removal blocked', 'SecurityError')
+        }
+        return originalRemoveItem.call(this, key)
+      },
+    })
+  })
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  await expect(disclosure).toContainText(
+    'ブラウザ設定からこのサイトのデータを削除',
+  )
+  expect(state.presenterActions).toContain('revoke')
+  expect(loopbackActions).toContain('/v1/disconnect')
+  expect(
+    await page.evaluate(() => ({
+      material: localStorage.getItem('compass-presenter-material-consent-v1'),
+      privacy: localStorage.getItem('compass-presenter-privacy-consent-v1'),
+    })),
+  ).toEqual({
+    material: expect.any(String),
+    privacy: expect.any(String),
+  })
+
+  await disclosure
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(disclosure).toContainText(
+    'ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。',
+  )
+  await page.waitForTimeout(1_100)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(issuesBeforeWithdrawal)
+
+  const freshPage = await context.newPage()
+  const freshState = await installNetworkMocks(freshPage)
+  await mountHookHarness(freshPage, 'consent')
+  await freshPage
+    .getByRole('button', { name: 'Harness accept privacy' })
+    .click()
+  await expect(freshPage.getByTestId('presenter-hook-message')).toHaveText(
+    '保存情報を削除できませんでした。ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。',
+  )
+  expect(freshState.presenterActions).toEqual([])
+  await freshPage.close()
+})
+
+test('privacy withdrawal survives reload when local consent cannot be removed or overwritten', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  const issuesBeforeWithdrawal = state.presenterActions.filter(
+    (action) => action === 'issue',
+  ).length
+
+  await page.evaluate(() => {
+    const originalRemoveItem = Storage.prototype.removeItem
+    const originalSetItem = Storage.prototype.setItem
+    Object.defineProperties(Storage.prototype, {
+      removeItem: {
+        configurable: true,
+        value(this: Storage, key: string) {
+          if (this === localStorage && key.startsWith('compass-presenter-')) {
+            throw new DOMException('Storage removal blocked', 'SecurityError')
+          }
+          return originalRemoveItem.call(this, key)
+        },
+      },
+      setItem: {
+        configurable: true,
+        value(this: Storage, key: string, value: string) {
+          if (this === localStorage && key.startsWith('compass-presenter-')) {
+            throw new DOMException('Storage write blocked', 'SecurityError')
+          }
+          return originalSetItem.call(this, key, value)
+        },
+      },
+    })
+  })
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'ブラウザ設定からこのサイトのデータを削除',
+  )
+
+  await page.reload()
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
+  await disclosure
+    .getByRole('button', { name: '同意してPowerPoint連携を開始' })
+    .click()
+  await expect(disclosure).toContainText(
+    'ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。',
+  )
+  await page.waitForTimeout(1_100)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(issuesBeforeWithdrawal)
+
+  const freshPage = await page.context().newPage()
+  const freshState = await installNetworkMocks(freshPage)
+  await mountHookHarness(freshPage, 'consent')
+  await freshPage
+    .getByRole('button', { name: 'Harness accept privacy' })
+    .click()
+  await expect(freshPage.getByTestId('presenter-hook-message')).toHaveText(
+    '保存情報を削除できませんでした。ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。',
+  )
+  expect(freshState.presenterActions).toEqual([])
+  await freshPage.close()
+})
+
+test('privacy withdrawal aborts a peer tab while its readiness check is in flight', async ({
+  context,
+  page,
+}) => {
+  await installAdminState(page)
+  await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  const peer = await context.newPage()
+  const readinessStarted = createDeferred()
+  const releaseReadiness = createDeferred()
+  try {
+    await installAdminState(peer)
+    const peerState = await installNetworkMocks(peer)
+    await peer.route('http://127.0.0.1:43124/v1/health', async (route) => {
+      readinessStarted.resolve()
+      await releaseReadiness.promise
+      await fulfillReadiness(route, true)
+    })
+    await mountHookHarness(peer, 'checking')
+    await readinessStarted.promise
+
+    await page.evaluate(() => {
+      const originalRemoveItem = Storage.prototype.removeItem
+      const originalSetItem = Storage.prototype.setItem
+      Object.defineProperties(Storage.prototype, {
+        removeItem: {
+          configurable: true,
+          value(this: Storage, key: string) {
+            if (this === localStorage && key.startsWith('compass-presenter-')) {
+              throw new DOMException('Storage removal blocked', 'SecurityError')
+            }
+            return originalRemoveItem.call(this, key)
+          },
+        },
+        setItem: {
+          configurable: true,
+          value(this: Storage, key: string, value: string) {
+            if (this === localStorage && key.startsWith('compass-presenter-')) {
+              throw new DOMException('Storage write blocked', 'SecurityError')
+            }
+            return originalSetItem.call(this, key, value)
+          },
+        },
+      })
+    })
+    await page
+      .getByRole('button', {
+        name: '同意を取り消してブラウザのPresenter設定を削除',
+      })
+      .click()
+
+    await expect(peer.getByTestId('presenter-hook-phase')).toHaveText('consent')
+    releaseReadiness.resolve()
+    await peer.waitForTimeout(250)
+    expect(
+      peerState.presenterActions.filter((action) =>
+        ['issue', 'confirm'].includes(action),
+      ),
+    ).toEqual([])
+  } finally {
+    releaseReadiness.resolve()
+    await peer.close()
+  }
+})
+
+test('privacy withdrawal immediately after reload discovers and revokes an active replacement while status is in flight', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    replaceConnectionAfterFirstRevoke: true,
+  })
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect.poll(() => state.statusConcurrency).toBe(0)
+
+  const pendingStatus = await holdNextPresenterStatus(page)
+  await page.reload()
+  await pendingStatus.started
+
+  try {
+    const withdrawal = page.getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    await expect(withdrawal).toBeEnabled()
+    await withdrawal.click()
+
+    await expect
+      .poll(() => state.revokedConnectionIds)
+      .toEqual([connectionId, replacementConnectionId])
+    expect(state.presenterActive).toBe(false)
+    expect(state.revoked).toBe(true)
+    await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+      'Presenter Bridgeを終了してください。',
+    )
+    expect(
+      await page.evaluate(
+        (key) => localStorage.getItem(key),
+        privacyConsentStorageKey,
+      ),
+    ).toBeNull()
+  } finally {
+    pendingStatus.release()
+    await pendingStatus.completed
+  }
+
+  await expect(page.locator('.admin-presenter-active')).toHaveCount(0)
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+  )
+})
+
+test('reload withdrawal requires Bridge shutdown when hosted discovery fails during an in-flight status', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect.poll(() => state.statusConcurrency).toBe(0)
+
+  const pendingStatus = await holdNextPresenterStatus(page)
+  await page.reload()
+  await pendingStatus.started
+  state.failStatus = true
+
+  try {
+    const withdrawal = page.getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    await expect(withdrawal).toBeEnabled()
+    await withdrawal.click()
+
+    const disclosure = page.getByTestId('powerpoint-sync-control')
+    await expect(disclosure).toContainText(
+      'Presenter Bridgeを終了してください。',
+    )
+    await expect(disclosure).toContainText(
+      'サーバー側の停止も確認できませんでした。',
+    )
+    expect(state.presenterActive).toBe(true)
+    expect(state.revokedConnectionIds).toEqual([])
+    expect(
+      await page.evaluate(
+        (key) => localStorage.getItem(key),
+        privacyConsentStorageKey,
+      ),
+    ).toBeNull()
+  } finally {
+    pendingStatus.release()
+    await pendingStatus.completed
+  }
+
+  await expect(page.locator('.admin-presenter-active')).toHaveCount(0)
+})
+
+test('privacy withdrawal is durable before a delayed disconnect and unmount', async ({
+  page,
+}) => {
+  const disconnect = await holdLoopbackDisconnect(page)
+  await installAdminState(page)
+  await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+  await disconnect.started
+  expect(
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      privacyConsentStorageKey,
+    ),
+  ).toBeNull()
+
+  await page.goto('/demo')
+  disconnect.release()
+  await disconnect.completed
+})
+
+test('an old privacy withdrawal cannot overwrite a new lecture generation', async ({
+  page,
+}) => {
+  const nextLectureSessionId = '72900000-0000-4000-8000-000000000010'
+  const disconnect = await holdLoopbackDisconnect(page)
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await mountHookHarness(page, 'review')
+  await page.getByRole('button', { name: 'Harness confirm' }).click()
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText('active')
+
+  await page.getByRole('button', { name: 'Harness withdraw privacy' }).click()
+  await disconnect.started
+  await expect.poll(() => state.revokedConnectionIds).toContain(connectionId)
+  await expect.poll(() => state.presenterActions.at(-1)).toBe('status')
+  await expect.poll(() => state.statusConcurrency).toBe(0)
+  state.currentLectureSessionId = nextLectureSessionId
+  await page.evaluate(async (lectureSessionId) => {
+    const path = '/e2e/helpers/presenterHookHarness.tsx'
+    const harness = await import(path)
+    harness.updatePresenterHookHarness({
+      activeLectureSessionId: lectureSessionId,
+      displayState: {
+        lectureSessionId,
+        currentPdfPage: 1,
+        displayMode: 'normal',
+        pdfDocumentId: 'phase729-presenter-e2e',
+        pdfDocumentVersion: 'a'.repeat(64),
+        pdfPageCount: 3,
+        pdfManifestVersion: 1,
+        pdfVisible: true,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  }, nextLectureSessionId)
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText('consent')
+
+  const issueCount = state.presenterActions.filter(
+    (action) => action === 'issue',
+  ).length
+  const acceptPrivacy = page.getByRole('button', {
+    name: 'Harness accept privacy',
+  })
+  await expect(acceptPrivacy).toBeEnabled()
+  await acceptPrivacy.click()
+  await expect(page.getByTestId('presenter-hook-message')).toHaveText(
+    '同意の取消処理が完了するまでお待ちください。',
+  )
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(issueCount)
+
+  disconnect.release()
+  await disconnect.completed
+  // The Presenter status endpoint is lecture-scoped. The old lecture's
+  // revoked connection must not be returned for the replacement lecture.
+  state.connectionIssued = false
+  state.revoked = false
+  await page.waitForTimeout(100)
+  await expect(acceptPrivacy).toBeEnabled()
+  await acceptPrivacy.click()
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'issue').length,
+    )
+    .toBeGreaterThan(issueCount)
+  await expect(page.getByTestId('presenter-hook-phase')).not.toHaveText(
+    'consent',
+  )
+})
+
+test('privacy withdrawal reports a failed local disconnect even after hosted revoke succeeds', async ({
+  page,
+}) => {
+  const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
+  if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await page.route('http://127.0.0.1:43124/v1/disconnect', async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        code: 'bridge_unavailable',
+        message: 'Unavailable.',
+        ok: false,
+      }),
+      contentType: 'application/json',
+      headers: {
+        'Access-Control-Allow-Origin': new URL(appBaseUrl).origin,
+        'Cache-Control': 'no-store',
+        Vary: 'Origin',
+      },
+      status: 503,
+    })
+  })
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  await page
+    .getByRole('button', {
+      name: '同意を取り消してブラウザのPresenter設定を削除',
+    })
+    .click()
+
+  const disclosure = page.getByTestId('powerpoint-sync-control')
+  await expect(disclosure).toContainText('Presenter Bridgeを終了してください。')
+  expect(state.presenterActions).toContain('revoke')
+  expect(
+    await page.evaluate(
+      (key) => localStorage.getItem(key),
+      privacyConsentStorageKey,
+    ),
+  ).toBeNull()
+})
+
+test('clearing storage in another tab withdraws an active Presenter connection', async ({
+  context,
+  page,
+}) => {
+  const loopbackActions: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/')) {
+      loopbackActions.push(new URL(request.url()).pathname)
+    }
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+
+  const withdrawalTab = await context.newPage()
+  await withdrawalTab.goto('/demo')
+  await withdrawalTab.evaluate(() => localStorage.clear())
+
+  await expect.poll(() => loopbackActions).toContain('/v1/disconnect')
+  await expect
+    .poll(() => state.presenterActions.filter((action) => action === 'revoke'))
+    .toHaveLength(1)
+  await expect(page.locator('.admin-presenter-active')).toHaveCount(0)
+  await withdrawalTab.close()
+})
+
+test('privacy withdrawal in another tab stops PowerPoint readiness observation', async ({
+  context,
+  page,
+}) => {
+  let healthRequests = 0
+  await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+    healthRequests += 1
+    await fulfillReadiness(route, false)
+  })
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await page.goto('/admin')
+  await expect
+    .poll(() => healthRequests, { timeout: 12_000 })
+    .toBeGreaterThan(1)
+
+  const withdrawalTab = await context.newPage()
+  await withdrawalTab.goto('/demo')
+  await withdrawalTab.evaluate(
+    (key) => localStorage.removeItem(key),
+    privacyConsentStorageKey,
+  )
+
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'PowerPoint連携のデータ利用',
+  )
+  const healthRequestsAfterWithdrawal = healthRequests
+  await page.waitForTimeout(10_500)
+  expect(healthRequests).toBe(healthRequestsAfterWithdrawal)
+  expect(
+    state.presenterActions.filter((action) =>
+      ['issue', 'confirm'].includes(action),
+    ),
+  ).toEqual([])
+  await withdrawalTab.close()
+})
 
 test('reviews, explicitly confirms, locks manual PDF controls, and hands back safely', async ({
   page,
@@ -989,10 +2111,7 @@ test('prepares local-network access before lecture start without issuing server 
   await page.getByRole('tab', { name: '準備' }).click()
   await expect(
     page.getByRole('link', { name: 'Bridgeをインストール' }),
-  ).toHaveAttribute(
-    'href',
-    'https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe',
-  )
+  ).toHaveAttribute('href', 'https://apps.microsoft.com/detail/9TESTONLY729')
   await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
     'Bridgeの準備ができました',

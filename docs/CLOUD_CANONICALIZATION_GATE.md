@@ -80,21 +80,23 @@ default-OFF behavior, rollback and any external asset reuse. Exact-head CI must
 be green before merge. Direct commits to `main` and force-push/delete of the
 release branch are prohibited by repository policy.
 
-GitHub Education is active. Main ruleset `20600565` now requires a Pull Request,
-conversation resolution and these five CI contexts, and rejects force-push and
-branch deletion:
+GitHub Education is active. Main rulesets `20600565` and `21259111` apply; the
+stricter `21259111` requires a Pull Request, conversation resolution, current
+`main`, linear history, Squash merge and these eight CI contexts, and rejects
+force-push and branch deletion:
 
 - `Quality and non-live regression`;
 - `Demo browser E2E`;
 - `Local Supabase, pgTAP and live browser E2E`;
 - `Presenter Bridge Windows x64 build and tests`;
-- `Presenter Bridge Windows x86 build and tests`.
+- `Presenter Bridge Windows x86 build and tests`;
+- `Build and verify the cloud workspace`;
+- `Dependency review`;
+- `CodeQL JavaScript and TypeScript`.
 
-The ruleset intentionally keeps `strict_required_status_checks_policy=false`.
-A later `main` update therefore does not force every open PR to update its base
-and repeat the complete browser/database matrix, while the five checks remain
-mandatory for the actual candidate head. High-risk PRs should still synchronize
-with current `main` once near the final head when practical.
+The effective ruleset has `strict_required_status_checks_policy=true`. Every
+candidate must include current `main`; a base or head change requires all eight
+checks on the resulting head before merge.
 
 Required approving reviews intentionally remain zero to avoid deadlocking the
 solo owner. For a manual Copilot review, open the PR, request Copilot from the
@@ -137,7 +139,8 @@ disconnected broad Worker build token.
 
 The reproducibility portion of C0 is PASS when `cloud:doctor`, `cloud:check`, the
 relevant environment contract and exact-head CI pass on a dedicated branch.
-The main-protection enforcement subgate is active through ruleset `20600565`.
+The main-protection enforcement subgate is active through rulesets `20600565`
+and `21259111`, with `21259111` supplying the stricter effective contract.
 Phase 7.31A still remains incomplete until the remaining supply-chain controls,
 protected deployment environments and negative tests are recorded. This does
 not authorize making the private repository public.

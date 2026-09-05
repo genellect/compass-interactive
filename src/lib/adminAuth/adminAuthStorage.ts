@@ -76,6 +76,13 @@ export function createAdminAuthFetch(
 
   return async (input, init) => {
     const requestUrl = getRequestUrl(input)
+    // This client also invokes Edge Functions, whose callers own longer deadlines.
+    if (
+      requestUrl.origin !== expectedOrigin ||
+      !requestUrl.pathname.startsWith('/auth/v1/')
+    ) {
+      return baseFetch(input, init)
+    }
     const controller = new AbortController()
     const upstreamSignal =
       init?.signal ??
@@ -99,11 +106,7 @@ export function createAdminAuthFetch(
       globalThis.clearTimeout(timeout)
       upstreamSignal?.removeEventListener('abort', abortFromUpstream)
     }
-    if (
-      requestUrl.origin === expectedOrigin &&
-      requestUrl.pathname.startsWith('/auth/v1/') &&
-      response.status === 429
-    ) {
+    if (response.status === 429) {
       const retryAfterMs = parseRetryAfterMs(
         response.headers.get('retry-after'),
       )
@@ -112,11 +115,7 @@ export function createAdminAuthFetch(
         Date.now() + (retryAfterMs || 60_000),
       )
     }
-    if (
-      requestUrl.origin !== expectedOrigin ||
-      !requestUrl.pathname.startsWith('/auth/v1/') ||
-      !response.headers.get('content-type')?.toLowerCase().includes('json')
-    ) {
+    if (!response.headers.get('content-type')?.toLowerCase().includes('json')) {
       return response
     }
 

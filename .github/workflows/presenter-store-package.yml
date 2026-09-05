@@ -1,0 +1,168 @@
+name: Presenter Store submission preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact reviewed 40-character commit currently at main
+        required: true
+        type: string
+      version:
+        description: Four-part Store version ending in .0
+        required: true
+        default: 1.0.0.0
+        type: string
+      identity_name:
+        description: Exact Package/Identity/Name reserved in Partner Center
+        required: true
+        type: string
+      publisher:
+        description: Exact Package/Identity/Publisher copied from Partner Center
+        required: true
+        type: string
+      publisher_display_name:
+        description: Exact PublisherDisplayName copied from Partner Center
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: presenter-store-submission-package
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build exact unsigned Partner Center input
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      STORE_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      STORE_VERSION: ${{ inputs.version }}
+      STORE_IDENTITY_NAME: ${{ inputs.identity_name }}
+      STORE_PUBLISHER: ${{ inputs.publisher }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name }}
+    steps:
+      - name: Require the reviewed default branch
+        shell: pwsh
+        run: |
+          if ('${{ github.ref }}' -cne 'refs/heads/main') {
+            throw 'The Partner Center input may be built only from refs/heads/main.'
+          }
+          if ($env:STORE_SOURCE_COMMIT -cnotmatch '^[a-f0-9]{40}$') {
+            throw 'source_commit must be the exact lowercase 40-character reviewed commit.'
+          }
+          if ('${{ github.sha }}' -cne $env:STORE_SOURCE_COMMIT) {
+            throw 'source_commit must equal the exact commit currently dispatched from main.'
+          }
+
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: presenter-bridge/global.json
+          architecture: x64
+
+      - name: Build and preflight the Partner Center submission input
+        id: package
+        shell: pwsh
+        working-directory: presenter-bridge
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkPolicy = Get-Content global.json -Raw | ConvertFrom-Json
+          $requestedVersion = [Version]$sdkPolicy.sdk.version
+          $actualVersionText = dotnet --version
+          $actualVersion = [Version]$actualVersionText
+          $requestedFeatureBand = [Math]::Floor($requestedVersion.Build / 100) * 100
+          $actualFeatureBand = [Math]::Floor($actualVersion.Build / 100) * 100
+          if (
+            $sdkPolicy.sdk.rollForward -cne 'latestPatch' -or
+            $actualVersion.Major -ne $requestedVersion.Major -or
+            $actualVersion.Minor -ne $requestedVersion.Minor -or
+            $actualFeatureBand -ne $requestedFeatureBand -or
+            $actualVersion.Build -lt $requestedVersion.Build
+          ) {
+            throw "Expected .NET SDK $($sdkPolicy.sdk.version) latestPatch feature band but found $actualVersionText."
+          }
+
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+          $makeAppx = Get-ChildItem -LiteralPath $sdkBin -Recurse -File -Filter 'makeappx.exe' |
+            Where-Object {
+              $_.FullName -match '[\\/]x64[\\/]makeappx\.exe$' -and
+              ([Version]$_.VersionInfo.ProductVersion).Build -ge 26100
+            } |
+            Sort-Object { [Version]$_.VersionInfo.ProductVersion } -Descending |
+            Select-Object -First 1
+          if ($null -eq $makeAppx) {
+            throw 'Windows SDK 10.0.26100+ x64 MakeAppx was not found.'
+          }
+
+          foreach ($file in Get-ChildItem -LiteralPath store -File -Filter '*.ps1') {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            )
+            if ($parseErrors.Count -ne 0) {
+              throw "Invalid Store release script: $($file.Name)"
+            }
+          }
+          & ./store/Test-PresenterStoreStaticPolicy.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Store static policy checks failed.' }
+          & ./store/Test-PresenterStoreBuildPolicy.ps1 -MakeAppxPath $makeAppx.FullName
+
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if (
+            $LASTEXITCODE -ne 0 -or
+            $sourceCommit -cne $env:STORE_SOURCE_COMMIT -or
+            $sourceCommit -cne '${{ github.sha }}'
+          ) {
+            throw 'Checkout HEAD, workflow source_commit and the dispatched main SHA must match exactly.'
+          }
+          $storeOutput = Join-Path $env:RUNNER_TEMP 'presenter-store-submission'
+          & ./store/Build-PresenterStorePackage.ps1 `
+            -Version $env:STORE_VERSION `
+            -OutputRoot $storeOutput `
+            -SourceCommit $sourceCommit `
+            -IdentityName $env:STORE_IDENTITY_NAME `
+            -Publisher $env:STORE_PUBLISHER `
+            -PublisherDisplayName $env:STORE_PUBLISHER_DISPLAY_NAME `
+            -UseMicrosoftStandardApplicationLicenseTerms `
+            -MakeAppxPath $makeAppx.FullName `
+            -DotnetPath (Get-Command dotnet).Source `
+            -PartnerCenterIdentityConfirmed
+
+          $receiptPath = Join-Path $storeOutput 'ready/store-build-receipt.json'
+          $receipt = Get-Content -Raw -LiteralPath $receiptPath | ConvertFrom-Json
+          if (
+            $receipt.Status -cne 'PARTNER_CENTER_SUBMISSION_INPUT_UNSIGNED' -or
+            $receipt.GeneralDistributionAllowed -ne $false -or
+            $receipt.SourceCommit -cne $sourceCommit -or
+            $receipt.BuildIsolation -cne 'NEW_OUTPUT_ROOT_ONLY' -or
+            $receipt.OutputRootBoundary -cne 'NORMAL_LOCAL_DRIVE_PHYSICALLY_OUTSIDE_CHECKOUT' -or
+            $receipt.DotnetArtifactsPath -cne 'work/dotnet-artifacts' -or
+            $receipt.RestorePackagesPath -cne 'work/nuget-packages' -or
+            $receipt.PublishPath -cne 'work/publish' -or
+            $receipt.LicenseTermsMode -cne 'MICROSOFT_STANDARD_APPLICATION_LICENSE_TERMS' -or
+            $receipt.PackagePreflight -cne 'STORE_PACKAGE_PREFLIGHT_PASS'
+          ) {
+            throw 'The final Store receipt did not preserve the submission-only release contract.'
+          }
+
+          "## Presenter Store submission input" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "- Source commit: ``$sourceCommit``" >> $env:GITHUB_STEP_SUMMARY
+          "- Package: ``$($receipt.Package)``" >> $env:GITHUB_STEP_SUMMARY
+          "- SHA-256: ``$($receipt.PackageSha256)``" >> $env:GITHUB_STEP_SUMMARY
+          "- Status: ``$($receipt.Status)``" >> $env:GITHUB_STEP_SUMMARY
+          "- Build isolation: ``$($receipt.BuildIsolation)``" >> $env:GITHUB_STEP_SUMMARY
+          "- Output boundary: ``$($receipt.OutputRootBoundary)``" >> $env:GITHUB_STEP_SUMMARY
+          "- Distribution: no package is uploaded from this public workflow" >> $env:GITHUB_STEP_SUMMARY
+          "- Owner action: repeat this verified build from the same clean SHA and inputs on the owner-controlled Windows release host; preserve that local receipt and use its local package hash" >> $env:GITHUB_STEP_SUMMARY
