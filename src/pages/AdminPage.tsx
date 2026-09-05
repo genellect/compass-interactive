@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
 import type { RememberedBrowserIdentityScope } from '../lib/adminAuth/rememberedBrowserCredential'
 import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
-import { AdminPowerPointIntegration } from '../components/AdminWorkspace/AdminPowerPointIntegration'
-import { useAdminPowerPointSync } from '../components/AdminWorkspace/useAdminPowerPointSync'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
@@ -69,6 +74,10 @@ import {
   restorePublisherSessionToken,
 } from './admin/adminSessionStorage'
 import './AdminPage.css'
+
+const AdminPowerPointController = lazy(
+  () => import('../components/AdminWorkspace/AdminPowerPointController'),
+)
 
 export function AdminPage({
   adminCredential,
@@ -276,21 +285,16 @@ export function AdminPage({
   const activePdfPageCount = displayState?.pdfDocumentId
     ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
     : null
-  const powerpointSync = useAdminPowerPointSync({
-    activeLectureSessionId,
-    adminToken,
-    displayState,
-    enabled: isPhase729PowerPointSyncEnabled && runtimeMode === 'live',
-    lectureStatus: activeAdminLecture?.status ?? 'draft',
-    materialConsentScope: `${identityScope.environmentId}:${identityScope.principalId}:${identityScope.membershipId}`,
-    onCommittedPage: () => void refreshDisplayState().catch(() => undefined),
-  })
+  const [
+    powerpointManualNavigationLocked,
+    setPowerpointManualNavigationLocked,
+  ] = useState(false)
   const canNavigateSlides = Boolean(
     activeLectureSessionId &&
     displayState?.pdfDocumentId &&
     displayState.pdfVisible &&
     activePdfPageCount &&
-    !powerpointSync.manualNavigationLocked &&
+    !powerpointManualNavigationLocked &&
     activeAdminLecture?.status !== 'closed',
   )
   const {
@@ -1166,21 +1170,24 @@ export function AdminPage({
         }}
       />
 
-      {isPhase729PowerPointSyncEnabled &&
-      activeLectureSessionId &&
-      displayState?.pdfDocumentId &&
-      (workspaceView === 'setup' ||
-        !['idle', 'error'].includes(powerpointSync.phase) ||
-        powerpointSync.hasConnection) ? (
-        <AdminPowerPointIntegration
-          activeLectureSessionId={activeLectureSessionId}
-          adminToken={adminToken}
-          displayState={displayState}
-          pdfPageCount={activePdfPageCount}
-          pdfTitle={selectedPdfAsset?.title ?? '講義資料'}
-          sync={powerpointSync}
-          showSetup={workspaceView === 'setup'}
-        />
+      {isPhase729PowerPointSyncEnabled ? (
+        <Suspense fallback={null}>
+          <AdminPowerPointController
+            activeLectureSessionId={activeLectureSessionId}
+            adminToken={adminToken}
+            displayState={displayState}
+            enabled={runtimeMode === 'live'}
+            lectureStatus={activeAdminLecture?.status ?? 'draft'}
+            materialConsentScope={`${identityScope.environmentId}:${identityScope.principalId}:${identityScope.membershipId}`}
+            onCommittedPage={() =>
+              void refreshDisplayState().catch(() => undefined)
+            }
+            onManualNavigationLockChange={setPowerpointManualNavigationLocked}
+            pdfPageCount={activePdfPageCount}
+            pdfTitle={selectedPdfAsset?.title ?? '講義資料'}
+            showSetup={workspaceView === 'setup'}
+          />
+        </Suspense>
       ) : null}
 
       {activeLectureSessionId &&
@@ -1222,7 +1229,7 @@ export function AdminPage({
           displayState={displayState}
           displayStateError={displayStateError}
           displayStateLoading={displayStateLoading}
-          manualNavigationLocked={powerpointSync.manualNavigationLocked}
+          manualNavigationLocked={powerpointManualNavigationLocked}
           lectureStatus={activeLectureStatus}
           onAbortInterruptedPublication={() =>
             void abortInterruptedPdfPublication()

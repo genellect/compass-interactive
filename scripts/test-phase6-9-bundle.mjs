@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const assets = resolve(import.meta.dirname, '..', 'dist', 'assets')
@@ -16,6 +16,16 @@ const largest = (prefix, suffix) =>
       .map((file) => file.size),
   )
 
+// A new lazy importer can change Rolldown's name for this shared chunk.
+// Locate both the viewer and PDF.js in the emitted code, preserving the same
+// whole-chunk budget. A split or missing PDF implementation must fail closed.
+const pdfChunks = files.filter((file) => {
+  if (!file.name.endsWith('.js')) return false
+  const source = readFileSync(resolve(assets, file.name), 'utf8')
+  return source.includes('pdf-canvas') && source.includes('GlobalWorkerOptions')
+})
+assert.equal(pdfChunks.length, 1, 'Expected one shared viewer/PDF.js chunk')
+
 const budgets = {
   // The Phase 7.30 identity gate keeps the existing Admin workspace in the
   // lazy Google-only Admin workspace chunk. Preserve the approved budget.
@@ -24,7 +34,7 @@ const budgets = {
   // 1% drift while keeping the production stylesheet under 100 KiB.
   appCss: { actual: largest('index-', '.css'), limit: 96_631 },
   indexJs: { actual: largest('index-', '.js'), limit: 529_742 },
-  pdfJs: { actual: largest('SyncedPdfViewer-', '.js'), limit: 479_617 },
+  pdfJs: { actual: pdfChunks[0].size, limit: 479_617 },
 }
 for (const [name, budget] of Object.entries(budgets)) {
   assert.ok(Number.isFinite(budget.actual), `${name} asset is missing`)

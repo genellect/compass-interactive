@@ -830,6 +830,32 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
   expect(pageErrors).toEqual([])
 })
 
+test('lazy Presenter loading preserves the visible Admin controls and their input', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  let releaseController: (() => void) | undefined
+  const controllerReady = new Promise<void>((resolve) => {
+    releaseController = resolve
+  })
+  await page.route('**/AdminPowerPointController.tsx*', async (route) => {
+    await controllerReady
+    await route.continue()
+  })
+  await page.goto('/admin')
+  const pageInput = page.getByLabel('表示するページ番号')
+  await expect(pageInput).toBeEnabled()
+  await pageInput.fill('2')
+  expect(state.presenterActions).toEqual([])
+  releaseController?.()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  await expect(pageInput).toHaveValue('2')
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(pageInput).toBeDisabled()
+})
+
 test('health precedes issuance, and tab changes and reload preserve native ownership', async ({
   page,
 }) => {
