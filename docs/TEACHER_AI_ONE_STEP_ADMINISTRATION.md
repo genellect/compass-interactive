@@ -59,3 +59,9 @@ bounded real material analysis, deliberate publication, automatic student UI
 arrival and reload persistence. No live test bypasses membership, policy,
 quality, budget, ownership or lifecycle checks. Secrets and private account
 identifiers stay outside this public repository.
+
+The real five-minute summary path must also retain the provider output limit in
+both child-grant and operation-start RPCs. The reservation's
+`estimatedOutputTokens` is the bounded provider maximum; a missing property must
+not silently disappear from serialized RPC arguments and appear as an
+authorization failure. Test the wire binding as well as helper calculations.
