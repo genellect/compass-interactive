@@ -126,6 +126,10 @@ install and use it without an additional account login.
 An unsigned development package is always marked
 `UNSIGNED_DEVELOPMENT_ONLY` in its file name, embedded metadata and receipt.
 It is not a Store submission and must never be generally distributed.
+For installation testing only, the Store helper can create a
+`SIGNED_LOCAL_DEVICE_TEST_ONLY` copy from that exact preflight-valid development
+package using a matching current-user Code Signing certificate. The signed copy
+and its receipt remain prohibited from distribution and Partner Center upload.
 
 Because package uninstall may retain a per-user CNG key, the tray exposes
 `ローカル接続IDを削除` only while idle. It requires an explicit confirmation,

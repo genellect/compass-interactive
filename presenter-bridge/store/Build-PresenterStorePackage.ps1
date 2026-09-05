@@ -60,6 +60,8 @@ if ($makeAppxSignature.Status -ne [Management.Automation.SignatureStatus]::Valid
 }
 $makeAppxSha256 = (Get-FileHash -LiteralPath $makeAppx -Algorithm SHA256).Hash.ToLowerInvariant()
 $additionalLicenseTerms = if ($AdditionalLicenseTermsPath) { (Resolve-Path -LiteralPath $AdditionalLicenseTermsPath).Path } else { $null }
+$additionalLicenseTermsFileName = if ($additionalLicenseTerms) { Split-Path -Leaf $additionalLicenseTerms } else { $null }
+$additionalLicenseTermsSha256 = if ($additionalLicenseTerms) { (Get-FileHash -LiteralPath $additionalLicenseTerms -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
 if ($UseMicrosoftStandardApplicationLicenseTerms -and $additionalLicenseTerms) {
     throw 'Choose either Microsoft Standard Application License Terms or AdditionalLicenseTermsPath, never both.'
 }
@@ -303,7 +305,8 @@ try {
         PublishedFiles = $publishedFilesManifest.Count
         PublishedFilesManifestSha256 = $publishedFilesManifestSha256
         LicenseTermsMode = $licenseTermsMode
-        AdditionalLicenseTermsSource = if ($additionalLicenseTerms) { $additionalLicenseTerms } else { $null }
+        AdditionalLicenseTermsFileName = $additionalLicenseTermsFileName
+        AdditionalLicenseTermsSha256 = $additionalLicenseTermsSha256
         NoticeFiles = $noticeFiles
         PackagePreflight = $preflight.Status
         StoreSigning = 'NOT_YET_SIGNED: Microsoft Store certification/ingestion must sign this package before teacher distribution.'

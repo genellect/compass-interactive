@@ -9,3 +9,6 @@ Microsoft Store submission has completed certification and Store signing. The
 license terms configured in Partner Center govern use of that Store
 distribution. An artifact marked UNSIGNED_DEVELOPMENT_ONLY is for development
 inspection only and may not be submitted, sideloaded, or generally distributed.
+An artifact marked SIGNED_LOCAL_DEVICE_TEST_ONLY is a controlled local test
+copy of that development package. It may be installed only on the intended
+test device and may not be distributed or uploaded to Partner Center.

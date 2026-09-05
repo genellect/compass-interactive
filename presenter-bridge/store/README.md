@@ -53,6 +53,8 @@ host this unsigned input.
 Use `-AdditionalLicenseTermsPath C:\approved\terms.txt` instead of the Standard
 Terms switch only when those additional terms have been separately approved.
 The file is copied byte-for-byte into the MSIX and hash-bound to the receipt.
+The receipt and stdout retain only its basename and SHA-256, never its absolute
+source path.
 The build always copies and hash-verifies `COMPASS-BINARY-NOTICE.txt`, the
 repository's exact `THIRD_PARTY_NOTICES.md`, and the .NET distribution's exact
 `LICENSE.txt` and `ThirdPartyNotices.txt` next to the selected `dotnet.exe`.
@@ -81,6 +83,34 @@ presenter-bridge/store/Build-PresenterStorePackage.ps1 `
   -AllowDirtyDevelopmentCheckout
 ```
 
+### Controlled local-device signed copy
+
+Windows requires a trusted package signature for normal MSIX installation.
+`New-PresenterStoreLocalDeviceTestPackage.ps1` can create a separately marked
+`SIGNED_LOCAL_DEVICE_TEST_ONLY` copy strictly for an intended local test
+device. Its source must be a preflight-valid
+`*_UNSIGNED_DEVELOPMENT_ONLY.msix`; a Partner Center submission input or an
+already signed package is rejected.
+
+```powershell
+presenter-bridge/store/New-PresenterStoreLocalDeviceTestPackage.ps1 `
+  -SourcePackagePath C:\outside\COMPASS.PresenterBridge_1.0.0.0_x64_UNSIGNED_DEVELOPMENT_ONLY.msix `
+  -OutputRoot C:\new\presenter-store-local-device-test `
+  -CertificateThumbprint <current-user-test-code-signing-certificate-thumbprint> `
+  -MakeAppxPath C:\WindowsSdk\x64\makeappx.exe `
+  -SignToolPath C:\WindowsSdk\x64\signtool.exe
+```
+
+The certificate Publisher must exactly match the package Publisher and the
+certificate must be currently valid, contain the Code Signing EKU and expose
+its private key to the current user. The scripts use SHA-256, verify the signed
+package and prove that signing changed no payload file. The receipt stores only
+package basenames and hashes, the public certificate thumbprint, Publisher,
+expiry, SHA-256 policy and `LocalDeviceTestOnly=true`; it stores no private key
+or absolute user path. Both the package and receipt prohibit distribution and
+Partner Center upload. Remove the local test certificate/trust separately when
+device testing is complete.
+
 `Test-PresenterStorePackage.ps1` unpacks the package through MakeAppx and
 checks the exact identity, source and notice/license hashes, x64 self-contained
 runtime, Japan-only `ja-JP` resource declaration, `StartupTask Enabled=true`,
@@ -91,6 +121,8 @@ an exact relative-path/size/SHA-256 manifest. Preflight verifies every entry and
 rejects missing or unexpected runtime payload files. Build and preflight also
 require a valid Microsoft Corporation Authenticode signature on MakeAppx from
 Windows SDK build 26100 or later, and record its exact SHA-256 and file version.
+`Test-PresenterStoreStaticPolicy.ps1` fixes the local-signing prohibition and
+receipt privacy markers in CI without requiring a private test certificate.
 
 Store package versions use four numeric parts. Major must be 1 through 65535,
 Minor and Build must be 0 through 65535, and Revision must be exactly 0. Both

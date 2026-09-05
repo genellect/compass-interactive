@@ -496,6 +496,8 @@ jobs:
             [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
             if ($parseErrors.Count -ne 0) { throw "Invalid release script: $($file.Name)" }
           }
+          & ./store/Test-PresenterStoreStaticPolicy.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Store static policy checks failed.' }
       - name: Build and preflight the Store-managed MSIX lane
         if: env.RUN_NATIVE == 'true' && matrix.platform == 'x64'
         shell: pwsh
