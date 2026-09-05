@@ -245,11 +245,19 @@ Implementation steps:
    principal, membership, verified factor-set version, origin, and eight-hour
    absolute cap. It may reissue the opaque application session but may not store
    a long-lived bearer in ordinary local storage.
-6. If restoration fails or only stale Supabase state remains, clear the partial
-   state and show the Google CTA. Do not show a bare TOTP screen.
+6. If restoration authoritatively rejects the identity/session or only stale
+   Supabase state remains, clear the partial state and show the Google CTA.
+   Temporary network/relay failures and HTTP 408/429/5xx must retain the
+   server-bound recovery proof and offer connection retry, honoring Retry-After,
+   without another Google or TOTP challenge. Do not show a bare TOTP screen.
 7. Start OAuth with account selection (`prompt=select_account`).
 8. Ordinary lecture and AI actions use the valid AAL2 application session and
    do not request a PIN or another TOTP.
+9. OAuth error returns at the canonical site root must reach the educator
+   portal, not the student Join page. Show a fixed, concise expiration/cancel
+   message, retain the bounded invitation/return context, and remove raw error
+   details from the URL. Never treat an expired provider state as a successful
+   login or automatically start another OAuth flow.
 
 Acceptance:
 

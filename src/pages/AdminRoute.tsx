@@ -36,6 +36,10 @@ import {
   restoreAdminAppSessionRestoreSeed,
 } from '../lib/adminAuth/adminAuthStorage'
 import { claimAdminSurfaceWindow } from '../lib/adminAuth/adminSurfaceNavigation'
+import {
+  getAdminOAuthFailure,
+  getAdminOAuthFailureMessage,
+} from '../lib/adminAuth/adminOAuthFailure'
 import { AdminAiUnlockError } from '../lib/adminAuth/adminAiUnlockApi'
 import {
   forgetGoogleAdminOperationSession,
@@ -86,6 +90,7 @@ type IdentityPhase =
   | 'enrollment'
   | 'error'
   | 'ready'
+  | 'restore_error'
   | 'signed_out'
   | 'transition_recovery'
 
@@ -97,6 +102,14 @@ type EnrollmentSecret = {
 function getSafeMessage(error: unknown) {
   if (error instanceof AdminIdentityError) return error.message
   return '管理者認証を確認できませんでした。時間をおいて再度お試しください。'
+}
+
+function isRetryableIdentityFailure(error: unknown) {
+  return (
+    error instanceof AdminIdentityError &&
+    (error.retryable ||
+      ['service_unavailable', 'rate_limited'].includes(error.code))
+  )
 }
 
 function AdminRouteHeader() {
@@ -229,6 +242,36 @@ export function AdminRoute() {
       // pathname as the next OAuth return path when the educator uses the CTA.
     },
     [clearGoogleAdminWorkspace],
+  )
+
+  const handleRestoreFailure = useCallback(
+    async (error: unknown, invalidatedToken = '') => {
+      if (!isRetryableIdentityFailure(error)) {
+        await returnToGoogleReauthentication(
+          error instanceof AdminIdentityError
+            ? error.message
+            : '管理者セッションを復元できませんでした。Googleログインからやり直してください。',
+          invalidatedToken,
+        )
+        return
+      }
+      // A transport failure does not prove that the authenticated session expired.
+      // Keep its server-bound recovery proof and retry the same status/restore path.
+      setAppSessionToken('')
+      setSession(null)
+      setErrorMessage(
+        'ログイン状態を確認できませんでした。接続を再試行してください。',
+      )
+      if (
+        error instanceof AdminIdentityError &&
+        (error.code === 'rate_limited' || error.retryAfterMs > 0)
+      ) {
+        setRateLimitUntil(Date.now() + (error.retryAfterMs || 60_000))
+        setRateLimitNow(Date.now())
+      }
+      setPhase('restore_error')
+    },
+    [returnToGoogleReauthentication],
   )
 
   useEffect(() => {
@@ -382,15 +425,14 @@ export function AdminRoute() {
               setPhase('ready')
               return
             } catch (restoreError) {
-              await returnToGoogleReauthentication(
-                restoreError instanceof AdminIdentityError
-                  ? restoreError.message
-                  : '管理者セッションを復元できませんでした。Googleログインからやり直してください。',
-                appSessionToken,
-              )
+              await handleRestoreFailure(restoreError, appSessionToken)
               return
             }
           } else {
+            if (isRetryableIdentityFailure(error)) {
+              await handleRestoreFailure(error)
+              return
+            }
             throw error
           }
         }
@@ -408,11 +450,7 @@ export function AdminRoute() {
           setPhase('ready')
           return
         } catch (error) {
-          await returnToGoogleReauthentication(
-            error instanceof AdminIdentityError
-              ? error.message
-              : '管理者セッションを復元できませんでした。Googleログインからやり直してください。',
-          )
+          await handleRestoreFailure(error)
           return
         }
       }
@@ -466,7 +504,7 @@ export function AdminRoute() {
       setFactorId(enrolled.id)
       setPhase('enrollment')
     },
-    [returnToGoogleReauthentication],
+    [handleRestoreFailure],
   )
 
   useEffect(() => {
@@ -496,6 +534,18 @@ export function AdminRoute() {
         invitationTokenRef.current = oauthAttempt.invitationToken
       }
       window.history.replaceState({}, '', '/admin/auth/callback')
+      const oauthFailure =
+        parameters.get('oauth_error') ??
+        getAdminOAuthFailure(location.search, location.hash)
+      if (oauthFailure && codes.length === 0) {
+        // A rejected provider response is not a completed login. Keep the
+        // invitation/return destination, but never exchange an expired state.
+        bootStarted.current = true
+        setErrorMessage(getAdminOAuthFailureMessage(oauthFailure))
+        setPhase('signed_out')
+        navigate(oauthAttempt?.returnPath ?? '/admin', { replace: true })
+        return
+      }
       const allowedKeys = new Set(['code'])
       const hasUnexpectedParameter = Array.from(parameters.keys()).some(
         (key) => !allowedKeys.has(key),
@@ -545,7 +595,7 @@ export function AdminRoute() {
       setErrorMessage(getSafeMessage(error))
       setPhase(error instanceof AdminIdentityError ? 'denied' : 'error')
     })
-  }, [adminPathname, location.search, navigate, prepareIdentity])
+  }, [adminPathname, location.hash, location.search, navigate, prepareIdentity])
 
   useEffect(
     () => () => {
@@ -586,6 +636,20 @@ export function AdminRoute() {
       clearAdminOAuthAttempt()
       setErrorMessage('Googleログインを開始できませんでした。')
       setPhase('error')
+    }
+  }
+
+  async function retrySessionRestore() {
+    if (isSubmitting || rateLimitUntil > Date.now()) return
+    setIsSubmitting(true)
+    setErrorMessage('')
+    setPhase('booting')
+    try {
+      await prepareIdentity()
+    } catch (error) {
+      await handleRestoreFailure(error)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -953,6 +1017,31 @@ export function AdminRoute() {
   let content
   if (phase === 'booting' || phase === 'callback') {
     content = <RouteFallback />
+  } else if (phase === 'restore_error') {
+    content = (
+      <main className="page-shell join-page">
+        <section className="join-card admin-identity-card">
+          <p className="eyebrow">EDUCATOR PORTAL</p>
+          <h1>接続を確認してください</h1>
+          <p className="error-note" role="alert">
+            {errorMessage}
+          </p>
+          {rateLimitRemainingSeconds > 0 ? (
+            <p className="helper-note" role="status">
+              再試行まで {rateLimitRemainingSeconds} 秒
+            </p>
+          ) : null}
+          <button
+            className="primary-button"
+            type="button"
+            disabled={isSubmitting || rateLimitRemainingSeconds > 0}
+            onClick={() => void retrySessionRestore()}
+          >
+            接続を再試行
+          </button>
+        </section>
+      </main>
+    )
   } else if (phase === 'signed_out') {
     content = (
       <main className="page-shell join-page">
