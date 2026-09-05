@@ -41,7 +41,7 @@ type PendingMutation = AdminLedgerMutationRequest & {
   controlStepUpNonce: string
   factorId?: string
   intent?: AdminLedgerMutationIntent
-  phase: 'authorized' | 'completing' | 'control' | 'preparing'
+  phase: 'authorized' | 'completing' | 'control' | 'preparing' | 'ready'
   requestId: string
 }
 
@@ -133,7 +133,9 @@ function restorePendingMutation(): PendingMutation | null {
       !/^[A-Za-z0-9_-]{43}$/.test(pending.controlStepUpNonce) ||
       typeof pending.requestId !== 'string' ||
       !/^[0-9a-f-]{36}$/i.test(pending.requestId) ||
-      !['authorized', 'completing', 'control', 'preparing'].includes(phase) ||
+      !['authorized', 'completing', 'control', 'preparing', 'ready'].includes(
+        phase,
+      ) ||
       (phase !== 'preparing' &&
         (typeof pending.factorId !== 'string' ||
           !/^[0-9a-f-]{36}$/i.test(pending.factorId) ||
@@ -229,6 +231,8 @@ export function AdminLedgerPanel({
   const [inviteCanUseAi, setInviteCanUseAi] = useState(false)
 
   const pendingConfirmationRef = useRef<HTMLFormElement>(null)
+  const awaitingTotp =
+    pending?.phase === 'ready' || pending?.phase === 'control'
   const pendingInvitationsForInviteEmail = useMemo(() => {
     const normalizedEmail = inviteEmail.trim().toLowerCase()
     if (!normalizedEmail || !snapshot) return []
@@ -309,18 +313,17 @@ export function AdminLedgerPanel({
       const form = pendingConfirmationRef.current
       if (!form) return
       form.scrollIntoView({ block: 'nearest' })
-      const nextControl =
-        pending.phase === 'control'
-          ? form.querySelector<HTMLInputElement>(
-              'input[autocomplete="one-time-code"]',
-            )
-          : form.querySelector<HTMLButtonElement>(
-              'button.primary-button:not(:disabled)',
-            )
+      const nextControl = awaitingTotp
+        ? form.querySelector<HTMLInputElement>(
+            'input[autocomplete="one-time-code"]',
+          )
+        : form.querySelector<HTMLButtonElement>(
+            'button.primary-button:not(:disabled)',
+          )
       nextControl?.focus({ preventScroll: true })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [busy, pending])
+  }, [awaitingTotp, busy, pending])
 
   async function preparePending(attempt: PendingMutation) {
     setBusy(true)
@@ -339,19 +342,11 @@ export function AdminLedgerPanel({
           payload: attempt.payload,
           requestId: attempt.requestId,
         } as Parameters<typeof prepareAdminLedgerMutation>[0]))
-      await beginAdminControlStepUp(
-        appSessionToken,
-        intent.controlStepUpAction,
-        intent.intentDigest,
-        attempt.requestId,
-        intent.operationKey,
-        attempt.controlStepUpNonce,
-      )
       rememberPendingMutation({
         ...attempt,
         factorId,
         intent,
-        phase: 'control',
+        phase: 'ready',
       })
       setTotpCode('')
     } catch (error) {
@@ -384,7 +379,7 @@ export function AdminLedgerPanel({
       !pending.factorId
     )
       return
-    if (pending.phase === 'control' && !/^\d{6}$/.test(totpCode)) return
+    if (awaitingTotp && !/^\d{6}$/.test(totpCode)) return
     let recoveryPhase = pending.phase
     setBusy(true)
     setMessage('')
@@ -396,6 +391,21 @@ export function AdminLedgerPanel({
         ...pending,
         factorId: pending.factorId,
         intent: pending.intent,
+      }
+      if (nextPending.phase === 'ready') {
+        // Bind the five-minute proof immediately before verifying the submitted
+        // code, not while the user is reading or waiting on this screen.
+        await beginAdminControlStepUp(
+          appSessionToken,
+          nextPending.intent.controlStepUpAction,
+          nextPending.intent.intentDigest,
+          nextPending.requestId,
+          nextPending.intent.operationKey,
+          nextPending.controlStepUpNonce,
+        )
+        nextPending = { ...nextPending, phase: 'control' }
+        recoveryPhase = 'control'
+        rememberPendingMutation(nextPending)
       }
       if (nextPending.phase === 'control') {
         const { error } = await adminSupabase.auth.mfa.challengeAndVerify({
@@ -648,7 +658,7 @@ export function AdminLedgerPanel({
               ? busy
                 ? '変更を準備しています'
                 : '変更を準備できませんでした'
-              : pending.phase === 'control'
+              : awaitingTotp
                 ? busy
                   ? '変更を確認しています'
                   : '変更を確認'
@@ -666,7 +676,7 @@ export function AdminLedgerPanel({
               ? busy
                 ? 'そのままお待ちください。'
                 : '通信を確認して、もう一度準備してください。'
-              : pending.phase === 'control'
+              : awaitingTotp
                 ? busy
                   ? '認証アプリのコードを確認しています。'
                   : '認証アプリの6桁コードを入力してください。'
@@ -688,7 +698,7 @@ export function AdminLedgerPanel({
                 準備を再試行
               </button>
             )
-          ) : pending.phase === 'control' ? (
+          ) : awaitingTotp ? (
             <>
               <label className="field">
                 <span>確認に使う認証アプリ</span>
@@ -754,8 +764,7 @@ export function AdminLedgerPanel({
               変更の完了を確認する
             </button>
           )}
-          {!busy &&
-          (pending.phase === 'preparing' || pending.phase === 'control') ? (
+          {!busy && (pending.phase === 'preparing' || awaitingTotp) ? (
             <button
               className="secondary-button"
               disabled={busy}

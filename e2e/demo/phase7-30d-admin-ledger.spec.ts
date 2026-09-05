@@ -412,6 +412,7 @@ async function installMocks(
   page: Page,
   admin: ReturnType<typeof adminSession>,
   options: {
+    controlNow?: () => number
     duplicatePendingInvitations?: boolean
     failFirstInvitationCommit?: boolean
     failFirstPolicySet?: boolean
@@ -425,6 +426,7 @@ async function installMocks(
   } = {},
 ) {
   const {
+    controlNow = Date.now,
     duplicatePendingInvitations = false,
     failFirstInvitationCommit = true,
     failFirstPolicySet = false,
@@ -466,6 +468,8 @@ async function installMocks(
   let pinControlIntentDigest = ''
   let pinControlNonce = ''
   let pinControlRequestId = ''
+  let priorInvitationRevoked = false
+  const controlExpiries = new Map<string, number>()
 
   await page.route('https://example.supabase.co/**', async (route) => {
     const request = route.request()
@@ -569,6 +573,8 @@ async function installMocks(
           return
         }
         if (action === 'beginControlStepUp') {
+          const expiresAt = controlNow() + 5 * 60_000
+          controlExpiries.set(String(body.controlRequestId), expiresAt)
           const controlStepUpNonce =
             body.controlStepUpNonce ?? `n.${'b'.repeat(41)}`
           if (body.controlAction === 'admin_invitation_change') {
@@ -588,12 +594,23 @@ async function installMocks(
             controlOperationKey: body.controlOperationKey,
             controlRequestId: body.controlRequestId,
             controlStepUpNonce,
-            expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+            expiresAt: new Date(expiresAt).toISOString(),
             ok: true,
           })
           return
         }
         if (action === 'completeControlStepUp') {
+          if (
+            (controlExpiries.get(String(body.controlRequestId)) ?? 0) <=
+            controlNow()
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'step_up_invalid', ok: false },
+              409,
+            )
+            return
+          }
           if (body.controlAction === 'admin_invitation_change') {
             state.ledgerCompleteAttempts += 1
             state.ledgerCompleteBodies.push(JSON.parse(JSON.stringify(body)))
@@ -864,14 +881,21 @@ async function installMocks(
 
       if (functionName === 'manage-admin-ledger') {
         if (body.action === 'snapshot') {
-          await fulfillJson(
-            route,
-            ledgerSnapshot(
-              state.admissionEnabled,
-              state.openLecture,
-              duplicatePendingInvitations,
-            ),
+          const snapshot = ledgerSnapshot(
+            state.admissionEnabled,
+            state.openLecture,
+            duplicatePendingInvitations,
           )
+          if (priorInvitationRevoked) {
+            snapshot.invitations = snapshot.invitations.map((invitation) => ({
+              ...invitation,
+              status:
+                invitation.invitationId === priorInvitationId
+                  ? 'revoked'
+                  : invitation.status,
+            }))
+          }
+          await fulfillJson(route, snapshot)
           return
         }
         if (body.action === 'audit') {
@@ -891,14 +915,44 @@ async function installMocks(
           })
           return
         }
-        if (body.stage === 'intent' && body.action === 'issueInvitation') {
+        if (
+          body.stage === 'intent' &&
+          (body.action === 'issueInvitation' ||
+            body.action === 'revokeInvitation')
+        ) {
           await fulfillJson(route, {
             controlStepUpAction: 'admin_invitation_change',
             intentDigest,
             ok: true,
-            operationKey: 'manage-admin-ledger.issueInvitation',
+            operationKey: `manage-admin-ledger.${String(body.action)}`,
             requestId: body.requestId,
-            targetId: resultInvitationId,
+            targetId:
+              body.action === 'revokeInvitation'
+                ? priorInvitationId
+                : resultInvitationId,
+          })
+          return
+        }
+        if (body.stage === 'commit' && body.action === 'revokeInvitation') {
+          state.commitBodies.push(JSON.parse(JSON.stringify(body)))
+          if (
+            !ledgerGrantAvailable ||
+            body.requestId !== ledgerControlRequestId
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'control_proof_required', ok: false },
+              409,
+            )
+            return
+          }
+          priorInvitationRevoked = true
+          await fulfillJson(route, {
+            idempotentReplay: false,
+            ok: true,
+            refreshRequired: true,
+            resultId: priorInvitationId,
+            resultStatus: 'revoked',
           })
           return
         }
@@ -1881,6 +1935,108 @@ test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and
   expect(state.unexpectedRequests).toEqual([])
   expect(pageErrors).toEqual([])
 })
+
+for (const surface of [
+  'invitation',
+  'invitation-cancel',
+  'ai-policy',
+] as const) {
+  test(`starts ${surface} control confirmation only after code submission, including an idle reload`, async ({
+    page,
+  }) => {
+    let now = Date.now()
+    const admin = adminSession()
+    const student = studentSession()
+    await installStoredSessions(page, admin, student.storageValue)
+    const state = await installMocks(page, admin, {
+      controlNow: () => now,
+      failFirstInvitationCommit: false,
+    })
+    await page.clock.install({ time: new Date(now) })
+    let panel = await openLedger(page)
+    state.admissionEnabled = true
+    await panel.getByRole('button', { name: '最新状態を確認' }).click()
+    if (surface !== 'ai-policy') {
+      await panel.getByText('教員を追加', { exact: true }).click()
+      await panel
+        .getByLabel('Googleアカウントのメールアドレス')
+        .fill(
+          surface === 'invitation-cancel'
+            ? 'pending@example.test'
+            : 'idle-teacher@example.test',
+        )
+      await panel
+        .getByRole('button', {
+          name:
+            surface === 'invitation-cancel'
+              ? 'この招待を取り消す'
+              : '招待リンクを作成',
+        })
+        .click()
+    } else {
+      const summary = page
+        .locator('summary')
+        .filter({ hasText: '講義AIの利用設定' })
+      await summary.click()
+      panel = summary.locator('..')
+      await panel
+        .getByLabel('対象の教員')
+        .selectOption(aiInstructorMembershipId)
+      await panel.getByRole('button', { name: 'この設定で利用を許可' }).click()
+    }
+    await expect(panel.getByLabel('6桁コード')).toBeVisible()
+    const begins = () =>
+      state.functionCalls.filter(
+        ({ body }) => body.action === 'beginControlStepUp',
+      )
+    expect(begins().length).toBe(0)
+    expect(
+      state.authRequests.filter(({ pathname }) =>
+        pathname.includes('/challenge'),
+      ),
+    ).toHaveLength(0)
+
+    now += 10 * 60_000
+    await page.clock.setFixedTime(new Date(now))
+    await page.reload()
+    panel = await openLedger(page)
+    if (surface === 'ai-policy') {
+      const summary = page
+        .locator('summary')
+        .filter({ hasText: '講義AIの利用設定' })
+      await summary.click()
+      panel = summary.locator('..')
+    }
+    await expect(panel.getByLabel('6桁コード')).toBeVisible()
+    expect(begins().length).toBe(0)
+    await panel.getByLabel('6桁コード').fill('123456')
+    await panel
+      .getByRole('button', {
+        name: surface !== 'ai-policy' ? 'この変更を実行' : '認証アプリで確認',
+      })
+      .click()
+    if (surface === 'invitation') {
+      await expect(
+        panel.getByText('今回だけ表示される招待リンク', { exact: true }),
+      ).toBeVisible()
+      expect(state.commitBodies).toHaveLength(1)
+    } else if (surface === 'invitation-cancel') {
+      await expect(
+        panel.getByText('管理台帳を更新しました。', { exact: true }),
+      ).toBeVisible()
+      expect(state.commitBodies).toHaveLength(1)
+      expect(state.commitBodies[0]?.action).toBe('revokeInvitation')
+    } else {
+      await expect.poll(() => state.policyCovered).toBe(true)
+      expect(state.policySetAttempts).toBe(1)
+    }
+    expect(begins()).toHaveLength(1)
+    expect(
+      state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+    ).toHaveLength(1)
+    expect(state.unexpectedRequests).toEqual([])
+  })
+}
 
 test('keeps the settings route available to an Instructor without exposing Owner AI policy controls', async ({
   page,
