@@ -14,6 +14,7 @@ type AdminPdfControlProps = {
   displayState: DisplayState | null
   displayStateError: string | null
   displayStateLoading: boolean
+  manualNavigationLocked?: boolean
   lectureStatus: string
   hasInterruptedPublication: boolean
   onAbortInterruptedPublication: () => void
@@ -55,6 +56,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
     displayState,
     displayStateError,
     displayStateLoading,
+    manualNavigationLocked = false,
     lectureStatus,
     hasInterruptedPublication,
     onAbortInterruptedPublication,
@@ -251,7 +253,9 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             <label className="field compact-field">
               <span>PDF資料</span>
               <select
-                disabled={displayStateLoading || closed}
+                disabled={
+                  displayStateLoading || closed || manualNavigationLocked
+                }
                 onChange={(event) => onSelectDocument(event.target.value)}
                 value={pdfDocumentInput}
               >
@@ -269,7 +273,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
             </label>
             <button
               className="secondary-button"
-              disabled={displayStateLoading || closed}
+              disabled={displayStateLoading || closed || manualNavigationLocked}
               onClick={onSetDocument}
               type="button"
             >

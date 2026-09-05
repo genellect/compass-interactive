@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
 import type { RememberedBrowserIdentityScope } from '../lib/adminAuth/rememberedBrowserCredential'
 import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
@@ -30,6 +37,7 @@ import {
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
   isPhase728JournalClubPresetCreationEnabled,
+  isPhase729PowerPointSyncEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
@@ -66,6 +74,10 @@ import {
   restorePublisherSessionToken,
 } from './admin/adminSessionStorage'
 import './AdminPage.css'
+
+const AdminPowerPointController = lazy(
+  () => import('../components/AdminWorkspace/AdminPowerPointController'),
+)
 
 export function AdminPage({
   adminCredential,
@@ -273,11 +285,16 @@ export function AdminPage({
   const activePdfPageCount = displayState?.pdfDocumentId
     ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
     : null
+  const [
+    powerpointManualNavigationLocked,
+    setPowerpointManualNavigationLocked,
+  ] = useState(false)
   const canNavigateSlides = Boolean(
     activeLectureSessionId &&
     displayState?.pdfDocumentId &&
     displayState.pdfVisible &&
     activePdfPageCount &&
+    !powerpointManualNavigationLocked &&
     activeAdminLecture?.status !== 'closed',
   )
   const {
@@ -1153,6 +1170,26 @@ export function AdminPage({
         }}
       />
 
+      {isPhase729PowerPointSyncEnabled ? (
+        <Suspense fallback={null}>
+          <AdminPowerPointController
+            activeLectureSessionId={activeLectureSessionId}
+            adminToken={adminToken}
+            displayState={displayState}
+            enabled={runtimeMode === 'live'}
+            lectureStatus={activeAdminLecture?.status ?? 'draft'}
+            materialConsentScope={`${identityScope.environmentId}:${identityScope.principalId}:${identityScope.membershipId}`}
+            onCommittedPage={() =>
+              void refreshDisplayState().catch(() => undefined)
+            }
+            onManualNavigationLockChange={setPowerpointManualNavigationLocked}
+            pdfPageCount={activePdfPageCount}
+            pdfTitle={selectedPdfAsset?.title ?? '講義資料'}
+            showSetup={workspaceView === 'setup'}
+          />
+        </Suspense>
+      ) : null}
+
       {activeLectureSessionId &&
       displayState?.pdfDocumentId &&
       activePdfPageCount ? (
@@ -1192,6 +1229,7 @@ export function AdminPage({
           displayState={displayState}
           displayStateError={displayStateError}
           displayStateLoading={displayStateLoading}
+          manualNavigationLocked={powerpointManualNavigationLocked}
           lectureStatus={activeLectureStatus}
           onAbortInterruptedPublication={() =>
             void abortInterruptedPdfPublication()

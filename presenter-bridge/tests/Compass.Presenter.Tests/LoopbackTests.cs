@@ -43,6 +43,15 @@ internal static class LoopbackTests
         wrongHost.Headers.Host = $"localhost:{fixture.Server.Port}";
         using var wrongHostResponse = await fixture.Client.SendAsync(wrongHost);
         Assert.Equal(HttpStatusCode.Forbidden, wrongHostResponse.StatusCode);
+        using var health = fixture.Request(HttpMethod.Get, "/v1/health");
+        using var healthResponse = await fixture.Client.SendAsync(health);
+        var healthPayload = await ReadJsonAsync(healthResponse);
+        Assert.Equal(5, healthPayload.EnumerateObject().Count());
+        Assert.True(healthPayload.GetProperty("ok").GetBoolean());
+        Assert.Equal("compass-presenter-bridge", healthPayload.GetProperty("service").GetString());
+        Assert.Equal(1, healthPayload.GetProperty("protocolVersion").GetInt32());
+        Assert.True(healthPayload.GetProperty("powerpointReady").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, healthPayload.GetProperty("powerpointIssue").ValueKind);
     }
 
     public static async Task PairActivateStatusAndDisconnectAreOriginBound()
@@ -60,6 +69,7 @@ internal static class LoopbackTests
         await AssertOkAsync(connectResponse);
         var payload = await ReadJsonAsync(connectResponse);
         Assert.Equal("pending_confirmation", payload.GetProperty("state").GetString());
+        Assert.True(fixture.Server.HasLiveSession);
         var token = payload.GetProperty("sessionToken").GetString();
         Assert.True(PresenterLoopbackTokenSyntax(token));
         var binding = payload.GetProperty("presentation")
@@ -77,6 +87,7 @@ internal static class LoopbackTests
         using var statusResponse = await fixture.Client.SendAsync(status);
         var statusPayload = await ReadJsonAsync(statusResponse);
         Assert.Equal("active", statusPayload.GetProperty("state").GetString());
+        Assert.True(fixture.Server.HasLiveSession);
 
         using var hostileStatus = fixture.Request(
             HttpMethod.Get,
@@ -94,6 +105,7 @@ internal static class LoopbackTests
             token);
         using var disconnectResponse = await fixture.Client.SendAsync(disconnect);
         await AssertOkAsync(disconnectResponse);
+        Assert.False(fixture.Server.HasLiveSession);
 
         using var replay = fixture.JsonRequest(HttpMethod.Post, "/v1/connect", new
         {

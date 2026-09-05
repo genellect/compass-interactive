@@ -170,6 +170,30 @@ internal sealed class PresenterSessionCoordinator :
         }
     }
 
+    public async Task<bool> TryRunWhenIdleAsync(
+        Func<CancellationToken, Task> action,
+        CancellationToken cancellationToken)
+    {
+        if (disposed || !await gate.WaitAsync(0, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return false;
+        }
+        try
+        {
+            if (activeSession is not null)
+            {
+                return false;
+            }
+            await action(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (disposed)

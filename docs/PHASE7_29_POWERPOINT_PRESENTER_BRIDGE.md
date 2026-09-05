@@ -32,7 +32,7 @@ The first release accepts only the following configuration:
 
 1. PowerPoint for Windows with one unambiguous active slideshow.
 2. Normal all-slide show; no hidden slides and no Custom Slide Show.
-3. Windowed slideshow; Presenter View is off.
+3. Normal full-screen (`Speaker`) or windowed slideshow; Presenter View is off.
 4. PPTX slide count equals the currently published PDF page count.
 5. The teacher sees the PowerPoint name/count, PDF name/count and PDF first
    page, then explicitly confirms the binding.
@@ -41,6 +41,13 @@ The first release accepts only the following configuration:
 
 Hidden-slide and Custom Show behavior are not approximated. They require a
 later explicitly designed mapping contract.
+
+The September release candidate extends the original windowed-only contract
+to a normal full-screen show. Its source and device evidence are tracked in
+`PRESENTER_PRODUCTION_RELEASE.md` and
+`../presenter-bridge/DEVICE_MODE_VERIFICATION.md`. Kiosk and unknown modes are
+rejected. A one-monitor test with the Presenter View setting on does not
+establish two-monitor Presenter View acceptance; that restriction remains.
 
 ## 3. Source of truth and convergence
 

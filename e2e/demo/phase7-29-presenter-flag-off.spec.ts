@@ -280,7 +280,16 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
   page,
 }) => {
   const pageErrors: string[] = []
+  const presenterModules: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
+  page.on('request', (request) => {
+    if (
+      /\/src\/(?:components\/AdminWorkspace\/(?:AdminPowerPoint|useAdminPowerPoint)|presenter\/|repositories\/supabasePresenterBridge)/.test(
+        new URL(request.url()).pathname,
+      )
+    )
+      presenterModules.push(request.url())
+  })
   await installAdminState(page)
   const presenterRequests = await installNetworkMocks(page)
 
@@ -308,9 +317,7 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
     )
     .toEqual({ legacyAuthenticated: null, legacyToken: null })
   await expect(page.getByTestId('powerpoint-sync-control')).toHaveCount(0)
-  const pageControls = page.locator(
-    '[aria-label="講義資料のページ操作"]',
-  )
+  const pageControls = page.locator('[aria-label="講義資料のページ操作"]')
   await expect(pageControls).toBeVisible()
   await expect(
     pageControls.getByRole('button', { name: '次へ →' }),
@@ -320,5 +327,6 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
   await expect(page.getByLabel('PDF資料')).toBeEnabled()
   await page.waitForTimeout(250)
   expect(presenterRequests).toEqual([])
+  expect(presenterModules).toEqual([])
   expect(pageErrors).toEqual([])
 })

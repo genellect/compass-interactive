@@ -87,6 +87,7 @@ public sealed class StablePresentationTracker
         PresentationObservation observation)
     {
         if (observation.DeckBindingDigest != binding.DeckBindingDigest ||
+            observation.PresentationInstance != binding.PresentationInstance ||
             observation.SlideCount != binding.SlideCount ||
             !observation.OrderedSlideIds.SequenceEqual(binding.OrderedSlideIds))
         {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { parseConfigFileTextToJson } from 'typescript'
 import {
   createPresenterGateway,
   type PresenterGatewayEnvironment,
@@ -463,4 +464,45 @@ test('wrangler configuration remains dormant and fail-closed', () => {
   assert.ok(namespaceIds.every((value) => /^[1-9]\d*$/.test(value)))
   assert.equal(namespaceIds.includes('6601'), false)
   assert.equal(namespaceIds.includes('6602'), false)
+})
+
+test('explicit production configuration binds only the approved machine host', () => {
+  const parsed = parseConfigFileTextToJson(
+    'wrangler.production.jsonc',
+    readFileSync(
+      new URL('../wrangler.production.jsonc', import.meta.url),
+      'utf8',
+    ),
+  )
+  assert.equal(parsed.error, undefined)
+  const configuration = parsed.config
+  assert.equal(configuration.name, 'compass-presenter-gateway-production')
+  assert.equal(configuration.account_id, 'f60a242ad3132b1a7ba11839c23d76f7')
+  assert.equal(configuration.workers_dev, false)
+  assert.equal(configuration.preview_urls, false)
+  assert.deepEqual(configuration.routes, [
+    {
+      pattern: 'presenter-api.yuto-matsui.com',
+      custom_domain: true,
+      zone_id: '68e9bb3faf02379bfcce2ee019e28326',
+    },
+  ])
+  assert.deepEqual(configuration.secrets.required, [
+    'PRESENTER_BRIDGE_GATEWAY_SECRET',
+  ])
+  for (const forbidden of [
+    'vars',
+    'r2_buckets',
+    'durable_objects',
+    'kv_namespaces',
+    'services',
+  ]) {
+    assert.equal(configuration[forbidden], undefined)
+  }
+  assert.deepEqual(
+    configuration.ratelimits.map(
+      (binding: { namespace_id: string }) => binding.namespace_id,
+    ),
+    ['72931', '72932'],
+  )
 })

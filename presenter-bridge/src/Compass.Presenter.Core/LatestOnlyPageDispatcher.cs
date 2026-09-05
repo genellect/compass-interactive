@@ -14,6 +14,7 @@ public sealed class LatestOnlyPageDispatcher : IAsyncDisposable
     private readonly Guid connectorEpoch = Guid.NewGuid();
     private StablePageState? desired;
     private StablePageState? acknowledged;
+    private bool unacknowledgedAttempt;
     private long sequence;
 
     public LatestOnlyPageDispatcher(
@@ -43,7 +44,9 @@ public sealed class LatestOnlyPageDispatcher : IAsyncDisposable
         var shouldSignal = false;
         lock (gate)
         {
-            if (SamePage(desired, state) || SamePage(acknowledged, state))
+            if (SamePage(desired, state) ||
+                (desired is null && !unacknowledgedAttempt &&
+                    SamePage(acknowledged, state)))
             {
                 return;
             }
@@ -86,7 +89,8 @@ public sealed class LatestOnlyPageDispatcher : IAsyncDisposable
                 lock (gate)
                 {
                     snapshot = desired;
-                    if (snapshot is null || SamePage(snapshot, acknowledged))
+                    if (snapshot is null ||
+                        (!unacknowledgedAttempt && SamePage(snapshot, acknowledged)))
                     {
                         desired = null;
                         break;
@@ -109,12 +113,19 @@ public sealed class LatestOnlyPageDispatcher : IAsyncDisposable
                 {
                     try
                     {
+                        lock (gate)
+                        {
+                            // A failed response can still follow a remote commit.
+                            // Returning to the last ACK must repair that uncertainty.
+                            unacknowledgedAttempt = true;
+                        }
                         await sink.SendAsync(envelope, lifetime.Token)
                             .ConfigureAwait(false);
                         lastSentAt = DateTimeOffset.UtcNow;
                         lock (gate)
                         {
                             acknowledged = snapshot;
+                            unacknowledgedAttempt = false;
                             if (SamePage(desired, snapshot))
                             {
                                 desired = null;

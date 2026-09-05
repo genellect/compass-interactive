@@ -12,20 +12,58 @@ internal static class SecurityTests
     {
         var accepted = BridgeOptions.ValidatePresenterEndpoint(
             BridgeOptions.ProductionPresenterEndpoint);
-        Assert.Equal("presenter-api.invalid", accepted.Host);
+        Assert.Equal("presenter-api.yuto-matsui.com", accepted.Host);
+        foreach (var rejected in new[]
+        {
+            "https://presenter-api.invalid/functions/v1/presenter-bridge-session",
+            "http://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session",
+            "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session?token=invalid",
+            "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session#invalid",
+            "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session/",
+        })
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                BridgeOptions.ValidatePresenterEndpoint(rejected));
+        }
 
         Assert.Throws<InvalidOperationException>(() =>
             BridgeOptions.ValidatePresenterEndpoint(
                 "https://evil.example/functions/v1/presenter-bridge-session"));
         Assert.Throws<InvalidOperationException>(() =>
             BridgeOptions.ValidatePresenterEndpoint(
-                "https://presenter-api.invalid:444/functions/v1/presenter-bridge-session"));
+                "https://presenter-api.yuto-matsui.com:444/functions/v1/presenter-bridge-session"));
         Assert.Throws<InvalidOperationException>(() =>
             BridgeOptions.ValidatePresenterEndpoint(
-                "https://user@presenter-api.invalid/functions/v1/presenter-bridge-session"));
+                "https://user@presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session"));
         Assert.Throws<InvalidOperationException>(() =>
             BridgeOptions.ValidatePresenterEndpoint(
                 "https://pfvedtqccblecuyjlfqh.supabase.co/functions/v1/presenter-bridge-session"));
+        return Task.CompletedTask;
+    }
+
+    public static Task ReleaseIgnoresEndpointAndOriginOverrides()
+    {
+#if !DEBUG
+        const string endpointName = "COMPASS_PRESENTER_SESSION_ENDPOINT";
+        const string originsName = "COMPASS_PRESENTER_ALLOWED_ORIGINS";
+        var originalEndpoint = Environment.GetEnvironmentVariable(endpointName);
+        var originalOrigins = Environment.GetEnvironmentVariable(originsName);
+        try
+        {
+            Environment.SetEnvironmentVariable(endpointName, "https://evil.example");
+            Environment.SetEnvironmentVariable(originsName, "https://evil.example");
+            var options = BridgeOptions.Load();
+            Assert.Equal(BridgeOptions.ProductionPresenterEndpoint,
+                options.PresenterSessionEndpoint.AbsoluteUri);
+            Assert.SequenceEqual(new[] { "https://compass-interactive.pages.dev" },
+                options.AllowedOrigins);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(endpointName, originalEndpoint);
+            Environment.SetEnvironmentVariable(originsName, originalOrigins);
+        }
+#endif
         return Task.CompletedTask;
     }
 
@@ -109,7 +147,7 @@ internal static class SecurityTests
         using var handler = new RecordingRetryHandler();
         using var client = new EdgePresenterClient(
             new Uri(
-                "https://presenter-api.invalid/functions/v1/presenter-bridge-session"),
+                "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session"),
             signer,
             handler);
         var capability = new PresenterCapability(
@@ -162,7 +200,7 @@ internal static class SecurityTests
         using var handler = new RateLimitedHandler();
         using var client = new EdgePresenterClient(
             new Uri(
-                "https://presenter-api.invalid/functions/v1/presenter-bridge-session"),
+                "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session"),
             signer,
             handler);
         var capability = new PresenterCapability(
@@ -196,7 +234,7 @@ internal static class SecurityTests
         using var handler = new UnexpectedRequestHandler();
         using var client = new EdgePresenterClient(
             new Uri(
-                "https://presenter-api.invalid/functions/v1/presenter-bridge-session"),
+                "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session"),
             signer,
             handler);
         var source = new FakePresentationSource(

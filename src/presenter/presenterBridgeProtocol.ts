@@ -42,6 +42,8 @@ export type PresenterPresentation = {
 
 export type PresenterBridgeHealthResponse = {
   ok: true
+  powerpointReady: boolean
+  powerpointIssue: PresenterIssueCode | 'observation_unavailable' | null
   protocolVersion: typeof PRESENTER_BRIDGE_PROTOCOL_VERSION
   service: 'compass-presenter-bridge'
 }
@@ -235,10 +237,23 @@ export function parsePresenterBridgeHealthResponse(
 ): PresenterBridgeHealthResponse | null {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ['ok', 'protocolVersion', 'service']) ||
+    !hasExactKeys(value, [
+      'ok',
+      'protocolVersion',
+      'service',
+      'powerpointReady',
+      'powerpointIssue',
+    ]) ||
     value.ok !== true ||
     value.protocolVersion !== PRESENTER_BRIDGE_PROTOCOL_VERSION ||
-    value.service !== 'compass-presenter-bridge'
+    value.service !== 'compass-presenter-bridge' ||
+    typeof value.powerpointReady !== 'boolean' ||
+    (value.powerpointReady
+      ? value.powerpointIssue !== null
+      : !(
+          isPresenterIssueCode(value.powerpointIssue) ||
+          value.powerpointIssue === 'observation_unavailable'
+        ))
   ) {
     return null
   }

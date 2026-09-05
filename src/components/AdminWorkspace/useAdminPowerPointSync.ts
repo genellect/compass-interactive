@@ -10,9 +10,18 @@ import {
   type PresenterBridgeClientError,
 } from '../../presenter/presenterBridgeClient'
 import type {
+  PresenterBridgeHealthResponse,
   PresenterIssueCode,
   PresenterPresentation,
 } from '../../presenter/presenterBridgeProtocol'
+import {
+  getPresenterMaterialConsentKey,
+  getPresenterManualModeKey,
+  hasPresenterManualMode,
+  hasPresenterMaterialConsent,
+  rememberPresenterMaterialConsent,
+  setPresenterManualMode,
+} from '../../presenter/presenterMaterialConsent'
 
 export type PowerPointSyncPhase =
   | 'active'
@@ -37,10 +46,19 @@ type UseAdminPowerPointSyncInput = {
   enabled: boolean
   lectureStatus: string
   onCommittedPage: () => void
+  materialConsentScope: string
 }
 
 const ACTIVE_STATUS_INTERVAL_MS = 5_000
 const PAIRING_STATUS_INTERVAL_MS = 1_000
+const READINESS_INTERVAL_MS = 5_000
+const AUTOMATIC_RECOVERY_REASONS = new Set([
+  'disconnected',
+  'deck_changed',
+  'document_changed',
+  'stale_heartbeat',
+  'heartbeat_stale',
+])
 type PresenterConnectionStage = 'active' | 'pending' | 'terminal'
 const bridgeErrorMessages: Readonly<Record<string, string>> = {
   bridge_unavailable:
@@ -72,7 +90,7 @@ const bridgeErrorMessages: Readonly<Record<string, string>> = {
     'スライド構成を確認し、PowerPointを保存して開き直してください。',
   ticket_invalid: '接続確認の期限が切れました。もう一度接続してください。',
   windowed_slide_show_required:
-    'PowerPointをウィンドウ表示のスライドショーに切り替えてください。',
+    'PowerPointを通常のスライドショー（全画面またはウィンドウ）で開いてください。',
 }
 
 function friendlyBridgeError(error: unknown) {
@@ -81,6 +99,16 @@ function friendlyBridgeError(error: unknown) {
     (code && bridgeErrorMessages[code]) ||
     'PowerPointを確認できませんでした。画面の状態を確認して、もう一度お試しください。'
   )
+}
+
+function readinessMessage(health: PresenterBridgeHealthResponse) {
+  if (health.powerpointIssue === 'powerpoint_not_running')
+    return 'PowerPointのスライドショーを開始すると自動で接続します。'
+  if (health.powerpointIssue === 'observation_unavailable')
+    return 'PowerPointの準備を確認しています。準備ができると自動で接続します。'
+  return health.powerpointIssue
+    ? friendlyBridgeError({ code: health.powerpointIssue })
+    : 'PowerPointの準備ができました。'
 }
 
 function manualReviewFromStatus(
@@ -123,8 +151,9 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     displayState,
     enabled,
     lectureStatus,
-    onCommittedPage,
   } = input
+  const inputRef = useRef(input)
+  inputRef.current = input
   const [phase, setPhase] = useState<PowerPointSyncPhase>('idle')
   const [message, setMessage] = useState('')
   const [manualCode, setManualCode] = useState('')
@@ -134,6 +163,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const [serverConnection, setServerConnection] =
     useState<PresenterConnectionStatus | null>(null)
   const connectionIdRef = useRef<string | null>(null)
+  const ownsIssuedConnectionRef = useRef(false)
   const localSessionRef = useRef<string | null>(null)
   const pairingTicketExpiresAtRef = useRef<string | null>(null)
   const manualRecoveryModeRef = useRef(false)
@@ -142,9 +172,37 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const connectionStageRef = useRef<PresenterConnectionStage>('pending')
   const epochRef = useRef(0)
   const lastCommittedPageRef = useRef<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [waitingForReadiness, setWaitingForReadiness] = useState(false)
+  const [pageVisible, setPageVisible] = useState(
+    () => document.visibilityState === 'visible',
+  )
+  const healthRequestRef =
+    useRef<Promise<PresenterBridgeHealthResponse> | null>(null)
+  const readinessPendingConnectionRef = useRef<string | null>(null)
+  const readinessIssueAttemptsRef = useRef(0)
+  const [observedNativeFault, setObservedNativeFault] = useState(false)
+  const [awaitingFaultReason, setAwaitingFaultReason] = useState(false)
+  const terminalReasonPendingRef = useRef(false)
+  const faultReasonChecksRef = useRef(0)
+  const [watchingConnection, setWatchingConnection] = useState(false)
+  const watchingConnectionRef = useRef(false)
+  const automaticRecoveryAllowedRef = useRef(true)
+  const reconnectFaultedRef = useRef(false)
+  const operationRef = useRef(false)
+  const statusRequestRef = useRef<Promise<void> | null>(null)
+  const materialConsentKeyRef = useRef<string | null>(null)
+  const manualModeKeyRef = useRef<string | null>(null)
+  const manualPausedRef = useRef(false)
+  const autoConfirmRef = useRef(false)
+  const autoAttemptedRef = useRef<string | null>(null)
+  const previousLectureRef = useRef<string | null>(null)
+  const credentialRef = useRef(adminToken)
+  const mountedRef = useRef(true)
 
   const clearLocalState = useCallback(() => {
     connectionIdRef.current = null
+    ownsIssuedConnectionRef.current = false
     localSessionRef.current = null
     pairingTicketExpiresAtRef.current = null
     manualRecoveryModeRef.current = false
@@ -156,47 +214,111 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     setManualCode('')
     setPresentation(null)
     setServerConnection(null)
+    materialConsentKeyRef.current = null
+    autoConfirmRef.current = false
+    watchingConnectionRef.current = false
+    setWatchingConnection(false)
+    terminalReasonPendingRef.current = false
+    setAwaitingFaultReason(false)
+    faultReasonChecksRef.current = 0
+    setWaitingForReadiness(false)
+  }, [])
+
+  const readHealth = useCallback(async () => {
+    if (healthRequestRef.current) return healthRequestRef.current
+    const request = presenterBridgeClient.health()
+    healthRequestRef.current = request
+    try {
+      return await request
+    } finally {
+      if (healthRequestRef.current === request) healthRequestRef.current = null
+    }
   }, [])
 
   useEffect(() => {
-    epochRef.current += 1
-    clearLocalState()
-    setMessage('')
-    setPhase('idle')
+    const observeVisibility = () =>
+      setPageVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', observeVisibility)
+    return () =>
+      document.removeEventListener('visibilitychange', observeVisibility)
+  }, [])
 
-    return () => {
-      const connectionId = connectionIdRef.current
-      const localSession = localSessionRef.current
-      epochRef.current += 1
-      connectionIdRef.current = null
-      localSessionRef.current = null
-      pairingTicketExpiresAtRef.current = null
-      manualRecoveryModeRef.current = false
-      manualRecoveryReadyRef.current = false
-      teacherConfirmedRef.current = false
-      connectionStageRef.current = 'pending'
-      lastCommittedPageRef.current = null
-
-      if (localSession) {
-        void presenterBridgeClient
-          .disconnect(localSession)
+  useEffect(() => {
+    const previousConnectionId = connectionIdRef.current
+    const previousLocalSession = localSessionRef.current
+    if (previousLectureRef.current !== activeLectureSessionId) {
+      if (previousConnectionId && ownsIssuedConnectionRef.current) {
+        void supabasePresenterBridgeRepository
+          .revoke({
+            adminToken: credentialRef.current,
+            connectionId: previousConnectionId,
+          })
           .catch(() => undefined)
       }
-      if (connectionId && adminToken) {
-        void supabasePresenterBridgeRepository
-          .revoke({ adminToken, connectionId })
+      if (previousLocalSession) {
+        void presenterBridgeClient
+          .disconnect(previousLocalSession)
           .catch(() => undefined)
       }
     }
-  }, [activeLectureSessionId, adminToken, clearLocalState])
+    previousLectureRef.current = activeLectureSessionId
+    credentialRef.current = inputRef.current.adminToken
+    epochRef.current += 1
+    autoAttemptedRef.current = null
+    readinessPendingConnectionRef.current = null
+    readinessIssueAttemptsRef.current = 0
+    manualModeKeyRef.current = null
+    manualPausedRef.current = false
+    reconnectFaultedRef.current = false
+    setObservedNativeFault(false)
+    automaticRecoveryAllowedRef.current = true
+    operationRef.current = false
+    setBusy(false)
+    clearLocalState()
+    setMessage('')
+    setPhase('idle')
+  }, [activeLectureSessionId, adminToken.appSessionToken, clearLocalState])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      epochRef.current += 1
+      if (
+        connectionStageRef.current === 'pending' &&
+        ownsIssuedConnectionRef.current &&
+        connectionIdRef.current
+      ) {
+        void supabasePresenterBridgeRepository
+          .revoke({
+            adminToken: inputRef.current.adminToken,
+            connectionId: connectionIdRef.current,
+          })
+          .catch(() => undefined)
+      }
+      // Reload/navigation must not stop the native lecture. Server lifecycle,
+      // explicit handover and the heartbeat lease remain authoritative.
+    }
+  }, [])
+
+  useEffect(() => {
+    const observeManualHandover = () => {
+      const key = manualModeKeyRef.current
+      if (!key || !hasPresenterManualMode(key)) return
+      manualPausedRef.current = true
+      reconnectFaultedRef.current = false
+      autoConfirmRef.current = false
+      setObservedNativeFault(false)
+      setAwaitingFaultReason(false)
+      setWaitingForReadiness(false)
+    }
+    window.addEventListener('storage', observeManualHandover)
+    return () => window.removeEventListener('storage', observeManualHandover)
+  }, [])
 
   const refreshStatus = useCallback(async () => {
-    if (
-      !enabled ||
-      !activeLectureSessionId ||
-      !adminToken ||
-      !connectionIdRef.current
-    ) {
+    const { enabled, activeLectureSessionId, adminToken } = inputRef.current
+    if (!enabled || !activeLectureSessionId || !connectionIdRef.current) {
       return
     }
     const epoch = epochRef.current
@@ -205,14 +327,54 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       lectureSessionId: activeLectureSessionId,
     })
     if (epoch !== epochRef.current) return
-    if (connectionStageRef.current === 'terminal') return
+    if (
+      connectionStageRef.current === 'terminal' &&
+      !terminalReasonPendingRef.current
+    )
+      return
 
     const connection = result.connection
+    if (connection && connection.connectionId !== connectionIdRef.current) {
+      // A server-authoritative replacement belongs to the lecture. The old
+      // local token must never be used to stop or inspect its successor.
+      epochRef.current += 1
+      operationRef.current = false
+      setBusy(false)
+      connectionIdRef.current = connection.connectionId
+      ownsIssuedConnectionRef.current = false
+      localSessionRef.current = null
+      pairingTicketExpiresAtRef.current = null
+      materialConsentKeyRef.current = null
+      autoConfirmRef.current = false
+      teacherConfirmedRef.current = false
+      setPresentation(null)
+      setManualCode('')
+      manualRecoveryModeRef.current = false
+      manualRecoveryReadyRef.current = false
+      setManualRecoveryRequired(false)
+      watchingConnectionRef.current = true
+      setWatchingConnection(true)
+      connectionStageRef.current = 'pending'
+    }
     if (
       !result.runtimeEnabled ||
       !connection ||
       connection.state === 'revoked'
     ) {
+      terminalReasonPendingRef.current = result.runtimeEnabled && !connection
+      if (!terminalReasonPendingRef.current) setAwaitingFaultReason(false)
+      automaticRecoveryAllowedRef.current = Boolean(
+        result.runtimeEnabled &&
+        connection?.revokeReason &&
+        AUTOMATIC_RECOVERY_REASONS.has(connection.revokeReason),
+      )
+      if (
+        !automaticRecoveryAllowedRef.current &&
+        !terminalReasonPendingRef.current
+      ) {
+        reconnectFaultedRef.current = false
+        setObservedNativeFault(false)
+      }
       connectionStageRef.current = 'terminal'
       setServerConnection(connection)
       manualRecoveryModeRef.current = false
@@ -228,6 +390,11 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     }
 
     if (connection.state === 'active') {
+      terminalReasonPendingRef.current = false
+      setAwaitingFaultReason(false)
+      automaticRecoveryAllowedRef.current = true
+      watchingConnectionRef.current = false
+      setWatchingConnection(false)
       connectionStageRef.current = 'active'
       setServerConnection(connection)
       manualRecoveryModeRef.current = false
@@ -242,7 +409,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         connection.lastCommittedPdfPage !== lastCommittedPageRef.current
       ) {
         lastCommittedPageRef.current = connection.lastCommittedPdfPage
-        onCommittedPage()
+        inputRef.current.onCommittedPage()
       }
       return
     }
@@ -263,6 +430,12 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     }
 
     setServerConnection(connection)
+
+    if (watchingConnectionRef.current) {
+      setPhase('activating')
+      setMessage('別の教員画面で接続を準備しています。')
+      return
+    }
 
     if (manualRecoveryModeRef.current) {
       if (!manualRecoveryReadyRef.current) return
@@ -300,120 +473,466 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         }
       }
     }
-  }, [activeLectureSessionId, adminToken, enabled, onCommittedPage])
+  }, [])
 
   useEffect(() => {
-    if (!['active', 'activating', 'recovery', 'review'].includes(phase)) return
+    if (
+      !['active', 'activating', 'recovery', 'review'].includes(phase) &&
+      !(phase === 'error' && awaitingFaultReason)
+    )
+      return
     let disposed = false
+    let timeoutId: number | null = null
     const check = async () => {
+      if (awaitingFaultReason && faultReasonChecksRef.current-- <= 0) {
+        setAwaitingFaultReason(false)
+        return
+      }
+      const epoch = epochRef.current
+      const localSession = localSessionRef.current
       try {
-        await refreshStatus()
-        const localSession = localSessionRef.current
-        if (!disposed && phase === 'active' && localSession) {
+        if (statusRequestRef.current) await statusRequestRef.current
+        if (disposed) return
+        const request = refreshStatus()
+        statusRequestRef.current = request
+        await request
+        if (statusRequestRef.current === request)
+          statusRequestRef.current = null
+        if (
+          (phase === 'active' || awaitingFaultReason) &&
+          localSession &&
+          localSession === localSessionRef.current &&
+          epoch === epochRef.current
+        ) {
           const localStatus =
             await presenterBridgeClient.getStatus(localSession)
-          if (!disposed && localStatus.state === 'faulted') {
-            setMessage(
-              'PowerPointを確認できなくなりました。手動操作へ切り替えられます。',
+          if (
+            mountedRef.current &&
+            epoch === epochRef.current &&
+            localSession === localSessionRef.current &&
+            localStatus.state === 'faulted' &&
+            !(
+              manualModeKeyRef.current &&
+              hasPresenterManualMode(manualModeKeyRef.current)
             )
+          ) {
+            if (automaticRecoveryAllowedRef.current) {
+              reconnectFaultedRef.current = true
+              setObservedNativeFault(true)
+              setAwaitingFaultReason(false)
+              setMessage(
+                'PowerPointを確認できなくなりました。手動操作へ切り替えられます。',
+              )
+            } else if (
+              terminalReasonPendingRef.current &&
+              !awaitingFaultReason
+            ) {
+              // An elapsed server lease may briefly hide the row before its
+              // terminal reason is written. Only a positive local fault permits
+              // three bounded, read-only checks; it never authorizes issuance.
+              faultReasonChecksRef.current = 3
+              setAwaitingFaultReason(true)
+            }
           }
         }
       } catch {
+        statusRequestRef.current = null
         if (!disposed) {
           setMessage(
-            phase === 'active'
+            phase === 'active' || awaitingFaultReason
               ? '同期状態を確認できません。接続を維持しながら再確認します。'
               : '接続状態を確認しています…',
+          )
+        }
+      } finally {
+        if (!disposed) {
+          timeoutId = window.setTimeout(
+            () => void check(),
+            phase === 'active' || awaitingFaultReason
+              ? ACTIVE_STATUS_INTERVAL_MS
+              : PAIRING_STATUS_INTERVAL_MS,
           )
         }
       }
     }
     void check()
-    const intervalId = window.setInterval(
-      () => void check(),
-      phase === 'active'
-        ? ACTIVE_STATUS_INTERVAL_MS
-        : PAIRING_STATUS_INTERVAL_MS,
-    )
     return () => {
       disposed = true
-      window.clearInterval(intervalId)
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
     }
-  }, [phase, refreshStatus])
+  }, [awaitingFaultReason, phase, refreshStatus])
 
-  const start = useCallback(async () => {
-    const display = displayState
-    if (
-      !enabled ||
-      !activeLectureSessionId ||
-      !adminToken ||
-      lectureStatus !== 'open' ||
-      !display?.pdfDocumentId ||
-      !display.pdfDocumentVersion ||
-      !display.pdfPageCount ||
-      !display.pdfVisible
-    ) {
-      setPhase('error')
-      setMessage('開始中の講義で、公開済みの講義資料を選択してください。')
-      return
-    }
-
-    const epoch = ++epochRef.current
-    clearLocalState()
-    setMessage('接続を準備しています…')
-    setPhase('checking')
-    try {
-      const issued = await supabasePresenterBridgeRepository.issue({
+  const startAttempt = useCallback(
+    async (automatic = false) => {
+      if (operationRef.current) return
+      const {
+        displayState,
+        activeLectureSessionId,
         adminToken,
-        lectureSessionId: activeLectureSessionId,
-      })
-      if (epoch !== epochRef.current) return
-      connectionIdRef.current = issued.connectionId
-      pairingTicketExpiresAtRef.current = issued.pairingTicketExpiresAt
-      setManualCode(issued.manualCode)
-
-      try {
-        await presenterBridgeClient.health()
-        const connected = await presenterBridgeClient.connect({
-          lectureSessionId: activeLectureSessionId,
-          pdfDocumentId: issued.pdf.documentId,
-          pdfDocumentVersion: issued.pdf.documentVersion,
-          pdfPageCount: issued.pdf.pageCount,
-          ticket: issued.pairingTicket,
-        })
-        if (epoch !== epochRef.current) return
-        localSessionRef.current = connected.sessionToken
-        setPresentation(connected.presentation)
-        setPhase('review')
-        setMessage(
-          connected.presentation.eligible
-            ? 'PowerPointと講義資料を確認してください。'
-            : 'このPowerPointは現在の講義資料と同期できません。',
-        )
-      } catch (bridgeError) {
-        if (epoch !== epochRef.current) return
-        manualRecoveryModeRef.current = true
-        manualRecoveryReadyRef.current = true
-        teacherConfirmedRef.current = false
-        setManualRecoveryRequired(true)
-        setPhase('recovery')
-        setMessage(friendlyBridgeError(bridgeError))
+        enabled,
+        lectureStatus,
+        materialConsentScope,
+      } = inputRef.current
+      const display = displayState
+      if (enabled && activeLectureSessionId && lectureStatus === 'draft') {
+        const epoch = ++epochRef.current
+        operationRef.current = true
+        setBusy(true)
+        setPhase('checking')
+        try {
+          await readHealth()
+          if (epoch === epochRef.current) {
+            setMessage('Bridgeの準備ができました。講義開始時に自動接続します。')
+          }
+        } catch {
+          if (epoch === epochRef.current) {
+            setMessage('Bridgeを起動してから、もう一度接続を確認してください。')
+          }
+        } finally {
+          if (epoch === epochRef.current) {
+            operationRef.current = false
+            setBusy(false)
+            setPhase('idle')
+          }
+        }
+        return
       }
-    } catch (error) {
-      if (epoch !== epochRef.current) return
-      setPhase('error')
-      setMessage(friendlyBridgeError(error))
-    }
-  }, [
-    activeLectureSessionId,
-    adminToken,
-    clearLocalState,
-    displayState,
-    enabled,
-    lectureStatus,
-  ])
+      if (
+        !enabled ||
+        !activeLectureSessionId ||
+        !adminToken ||
+        lectureStatus !== 'open' ||
+        !display?.pdfDocumentId ||
+        !display.pdfDocumentVersion ||
+        !display.pdfPageCount ||
+        !display.pdfVisible
+      ) {
+        setPhase('error')
+        setMessage('開始中の講義で、公開済みの講義資料を選択してください。')
+        return
+      }
 
-  const confirm = useCallback(async () => {
+      const epoch = ++epochRef.current
+      const previousConnectionId = connectionIdRef.current
+      const readinessPendingConnectionId = readinessPendingConnectionRef.current
+      const readinessLocalSession = readinessPendingConnectionId
+        ? localSessionRef.current
+        : null
+      const faultedLocalSession = reconnectFaultedRef.current
+        ? localSessionRef.current
+        : null
+      const reconnectFaulted = reconnectFaultedRef.current
+      reconnectFaultedRef.current = false
+      operationRef.current = true
+      setBusy(true)
+      clearLocalState()
+      setMessage('接続を準備しています…')
+      setPhase('checking')
+      try {
+        const manualKey = await getPresenterManualModeKey(
+          materialConsentScope,
+          activeLectureSessionId,
+        )
+        if (epoch !== epochRef.current || !mountedRef.current) return
+        manualModeKeyRef.current = manualKey
+        if (!automatic) {
+          manualPausedRef.current = false
+          setPresenterManualMode(manualKey, false)
+        }
+        // Discover the server's active connection before issuing anything new.
+        const existing = await supabasePresenterBridgeRepository.status({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+        if (epoch !== epochRef.current || !mountedRef.current) return
+        if (!existing.runtimeEnabled) {
+          setPhase('idle')
+          setMessage('')
+          return
+        }
+        if (automatic && reconnectFaulted && !existing.connection) {
+          connectionIdRef.current = previousConnectionId
+          localSessionRef.current = faultedLocalSession
+          connectionStageRef.current = 'terminal'
+          terminalReasonPendingRef.current = true
+          automaticRecoveryAllowedRef.current = false
+          faultReasonChecksRef.current = 3
+          setAwaitingFaultReason(true)
+          setPhase('error')
+          setMessage('同期の停止状態を確認しています。手動操作も使えます。')
+          return
+        }
+        if (
+          existing.connection?.state === 'active' &&
+          (!reconnectFaulted ||
+            existing.connection.connectionId !== previousConnectionId)
+        ) {
+          connectionIdRef.current = existing.connection.connectionId
+          connectionStageRef.current = 'active'
+          setServerConnection(existing.connection)
+          setPhase('active')
+          setMessage('')
+          inputRef.current.onCommittedPage()
+          return
+        }
+        if (
+          automatic &&
+          (manualPausedRef.current || hasPresenterManualMode(manualKey))
+        ) {
+          setPhase('idle')
+          setMessage('手動スライド操作を利用中です。')
+          return
+        }
+        if (
+          automatic &&
+          existing.connection?.state === 'revoked' &&
+          existing.connection.revokeReason &&
+          !AUTOMATIC_RECOVERY_REASONS.has(existing.connection.revokeReason)
+        ) {
+          setPhase('idle')
+          setMessage('手動スライド操作を利用中です。')
+          return
+        }
+        if (
+          automatic &&
+          existing.connection &&
+          existing.connection.connectionId !== readinessPendingConnectionId &&
+          ['pairing', 'inspected', 'confirmed'].includes(
+            existing.connection.state,
+          ) &&
+          Date.parse(existing.connection.ticketExpiresAt) > Date.now()
+        ) {
+          connectionIdRef.current = existing.connection.connectionId
+          setServerConnection(existing.connection)
+          watchingConnectionRef.current = true
+          setWatchingConnection(true)
+          setPhase('activating')
+          setMessage('別の教員画面で接続を準備しています。')
+          return
+        }
+        if (
+          existing.connection?.connectionId === readinessPendingConnectionId
+        ) {
+          connectionIdRef.current = readinessPendingConnectionId
+          ownsIssuedConnectionRef.current = true
+          localSessionRef.current = readinessLocalSession
+        }
+        if (
+          reconnectFaulted &&
+          existing.connection &&
+          existing.connection.connectionId === previousConnectionId &&
+          existing.connection.state !== 'revoked'
+        ) {
+          await supabasePresenterBridgeRepository.revoke({
+            adminToken,
+            connectionId: existing.connection.connectionId,
+          })
+        }
+        if (faultedLocalSession) {
+          await presenterBridgeClient
+            .disconnect(faultedLocalSession)
+            .catch(() => undefined)
+        }
+        if (epoch !== epochRef.current || !mountedRef.current) return
+        try {
+          const health = await readHealth()
+          if (epoch !== epochRef.current || !mountedRef.current) return
+          if (!health.powerpointReady) {
+            setWaitingForReadiness(true)
+            setPhase('idle')
+            setMessage(readinessMessage(health))
+            return
+          }
+        } catch {
+          if (epoch !== epochRef.current) return
+          setPhase('idle')
+          setWaitingForReadiness(true)
+          setMessage(
+            'BridgeとPowerPointの起動を待っています。手動スライド操作も使えます。',
+          )
+          return
+        }
+        if (epoch !== epochRef.current || !mountedRef.current) return
+        if (automatic && document.visibilityState !== 'visible') {
+          setWaitingForReadiness(true)
+          setPhase('idle')
+          return
+        }
+        if (automatic && hasPresenterManualMode(manualKey)) {
+          setPhase('idle')
+          setMessage('手動スライド操作を利用中です。')
+          return
+        }
+        if (readinessLocalSession) {
+          await presenterBridgeClient
+            .disconnect(readinessLocalSession)
+            .catch(() => undefined)
+          if (epoch !== epochRef.current || !mountedRef.current) return
+        }
+        if (
+          automatic &&
+          (manualPausedRef.current ||
+            hasPresenterManualMode(manualKey) ||
+            document.visibilityState !== 'visible')
+        )
+          return
+        if (automatic) readinessIssueAttemptsRef.current += 1
+        const issued = await supabasePresenterBridgeRepository.issue({
+          adminToken,
+          lectureSessionId: activeLectureSessionId,
+        })
+        if (epoch !== epochRef.current) {
+          void supabasePresenterBridgeRepository
+            .revoke({ adminToken, connectionId: issued.connectionId })
+            .catch(() => undefined)
+          return
+        }
+        connectionIdRef.current = issued.connectionId
+        ownsIssuedConnectionRef.current = true
+        readinessPendingConnectionRef.current = null
+        pairingTicketExpiresAtRef.current = issued.pairingTicketExpiresAt
+        setManualCode(issued.manualCode)
+
+        try {
+          const connected = await presenterBridgeClient.connect({
+            lectureSessionId: activeLectureSessionId,
+            pdfDocumentId: issued.pdf.documentId,
+            pdfDocumentVersion: issued.pdf.documentVersion,
+            pdfPageCount: issued.pdf.pageCount,
+            ticket: issued.pairingTicket,
+          })
+          if (epoch !== epochRef.current) {
+            void presenterBridgeClient
+              .disconnect(connected.sessionToken)
+              .catch(() => undefined)
+            return
+          }
+          localSessionRef.current = connected.sessionToken
+          if (
+            automatic &&
+            !connected.presentation.eligible &&
+            connected.presentation.issues.every((issue) =>
+              ['powerpoint_not_running', 'presenter_session_stopped'].includes(
+                issue,
+              ),
+            )
+          ) {
+            readinessPendingConnectionRef.current = issued.connectionId
+            setWaitingForReadiness(readinessIssueAttemptsRef.current < 2)
+            setPhase('idle')
+            setMessage(
+              readinessIssueAttemptsRef.current < 2
+                ? 'PowerPointのスライドショーを開始すると自動で接続します。'
+                : 'PowerPointの準備を確認できませんでした。Bridgeの接続を確認してください。',
+            )
+            return
+          }
+          setPresentation(connected.presentation)
+          if (connected.presentation.eligible) {
+            readinessIssueAttemptsRef.current = 0
+            const key = await getPresenterMaterialConsentKey({
+              scope: materialConsentScope,
+              pdfDocumentVersion: issued.pdf.documentVersion,
+              pdfPageCount: issued.pdf.pageCount,
+              deckBindingDigest: connected.presentation.bindingDigest,
+            })
+            if (epoch !== epochRef.current || !mountedRef.current) return
+            materialConsentKeyRef.current = key
+            autoConfirmRef.current = hasPresenterMaterialConsent(key)
+          }
+          setPhase('review')
+          setMessage(
+            connected.presentation.eligible
+              ? 'PowerPointと講義資料を確認してください。'
+              : 'このPowerPointは現在の講義資料と同期できません。',
+          )
+        } catch (bridgeError) {
+          if (epoch !== epochRef.current) return
+          const bridgeCode = (
+            bridgeError as PresenterBridgeClientError | undefined
+          )?.code
+          let waitingForPowerPoint = bridgeCode === 'powerpoint_not_running'
+          if (automatic && bridgeCode === 'ticket_invalid') {
+            try {
+              const health = await readHealth()
+              waitingForPowerPoint =
+                !health.powerpointReady &&
+                health.powerpointIssue === 'powerpoint_not_running'
+            } catch {
+              /* An unknown failure retains the existing recovery flow. */
+            }
+            if (epoch !== epochRef.current || !mountedRef.current) return
+          }
+          if (automatic && waitingForPowerPoint) {
+            readinessPendingConnectionRef.current = issued.connectionId
+            setWaitingForReadiness(readinessIssueAttemptsRef.current < 2)
+            setPhase('idle')
+            setMessage(
+              readinessIssueAttemptsRef.current < 2
+                ? 'PowerPointのスライドショーを開始すると自動で接続します。'
+                : 'PowerPointの準備を確認できませんでした。Bridgeの接続を確認してください。',
+            )
+            return
+          }
+          manualRecoveryModeRef.current = true
+          manualRecoveryReadyRef.current = true
+          teacherConfirmedRef.current = false
+          setManualRecoveryRequired(true)
+          setPhase('recovery')
+          setMessage(friendlyBridgeError(bridgeError))
+        }
+      } catch (error) {
+        if (epoch !== epochRef.current) return
+        setPhase('error')
+        setMessage(friendlyBridgeError(error))
+      } finally {
+        if (epoch === epochRef.current) {
+          operationRef.current = false
+          setBusy(false)
+        }
+      }
+    },
+    [clearLocalState, readHealth],
+  )
+
+  const start = useCallback(
+    async (automatic = false) => {
+      if (!automatic) return startAttempt(false)
+      const current = inputRef.current
+      if (
+        !current.activeLectureSessionId ||
+        !current.enabled ||
+        document.visibilityState !== 'visible'
+      )
+        return
+      const epoch = epochRef.current
+      const key = await getPresenterManualModeKey(
+        current.materialConsentScope,
+        current.activeLectureSessionId,
+      )
+      if (!navigator.locks) return
+      await navigator.locks.request(
+        `compass-presenter-connection:${key}`,
+        async () => {
+          if (
+            !mountedRef.current ||
+            epoch !== epochRef.current ||
+            document.visibilityState !== 'visible'
+          )
+            return
+          await startAttempt(true)
+        },
+      )
+    },
+    [startAttempt],
+  )
+
+  const confirmConnection = useCallback(async () => {
+    if (
+      manualModeKeyRef.current &&
+      hasPresenterManualMode(manualModeKeyRef.current)
+    )
+      return
     const connectionId = connectionIdRef.current
     if (
       !connectionId ||
@@ -481,7 +1000,17 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       ) {
         return
       }
+      if (
+        manualModeKeyRef.current &&
+        hasPresenterManualMode(manualModeKeyRef.current)
+      ) {
+        await refreshStatus()
+        return
+      }
       teacherConfirmedRef.current = true
+      if (materialConsentKeyRef.current) {
+        rememberPresenterMaterialConsent(materialConsentKeyRef.current)
+      }
     } catch (error) {
       if (
         epoch !== epochRef.current ||
@@ -539,44 +1068,174 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     await refreshStatus()
   }, [adminToken, presentation, refreshStatus])
 
+  const confirm = useCallback(async () => {
+    if (operationRef.current) return
+    operationRef.current = true
+    setBusy(true)
+    const epoch = epochRef.current
+    try {
+      await confirmConnection()
+    } finally {
+      if (epoch === epochRef.current) {
+        operationRef.current = false
+        setBusy(false)
+      }
+    }
+  }, [confirmConnection])
+
+  useEffect(() => {
+    if (phase !== 'review' || busy || !pageVisible || !autoConfirmRef.current)
+      return
+    autoConfirmRef.current = false
+    void confirm()
+  }, [busy, confirm, pageVisible, phase])
+
+  const readyKey =
+    enabled &&
+    activeLectureSessionId &&
+    lectureStatus === 'open' &&
+    displayState?.pdfVisible &&
+    displayState.pdfDocumentId &&
+    displayState.pdfDocumentVersion &&
+    displayState.pdfPageCount
+      ? `${activeLectureSessionId}:${displayState.pdfDocumentVersion}:${displayState.pdfPageCount}`
+      : null
+
+  useEffect(() => {
+    if (!pageVisible || !readyKey || autoAttemptedRef.current === readyKey)
+      return
+    autoAttemptedRef.current = readyKey
+    void start(true)
+  }, [adminToken.appSessionToken, pageVisible, readyKey, start])
+
+  useEffect(() => {
+    if (!waitingForReadiness || !pageVisible || !readyKey) return
+    let disposed = false
+    let timer: number | null = null
+    const epoch = epochRef.current
+    const check = async () => {
+      const manualKey = manualModeKeyRef.current
+      if (
+        disposed ||
+        epoch !== epochRef.current ||
+        document.visibilityState !== 'visible' ||
+        manualPausedRef.current ||
+        (manualKey && hasPresenterManualMode(manualKey))
+      )
+        return
+      try {
+        const health = await readHealth()
+        if (
+          disposed ||
+          epoch !== epochRef.current ||
+          !mountedRef.current ||
+          document.visibilityState !== 'visible'
+        )
+          return
+        if (
+          manualPausedRef.current ||
+          (manualKey && hasPresenterManualMode(manualKey))
+        )
+          return
+        if (health.powerpointReady) {
+          await start(true)
+          return
+        }
+        setMessage(readinessMessage(health))
+      } catch {
+        // Keep readiness local and quiet. No server retry or ticket is issued.
+      }
+      if (!disposed && epoch === epochRef.current)
+        timer = window.setTimeout(() => void check(), READINESS_INTERVAL_MS)
+    }
+    timer = window.setTimeout(() => void check(), READINESS_INTERVAL_MS)
+    return () => {
+      disposed = true
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [
+    adminToken.appSessionToken,
+    pageVisible,
+    readHealth,
+    readyKey,
+    start,
+    waitingForReadiness,
+  ])
+
+  useEffect(() => {
+    if (!observedNativeFault || !readyKey || busy) return
+    // A native fault is positive evidence. An unreachable Bridge or unknown
+    // local token may mean the teacher exited it, so those never restart it.
+    const timer = window.setTimeout(() => {
+      setObservedNativeFault(false)
+      void start(true)
+    }, 1_000)
+    return () => window.clearTimeout(timer)
+  }, [busy, observedNativeFault, readyKey, start])
+
   const stop = useCallback(async () => {
+    if (operationRef.current) return
+    reconnectFaultedRef.current = false
+    setObservedNativeFault(false)
+    setWaitingForReadiness(false)
+    manualPausedRef.current = true
+    if (manualModeKeyRef.current)
+      setPresenterManualMode(manualModeKeyRef.current, true)
     const connectionId = connectionIdRef.current
+    const localSession = localSessionRef.current
+    const epoch = epochRef.current
+    let completed = false
     if (!connectionId) {
       clearLocalState()
       setPhase('idle')
       return
     }
+    operationRef.current = true
+    setBusy(true)
     setMessage('手動操作へ切り替えています…')
     try {
       await supabasePresenterBridgeRepository.revoke({
         adminToken,
         connectionId,
       })
-      const localSession = localSessionRef.current
+      if (epoch !== epochRef.current || !mountedRef.current) return
       if (localSession) {
         await presenterBridgeClient
           .disconnect(localSession)
           .catch(() => undefined)
       }
+      if (epoch !== epochRef.current || !mountedRef.current) return
       epochRef.current += 1
       clearLocalState()
+      completed = true
       setMessage('手動操作へ切り替えました。')
       setPhase('idle')
     } catch {
+      if (epoch !== epochRef.current || !mountedRef.current) return
       setMessage(
         '同期を停止できませんでした。状態を維持しているため、もう一度お試しください。',
       )
+    } finally {
+      if (completed || epoch === epochRef.current) {
+        operationRef.current = false
+        setBusy(false)
+      }
     }
   }, [adminToken, clearLocalState])
 
   const manualNavigationLocked =
-    serverConnection?.state === 'active' && serverConnection.revokedAt === null
+    phase === 'active' ||
+    (serverConnection?.state === 'active' &&
+      serverConnection.revokedAt === null)
 
   return {
     confirm,
+    busy,
+    watchingConnection,
     manualCode,
     manualRecoveryRequired,
     manualNavigationLocked,
+    hasConnection: connectionIdRef.current !== null,
     message,
     phase,
     presentation,

@@ -1,17 +1,15 @@
-import { useEffect } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { SyncedPdfViewer } from '../DisplayView/SyncedPdfViewer'
 import type { DisplayState } from '../../repositories/supabaseDisplayStateRepository'
-import { useAdminPowerPointSync } from './useAdminPowerPointSync'
+import type { ReturnTypeOfPowerPointSync } from './adminPowerPointTypes'
 import { AdminPowerPointSyncControl } from './AdminPowerPointSyncControl'
 
 type AdminPowerPointIntegrationProps = {
   activeLectureSessionId: string
   adminToken: AdminOperationCredentialInput
   displayState: DisplayState
-  lectureStatus: string
-  onCommittedPage: () => void
-  onManualNavigationLockedChange: (locked: boolean) => void
+  sync: ReturnTypeOfPowerPointSync
+  showSetup: boolean
   pdfPageCount: number | null
   pdfTitle: string
 }
@@ -20,30 +18,11 @@ export function AdminPowerPointIntegration({
   activeLectureSessionId,
   adminToken,
   displayState,
-  lectureStatus,
-  onCommittedPage,
-  onManualNavigationLockedChange,
+  sync,
+  showSetup,
   pdfPageCount,
   pdfTitle,
 }: AdminPowerPointIntegrationProps) {
-  const sync = useAdminPowerPointSync({
-    activeLectureSessionId,
-    adminToken,
-    displayState,
-    enabled: true,
-    lectureStatus,
-    onCommittedPage,
-  })
-
-  useEffect(() => {
-    onManualNavigationLockedChange(sync.manualNavigationLocked)
-  }, [onManualNavigationLockedChange, sync.manualNavigationLocked])
-
-  useEffect(
-    () => () => onManualNavigationLockedChange(false),
-    [onManualNavigationLockedChange],
-  )
-
   return (
     <AdminPowerPointSyncControl
       pdfPageCount={pdfPageCount}
@@ -68,6 +47,7 @@ export function AdminPowerPointIntegration({
       }
       pdfTitle={pdfTitle}
       sync={sync}
+      showSetup={showSetup}
     />
   )
 }
