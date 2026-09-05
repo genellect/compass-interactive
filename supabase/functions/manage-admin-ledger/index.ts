@@ -4,6 +4,7 @@ import {
   readSecret,
   sha256Hex,
 } from '../_shared/adminIdentity.ts'
+import { classifyAdminLedgerRpcFailure } from '../_shared/adminLedgerRpcFailure.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   readJsonBody,
@@ -225,25 +226,6 @@ function normalizeMutationPayload(
   }
 }
 
-function rpcFailure(errorCode: string | undefined) {
-  switch (errorCode) {
-    case '22023':
-      return { code: 'request_invalid', status: 400 }
-    case '42501':
-      return { code: 'authorization_failed', status: 403 }
-    case 'P7310':
-      return { code: 'last_owner_required', status: 409 }
-    case 'P7335':
-      return { code: 'state_changed', status: 409 }
-    case 'P7337':
-      return { code: 'feature_disabled', status: 503 }
-    case 'P7301':
-      return { code: 'rate_limited', status: 429 }
-    default:
-      return { code: 'service_unavailable', status: 503 }
-  }
-}
-
 Deno.serve(async (request) => {
   const jsonResponse = createJsonResponse(request)
   const corsResponse = handleCors(request)
@@ -332,7 +314,7 @@ Deno.serve(async (request) => {
     )
     if (error || !data) {
       const failure = error
-        ? rpcFailure(error.code)
+        ? classifyAdminLedgerRpcFailure(error)
         : { code: 'authorization_failed', status: 403 }
       return jsonResponse(
         {
@@ -379,7 +361,7 @@ Deno.serve(async (request) => {
     )
     if (error || !data) {
       const failure = error
-        ? rpcFailure(error.code)
+        ? classifyAdminLedgerRpcFailure(error)
         : { code: 'authorization_failed', status: 403 }
       return jsonResponse(
         {
@@ -517,7 +499,7 @@ Deno.serve(async (request) => {
   const { data, error } = await verification.serviceClient.rpc(rpcName, rpcArgs)
   if (error || !data) {
     const failure = error
-      ? rpcFailure(error.code)
+      ? classifyAdminLedgerRpcFailure(error, action)
       : { code: 'authorization_failed', status: 403 }
     return jsonResponse(
       {

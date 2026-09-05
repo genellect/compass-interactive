@@ -172,6 +172,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   authorization_failed: 'この管理台帳を操作する権限がありません。',
   feature_disabled:
     '現在、新しい招待や権限追加は停止中です。確認と安全な停止操作は引き続き利用できます。',
+  invitation_pending:
+    'この教員には受諾待ちの招待があります。取り消してから、新しい招待リンクを作成してください。',
   last_owner_required: '環境に最後に残るOwnerは変更できません。',
   rate_limited: '操作が集中しています。少し待ってからもう一度お試しください。',
   request_invalid: '入力内容を確認してください。',
