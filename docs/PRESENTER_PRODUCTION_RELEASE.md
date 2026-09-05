@@ -1,7 +1,7 @@
 # Presenter production release candidate
 
 Decision date: 2026-09-06. Baseline for this record:
-`71def0b2abc48d68df8e00d40e2c45cc91109ac9`.
+`c0f62fa491f0c01691dbe680c1fa7f49ddd0fbb7`.
 
 The production decision is Microsoft Store distribution of a packaged x64
 MSIX. The old Direct Velopack EXE and anonymous R2 update feed are not a
