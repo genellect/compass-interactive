@@ -5,6 +5,28 @@ namespace Compass.Presenter.Tests;
 
 internal static class CoreTests
 {
+    public static Task OrdinaryFullScreenSupportsStablePagesButNotKioskOrPresenterView()
+    {
+        var observation = TestData.Observation(1, 0,
+            windowMode: PresentationWindowMode.Speaker);
+        var tracker = new StablePresentationTracker(TimeSpan.FromMilliseconds(100));
+        tracker.Bind(observation, TestData.SlideIds.Length);
+        Assert.Null(tracker.Observe(observation));
+        var stable = tracker.Observe(observation with
+        {
+            ObservedMonotonicTimestamp = TestData.Milliseconds(120),
+        });
+        Assert.Equal(1, stable?.PageNumber);
+        foreach (var mode in new[] { PresentationWindowMode.Kiosk, (PresentationWindowMode)0, (PresentationWindowMode)99 })
+        {
+            Assert.Throws<InvalidOperationException>(() => tracker.Bind(
+                observation with { WindowMode = mode }, TestData.SlideIds.Length));
+        }
+        Assert.Throws<InvalidOperationException>(() => tracker.Bind(
+            observation with { PresenterViewEnabled = true }, TestData.SlideIds.Length));
+        return Task.CompletedTask;
+    }
+
     public static Task EligibilityRejectsUnsupportedDecks()
     {
         var observation = TestData.Observation(
@@ -12,7 +34,7 @@ internal static class CoreTests
             0,
             hidden: true,
             rangeMode: PresentationRangeMode.CustomShow,
-            windowMode: PresentationWindowMode.Speaker,
+            windowMode: PresentationWindowMode.Kiosk,
             presenterView: true);
         var result = PresentationEligibilityEvaluator.Evaluate(observation, 49);
         Assert.False(result.Eligible);
@@ -47,6 +69,18 @@ internal static class CoreTests
                 1,
                 TestData.Milliseconds(200),
                 digest: new string('b', 64))));
+        return Task.CompletedTask;
+    }
+
+    public static Task ReopenedSameDeckStopsSynchronization()
+    {
+        var tracker = BoundTracker();
+        var reopened = TestData.Observation(2, TestData.Milliseconds(200)) with
+        {
+            PresentationInstance = "replacement-presentation-instance",
+        };
+        Assert.Throws<PresentationBindingChangedException>(() =>
+            tracker.Observe(reopened));
         return Task.CompletedTask;
     }
 
@@ -148,6 +182,41 @@ internal static class CoreTests
         var calls = sink.Calls;
         Assert.Equal(calls[0].EventId, calls[1].EventId);
         Assert.Equal(calls[0].Sequence, calls[1].Sequence);
+    }
+
+    public static Task ReturnToAcknowledgedPageSurvivesInFlightCommit() =>
+        ReturnToAcknowledgedPageConverges(loseSecondResponse: false);
+
+    public static Task ReturnToAcknowledgedPageRepairsLostCommitResponse() =>
+        ReturnToAcknowledgedPageConverges(loseSecondResponse: true);
+
+    private static async Task ReturnToAcknowledgedPageConverges(
+        bool loseSecondResponse)
+    {
+        var sink = new ReturnToPageSink(loseSecondResponse);
+        await using var dispatcher = new LatestOnlyPageDispatcher(
+            sink,
+            TimeSpan.FromMilliseconds(1),
+            TimeSpan.FromMilliseconds(1));
+        dispatcher.Submit(Page(1));
+        await Assert.EventuallyAsync(
+            () => dispatcher.Acknowledged?.PageNumber == 1,
+            TimeSpan.FromSeconds(2));
+
+        dispatcher.Submit(Page(2));
+        await sink.SecondCommitted.WaitAsync(TimeSpan.FromSeconds(2));
+        dispatcher.Submit(Page(1));
+        sink.ReleaseSecondResponse();
+
+        await Assert.EventuallyAsync(
+            () => sink.Calls.Count == 3 &&
+                dispatcher.Acknowledged?.PageNumber == 1,
+            TimeSpan.FromSeconds(2));
+        Assert.Equal(1, sink.RemotePage);
+        Assert.SequenceEqual(new[] { 1, 2, 1 },
+            sink.Calls.Select(call => call.State.PageNumber));
+        Assert.True(sink.Calls[2].Sequence > sink.Calls[1].Sequence);
+        Assert.False(sink.Calls[2].EventId == sink.Calls[1].EventId);
     }
 
     public static async Task MissingSlideShowFaultsWithinGrace()

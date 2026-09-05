@@ -57,7 +57,7 @@ const safeErrorMessages: Readonly<Record<string, string>> = {
   slide_id_order_invalid: 'The PowerPoint slide order is not supported.',
   ticket_invalid: 'The connection request expired. Start again.',
   windowed_slide_show_required:
-    'Use a windowed PowerPoint slide show before connecting.',
+    'Use a normal full-screen or windowed PowerPoint slide show before connecting.',
 }
 
 export class PresenterBridgeClientError extends Error {

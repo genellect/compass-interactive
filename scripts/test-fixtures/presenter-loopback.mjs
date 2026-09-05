@@ -94,6 +94,8 @@ const server = createServer(async (request, response) => {
   if (request.method === 'GET' && request.url === '/v1/health') {
     send(response, 200, {
       ok: true,
+      powerpointReady: true,
+      powerpointIssue: null,
       protocolVersion: 1,
       service: 'compass-presenter-bridge',
     })

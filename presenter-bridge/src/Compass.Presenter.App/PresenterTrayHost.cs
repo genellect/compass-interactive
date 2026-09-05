@@ -12,6 +12,8 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         CancellationToken,
         Task> recover;
     private readonly Action requestShutdown;
+    private readonly Func<CancellationToken, Task<bool>>? checkUpdate;
+    private readonly Func<CancellationToken, Task<bool>>? installUpdate;
     private readonly CancellationTokenSource lifetime = new();
     private readonly TaskCompletionSource ready = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -21,11 +23,14 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
     private ApplicationContext? applicationContext;
     private Form? activeDialog;
     private Task recoveryTask = Task.CompletedTask;
+    private Task updateTask = Task.CompletedTask;
     private NotifyIcon? notifyIcon;
     private ToolStripMenuItem? recoveryItem;
+    private ToolStripMenuItem? updateItem;
     private ToolStripMenuItem? statusItem;
     private int presenterSessionState;
     private int recoveryRunning;
+    private int updateAvailable;
     private int disposed;
     private SynchronizationContext? uiContext;
 
@@ -35,10 +40,14 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             Action<ManualRecoveryStage>,
             CancellationToken,
             Task> recover,
-        Action requestShutdown)
+        Action requestShutdown,
+        Func<CancellationToken, Task<bool>>? checkUpdate,
+        Func<CancellationToken, Task<bool>>? installUpdate)
     {
         this.recover = recover;
         this.requestShutdown = requestShutdown;
+        this.checkUpdate = checkUpdate;
+        this.installUpdate = installUpdate;
         thread = new Thread(Run)
         {
             IsBackground = true,
@@ -53,9 +62,11 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             Action<ManualRecoveryStage>,
             CancellationToken,
             Task> recover,
-        Action requestShutdown)
+        Action requestShutdown,
+        Func<CancellationToken, Task<bool>>? checkUpdate = null,
+        Func<CancellationToken, Task<bool>>? installUpdate = null)
     {
-        var host = new PresenterTrayHost(recover, requestShutdown);
+        var host = new PresenterTrayHost(recover, requestShutdown, checkUpdate, installUpdate);
         host.thread.Start();
         try
         {
@@ -75,6 +86,10 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         {
             using var menu = new ContextMenuStrip();
             using var recoveryItem = new ToolStripMenuItem("復旧コードを入力");
+            using var localUpdateItem = new ToolStripMenuItem("更新を確認")
+            {
+                Enabled = checkUpdate is not null && installUpdate is not null,
+            };
             using var localStatusItem = new ToolStripMenuItem("状態: 待機中")
             {
                 Enabled = false,
@@ -82,6 +97,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             using var exitItem = new ToolStripMenuItem("終了");
             menu.Items.Add(localStatusItem);
             menu.Items.Add(recoveryItem);
+            menu.Items.Add(localUpdateItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(exitItem);
             using var icon = new NotifyIcon
@@ -95,12 +111,21 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             applicationContext = context;
             notifyIcon = icon;
             this.recoveryItem = recoveryItem;
+            updateItem = localUpdateItem;
             statusItem = localStatusItem;
             recoveryItem.Click += (_, _) => StartRecovery(icon);
+            localUpdateItem.Click += (_, _) =>
+            {
+                if (updateTask.IsCompleted)
+                {
+                    updateTask = BeginUpdateAsync();
+                }
+            };
             exitItem.Click += (_, _) =>
             {
                 exitItem.Enabled = false;
                 recoveryItem.Enabled = false;
+                localUpdateItem.Enabled = false;
                 SetStatus("状態: 終了しています…");
                 requestShutdown();
             };
@@ -127,6 +152,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             applicationContext = null;
             notifyIcon = null;
             this.recoveryItem = null;
+            updateItem = null;
             statusItem = null;
             uiContext = null;
             stopped.TrySetResult();
@@ -232,6 +258,12 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                         state != PresenterSessionState.Active &&
                         Volatile.Read(ref recoveryRunning) == 0;
                 }
+                if (updateItem is not null)
+                {
+                    updateItem.Enabled = checkUpdate is not null && installUpdate is not null &&
+                        state != PresenterSessionState.Active &&
+                        Volatile.Read(ref recoveryRunning) == 0;
+                }
                 switch (state)
                 {
                     case PresenterSessionState.Active:
@@ -242,7 +274,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                         notifyIcon?.ShowBalloonTip(
                             6_000,
                             "COMPASS Presenter Bridge",
-                            "PowerPoint同期が停止しました。PowerPointを確認し、必要なら復旧コードで再接続してください。",
+                            "PowerPointと教員画面の接続状態を確認してください。",
                             ToolTipIcon.Warning);
                         break;
                     default:
@@ -251,6 +283,54 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                 }
             },
             null);
+    }
+
+    public void ReportUpdateAvailability(bool available)
+    {
+        Volatile.Write(ref updateAvailable, available ? 1 : 0);
+        Volatile.Read(ref uiContext)?.Post(_ =>
+        {
+            if (updateItem is not null && !lifetime.IsCancellationRequested)
+            {
+                updateItem.Text = available ? "更新して再起動" : "更新を確認";
+            }
+        }, null);
+    }
+
+    private async Task BeginUpdateAsync()
+    {
+        var update = Volatile.Read(ref updateAvailable) == 1 ? installUpdate : checkUpdate;
+        if (update is null || lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        if (updateItem is not null)
+        {
+            updateItem.Enabled = false;
+        }
+        try
+        {
+            SetStatus("状態: 更新を確認中…");
+            var ran = await update(lifetime.Token).ConfigureAwait(true);
+            SetStatus(!ran ? "状態: 接続中は更新できません" :
+                Volatile.Read(ref updateAvailable) == 1 ? "状態: 更新をインストールできます" :
+                "状態: 最新の状態です");
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            SetStatus("状態: 更新できませんでした。後で再試行してください");
+        }
+        finally
+        {
+            if (updateItem is not null && !lifetime.IsCancellationRequested)
+            {
+                updateItem.Enabled = (PresenterSessionState)Volatile.Read(
+                    ref presenterSessionState) != PresenterSessionState.Active;
+            }
+        }
     }
 
     private void ReportRecoveryStage(ManualRecoveryStage stage)
@@ -378,7 +458,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             "状態: PowerPointを保存して開き直してください",
         "service_unavailable" => "状態: 接続先を確認できません",
         "windowed_slide_show_required" =>
-            "状態: ウィンドウ表示へ切り替えてください",
+            "状態: 通常のスライドショーへ切り替えてください",
         _ => "状態: 接続できませんでした",
     };
 
@@ -394,7 +474,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             null);
         try
         {
-            await recoveryTask.ConfigureAwait(false);
+            await Task.WhenAll(recoveryTask, updateTask).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {

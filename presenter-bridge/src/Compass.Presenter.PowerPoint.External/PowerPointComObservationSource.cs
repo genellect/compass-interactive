@@ -23,8 +23,10 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
     private readonly TaskCompletionSource<Exception?> dispatcherStopped =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<(EventInfo Event, Delegate Handler)> eventHandlers = [];
+    private readonly PowerPointObservationIdentityGuard identityGuard = new();
     private SynchronizationContext? dispatcher;
     private object? powerPointApplication;
+    private nint retainedPresentationIdentity;
     private DeckSnapshot? snapshot;
     private string? cachedFilePath;
     private string? cachedFileSha256;
@@ -197,6 +199,7 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
         object? presentation = null;
         object? view = null;
         object? currentSlide = null;
+        object? currentSlideParent = null;
         try
         {
             dynamic application = powerPointApplication!;
@@ -227,6 +230,26 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
             var observedAt = Stopwatch.GetTimestamp();
 
             dynamic deck = presentation;
+            var file = RequireSavedPresentation(presentation);
+            var processInstance = GetPowerPointProcessInstance(slideShowWindow);
+            var presentationIdentity = RetainPresentationIdentity(presentation);
+            currentSlideParent = slide.Parent;
+            var slideParentIdentity = Marshal.GetIUnknownForObject(currentSlideParent);
+            try
+            {
+                PowerPointObservationIdentityGuard.RequireSamePresentation(
+                    presentationIdentity, slideParentIdentity);
+            }
+            finally
+            {
+                _ = Marshal.Release(slideParentIdentity);
+            }
+            var identityChanged = identityGuard.Observe(
+                processInstance,
+                presentationIdentity,
+                file.FullName,
+                file.Length,
+                file.LastWriteTimeUtc.Ticks);
             object? slidesForCount = null;
             int slideCount;
             try
@@ -240,11 +263,16 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
                 ReleaseComObject(slidesForCount);
             }
 
-            if (snapshot is null ||
+            if (snapshot is null || identityChanged ||
                 snapshot.SlideCount != slideCount ||
                 observedAt - lastDeepScanAt >= DeepScanIntervalTicks)
             {
-                snapshot = ScanDeck(presentation, slideShowWindow, observedAt);
+                snapshot = ScanDeck(
+                    presentation,
+                    file,
+                    processInstance,
+                    identityGuard.Instance,
+                    observedAt);
                 lastDeepScanAt = observedAt;
             }
 
@@ -273,6 +301,7 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
         }
         finally
         {
+            ReleaseComObject(currentSlideParent);
             ReleaseComObject(currentSlide);
             ReleaseComObject(view);
             ReleaseComObject(presentation);
@@ -283,19 +312,13 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
 
     private DeckSnapshot ScanDeck(
         object presentationObject,
-        object slideShowWindowObject,
+        FileInfo file,
+        string processInstance,
+        string presentationInstance,
         long observedAt)
     {
         dynamic presentation = presentationObject;
-        var fullName = Convert.ToString(presentation.FullName) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(fullName) || !File.Exists(fullName))
-        {
-            throw new InvalidOperationException(
-                "The PowerPoint presentation must be saved before pairing.");
-        }
-
-        var displayName = Path.GetFileName(fullName);
-        var file = new FileInfo(fullName);
+        var displayName = file.Name;
         var fileHash = GetFileHash(file);
         var slideIds = new List<int>();
         var hiddenSlideIds = new List<int>();
@@ -340,9 +363,6 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
                 settings.ShowType);
             var presenterView = Convert.ToInt32(settings.ShowPresenterView) ==
                 MsoTrue;
-            var processInstance = GetPowerPointProcessInstance();
-            var presentationInstance = CreateDigest(
-                $"{processInstance}|{fileHash}|{file.Length}|{file.LastWriteTimeUtc.Ticks}");
             var bindingDigest = CreateDigest(
                 $"{fileHash}|{string.Join(',', slideIds)}|" +
                 $"hidden:{string.Join(',', hiddenSlideIds)}|{rangeMode}|" +
@@ -485,6 +505,12 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
         eventHandlers.Clear();
         EventAccelerationAvailable = false;
         snapshot = null;
+        identityGuard.Reset();
+        if (retainedPresentationIdentity != 0)
+        {
+            _ = Marshal.Release(retainedPresentationIdentity);
+            retainedPresentationIdentity = 0;
+        }
         lastDeepScanAt = 0;
         cachedFilePath = null;
         cachedFileSha256 = null;
@@ -494,20 +520,91 @@ public sealed class PowerPointComObservationSource : IPresentationObservationSou
         powerPointApplication = null;
     }
 
-    private string GetPowerPointProcessInstance()
+    internal static nint ReadSlideShowWindowHandle(object slideShowWindow)
     {
-        dynamic application = powerPointApplication!;
-        var windowHandle = new IntPtr(Convert.ToInt64(application.HWND));
-        _ = GetWindowThreadProcessId(windowHandle, out var processId);
-        try
+        dynamic window = slideShowWindow;
+        var handle = new IntPtr(Convert.ToInt64(window.HWND));
+        if (handle == IntPtr.Zero)
+            throw new InvalidOperationException("The PowerPoint slide show window is unavailable.");
+        return handle;
+    }
+
+    private static string GetPowerPointProcessInstance(object slideShowWindow)
+    {
+        return ResolveWindowOrSingleProcess(() =>
         {
+            var windowHandle = ReadSlideShowWindowHandle(slideShowWindow);
+            if (GetWindowThreadProcessId(windowHandle, out var processId) == 0 || processId == 0)
+                throw new InvalidOperationException("The PowerPoint slide show process is unavailable.");
             using var process = Process.GetProcessById(checked((int)processId));
             return $"{processId}:{process.StartTime.ToUniversalTime().Ticks}";
-        }
-        catch
+        }, () =>
         {
-            return processId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            using var current = Process.GetCurrentProcess();
+            var processes = Process.GetProcessesByName("POWERPNT");
+            try
+            {
+                return processes.Where(process => process.SessionId == current.SessionId)
+                    .Select(process => $"{process.Id}:{process.StartTime.ToUniversalTime().Ticks}")
+                    .ToArray();
+            }
+            finally
+            {
+                foreach (var process in processes) process.Dispose();
+            }
+        });
+    }
+
+    internal static string ResolveWindowOrSingleProcess(
+        Func<string> readWindowProcess, Func<IReadOnlyList<string>> readSameSessionProcesses)
+    {
+        try
+        {
+            return readWindowProcess();
         }
+        catch (MissingMemberException)
+        {
+            // Some Office 16 COM surfaces omit HWND, even by its type-library
+            // DISPID. Only an unambiguous PowerPoint process in this Windows
+            // session may replace that unavailable lookup. Never guess by focus.
+            var candidates = readSameSessionProcesses();
+            if (candidates.Count != 1)
+                throw new InvalidOperationException("The PowerPoint process identity is ambiguous.");
+            return candidates[0];
+        }
+    }
+
+    private static FileInfo RequireSavedPresentation(object presentationObject)
+    {
+        dynamic presentation = presentationObject;
+        var fullName = Convert.ToString(presentation.FullName) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(fullName) || !File.Exists(fullName))
+        {
+            throw new InvalidOperationException(
+                "The PowerPoint presentation must be saved before pairing.");
+        }
+        var file = new FileInfo(fullName);
+        file.Refresh();
+        return file;
+    }
+
+    private nint RetainPresentationIdentity(object presentation)
+    {
+        var observedIdentity = Marshal.GetIUnknownForObject(presentation);
+        if (observedIdentity == retainedPresentationIdentity)
+        {
+            _ = Marshal.Release(observedIdentity);
+            return retainedPresentationIdentity;
+        }
+
+        if (retainedPresentationIdentity != 0)
+        {
+            _ = Marshal.Release(retainedPresentationIdentity);
+        }
+        // Retain one COM reference so a closed deck's address cannot be reused
+        // and confused with another deck between consecutive observations.
+        retainedPresentationIdentity = observedIdentity;
+        return retainedPresentationIdentity;
     }
 
     private static string ComputeFileHash(string path)

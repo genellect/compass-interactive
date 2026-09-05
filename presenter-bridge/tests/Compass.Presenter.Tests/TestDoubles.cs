@@ -205,6 +205,44 @@ internal sealed class RetryRecordingSink : IPageUpdateSink
     }
 }
 
+internal sealed class ReturnToPageSink(bool loseSecondResponse) : IPageUpdateSink
+{
+    private readonly ConcurrentQueue<PageUpdateEnvelope> calls = new();
+    private readonly TaskCompletionSource secondCommitted = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource releaseSecondResponse = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    private int callCount;
+    private int remotePage;
+
+    public IReadOnlyList<PageUpdateEnvelope> Calls => calls.ToArray();
+
+    public Task SecondCommitted => secondCommitted.Task;
+
+    public int RemotePage => Volatile.Read(ref remotePage);
+
+    public void ReleaseSecondResponse() => releaseSecondResponse.TrySetResult();
+
+    public async ValueTask SendAsync(
+        PageUpdateEnvelope update,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var call = Interlocked.Increment(ref callCount);
+        calls.Enqueue(update);
+        Volatile.Write(ref remotePage, update.State.PageNumber);
+        if (call == 2)
+        {
+            secondCommitted.TrySetResult();
+            await releaseSecondResponse.Task.WaitAsync(cancellationToken);
+            if (loseSecondResponse)
+            {
+                throw new HttpRequestException("synthetic lost commit response");
+            }
+        }
+    }
+}
+
 internal static class TestData
 {
     public static readonly int[] SlideIds =

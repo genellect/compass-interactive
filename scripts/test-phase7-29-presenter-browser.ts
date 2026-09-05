@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {
+  getPresenterMaterialConsentKey,
+  hasPresenterMaterialConsent,
+  rememberPresenterMaterialConsent,
+} from '../src/presenter/presenterMaterialConsent.ts'
 
 import {
   PresenterBridgeClient,
@@ -8,6 +13,7 @@ import {
 import {
   isPresenterBridgeConnectRequest,
   parsePresenterBridgeConnectResponse,
+  parsePresenterBridgeHealthResponse,
   parsePresenterBridgePresentationResponse,
   parsePresenterBridgeStatusResponse,
   PRESENTER_BRIDGE_BASE_URL,
@@ -31,6 +37,61 @@ const presentation = {
   slideCount: 20,
 }
 
+test('material consent is scoped to owner, PDF version/count and current native deck digest', async () => {
+  const input = {
+    scope: 'environment:principal:membership',
+    pdfDocumentVersion: documentVersion,
+    pdfPageCount: 20,
+    deckBindingDigest: digest,
+  }
+  const key = await getPresenterMaterialConsentKey(input)
+  assert.match(key, /^[a-f0-9]{64}$/)
+  assert.equal(await getPresenterMaterialConsentKey({ ...input }), key)
+  for (const changed of [
+    { scope: 'another-principal' },
+    { pdfDocumentVersion: 'c'.repeat(64) },
+    { pdfPageCount: 21 },
+    { deckBindingDigest: 'd'.repeat(64) },
+  ])
+    assert.notEqual(
+      await getPresenterMaterialConsentKey({ ...input, ...changed }),
+      key,
+    )
+})
+
+test('material preferences retain only bounded digest markers and tolerate blocked storage', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  const values = new Map<string, string>()
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  })
+  try {
+    for (let index = 0; index < 40; index += 1)
+      rememberPresenterMaterialConsent(index.toString(16).padStart(64, '0'))
+    const saved = JSON.parse([...values.values()][0]) as string[]
+    assert.equal(saved.length, 32)
+    assert.ok(saved.every((item) => /^[a-f0-9]{64}$/.test(item)))
+    assert.equal(hasPresenterMaterialConsent(saved[0]), true)
+    rememberPresenterMaterialConsent('not-a-digest')
+    assert.equal(JSON.parse([...values.values()][0]).length, 32)
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new Error('blocked')
+      },
+    })
+    assert.equal(hasPresenterMaterialConsent(saved[0]), false)
+    assert.doesNotThrow(() => rememberPresenterMaterialConsent(saved[0]))
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
+})
+
 function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     headers: {
@@ -45,6 +106,37 @@ test('loopback bridge contract fixes the port and bounded timeouts', () => {
   assert.equal(PRESENTER_BRIDGE_BASE_URL, 'http://127.0.0.1:43124')
   assert.equal(PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS, 1_500)
   assert.equal(PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS, 12_000)
+})
+
+test('readiness health exposes only bounded eligibility and never material or authority', () => {
+  const health = {
+    ok: true,
+    protocolVersion: 1,
+    service: 'compass-presenter-bridge',
+    powerpointReady: true,
+    powerpointIssue: null,
+  }
+  assert.deepEqual(parsePresenterBridgeHealthResponse(health), health)
+  const waiting = {
+    ...health,
+    powerpointReady: false,
+    powerpointIssue: 'powerpoint_not_running',
+  }
+  assert.deepEqual(parsePresenterBridgeHealthResponse(waiting), waiting)
+  assert.ok(
+    parsePresenterBridgeHealthResponse({
+      ...waiting,
+      powerpointIssue: 'observation_unavailable',
+    }),
+  )
+  for (const invalid of [
+    { ...health, powerpointIssue: 'powerpoint_not_running' },
+    { ...waiting, powerpointIssue: null },
+    { ...waiting, powerpointIssue: 'private-path' },
+    { ...health, displayName: 'lecture.pptx' },
+    { ...health, sessionToken },
+  ])
+    assert.equal(parsePresenterBridgeHealthResponse(invalid), null)
 })
 
 test('strict presentation validators reject unknown fields and inconsistent eligibility', () => {

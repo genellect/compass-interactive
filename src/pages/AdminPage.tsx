@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { type AdminOperationCredential } from '../lib/adminAuth/adminOperationCredential'
 import type { RememberedBrowserIdentityScope } from '../lib/adminAuth/rememberedBrowserCredential'
 import { openAdminSurface } from '../lib/adminAuth/adminSurfaceNavigation'
+import { AdminPowerPointIntegration } from '../components/AdminWorkspace/AdminPowerPointIntegration'
+import { useAdminPowerPointSync } from '../components/AdminWorkspace/useAdminPowerPointSync'
 import { useCompassState } from '../hooks/useCompassState'
 import {
   AdminAiControlPanel,
@@ -30,6 +32,7 @@ import {
   isPhase72AcademicAnswersEnabled,
   isPhase726BrowserPdfPublishingEnabled,
   isPhase728JournalClubPresetCreationEnabled,
+  isPhase729PowerPointSyncEnabled,
 } from '../lib/featureFlags'
 import { issuePdfAccessSession } from '../pdf/pdfDelivery'
 import { clearAdminPdfExtractionCache } from '../pdf/adminPdfExtraction'
@@ -273,11 +276,21 @@ export function AdminPage({
   const activePdfPageCount = displayState?.pdfDocumentId
     ? (displayState.pdfPageCount ?? selectedPdfAsset?.pageCount ?? null)
     : null
+  const powerpointSync = useAdminPowerPointSync({
+    activeLectureSessionId,
+    adminToken,
+    displayState,
+    enabled: isPhase729PowerPointSyncEnabled && runtimeMode === 'live',
+    lectureStatus: activeAdminLecture?.status ?? 'draft',
+    materialConsentScope: `${identityScope.environmentId}:${identityScope.principalId}:${identityScope.membershipId}`,
+    onCommittedPage: () => void refreshDisplayState().catch(() => undefined),
+  })
   const canNavigateSlides = Boolean(
     activeLectureSessionId &&
     displayState?.pdfDocumentId &&
     displayState.pdfVisible &&
     activePdfPageCount &&
+    !powerpointSync.manualNavigationLocked &&
     activeAdminLecture?.status !== 'closed',
   )
   const {
@@ -1153,6 +1166,23 @@ export function AdminPage({
         }}
       />
 
+      {isPhase729PowerPointSyncEnabled &&
+      activeLectureSessionId &&
+      displayState?.pdfDocumentId &&
+      (workspaceView === 'setup' ||
+        !['idle', 'error'].includes(powerpointSync.phase) ||
+        powerpointSync.hasConnection) ? (
+        <AdminPowerPointIntegration
+          activeLectureSessionId={activeLectureSessionId}
+          adminToken={adminToken}
+          displayState={displayState}
+          pdfPageCount={activePdfPageCount}
+          pdfTitle={selectedPdfAsset?.title ?? '講義資料'}
+          sync={powerpointSync}
+          showSetup={workspaceView === 'setup'}
+        />
+      ) : null}
+
       {activeLectureSessionId &&
       displayState?.pdfDocumentId &&
       activePdfPageCount ? (
@@ -1192,6 +1222,7 @@ export function AdminPage({
           displayState={displayState}
           displayStateError={displayStateError}
           displayStateLoading={displayStateLoading}
+          manualNavigationLocked={powerpointSync.manualNavigationLocked}
           lectureStatus={activeLectureStatus}
           onAbortInterruptedPublication={() =>
             void abortInterruptedPdfPublication()

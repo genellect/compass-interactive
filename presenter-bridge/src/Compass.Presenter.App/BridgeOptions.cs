@@ -7,9 +7,9 @@ internal sealed record BridgeOptions(
     private const string CanonicalOrigin =
         "https://compass-interactive.pages.dev";
     internal const string ProductionPresenterEndpoint =
-        "https://presenter-api.invalid/functions/v1/presenter-bridge-session";
+        "https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session";
     private const string CanonicalEndpointHost =
-        "presenter-api.invalid";
+        "presenter-api.yuto-matsui.com";
     private const string EndpointVariable =
         "COMPASS_PRESENTER_SESSION_ENDPOINT";
     private const string OriginsVariable =
@@ -26,12 +26,6 @@ internal sealed record BridgeOptions(
         var endpointText = ProductionPresenterEndpoint;
 #endif
         var endpoint = ValidatePresenterEndpoint(endpointText);
-        if (endpoint.IdnHost.EndsWith(".invalid", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "The production Presenter gateway has not been configured.");
-        }
-
 #if DEBUG
         var configuredOrigins = Environment.GetEnvironmentVariable(OriginsVariable);
         string[] origins = string.IsNullOrWhiteSpace(configuredOrigins)

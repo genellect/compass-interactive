@@ -412,7 +412,14 @@ assert.match(
 )
 assert.match(nativeTray, /ReportSessionState/)
 assert.match(nativeTray, /状態: PowerPoint同期中/)
-assert.match(nativeOptions, /presenter-api\.invalid/)
+assert.match(
+  nativeOptions,
+  /https:\/\/presenter-api\.yuto-matsui\.com\/functions\/v1\/presenter-bridge-session/,
+)
+assert.match(
+  nativeOptions,
+  /#else\s+var endpointText = ProductionPresenterEndpoint;\s+#endif/,
+)
 assert.doesNotMatch(nativeOptions, /supabase\.co/)
 assert.match(nativeOptions, /ProductionPresenterEndpoint/)
 assert.match(nativeOptions, /endpoint\.IsDefaultPort/)
