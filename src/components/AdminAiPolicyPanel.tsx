@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -22,7 +23,16 @@ import {
   createAdminControlStepUpNonce,
 } from '../lib/adminAuth/adminIdentityApi'
 import { adminSupabase } from '../lib/adminAuth/adminSupabaseClient'
-import type { AdminLedgerMembership } from '../lib/adminAuth/adminLedgerApi'
+import type {
+  AdminLedgerAiPolicy,
+  AdminLedgerMembership,
+} from '../lib/adminAuth/adminLedgerApi'
+import { AdminAiBudgetFields } from './AdminAiBudgetFields'
+import {
+  DEFAULT_AI_DAY_COST,
+  DEFAULT_AI_LECTURE_COST,
+  dollarsToMicrousd,
+} from '../lib/adminAuth/adminAiBudget'
 
 type FactorOption = { id: string; label: string }
 
@@ -99,13 +109,6 @@ function restorePendingPolicy(): PendingPolicyMutation | null {
   }
 }
 
-function dollarsToMicrousd(value: string, maximum: number) {
-  if (!/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?$/.test(value.trim())) return null
-  const amount = Number(value)
-  if (!Number.isFinite(amount) || amount < 0.01 || amount > maximum) return null
-  return Math.round(amount * 1_000_000)
-}
-
 function policyMessage(error: unknown) {
   if (error instanceof AdminAiUnlockError) return error.message
   return error instanceof Error
@@ -136,20 +139,29 @@ export function AdminAiPolicyPanel({
   disabled,
   factors,
   memberships,
+  onEnableAi,
   onPendingChange,
+  onStatusChange,
+  selection,
 }: {
   appSessionToken: string
   disabled: boolean
   factors: FactorOption[]
   memberships: AdminLedgerMembership[]
+  onEnableAi: (
+    membership: AdminLedgerMembership,
+    policy: AdminLedgerAiPolicy,
+  ) => void
   onPendingChange: (pending: boolean) => void
+  onStatusChange: (status: AdminAiPolicyStatus) => void
+  selection: { membershipId: string } | null
 }) {
   const eligibleMemberships = useMemo(
     () =>
       memberships.filter(
         (membership) =>
           membership.status === 'active' &&
-          membership.canUseAi &&
+          (membership.canUseAi || membership.role === 'instructor') &&
           (!membership.expiresAt ||
             Date.parse(membership.expiresAt) > Date.now()),
       ),
@@ -158,8 +170,10 @@ export function AdminAiPolicyPanel({
   const [status, setStatus] = useState<AdminAiPolicyStatus | null>(null)
   const [selectedMembershipId, setSelectedMembershipId] = useState('')
   const [selectedFactorId, setSelectedFactorId] = useState('')
-  const [lectureCost, setLectureCost] = useState('0.50')
-  const [dayCost, setDayCost] = useState('2.00')
+  const [lectureCost, setLectureCost] = useState(DEFAULT_AI_LECTURE_COST)
+  const [dayCost, setDayCost] = useState(DEFAULT_AI_DAY_COST)
+  const panelRef = useRef<HTMLDetailsElement>(null)
+  const handledSelectionRef = useRef<typeof selection>(null)
   const [totpCode, setTotpCode] = useState('')
   const [pending, setPending] = useState<PendingPolicyMutation | null>(
     restorePendingPolicy,
@@ -168,6 +182,32 @@ export function AdminAiPolicyPanel({
   const [message, setMessage] = useState('')
   const awaitingTotp =
     pending?.phase === 'ready' || pending?.phase === 'control'
+
+  useEffect(() => {
+    if (
+      !selection ||
+      selection === handledSelectionRef.current ||
+      pending ||
+      disabled
+    )
+      return
+    if (
+      !eligibleMemberships.some(
+        (entry) => entry.membershipId === selection.membershipId,
+      )
+    )
+      return
+    handledSelectionRef.current = selection
+    setSelectedMembershipId(selection.membershipId)
+    const panel = panelRef.current
+    if (panel) {
+      panel.open = true
+      panel.scrollIntoView({ behavior: 'instant', block: 'nearest' })
+      panel
+        .querySelector<HTMLSelectElement>('select')
+        ?.focus({ preventScroll: true })
+    }
+  }, [selection, eligibleMemberships, pending, disabled])
 
   useEffect(() => {
     onPendingChange(Boolean(pending))
@@ -194,7 +234,8 @@ export function AdminAiPolicyPanel({
   const refreshStatus = useCallback(async () => {
     const nextStatus = await getAdminAiPolicyStatus(appSessionToken)
     setStatus(nextStatus)
-  }, [appSessionToken])
+    onStatusChange(nextStatus)
+  }, [appSessionToken, onStatusChange])
 
   useEffect(() => {
     let active = true
@@ -204,7 +245,7 @@ export function AdminAiPolicyPanel({
     return () => {
       active = false
     }
-  }, [refreshStatus])
+  }, [refreshStatus, memberships])
 
   function rememberPending(nextPending: PendingPolicyMutation) {
     persistPendingPolicy(nextPending)
@@ -224,7 +265,7 @@ export function AdminAiPolicyPanel({
     )
     clearPending()
     await refreshStatus()
-    setMessage(`講義AIの利用設定を保存しました（version ${result.version}）。`)
+    setMessage(`AI利用設定を保存しました（更新 ${result.version}）。`)
   }
 
   async function completeControl(attempt: PendingPolicyMutation) {
@@ -294,6 +335,18 @@ export function AdminAiPolicyPanel({
       setMessage(
         'コスト上限は講義0.01〜5.00 USD、1日0.01〜20.00 USDで入力してください。',
       )
+      return
+    }
+    const membership = eligibleMemberships.find(
+      (entry) => entry.membershipId === selectedMembershipId,
+    )
+    if (!membership) return
+    if (!membership.canUseAi) {
+      onEnableAi(membership, {
+        maxCostMicrousdPerDay,
+        maxCostMicrousdPerLecture,
+        validityDays: 30,
+      })
       return
     }
     const request = createAdminAiPolicyMutationRequest(
@@ -367,7 +420,7 @@ export function AdminAiPolicyPanel({
   }
 
   return (
-    <details className="admin-ai-policy-panel">
+    <details className="admin-ai-policy-panel" ref={panelRef}>
       <summary>講義AIの利用設定</summary>
       <div className="admin-ledger-form admin-ai-policy-content">
         <p className="muted">
@@ -388,33 +441,51 @@ export function AdminAiPolicyPanel({
               return (
                 <li key={membership.membershipId}>
                   <span>{membershipLabel(membership)}</span>
-                  <strong>{coverage?.covered ? '設定済み' : '未設定'}</strong>
+                  <strong>
+                    {!status
+                      ? '確認中'
+                      : coverage?.covered
+                        ? '設定済み'
+                        : '未設定'}
+                  </strong>
                 </li>
               )
             })}
           </ul>
         )}
 
-        <p className="muted admin-ai-policy-preset">
-          対象機能: 学術回答・字幕・資料解析・投票案・要約 / モデル:
-          {ADMIN_AI_POLICY_PRESET.allowedModels.join('・')} /{' '}
-          {ADMIN_AI_POLICY_PRESET.maxCallsPerLecture}回/講義・
-          {ADMIN_AI_POLICY_PRESET.maxCallsPerDay}回/日 / 入力
-          {ADMIN_AI_POLICY_PRESET.maxInputTokensPerLecture.toLocaleString(
-            'ja-JP',
-          )}
-          /{ADMIN_AI_POLICY_PRESET.maxInputTokensPerDay.toLocaleString('ja-JP')}{' '}
-          token・出力
-          {ADMIN_AI_POLICY_PRESET.maxOutputTokensPerLecture.toLocaleString(
-            'ja-JP',
-          )}
-          /
-          {ADMIN_AI_POLICY_PRESET.maxOutputTokensPerDay.toLocaleString('ja-JP')}{' '}
-          token / realtime {ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerLecture}
-          分/{ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerDay}分 / 同時
-          {ADMIN_AI_POLICY_PRESET.maxConcurrency}件 /{' '}
-          {ADMIN_AI_POLICY_PRESET.validityDays}日間
+        <p className="muted">
+          AI権限と上限をまとめて設定します。有効期間30日・字幕は最大90分/講義。
         </p>
+        <details>
+          <summary>利用上限の詳細</summary>
+          <p className="muted admin-ai-policy-preset">
+            対象機能: 学術回答・字幕・資料解析・投票案・要約 / モデル:
+            {ADMIN_AI_POLICY_PRESET.allowedModels.join('・')} /{' '}
+            {ADMIN_AI_POLICY_PRESET.maxCallsPerLecture}回/講義・
+            {ADMIN_AI_POLICY_PRESET.maxCallsPerDay}回/日 / 入力
+            {ADMIN_AI_POLICY_PRESET.maxInputTokensPerLecture.toLocaleString(
+              'ja-JP',
+            )}
+            /
+            {ADMIN_AI_POLICY_PRESET.maxInputTokensPerDay.toLocaleString(
+              'ja-JP',
+            )}{' '}
+            token・出力
+            {ADMIN_AI_POLICY_PRESET.maxOutputTokensPerLecture.toLocaleString(
+              'ja-JP',
+            )}
+            /
+            {ADMIN_AI_POLICY_PRESET.maxOutputTokensPerDay.toLocaleString(
+              'ja-JP',
+            )}{' '}
+            token / realtime{' '}
+            {ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerLecture}
+            分/{ADMIN_AI_POLICY_PRESET.maxRealtimeMinutesPerDay}分 / 同時
+            {ADMIN_AI_POLICY_PRESET.maxConcurrency}件 /{' '}
+            {ADMIN_AI_POLICY_PRESET.validityDays}日間
+          </p>
+        </details>
 
         {!pending ? (
           <form noValidate onSubmit={beginPolicy}>
@@ -437,34 +508,13 @@ export function AdminAiPolicyPanel({
                 ))}
               </select>
             </label>
-            <div className="admin-ai-policy-costs">
-              <label className="field">
-                <span>講義ごとの上限（USD）</span>
-                <input
-                  inputMode="decimal"
-                  max="5.00"
-                  min="0.01"
-                  onChange={(event) => setLectureCost(event.target.value)}
-                  required
-                  step="0.01"
-                  type="number"
-                  value={lectureCost}
-                />
-              </label>
-              <label className="field">
-                <span>1日ごとの上限（USD）</span>
-                <input
-                  inputMode="decimal"
-                  max="20.00"
-                  min="0.01"
-                  onChange={(event) => setDayCost(event.target.value)}
-                  required
-                  step="0.01"
-                  type="number"
-                  value={dayCost}
-                />
-              </label>
-            </div>
+            <AdminAiBudgetFields
+              dayCost={dayCost}
+              disabled={disabled || busy}
+              lectureCost={lectureCost}
+              onDayCostChange={setDayCost}
+              onLectureCostChange={setLectureCost}
+            />
             <label className="field">
               <span>確認に使う認証アプリ</span>
               <select
@@ -495,7 +545,15 @@ export function AdminAiPolicyPanel({
         ) : (
           <div className="admin-ai-policy-recovery">
             <p className="muted">
-              同じ request ID と設定内容で安全に再開します。
+              {
+                memberships.find(
+                  (entry) => entry.membershipId === pending.targetMembershipId,
+                )?.normalizedEmail
+              }
+              {' — '}1講義 $
+              {(pending.maxCostMicrousdPerLecture / 1_000_000).toFixed(2)}
+              {' / '}1日 $
+              {(pending.maxCostMicrousdPerDay / 1_000_000).toFixed(2)}・30日間
             </p>
             {awaitingTotp && (
               <label className="field">
@@ -538,7 +596,11 @@ export function AdminAiPolicyPanel({
           </div>
         )}
 
-        {message && <p className="admin-ledger-message">{message}</p>}
+        {message && (
+          <p className="admin-ledger-message" role="status">
+            {message}
+          </p>
+        )}
       </div>
     </details>
   )

@@ -5,6 +5,7 @@ import {
   sha256Hex,
 } from '../_shared/adminIdentity.ts'
 import { classifyAdminLedgerRpcFailure } from '../_shared/adminLedgerRpcFailure.ts'
+import { normalizeAdminLedgerAiPolicy as normalizeAiPolicy } from '../_shared/adminLedgerAiPolicy.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   readJsonBody,
@@ -77,8 +78,16 @@ function isMembershipStatus(value: unknown) {
 function normalizeMutationPayload(
   action: Exclude<MutationAction, 'issueInvitation'>,
   value: unknown,
-) {
+): Record<string, unknown> | null {
   if (!isRecord(value)) return null
+  if ('aiPolicy' in value) {
+    if (action !== 'enableAi') return null
+    const aiPolicy = normalizeAiPolicy(value.aiPolicy)
+    if (!aiPolicy) return null
+    const { aiPolicy: _policy, ...membershipPayload } = value
+    const normalized = normalizeMutationPayload(action, membershipPayload)
+    return normalized ? { ...normalized, ai_policy: aiPolicy } : null
+  }
 
   if (action === 'revokeInvitation') {
     if (
@@ -414,6 +423,7 @@ Deno.serve(async (request) => {
         'membershipExpiresAt',
         'normalizedEmail',
         'role',
+        ...('aiPolicy' in body.payload ? ['aiPolicy'] : []),
       ]) ||
       typeof body.payload.normalizedEmail !== 'string' ||
       typeof body.payload.canUseAi !== 'boolean' ||
@@ -421,6 +431,22 @@ Deno.serve(async (request) => {
       !isTimestamp(body.payload.expiresAt) ||
       (body.payload.membershipExpiresAt !== null &&
         !isTimestamp(body.payload.membershipExpiresAt))
+    ) {
+      return jsonResponse(
+        { code: 'request_invalid', message: 'Request is invalid.', ok: false },
+        400,
+      )
+    }
+    const aiPolicy =
+      'aiPolicy' in body.payload
+        ? normalizeAiPolicy(body.payload.aiPolicy)
+        : undefined
+    if (
+      'aiPolicy' in body.payload &&
+      (!aiPolicy ||
+        body.payload.role !== 'instructor' ||
+        body.payload.canUseAi !== true ||
+        body.payload.membershipExpiresAt !== null)
     ) {
       return jsonResponse(
         { code: 'request_invalid', message: 'Request is invalid.', ok: false },
@@ -453,6 +479,7 @@ Deno.serve(async (request) => {
         invitationSecret,
       )
       payload = {
+        ...(aiPolicy ? { ai_policy: aiPolicy } : {}),
         can_use_ai: body.payload.canUseAi,
         email_hmac: emailHmac,
         email_pepper_version: verification.subjectPepperVersion,

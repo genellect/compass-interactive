@@ -16,6 +16,11 @@ const ledgerApi = read('src/lib/adminAuth/adminLedgerApi.ts')
 const ledgerPanel = read('src/components/AdminLedgerPanel.tsx')
 const aiUnlockPanel = read('src/components/AdminAiUnlockPanel.tsx')
 const aiPolicyPanel = read('src/components/AdminAiPolicyPanel.tsx')
+const aiBudgetFields = read('src/components/AdminAiBudgetFields.tsx')
+const aiBudget = read('src/lib/adminAuth/adminAiBudget.ts')
+const oneStepPolicyMigration = read(
+  'supabase/migrations/20260905105753_teacher_ai_one_step_administration.sql',
+)
 const aiUnlockEdge = read('supabase/functions/admin-ai-unlock/index.ts')
 const aiUnlockApi = read('src/lib/adminAuth/adminAiUnlockApi.ts')
 const adminRoute = read('src/pages/AdminRoute.tsx')
@@ -837,9 +842,49 @@ for (const label of [
   '同じ内容で再試行',
   '保留中の設定を取り消す',
 ]) {
-  assert.match(aiPolicyPanel, new RegExp(label))
+  assert.match(aiPolicyPanel + aiBudgetFields, new RegExp(label))
 }
-assert.match(aiPolicyPanel, /0\.50[\s\S]*2\.00/)
+assert.match(
+  aiBudget,
+  /DEFAULT_AI_LECTURE_COST = '3\.00'[\s\S]*DEFAULT_AI_DAY_COST = '6\.00'/,
+)
+assert.match(
+  aiPolicyPanel,
+  /if \(!membership\.canUseAi\) \{[\s\S]*onEnableAi\(membership,[\s\S]*validityDays: 30,[\s\S]*return/,
+)
+assert.match(
+  ledgerPanel,
+  /onEnableAi=\{[\s\S]*action: 'enableAi'[\s\S]*aiPolicy,/,
+)
+assert.match(
+  ledgerPanel,
+  /招待受諾時から30日間有効です。AI権限と上限をまとめて設定します。/,
+)
+assert.match(
+  oneStepPolicyMigration,
+  /result_value ->> 'idempotentReplay' = 'true'[\s\S]*return result_value;[\s\S]*insert into private\.admin_invitation_ai_policy_contracts/,
+)
+assert.match(
+  oneStepPolicyMigration,
+  /normalize_google_admin_ledger_payload_pre_one_step_v1\([\s\S]*target_payload - 'ai_policy'[\s\S]*jsonb_build_object\('ai_policy', policy_terms\)/,
+)
+assert.match(
+  oneStepPolicyMigration,
+  /alter table private\.admin_invitation_ai_policy_contracts enable row level security/,
+)
+assert.match(
+  oneStepPolicyMigration,
+  /receipt\.operation_key = 'manage-admin-ledger\.issueInvitation'[\s\S]*receipt\.environment_id = invitation\.environment_id/,
+)
+assert.match(
+  oneStepPolicyMigration,
+  /after update of status on private\.admin_invitations[\s\S]*old\.status = 'pending' and new\.status = 'accepted'/,
+)
+assert.doesNotMatch(
+  oneStepPolicyMigration,
+  /update\s+(?:public\.)?admin_sessions\b/i,
+  'AI permission must not reissue or extend an Admin session',
+)
 for (const clientCall of [
   'getAdminAiPolicyStatus',
   'prepareAdminAiPolicyMutation',
