@@ -78,3 +78,16 @@ summary failure RPC under the start-request serialization lock. Preserve
 undispatched reservation release, claim-ID-backed HTTP429 settlement, reserved
 timeout accounting and immutable already-settled replay. No new scheduler,
 permission or UI confirmation is required for this correction.
+
+The ten-second Auth deadline applies only to this Supabase origin's `/auth/v1/`
+requests. Edge calls preserve their caller-owned deadlines and abort signals;
+normal AI calls retain their existing 65-second limit. Auth rate-limit handling
+and provider-token removal remain unchanged.
+
+A prepared receipt replay whose window is already succeeded, skipped or
+discarded returns a metadata acknowledgement without another child grant or
+provider dispatch. The client then reads the authorized summary status once,
+matches the same run and window, and restores both results and publication state.
+Failed, pending and running windows do not become successful acknowledgements.
+A missing, mismatched or failed status response must not replace visible results
+with an empty success or discard the current attempt's request IDs.
