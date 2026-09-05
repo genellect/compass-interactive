@@ -66,6 +66,12 @@ const adminPresenterHook = read(
   'AdminWorkspace',
   'useAdminPowerPointSync.ts',
 )
+const adminPresenterControl = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'AdminPowerPointSyncControl.tsx',
+)
 const featureFlags = read('src', 'lib', 'featureFlags.ts')
 const envExample = read('.env.local.example')
 const supabaseConfig = read('supabase', 'config.toml')
@@ -314,6 +320,14 @@ assert.doesNotMatch(
 )
 
 assert.match(envExample, /^VITE_PHASE7_29_POWERPOINT_SYNC=false$/m)
+assert.match(envExample, /^VITE_PRESENTER_STORE_URL=$/m)
+assert.match(adminPresenterControl, /VITE_PRESENTER_STORE_URL/)
+assert.match(adminPresenterControl, /url\.hostname !== 'apps\.microsoft\.com'/)
+assert.match(adminPresenterControl, /\\\/detail\\\/\[A-Z0-9\]\{12\}/)
+assert.doesNotMatch(
+  adminPresenterControl,
+  /presenter-updates\.yuto-matsui\.com/,
+)
 assert.match(envExample, /^PHASE729_POWERPOINT_SYNC_ENABLED=false$/m)
 assert.match(
   featureFlags,

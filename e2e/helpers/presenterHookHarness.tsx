@@ -25,6 +25,19 @@ function Harness({ initial }: { initial: Input }) {
       <span data-testid="presenter-hook-locked">
         {String(sync.manualNavigationLocked)}
       </span>
+      <span data-testid="presenter-hook-message">{sync.message}</span>
+      <button disabled={sync.busy} onClick={sync.acceptPrivacyConsent}>
+        Harness accept privacy
+      </button>
+      <button disabled={sync.busy} onClick={() => void sync.confirm()}>
+        Harness confirm
+      </button>
+      <button
+        disabled={sync.busy}
+        onClick={() => void sync.revokePrivacyConsent()}
+      >
+        Harness withdraw privacy
+      </button>
       <button disabled={sync.busy} onClick={() => void sync.stop()}>
         Harness handover
       </button>

@@ -84,6 +84,34 @@ assert.match(
   }).join('\n'),
   /requires VITE_PHASE3_PRIVATE_PDF=true/,
 )
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PHASE7_29_POWERPOINT_SYNC: 'true',
+  }).join('\n'),
+  /requires a valid VITE_PRESENTER_STORE_URL/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_STORE_URL: 'https://example.com/fake-store-listing',
+  }).join('\n'),
+  /must be an exact HTTPS apps\.microsoft\.com listing URL/,
+)
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_STORE_URL: 'https://apps.microsoft.com/search?query=compass',
+  }).join('\n'),
+  /must be an exact HTTPS apps\.microsoft\.com listing URL/,
+)
+assert.deepEqual(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_STORE_URL: 'https://apps.microsoft.com/detail/9TESTONLY729',
+  }),
+  [],
+)
 assert.deepEqual(validateProductionServerEnvironment({}), [])
 assert.match(
   validateProductionServerEnvironment({

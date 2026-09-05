@@ -28,10 +28,30 @@ type AdminPowerPointSyncControlProps = {
   showSetup: boolean
 }
 
-// The release controller enables the Presenter flag only after this immutable
-// signed package and the matching hosted/device gates have been verified.
-const PRESENTER_INSTALLER_URL =
-  'https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe'
+function readPresenterStoreUrl(): string | null {
+  const value = import.meta.env.VITE_PRESENTER_STORE_URL?.trim()
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'apps.microsoft.com' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      !/^\/detail\/[A-Z0-9]{12}$/i.test(url.pathname)
+    )
+      return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+// The release controller injects the exact Store listing only after the
+// Store-signed package and matching hosted/device gates have been verified.
+const PRESENTER_INSTALLER_URL = readPresenterStoreUrl()
 const PRESENTER_PRIVACY_URL = '/presenter-bridge/privacy/'
 
 function PrivacyConsentDisclosure({
@@ -95,7 +115,7 @@ function PrivacyConsentManagement({
         onClick={() => void sync.revokePrivacyConsent()}
         type="button"
       >
-        同意を取り消して保存情報を削除
+        同意を取り消してブラウザのPresenter設定を削除
       </button>
     </div>
   )
@@ -138,7 +158,7 @@ export function AdminPowerPointSyncControl({
           ) : null}
         </div>
         <div className="admin-presenter-actions">
-          {showSetup ? (
+          {showSetup && PRESENTER_INSTALLER_URL ? (
             <a
               className="secondary-button"
               href={PRESENTER_INSTALLER_URL}
@@ -147,6 +167,8 @@ export function AdminPowerPointSyncControl({
             >
               Bridgeをインストール
             </a>
+          ) : showSetup ? (
+            <span className="note">Microsoft Storeでの公開準備中です。</span>
           ) : null}
           <button
             className="secondary-button"

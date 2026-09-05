@@ -59,10 +59,22 @@ export function rememberPresenterPrivacyConsent(): PresenterPrivacyConsent | nul
   }
 }
 
-export function clearPresenterPrivacyConsent(): void {
+export function clearPresenterPrivacyConsent(): boolean {
   try {
     localStorage.removeItem(PRESENTER_PRIVACY_CONSENT_STORAGE_KEY)
+    if (localStorage.getItem(PRESENTER_PRIVACY_CONSENT_STORAGE_KEY) === null)
+      return true
   } catch {
-    /* The browser may block storage, so consent remains fail-closed. */
+    /* Fall through and invalidate a consent value that could not be removed. */
   }
+
+  try {
+    localStorage.setItem(
+      PRESENTER_PRIVACY_CONSENT_STORAGE_KEY,
+      JSON.stringify({ status: 'withdrawn' }),
+    )
+  } catch {
+    /* The mounted hook keeps consent fail-closed and asks to clear site data. */
+  }
+  return false
 }

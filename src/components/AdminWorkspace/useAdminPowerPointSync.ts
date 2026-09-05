@@ -24,6 +24,7 @@ import {
   setPresenterManualMode,
 } from '../../presenter/presenterMaterialConsent'
 import {
+  PRESENTER_PRIVACY_CONSENT_STORAGE_KEY,
   clearPresenterPrivacyConsent,
   readPresenterPrivacyConsent,
   rememberPresenterPrivacyConsent,
@@ -59,6 +60,8 @@ type UseAdminPowerPointSyncInput = {
 const ACTIVE_STATUS_INTERVAL_MS = 5_000
 const PAIRING_STATUS_INTERVAL_MS = 1_000
 const READINESS_INTERVAL_MS = 5_000
+const PRESENTER_STORAGE_CLEANUP_MESSAGE =
+  '保存情報を削除できませんでした。ブラウザ設定からこのサイトのデータを削除して、画面を再読み込みしてください。'
 const AUTOMATIC_RECOVERY_REASONS = new Set([
   'disconnected',
   'deck_changed',
@@ -208,6 +211,8 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   const autoAttemptedRef = useRef<string | null>(null)
   const previousLectureRef = useRef<string | null>(null)
   const consentResumeRef = useRef<'automatic' | 'manual' | null>(null)
+  const privacyWithdrawalInFlightRef = useRef(false)
+  const privacyStorageCleanupRequiredRef = useRef(false)
   const credentialRef = useRef(adminToken)
   const mountedRef = useRef(true)
 
@@ -585,11 +590,17 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         materialConsentScope,
       } = inputRef.current
       const display = displayState
-      const privacyConsent = readPresenterPrivacyConsent()
+      const privacyConsent = privacyStorageCleanupRequiredRef.current
+        ? null
+        : readPresenterPrivacyConsent()
       setPrivacyConsentAccepted(privacyConsent !== null)
       if (enabled && activeLectureSessionId && !privacyConsent) {
         consentResumeRef.current = automatic ? 'automatic' : 'manual'
-        setMessage('')
+        setMessage(
+          privacyStorageCleanupRequiredRef.current
+            ? PRESENTER_STORAGE_CLEANUP_MESSAGE
+            : '',
+        )
         setPhase('consent')
         return
       }
@@ -947,6 +958,18 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
   )
 
   const acceptPrivacyConsent = useCallback(() => {
+    if (privacyWithdrawalInFlightRef.current) {
+      setPrivacyConsentAccepted(false)
+      setPhase('consent')
+      setMessage('同意の取消処理が完了するまでお待ちください。')
+      return
+    }
+    if (privacyStorageCleanupRequiredRef.current) {
+      setPrivacyConsentAccepted(false)
+      setPhase('consent')
+      setMessage(PRESENTER_STORAGE_CLEANUP_MESSAGE)
+      return
+    }
     const consent = rememberPresenterPrivacyConsent()
     if (!consent) {
       setPrivacyConsentAccepted(false)
@@ -962,7 +985,16 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     const resume = consentResumeRef.current
     consentResumeRef.current = null
     if (resume) void start(resume === 'automatic')
-    else setPhase('idle')
+    else {
+      const current = inputRef.current
+      if (
+        current.enabled &&
+        current.activeLectureSessionId &&
+        current.lectureStatus === 'open'
+      ) {
+        void start(true)
+      } else setPhase('idle')
+    }
   }, [start])
 
   const confirmConnection = useCallback(async () => {
@@ -1128,6 +1160,92 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     void confirm()
   }, [busy, confirm, pageVisible, phase])
 
+  const revokePrivacyConsent = useCallback(async () => {
+    if (privacyWithdrawalInFlightRef.current) return
+    privacyWithdrawalInFlightRef.current = true
+    const connectionId = connectionIdRef.current
+    const localSession = localSessionRef.current
+    const withdrawalEpoch = ++epochRef.current
+    reconnectFaultedRef.current = false
+    setObservedNativeFault(false)
+    setWaitingForReadiness(false)
+    manualPausedRef.current = true
+    consentResumeRef.current = 'manual'
+    operationRef.current = true
+    setBusy(true)
+    setMessage('PowerPoint同期を停止して同意を取り消しています…')
+
+    readinessPendingConnectionRef.current = null
+    readinessIssueAttemptsRef.current = 0
+    const materialPreferencesCleared = clearPresenterMaterialPreferences()
+    const privacyConsentCleared = clearPresenterPrivacyConsent()
+    const storageCleared = materialPreferencesCleared && privacyConsentCleared
+    privacyStorageCleanupRequiredRef.current = !storageCleared
+    setPrivacyConsentAccepted(false)
+    clearLocalState()
+    setPhase('consent')
+
+    try {
+      const [localStop, hostedStop] = await Promise.allSettled([
+        localSession
+          ? presenterBridgeClient.disconnect(localSession)
+          : Promise.resolve(null),
+        connectionId
+          ? supabasePresenterBridgeRepository.revoke({
+              adminToken: inputRef.current.adminToken,
+              connectionId,
+            })
+          : Promise.resolve(null),
+      ])
+      if (!mountedRef.current || withdrawalEpoch !== epochRef.current) return
+
+      const localStopConfirmed =
+        !localSession || localStop.status === 'fulfilled'
+      const hostedStopConfirmed =
+        !connectionId || hostedStop.status === 'fulfilled'
+      if (!localStopConfirmed && !storageCleared) {
+        setMessage(
+          '同意は取り消しました。Presenter Bridgeを終了し、ブラウザ設定からこのサイトのデータを削除してください。',
+        )
+      } else if (!localStopConfirmed) {
+        setMessage(
+          '同意は取り消しました。同期停止を確認できないため、Presenter Bridgeを終了してください。',
+        )
+      } else if (!storageCleared) {
+        setMessage(
+          '同意を取り消して同期を停止しました。保存情報を削除できないため、ブラウザ設定からこのサイトのデータを削除してください。',
+        )
+      } else if (!hostedStopConfirmed) {
+        setMessage(
+          'このPCの同期は停止しました。サーバー側の停止確認に失敗しました。',
+        )
+      } else {
+        setMessage('')
+      }
+      setPhase('consent')
+    } finally {
+      if (withdrawalEpoch === epochRef.current) {
+        operationRef.current = false
+        if (mountedRef.current) setBusy(false)
+      }
+      privacyWithdrawalInFlightRef.current = false
+    }
+  }, [clearLocalState])
+
+  useEffect(() => {
+    const observePrivacyWithdrawal = (event: StorageEvent) => {
+      if (
+        (event.key !== PRESENTER_PRIVACY_CONSENT_STORAGE_KEY &&
+          event.key !== null) ||
+        readPresenterPrivacyConsent()
+      )
+        return
+      void revokePrivacyConsent()
+    }
+    window.addEventListener('storage', observePrivacyWithdrawal)
+    return () => window.removeEventListener('storage', observePrivacyWithdrawal)
+  }, [revokePrivacyConsent])
+
   const readyKey =
     enabled &&
     activeLectureSessionId &&
@@ -1161,6 +1279,10 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         (manualKey && hasPresenterManualMode(manualKey))
       )
         return
+      if (!readPresenterPrivacyConsent()) {
+        await revokePrivacyConsent()
+        return
+      }
       try {
         const health = await readHealth()
         if (
@@ -1170,6 +1292,10 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           document.visibilityState !== 'visible'
         )
           return
+        if (!readPresenterPrivacyConsent()) {
+          await revokePrivacyConsent()
+          return
+        }
         if (
           manualPausedRef.current ||
           (manualKey && hasPresenterManualMode(manualKey))
@@ -1196,6 +1322,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     pageVisible,
     readHealth,
     readyKey,
+    revokePrivacyConsent,
     start,
     waitingForReadiness,
   ])
@@ -1261,18 +1388,6 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
     }
     return completed
   }, [adminToken, clearLocalState])
-
-  const revokePrivacyConsent = useCallback(async () => {
-    if (operationRef.current) return
-    if (connectionIdRef.current && !(await stop())) return
-    manualPausedRef.current = true
-    consentResumeRef.current = 'manual'
-    clearPresenterMaterialPreferences()
-    clearPresenterPrivacyConsent()
-    setPrivacyConsentAccepted(false)
-    setMessage('')
-    setPhase('consent')
-  }, [stop])
 
   const manualNavigationLocked =
     phase === 'active' ||
