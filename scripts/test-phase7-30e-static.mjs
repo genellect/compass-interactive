@@ -823,7 +823,7 @@ assert.doesNotMatch(
 )
 assert.match(
   browserSafety,
-  /page\.on\('pageerror'[\s\S]*message: `pageerror: \$\{error\.message\}`[\s\S]*externalRequests\.push\(requestUrl\.origin\)[\s\S]*route\.abort\('blockedbyclient'\)[\s\S]*new Set\(externalRequests\)[\s\S]*browserErrors\.map/,
+  /page\.on\('pageerror'[\s\S]*message: `pageerror: \$\{error\.message\}`[\s\S]*externalRequests\.push\(requestUrl\.origin\)[\s\S]*route\.abort\('blockedbyclient'\)[\s\S]*new Set\(externalRequests\)[\s\S]*browserErrors\s*\.map/,
   'one-shot console consumption must preserve page-error and external-host rejection',
 )
 const revokedDisplayBrowserPhaseStart = displayRealtimeBrowser.indexOf(
@@ -842,7 +842,7 @@ assert.match(
   'the Display regression must stop the original clean Admin page before revoking its tracked session',
 )
 const displayProbePhaseStart = displayRealtimeBrowser.indexOf(
-  'await displaySafety.assertClean()',
+  'await displaySafety.assertClean(',
 )
 assert.ok(
   displayProbePhaseStart >= 0,
@@ -851,7 +851,7 @@ assert.ok(
 const displayProbePhase = displayRealtimeBrowser.slice(displayProbePhaseStart)
 assert.match(
   displayProbePhase,
-  /await displaySafety\.assertClean\(\)[\s\S]*await displayPage\.close\(\)[\s\S]*displayContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(displayProbePage\)[\s\S]*await displayProbePage\.goto\('\/join'\)/,
+  /await displaySafety\.assertClean\(\{[\s\S]*expectedConsoleErrors:[\s\S]*message: featureDisabledStatusConsoleMessage,[\s\S]*url: featureDisabledStatusConflict\.url\(\),[\s\S]*minCount: featureDisabledStatusConflicts\.length,[\s\S]*maxCount: featureDisabledStatusConflicts\.length \* 2,[\s\S]*\}\)[\s\S]*await displayPage\.close\(\)[\s\S]*displayContext\.newPage\(\)[\s\S]*installBrowserSafetyMonitor\(displayProbePage\)[\s\S]*await displayProbePage\.goto\('\/join'\)/,
   'the Display regression must stop the live five-second fallback before isolated invalidation probes',
 )
 assert.equal(

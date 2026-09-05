@@ -259,7 +259,33 @@ assert.match(ledgerApi, /prepareAdminLedgerMutation/)
 assert.match(ledgerApi, /commitAdminLedgerMutation/)
 assert.match(
   ledgerPanel,
-  /phase: 'authorized' \| 'completing' \| 'control' \| 'preparing'/,
+  /phase: 'authorized' \| 'completing' \| 'control' \| 'preparing' \| 'ready'/,
+)
+assert.doesNotMatch(
+  ledgerPanel.slice(
+    ledgerPanel.indexOf('async function preparePending'),
+    ledgerPanel.indexOf('function startMutation'),
+  ),
+  /beginAdminControlStepUp/,
+  'opening the ledger confirmation must not start its five-minute proof window',
+)
+assert.match(
+  ledgerPanel,
+  /nextPending.phase === 'ready'[\s\S]*beginAdminControlStepUp\([\s\S]*phase: 'control'[\s\S]*mfa.challengeAndVerify/,
+  'ledger proof must start on submission before the fresh TOTP verification',
+)
+assert.doesNotMatch(
+  aiPolicyPanel.slice(
+    aiPolicyPanel.indexOf('async function prepareControl'),
+    aiPolicyPanel.indexOf('async function beginPolicy'),
+  ),
+  /beginAdminControlStepUp/,
+  'opening AI policy confirmation must not start its five-minute proof window',
+)
+assert.match(
+  aiPolicyPanel,
+  /pending.phase === 'ready'[\s\S]*beginAdminControlStepUp\([\s\S]*phase: 'control'[\s\S]*mfa.challengeAndVerify/,
+  'policy proof must start on submission before the fresh TOTP verification',
 )
 assert.match(ledgerPanel, /新しい教員の招待は停止中です/)
 assert.match(

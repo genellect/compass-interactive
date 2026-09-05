@@ -30,7 +30,7 @@ type PendingPolicyMutation = AdminAiPolicyMutationRequest & {
   controlIntentDigest?: string
   controlStepUpNonce: string
   factorId?: string
-  phase: 'authorized' | 'completing' | 'control' | 'preparing'
+  phase: 'authorized' | 'completing' | 'control' | 'preparing' | 'ready'
 }
 
 const UUID_PATTERN =
@@ -83,7 +83,9 @@ function restorePendingPolicy(): PendingPolicyMutation | null {
       !Number.isSafeInteger(pending.maxCostMicrousdPerDay) ||
       typeof pending.validFrom !== 'string' ||
       typeof pending.validUntil !== 'string' ||
-      !['authorized', 'completing', 'control', 'preparing'].includes(phase) ||
+      !['authorized', 'completing', 'control', 'preparing', 'ready'].includes(
+        phase,
+      ) ||
       (phase !== 'preparing' &&
         (!SHA256_PATTERN.test(String(pending.controlIntentDigest)) ||
           !UUID_PATTERN.test(String(pending.factorId))))
@@ -164,6 +166,8 @@ export function AdminAiPolicyPanel({
   )
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const awaitingTotp =
+    pending?.phase === 'ready' || pending?.phase === 'control'
 
   useEffect(() => {
     onPendingChange(Boolean(pending))
@@ -268,21 +272,9 @@ export function AdminAiPolicyPanel({
       ...attempt,
       controlIntentDigest: intent.controlIntentDigest,
       factorId,
-      phase: 'preparing' as const,
+      phase: 'ready' as const,
     }
     rememberPending(prepared)
-    const control = await beginAdminControlStepUp(
-      appSessionToken,
-      'environment_ai_policy_change',
-      intent.controlIntentDigest,
-      attempt.requestId,
-      undefined,
-      attempt.controlStepUpNonce,
-    )
-    if (control.controlStepUpNonce !== attempt.controlStepUpNonce) {
-      throw new Error('設定内容の確認を最初からやり直してください。')
-    }
-    rememberPending({ ...prepared, phase: 'control' })
     setMessage('認証アプリの6桁コードで、この設定を確認してください。')
   }
 
@@ -327,21 +319,38 @@ export function AdminAiPolicyPanel({
   }
 
   async function continuePending() {
-    if (!pending) return
+    if (!pending || busy || disabled) return
     setBusy(true)
     setMessage('')
     try {
       if (pending.phase === 'preparing') {
         await prepareControl(pending)
-      } else if (pending.phase === 'control') {
+      } else if (awaitingTotp) {
         if (!pending.factorId || !/^\d{6}$/.test(totpCode)) {
           throw new Error('認証アプリの6桁コードを入力してください。')
+        }
+        if (pending.phase === 'ready') {
+          // The user may leave the confirmation screen open; start its bounded
+          // proof only when they submit a code.
+          const control = await beginAdminControlStepUp(
+            appSessionToken,
+            'environment_ai_policy_change',
+            pending.controlIntentDigest!,
+            pending.requestId,
+            undefined,
+            pending.controlStepUpNonce,
+          )
+          if (control.controlStepUpNonce !== pending.controlStepUpNonce) {
+            throw new Error('設定内容の確認を最初からやり直してください。')
+          }
+          rememberPending({ ...pending, phase: 'control' })
         }
         const { error } = await adminSupabase.auth.mfa.challengeAndVerify({
           code: totpCode,
           factorId: pending.factorId,
         })
         if (error) throw error
+        setTotpCode('')
         const completing = { ...pending, phase: 'completing' as const }
         rememberPending(completing)
         await completeControl(completing)
@@ -488,11 +497,12 @@ export function AdminAiPolicyPanel({
             <p className="muted">
               同じ request ID と設定内容で安全に再開します。
             </p>
-            {pending.phase === 'control' && (
+            {awaitingTotp && (
               <label className="field">
                 <span>6桁コード</span>
                 <input
                   autoComplete="one-time-code"
+                  disabled={busy}
                   inputMode="numeric"
                   maxLength={6}
                   onChange={(event) =>
@@ -511,9 +521,7 @@ export function AdminAiPolicyPanel({
                 onClick={() => void continuePending()}
                 type="button"
               >
-                {pending.phase === 'control'
-                  ? '認証アプリで確認'
-                  : '同じ内容で再試行'}
+                {awaitingTotp ? '認証アプリで確認' : '同じ内容で再試行'}
               </button>
               <button
                 className="secondary-button"

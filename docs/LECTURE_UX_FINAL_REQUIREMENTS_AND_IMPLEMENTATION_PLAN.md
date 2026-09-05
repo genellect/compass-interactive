@@ -258,6 +258,15 @@ Implementation steps:
    message, retain the bounded invitation/return context, and remove raw error
    details from the URL. Never treat an expired provider state as a successful
    login or automatically start another OAuth flow.
+10. For rare Owner ledger and AI-policy mutations, preparing the exact intent
+    and displaying the code input must not start the five-minute control proof.
+    Begin that proof only after the user submits a six-digit code, immediately
+    before fresh TOTP verification. Preserve the same intent, request ID and
+    nonce through transport recovery; do not restart an already verified or
+    authorized mutation. The server's five-minute, fresh-AMR, single-use and
+    Owner-only checks remain unchanged. An idle confirmation screen, including
+    a reload after ten minutes within a valid Admin session, must still complete
+    with one submitted code.
 
 Acceptance:
 
