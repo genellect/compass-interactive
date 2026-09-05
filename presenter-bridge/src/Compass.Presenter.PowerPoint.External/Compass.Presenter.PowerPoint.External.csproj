@@ -7,4 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../Compass.Presenter.Contracts/Compass.Presenter.Contracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Compass.Presenter.Tests" />
+  </ItemGroup>
 </Project>

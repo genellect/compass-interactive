@@ -12,11 +12,12 @@ const issueLabels: Record<PresenterIssueCode, string> = {
   pdf_page_count_invalid: '講義資料のページ数を確認できません。',
   powerpoint_not_running: 'PowerPointのスライドショーを開始してください。',
   presentation_changed: 'PowerPointが変更されています。',
-  presenter_session_stopped: 'PowerPoint同期が停止しました。再接続してください。',
+  presenter_session_stopped:
+    'PowerPoint同期が停止しました。再接続してください。',
   presenter_view_must_be_disabled: '発表者ツールをオフにしてください。',
   slide_id_order_invalid: 'PowerPointのスライド構成を確認できません。',
   windowed_slide_show_required:
-    'スライドショーをウィンドウ表示にしてください。',
+    '通常のスライドショー（全画面またはウィンドウ）で開いてください。',
 }
 
 type AdminPowerPointSyncControlProps = {
@@ -24,7 +25,13 @@ type AdminPowerPointSyncControlProps = {
   pdfPreview?: ReactNode
   pdfTitle: string
   sync: ReturnTypeOfPowerPointSync
+  showSetup: boolean
 }
+
+// The release controller enables the Presenter flag only after this immutable
+// signed package and the matching hosted/device gates have been verified.
+const PRESENTER_INSTALLER_URL =
+  'https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe'
 
 function RecoveryCode({ code }: { code: string }) {
   return (
@@ -43,6 +50,7 @@ export function AdminPowerPointSyncControl({
   pdfPreview,
   pdfTitle,
   sync,
+  showSetup,
 }: AdminPowerPointSyncControlProps) {
   if (sync.phase === 'idle' || sync.phase === 'error') {
     return (
@@ -57,9 +65,26 @@ export function AdminPowerPointSyncControl({
             <RecoveryCode code={sync.manualCode} />
           ) : null}
         </div>
-        <button className="secondary-button" onClick={sync.start} type="button">
-          PowerPointと同期
-        </button>
+        <div className="admin-presenter-actions">
+          {showSetup ? (
+            <a
+              className="secondary-button"
+              href={PRESENTER_INSTALLER_URL}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Bridgeをインストール
+            </a>
+          ) : null}
+          <button
+            className="secondary-button"
+            disabled={sync.busy}
+            onClick={() => void sync.start()}
+            type="button"
+          >
+            Bridgeの接続を確認
+          </button>
+        </div>
       </div>
     )
   }
@@ -67,7 +92,7 @@ export function AdminPowerPointSyncControl({
   if (sync.phase === 'checking') {
     return (
       <div className="admin-presenter-sync" aria-live="polite">
-        <strong>PowerPoint接続を準備しています…</strong>
+        <strong>PowerPointを確認中…</strong>
       </div>
     )
   }
@@ -84,12 +109,27 @@ export function AdminPowerPointSyncControl({
               ? '復旧コードで接続'
               : 'Presenter Bridgeの接続待ち'}
           </strong>
+          {sync.watchingConnection ? (
+            <button
+              className="secondary-button"
+              disabled={sync.busy}
+              onClick={() => void sync.start()}
+              type="button"
+            >
+              この画面で接続を引き継ぐ
+            </button>
+          ) : null}
           {sync.message ? <p className="note">{sync.message}</p> : null}
           {sync.manualRecoveryRequired && sync.manualCode ? (
             <RecoveryCode code={sync.manualCode} />
           ) : null}
         </div>
-        <button className="secondary-button" onClick={sync.stop} type="button">
+        <button
+          className="secondary-button"
+          disabled={sync.busy}
+          onClick={sync.stop}
+          type="button"
+        >
           やめる
         </button>
       </div>
@@ -127,14 +167,15 @@ export function AdminPowerPointSyncControl({
         <div className="admin-presenter-actions">
           <button
             className="primary-button"
-            disabled={!sync.presentation.eligible}
+            disabled={!sync.presentation.eligible || sync.busy}
             onClick={sync.confirm}
             type="button"
           >
-            このPowerPointと講義資料を同期
+            この組合せで同期する
           </button>
           <button
             className="secondary-button"
+            disabled={sync.busy}
             onClick={sync.stop}
             type="button"
           >
@@ -162,7 +203,12 @@ export function AdminPowerPointSyncControl({
         </p>
         {sync.message ? <p className="error-note">{sync.message}</p> : null}
       </div>
-      <button className="secondary-button" onClick={sync.stop} type="button">
+      <button
+        className="secondary-button"
+        disabled={sync.busy}
+        onClick={sync.stop}
+        type="button"
+      >
         手動操作へ切り替える
       </button>
     </div>

@@ -36,7 +36,8 @@ public static class PresentationEligibilityEvaluator
         }
 
         if (observation.WindowMode is not (
-            PresentationWindowMode.Window or PresentationWindowMode.Windowed))
+            PresentationWindowMode.Speaker or PresentationWindowMode.Window or
+            PresentationWindowMode.Windowed))
         {
             issues.Add("windowed_slide_show_required");
         }

@@ -166,6 +166,7 @@ jobs:
       - run: npm run test:e2e:phase7-27
       - run: npm run test:e2e:phase7-27:flag-off
       - run: npm run test:e2e:phase7-29:flag-off
+      - run: npm run test:e2e:phase7-29
       - run: npm run test:e2e:phase7-30:flag-off
       - run: npm run test:e2e:phase7-30
       - run: npm run test:e2e:phase7-30b22b-browser
@@ -234,6 +235,12 @@ jobs:
       - name: Run real-database Presenter connection concurrency regression
         run: npm run test:phase7-29-concurrency
 
+      - name: Run Presenter bound authority and terminal lease concurrency regression
+        # Earlier concurrency tests retain terminal Admin/AI audit fixtures.
+        run: |
+          npx supabase db reset --local --no-seed
+          npm exec -- node scripts/test-presenter-authority-concurrency.mjs
+
       - name: Run Admin AI unlock replay and lock-order concurrency regression
         run: npm run test:phase7-30b2-concurrency
 
@@ -257,6 +264,9 @@ jobs:
 
       - name: Run Google-only Admin cutover serialization and writer-fence regression
         run: npm run test:phase7-30e-concurrency
+
+      - name: Verify populated Google Admin upgrade preserves Presenter authority and gate state
+        run: npm exec -- node scripts/test-presenter-authority-upgrade.mjs
 
       - name: Lint the local database
         run: npx supabase db lint --local --fail-on error
@@ -466,6 +476,26 @@ jobs:
         if: env.RUN_NATIVE == 'true'
         working-directory: presenter-bridge
         run: dotnet run --project tests/Compass.Presenter.Tests/Compass.Presenter.Tests.csproj --configuration Release --no-build -p:PlatformTarget=${{ matrix.platform }}
+      - name: Validate the pinned release packager and self-contained payload
+        if: env.RUN_NATIVE == 'true' && matrix.platform == 'x64'
+        shell: pwsh
+        working-directory: presenter-bridge
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool restore
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned packager restore failed.' }
+          dotnet tool run vpk -- --help
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned packager could not start.' }
+          dotnet restore src/Compass.Presenter.App/Compass.Presenter.App.csproj --runtime win-x64 --locked-mode -p:SelfContained=true
+          if ($LASTEXITCODE -ne 0) { throw 'Release runtime restore failed.' }
+          dotnet publish src/Compass.Presenter.App/Compass.Presenter.App.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore -p:PlatformTarget=x64 --output "$env:RUNNER_TEMP/presenter-unsigned-payload"
+          if ($LASTEXITCODE -ne 0) { throw 'Self-contained payload build failed.' }
+          foreach ($file in Get-ChildItem -LiteralPath scripts -File -Filter '*.ps1') {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -ne 0) { throw "Invalid release script: $($file.Name)" }
+          }
       - if: env.RUN_NATIVE == 'true'
         run: git diff --check
 

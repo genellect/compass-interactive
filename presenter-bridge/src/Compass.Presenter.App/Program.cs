@@ -65,6 +65,8 @@ internal static class Program
         AppDomain.CurrentDomain.ProcessExit += processExit;
         Console.CancelKeyPress += cancel;
 
+        using var activityGate = new SemaphoreSlim(1, 1);
+        using var updateLifetime = new CancellationTokenSource();
         await using var presentationSource =
             new PowerPointComObservationSource();
         using var installationProofLifetime = installationProof;
@@ -83,7 +85,8 @@ internal static class Program
             remoteClient,
             coordinator,
             presentationSource,
-            installationProof.KeyId);
+            installationProof.KeyId,
+            activityGate);
 
         LoopbackPresenterServer? server = null;
         try
@@ -94,13 +97,42 @@ internal static class Program
                 presentationSource,
                 coordinator,
                 port: LoopbackPresenterServer.DefaultPort,
-                pairingAttemptsPerMinute: 5).ConfigureAwait(false);
+                pairingAttemptsPerMinute: 5,
+                activityGate: activityGate).ConfigureAwait(false);
+            using var updateProvider = VelopackPresenterUpdater.TryCreate();
+            var updates = updateProvider is null ? null : new PresenterUpdateCoordinator(
+                activityGate,
+                () => server.HasLiveSession,
+                coordinator.TryRunWhenIdleAsync,
+                updateProvider);
             await using var tray = await PresenterTrayHost.StartAsync(
                 manualRecovery.RecoverAsync,
-                () => shutdown.TrySetResult()).ConfigureAwait(false);
+                () => shutdown.TrySetResult(),
+                updates is null ? null : updates.CheckAsync,
+                updates is null ? null : updates.InstallAsync).ConfigureAwait(false);
             EventHandler<PresenterSessionStateChangedEventArgs> stateChanged =
                 (_, eventArgs) => tray.ReportSessionState(eventArgs.State);
             coordinator.SessionStateChanged += stateChanged;
+            if (updates is not null)
+            {
+                updates.AvailabilityChanged += tray.ReportUpdateAvailability;
+            }
+            var updateCheck = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), updateLifetime.Token)
+                        .ConfigureAwait(false);
+                    if (updates is not null)
+                    {
+                        await updates.CheckAsync(updateLifetime.Token).ConfigureAwait(false);
+                    }
+                }
+                catch
+                {
+                    // Update availability never interrupts a lecture or startup.
+                }
+            });
             try
             {
                 tray.ReportSessionState(coordinator.SessionState);
@@ -108,7 +140,13 @@ internal static class Program
             }
             finally
             {
+                updateLifetime.Cancel();
+                await updateCheck.ConfigureAwait(false);
                 coordinator.SessionStateChanged -= stateChanged;
+                if (updates is not null)
+                {
+                    updates.AvailabilityChanged -= tray.ReportUpdateAvailability;
+                }
             }
             return 0;
         }

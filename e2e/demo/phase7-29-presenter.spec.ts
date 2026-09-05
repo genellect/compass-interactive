@@ -44,6 +44,12 @@ type MockState = {
   presenterActive: boolean
   presenterLastSeenAt: string
   revoked: boolean
+  revokeReason: string
+  maximumStatusConcurrency: number
+  statusConcurrency: number
+  currentConnectionId: string
+  revokedConnectionIds: string[]
+  currentLectureSessionId: string
 }
 
 type NetworkMockOptions = {
@@ -51,6 +57,9 @@ type NetworkMockOptions = {
   localActivationFailure?: boolean
   manualRecovery?: boolean
   staleInspectedAfterConfirm?: boolean
+  statusDelayMs?: number
+  lectureStatus?: 'draft' | 'open'
+  additionalAppToken?: string
 }
 
 function createDeferred() {
@@ -238,8 +247,9 @@ async function installAdminState(page: Page) {
 async function installNetworkMocks(
   page: Page,
   options: NetworkMockOptions = {},
+  sharedState?: MockState,
 ) {
-  const state: MockState = {
+  const state: MockState = sharedState ?? {
     completeManualClaim: () => {
       state.manualClaimed = true
     },
@@ -253,6 +263,7 @@ async function installNetworkMocks(
     completeServerTermination: () => {
       state.presenterActive = false
       state.revoked = true
+      state.revokeReason = 'disconnected'
     },
     confirmed: false,
     connectionIssued: false,
@@ -264,6 +275,12 @@ async function installNetworkMocks(
     presenterActive: false,
     presenterLastSeenAt: new Date().toISOString(),
     revoked: false,
+    revokeReason: 'disconnected',
+    maximumStatusConcurrency: 0,
+    statusConcurrency: 0,
+    currentConnectionId: connectionId,
+    revokedConnectionIds: [],
+    currentLectureSessionId: lectureSessionId,
   }
   const appBaseUrl = process.env.PLAYWRIGHT_BASE_URL
   if (!appBaseUrl) throw new Error('PLAYWRIGHT_BASE_URL is required.')
@@ -322,11 +339,19 @@ async function installNetworkMocks(
 
     const functionName = url.pathname.split('/').at(-1) ?? ''
     const body = (request.postDataJSON() ?? {}) as Record<string, unknown>
-    if (functionName !== 'lecture-live-snapshot') {
+    if (
+      functionName !== 'lecture-live-snapshot' &&
+      functionName !== 'manage-presenter-connection'
+    ) {
       expectMockGoogleAdminCredential(body, googleAdmin)
     }
     if (functionName === 'manage-lectures') {
-      await fulfillJson(route, { lectures: [lectureResponse()], ok: true })
+      await fulfillJson(route, {
+        lectures: [
+          { ...lectureResponse(), status: options.lectureStatus ?? 'open' },
+        ],
+        ok: true,
+      })
       return
     }
     if (functionName === 'manage-polls') {
@@ -361,10 +386,21 @@ async function installNetworkMocks(
     if (functionName === 'manage-presenter-connection') {
       const action = body.action as PresenterAction
       state.presenterActions.push(action)
-      expect(body.appSessionToken).toBe(googleAdmin.appSessionToken)
+      expect(
+        [googleAdmin.appSessionToken, options.additionalAppToken].filter(
+          Boolean,
+        ),
+      ).toContain(body.appSessionToken)
+      expectMockGoogleAdminCredential(body, {
+        ...googleAdmin,
+        appSessionToken: String(body.appSessionToken),
+      })
       if (action === 'issue') {
-        expect(body.lectureSessionId).toBe(lectureSessionId)
+        expect(body.lectureSessionId).toBe(state.currentLectureSessionId)
         state.connectionIssued = true
+        state.revoked = false
+        state.confirmed = false
+        state.presenterActive = false
         const now = Date.now()
         await fulfillJson(route, {
           connectionId,
@@ -400,8 +436,25 @@ async function installNetworkMocks(
         return
       }
       if (action === 'status') {
-        expect(body.lectureSessionId).toBe(lectureSessionId)
+        state.statusConcurrency += 1
+        state.maximumStatusConcurrency = Math.max(
+          state.maximumStatusConcurrency,
+          state.statusConcurrency,
+        )
+        if (options.statusDelayMs)
+          await new Promise((resolve) =>
+            setTimeout(resolve, options.statusDelayMs),
+          )
+        expect(body.lectureSessionId).toBe(state.currentLectureSessionId)
         let connection = null
+        if (state.connectionIssued && state.revoked) {
+          connection = {
+            ...presenterStatus('active'),
+            state: 'revoked',
+            revokedAt: new Date().toISOString(),
+            revokeReason: state.revokeReason,
+          }
+        }
         if (state.connectionIssued && !state.revoked) {
           if (state.manualRecovery && !state.confirmed) {
             connection = presenterStatus(
@@ -435,18 +488,23 @@ async function installNetworkMocks(
           }
         }
         await fulfillJson(route, {
-          connection,
+          connection: connection
+            ? { ...connection, connectionId: state.currentConnectionId }
+            : null,
           ok: true,
           runtimeEnabled: true,
         })
+        state.statusConcurrency -= 1
         return
       }
       if (action === 'revoke') {
-        expect(body.connectionId).toBe(connectionId)
+        expect(body.connectionId).toBe(state.currentConnectionId)
+        state.revokedConnectionIds.push(String(body.connectionId))
         state.presenterActive = false
         state.revoked = true
+        state.revokeReason = 'manual_handover'
         await fulfillJson(route, {
-          connectionId,
+          connectionId: state.currentConnectionId,
           ok: true,
           revokeReason: 'manual_handover',
           revokedAt: new Date().toISOString(),
@@ -580,13 +638,90 @@ async function waitForAnimationFrames(page: Page, count: number) {
 
 async function startAutomaticPresenterReview(page: Page) {
   await page.goto('/admin')
-  await page
-    .getByTestId('powerpoint-sync-control')
-    .getByRole('button', { name: 'PowerPointと同期' })
-    .click()
   const review = page.locator('.admin-presenter-review')
   await expect(review).toBeVisible()
   return review
+}
+
+async function confirmPresenterMaterial(page: Page) {
+  const button = page.getByRole('button', { name: 'この組合せで同期する' })
+  await expect(button).toBeEnabled()
+  await button.scrollIntoViewIfNeeded()
+  // WebKit can finish an automatic scroll after actionability is checked.
+  // Wait for the actual CTA geometry to settle, then make one ordinary click.
+  await expect
+    .poll(async () => {
+      const before = await button.boundingBox()
+      await waitForAnimationFrames(page, 4)
+      const after = await button.boundingBox()
+      const viewport = page.viewportSize()
+      if (!before || !after || !viewport) return false
+      return (
+        Math.abs(before.x - after.x) < 0.5 &&
+        Math.abs(before.y - after.y) < 0.5 &&
+        Math.abs(before.width - after.width) < 0.5 &&
+        Math.abs(before.height - after.height) < 0.5 &&
+        after.x >= 0 &&
+        after.y >= 0 &&
+        after.x + after.width <= viewport.width &&
+        after.y + after.height <= viewport.height
+      )
+    })
+    .toBe(true)
+  await button.click()
+}
+
+async function mountHookHarness(page: Page, expectedPhase = 'active') {
+  await page.goto('/demo')
+  await page.evaluate(async (adminToken) => {
+    const path = '/e2e/helpers/presenterHookHarness.tsx'
+    const harness = await import(path)
+    harness.mountPresenterHookHarness({
+      activeLectureSessionId: '72900000-0000-4000-8000-000000000001',
+      adminToken: { kind: 'google', appSessionToken: adminToken },
+      enabled: true,
+      lectureStatus: 'open',
+      materialConsentScope: 'test-owner',
+      displayState: {
+        lectureSessionId: '72900000-0000-4000-8000-000000000001',
+        currentPdfPage: 1,
+        displayMode: 'normal',
+        pdfDocumentId: 'phase729-presenter-e2e',
+        pdfDocumentVersion: 'a'.repeat(64),
+        pdfPageCount: 3,
+        pdfManifestVersion: 1,
+        pdfVisible: true,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+  }, googleAdmin.appSessionToken)
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText(
+    expectedPhase,
+  )
+}
+
+async function fulfillReadiness(route: Route, ready: boolean) {
+  const response = await route.fetch()
+  await route.fulfill({
+    response,
+    json: {
+      ok: true,
+      protocolVersion: 1,
+      service: 'compass-presenter-bridge',
+      powerpointReady: ready,
+      powerpointIssue: ready ? null : 'powerpoint_not_running',
+    },
+  })
+}
+
+async function setPageVisibility(page: Page, visible: boolean) {
+  await page.evaluate((visible) => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: visible ? 'visible' : 'hidden',
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+  }, visible)
 }
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
@@ -611,8 +746,8 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
   await page.goto('/admin')
   const pdfPanel = page.locator('#admin-live')
   const presenter = page.getByTestId('powerpoint-sync-control')
-  await expect(presenter).toBeVisible()
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
 
   const loopbackHealth = await page.evaluate(async () => {
     try {
@@ -639,6 +774,8 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
   expect(loopbackHealth).toEqual({
     body: {
       ok: true,
+      powerpointReady: true,
+      powerpointIssue: null,
       protocolVersion: 1,
       service: 'compass-presenter-bridge',
     },
@@ -646,7 +783,6 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
     status: 200,
   })
 
-  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
   const review = page.locator('.admin-presenter-review')
   await expect(review).toBeVisible()
   await expect(review).toContainText('Phase 7.29 test presentation.pptx')
@@ -656,10 +792,10 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
   await expect(review.locator('.admin-presenter-recovery-code')).toHaveCount(0)
   await expect(
     review.getByRole('button', {
-      name: 'このPowerPointと講義資料を同期',
+      name: 'この組合せで同期する',
     }),
   ).toBeEnabled()
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await expect(review.locator('canvas')).toBeVisible()
 
   await page.setViewportSize({ height: 844, width: 390 })
@@ -674,28 +810,536 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
     .toBe(true)
   await expectNoSeriousAccessibilityViolations(page)
 
-  await review
-    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-    .click()
+  await confirmPresenterMaterial(page)
   const active = page.locator('.admin-presenter-active')
   await expect(active).toContainText('PowerPoint同期中')
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeDisabled()
-  await expect(pdfPanel.getByLabel('表示するページ番号')).toBeDisabled()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeDisabled()
+  await expect(page.getByLabel('表示するページ番号')).toBeDisabled()
   await expect(pdfPanel.getByLabel('PDF資料')).toBeDisabled()
   expect(state.presenterActions).toEqual(
     expect.arrayContaining(['issue', 'confirm', 'status']),
   )
 
   await active.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await page.getByRole('tab', { name: '準備' }).click()
   await expect(presenter).toBeVisible()
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
-  await expect(pdfPanel.getByLabel('表示するページ番号')).toBeEnabled()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await expect(page.getByLabel('表示するページ番号')).toBeEnabled()
   await expect(pdfPanel.getByLabel('PDF資料')).toBeEnabled()
   expect(state.presenterActions.at(-1)).toBe('revoke')
   expect(pageErrors).toEqual([])
 })
 
-test('recovers without localhost access, confirms once, and reaches active sync', async ({
+test('lazy Presenter loading preserves the visible Admin controls and their input', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  let releaseController: (() => void) | undefined
+  const controllerReady = new Promise<void>((resolve) => {
+    releaseController = resolve
+  })
+  await page.route('**/AdminPowerPointController.tsx*', async (route) => {
+    await controllerReady
+    await route.continue()
+  })
+  await page.goto('/admin')
+  const pageInput = page.getByLabel('表示するページ番号')
+  await expect(pageInput).toBeEnabled()
+  await pageInput.fill('2')
+  expect(state.presenterActions).toEqual([])
+  releaseController?.()
+  await expect(page.locator('.admin-presenter-review')).toBeVisible()
+  await expect(pageInput).toHaveValue('2')
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(pageInput).toBeDisabled()
+})
+
+test('health precedes issuance, and tab changes and reload preserve native ownership', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  const operations: string[] = []
+  page.on('request', (request) => {
+    if (request.url().endsWith('/v1/health')) operations.push('health')
+    if (request.url().endsWith('/manage-presenter-connection')) {
+      operations.push(String(request.postDataJSON().action))
+    }
+  })
+  await startAutomaticPresenterReview(page)
+  expect(operations.indexOf('health')).toBeLessThan(operations.indexOf('issue'))
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  for (const name of ['参加', 'AI', 'スライド']) {
+    await page.getByRole('tab', { name }).click()
+    await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    await expect(page.getByRole('button', { name: '次へ →' })).toBeDisabled()
+  }
+  await page.reload()
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeDisabled()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'revoke'),
+  ).toHaveLength(0)
+  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+})
+
+test('reuses one material confirmation after restart for the exact same deck and PDF', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await page.reload()
+  await page.getByRole('tab', { name: '準備' }).click()
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    '手動スライド操作を利用中',
+  )
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(2)
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(2)
+  const stored = await page.evaluate(() =>
+    localStorage.getItem('compass-presenter-material-consent-v1'),
+  )
+  expect(JSON.parse(stored ?? '[]')).toEqual([
+    expect.stringMatching(/^[a-f0-9]{64}$/),
+  ])
+})
+
+test('requires a new material check when the deck fingerprint changes', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  const review = await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
+    const response = await route.fetch()
+    const body = await response.json()
+    if (body.presentation) body.presentation.bindingDigest = 'b'.repeat(64)
+    await route.fulfill({ response, json: body })
+  })
+  await page.reload()
+  await page.getByRole('tab', { name: '準備' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Bridgeの接続を確認' }),
+  ).toBeEnabled()
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await expect(review).toBeVisible()
+  await expect(
+    review.getByRole('button', { name: 'この組合せで同期する' }),
+  ).toBeEnabled()
+  await page.waitForTimeout(1_200)
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(1)
+})
+
+test('waits for slow status completion before scheduling another request', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, { statusDelayMs: 1_600 })
+  await startAutomaticPresenterReview(page)
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThanOrEqual(3)
+  expect(state.maximumStatusConcurrency).toBe(1)
+})
+
+test('prepares local-network access before lecture start without issuing server credentials', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, { lectureStatus: 'draft' })
+  const loopback: string[] = []
+  page.on('request', (request) => {
+    if (request.url().startsWith('http://127.0.0.1:43124/'))
+      loopback.push(new URL(request.url()).pathname)
+  })
+  await page.goto('/admin')
+  await page.getByRole('tab', { name: '準備' }).click()
+  await expect(
+    page.getByRole('link', { name: 'Bridgeをインストール' }),
+  ).toHaveAttribute(
+    'href',
+    'https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe',
+  )
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
+    'Bridgeの準備ができました',
+  )
+  expect(loopback).toEqual(['/v1/health'])
+  expect(state.presenterActions).toEqual([])
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+})
+
+test('serializes simultaneous tabs and never reconnects after handover in another tab', async ({
+  page,
+  context,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  const other = await context.newPage()
+  await installAdminState(other)
+  await installNetworkMocks(other, {}, state)
+  await Promise.all([page.goto('/admin'), other.goto('/admin')])
+  await expect
+    .poll(
+      async () =>
+        (await page.locator('.admin-presenter-review').count()) +
+        (await other.locator('.admin-presenter-review').count()),
+    )
+    .toBe(1)
+  const controller = (await page.locator('.admin-presenter-review').isVisible())
+    ? page
+    : other
+  const observer = controller === page ? other : page
+  await expect(
+    observer.getByRole('button', { name: 'この画面で接続を引き継ぐ' }),
+  ).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await confirmPresenterMaterial(controller)
+  await expect(observer.locator('.admin-presenter-active')).toBeVisible()
+  await controller.route('http://127.0.0.1:43124/v1/status', async (route) => {
+    const response = await route.fetch()
+    await route.fulfill({
+      response,
+      json: {
+        ok: true,
+        state: 'faulted',
+        lastErrorCode: 'presenter_session_stopped',
+        presentation: null,
+      },
+    })
+  })
+  await observer.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await expect(controller.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await page.waitForTimeout(1_500)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await other.close()
+})
+
+test('leaving a passive pending observer preserves the originating setup', async ({
+  page,
+  context,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  const observer = await context.newPage()
+  await installAdminState(observer)
+  await installNetworkMocks(observer, {}, state)
+  await observer.goto('/admin')
+  await expect(
+    observer.getByRole('button', { name: 'この画面で接続を引き継ぐ' }),
+  ).toBeVisible()
+  await observer.goto('/demo')
+  await observer.close()
+  const count = state.presenterActions.filter(
+    (action) => action === 'status',
+  ).length
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThan(count)
+  expect(
+    state.presenterActions.filter((action) => action === 'revoke'),
+  ).toHaveLength(0)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+})
+
+test('hands over the server replacement connection rather than a stale local ID', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  state.currentConnectionId = '72900000-0000-4000-8000-000000000003'
+  const count = state.presenterActions.filter(
+    (action) => action === 'status',
+  ).length
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThan(count)
+  await waitForAnimationFrames(page, 2)
+  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  expect(state.revokedConnectionIds).toEqual([state.currentConnectionId])
+})
+
+test('rediscovers native ownership when the ordinary application credential is replaced', async ({
+  page,
+}) => {
+  const replacementToken = `${googleAdmin.appSessionToken.slice(0, -1)}Z`
+  await installAdminState(page)
+  const state = await installNetworkMocks(page, {
+    additionalAppToken: replacementToken,
+  })
+  state.connectionIssued = true
+  state.completeServerActivation()
+  await mountHookHarness(page)
+  const count = state.presenterActions.filter(
+    (action) => action === 'status',
+  ).length
+  await page.evaluate(async (token) => {
+    const path = '/e2e/helpers/presenterHookHarness.tsx'
+    const harness = await import(path)
+    harness.updatePresenterHookHarness({
+      adminToken: { kind: 'google', appSessionToken: token },
+    })
+  }, replacementToken)
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'status').length,
+    )
+    .toBeGreaterThan(count)
+  await expect(page.getByTestId('presenter-hook-phase')).toHaveText('active')
+  await expect(page.getByTestId('presenter-hook-locked')).toHaveText('true')
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+})
+
+for (const changeLecture of [true, false]) {
+  test(`ignores an old handover response after ${changeLecture ? 'selection moves to another lecture' : 'the server replaces the connection in this lecture'}`, async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    const state = await installNetworkMocks(page)
+    state.connectionIssued = true
+    state.completeServerActivation()
+    await mountHookHarness(page)
+    const started = createDeferred()
+    const release = createDeferred()
+    await page.route(
+      'https://example.supabase.co/functions/v1/manage-presenter-connection',
+      async (route) => {
+        if (route.request().postDataJSON().action !== 'revoke') {
+          await route.fallback()
+          return
+        }
+        started.resolve()
+        await release.promise
+        await fulfillJson(route, {
+          ok: true,
+          connectionId,
+          state: 'revoked',
+          revokeReason: 'manual_handover',
+          revokedAt: new Date().toISOString(),
+        })
+      },
+    )
+    await page.getByRole('button', { name: 'Harness handover' }).click()
+    await started.promise
+    state.currentConnectionId = '72900000-0000-4000-8000-000000000005'
+    if (changeLecture) {
+      state.currentLectureSessionId = '72900000-0000-4000-8000-000000000004'
+      await page.evaluate(async (lecture) => {
+        const path = '/e2e/helpers/presenterHookHarness.tsx'
+        const harness = await import(path)
+        harness.updatePresenterHookHarness({ activeLectureSessionId: lecture })
+      }, state.currentLectureSessionId)
+    }
+    await expect(page.getByTestId('presenter-hook-connection')).toHaveText(
+      state.currentConnectionId,
+    )
+    release.resolve()
+    await waitForAnimationFrames(page, 4)
+    await expect(page.getByTestId('presenter-hook-phase')).toHaveText('active')
+    await expect(page.getByTestId('presenter-hook-locked')).toHaveText('true')
+    await expect(page.getByTestId('presenter-hook-connection')).toHaveText(
+      state.currentConnectionId,
+    )
+  })
+}
+
+test('reconnects an observed native fault with fresh pairing and the existing material consent', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  let fault = true
+  await page.route('http://127.0.0.1:43124/v1/status', async (route) => {
+    const response = await route.fetch()
+    if (!fault) {
+      await route.fulfill({ response })
+      return
+    }
+    fault = false
+    state.completeServerTermination()
+    await route.fulfill({
+      response,
+      json: {
+        ok: true,
+        state: 'faulted',
+        lastErrorCode: 'presenter_session_stopped',
+        presentation: null,
+      },
+    })
+  })
+  await expect
+    .poll(
+      () =>
+        state.presenterActions.filter((action) => action === 'issue').length,
+      { timeout: 15_000 },
+    )
+    .toBe(2)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(2)
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+})
+
+for (const reason of ['disconnected', 'manual_handover']) {
+  test(`resolves a missing lease after a positive native fault and honors ${reason}`, async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    const state = await installNetworkMocks(page)
+    await startAutomaticPresenterReview(page)
+    await confirmPresenterMaterial(page)
+    await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    let nullReplies = 0
+    let resolvedReplies = 0
+    await page.route(
+      'https://example.supabase.co/functions/v1/manage-presenter-connection',
+      async (route) => {
+        if (route.request().postDataJSON().action === 'status') {
+          if (nullReplies === 0) {
+            nullReplies += 1
+            await fulfillJson(route, {
+              ok: true,
+              runtimeEnabled: true,
+              connection: null,
+            })
+            return
+          }
+          resolvedReplies += 1
+        }
+        await route.fallback()
+      },
+    )
+    await page.route('http://127.0.0.1:43124/v1/status', async (route) => {
+      const response = await route.fetch()
+      if (
+        state.presenterActions.filter((action) => action === 'issue').length > 1
+      ) {
+        await route.fulfill({ response })
+        return
+      }
+      state.completeServerTermination()
+      state.revokeReason = reason
+      await route.fulfill({
+        response,
+        json: {
+          ok: true,
+          state: 'faulted',
+          lastErrorCode: 'presenter_session_stopped',
+          presentation: null,
+        },
+      })
+    })
+    await expect
+      .poll(() => resolvedReplies, { timeout: 15_000 })
+      .toBeGreaterThan(0)
+    if (reason === 'disconnected') {
+      await expect
+        .poll(
+          () =>
+            state.presenterActions.filter((action) => action === 'issue')
+              .length,
+          { timeout: 15_000 },
+        )
+        .toBe(2)
+      await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    } else {
+      await page.waitForTimeout(1_500)
+      expect(
+        state.presenterActions.filter((action) => action === 'issue'),
+      ).toHaveLength(1)
+      await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+    }
+  })
+}
+
+test('does not restart an explicitly unavailable native session', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.route('http://127.0.0.1:43124/v1/status', async (route) => {
+    const response = await route.fetch()
+    state.completeServerTermination()
+    await route.fulfill({
+      response,
+      status: 401,
+      json: {
+        ok: false,
+        code: 'invalid_session',
+        message: 'Request rejected.',
+      },
+    })
+  })
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled({
+    timeout: 16_000,
+  })
+  await page.waitForTimeout(1_500)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(1)
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+})
+
+test('keeps absent Bridge readiness checks local without issuing pairing material', async ({
   page,
 }) => {
   const pageErrors: string[] = []
@@ -709,56 +1353,245 @@ test('recovers without localhost access, confirms once, and reaches active sync'
   const state = await installNetworkMocks(page, { manualRecovery: true })
 
   await page.goto('/admin')
+  await page.getByRole('tab', { name: '準備' }).click()
   const pdfPanel = page.locator('#admin-live')
   const presenter = page.getByTestId('powerpoint-sync-control')
-  await presenter.getByRole('button', { name: 'PowerPointと同期' }).click()
-
-  const recovery = page.locator('.admin-presenter-recovery-panel')
-  await expect(recovery).toBeVisible()
-  await expect(recovery).toContainText('復旧コードで接続')
-  await expect(recovery.locator('.admin-presenter-recovery-code')).toHaveText(
-    'ABCD2345',
+  await expect(presenter).toContainText(
+    'BridgeとPowerPointの起動を待っています',
   )
-  expect(loopbackRequests).toEqual(['/v1/health'])
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+  expect(loopbackRequests.every((path) => path === '/v1/health')).toBe(true)
+  await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+  await expect(pdfPanel.getByLabel('PDF資料')).toBeEnabled()
+  await page.getByRole('tab', { name: 'スライド' }).click()
+  await page.getByRole('tab', { name: '参加' }).click()
+  await expect
+    .poll(() => loopbackRequests.length, { timeout: 8_000 })
+    .toBeGreaterThan(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+  expect(
+    state.presenterActions.filter((action) => action === 'confirm'),
+  ).toHaveLength(0)
+  expect(loopbackRequests.every((path) => path === '/v1/health')).toBe(true)
+  expect(
+    state.presenterActions.filter((action) => action === 'status'),
+  ).toHaveLength(1)
+  expect(pageErrors).toEqual([])
+})
 
-  const review = page.locator('.admin-presenter-review')
-  state.completeManualInspect()
-  await expect(review).toBeVisible()
-  await expect(review.locator('.admin-presenter-recovery-code')).toHaveText(
-    'ABCD2345',
-  )
-  await expect(review).toContainText('接続中のPowerPoint')
-  await expect(review).toContainText('3スライド')
-  await expect(review).toContainText('Phase 7.29 lecture.pdf')
-  await expect(
-    review.getByRole('button', {
-      name: 'このPowerPointと講義資料を同期',
-    }),
-  ).toBeEnabled()
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeEnabled()
-
-  await review
-    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-    .click()
-  await expect(page.locator('.admin-presenter-recovery-panel')).toContainText(
-    'Presenter Bridgeの接続待ち',
-  )
-  const recoveryCode = page.locator('.admin-presenter-recovery-code')
-  await expect(recoveryCode).toHaveText('ABCD2345')
-  state.completeManualClaim()
-
-  const active = page.locator('.admin-presenter-active')
-  await expect(active).toContainText('PowerPoint同期中')
-  await expect(recoveryCode).toHaveCount(0)
-  await expect(pdfPanel.getByRole('button', { name: '次へ →' })).toBeDisabled()
+test('late startup waits locally for both Bridge and PowerPoint then issues once without a retry click', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  let stage = 0
+  let healthCalls = 0
+  await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+    healthCalls += 1
+    if (stage === 0) await route.abort('connectionrefused')
+    else await fulfillReadiness(route, stage === 2)
+  })
+  await page.goto('/admin')
+  await expect.poll(() => healthCalls).toBe(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+  stage = 1
+  await expect.poll(() => healthCalls, { timeout: 8_000 }).toBeGreaterThan(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+  expect(
+    state.presenterActions.filter((action) => action === 'status'),
+  ).toHaveLength(1)
+  stage = 2
+  await expect(page.locator('.admin-presenter-review')).toBeVisible({
+    timeout: 10_000,
+  })
   expect(
     state.presenterActions.filter((action) => action === 'issue'),
   ).toHaveLength(1)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+})
+
+for (const alwaysUnavailable of [false, true]) {
+  test(`late startup handles a PowerPoint readiness race with ${alwaysUnavailable ? 'at most two automatic tickets' : 'one fresh retry and no cancel click'}`, async ({
+    page,
+  }) => {
+    await installAdminState(page)
+    const state = await installNetworkMocks(page)
+    let attempts = 0
+    await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
+      if (route.request().postDataJSON().action === 'activate') {
+        await route.fallback()
+        return
+      }
+      const response = await route.fetch()
+      const payload = await response.json()
+      attempts += 1
+      if (alwaysUnavailable || attempts === 1) {
+        await route.fulfill({
+          response,
+          json: {
+            ...payload,
+            presentation: {
+              ...payload.presentation,
+              eligible: false,
+              issues: ['powerpoint_not_running'],
+            },
+          },
+        })
+      } else await route.fulfill({ response })
+    })
+    await page.goto('/admin')
+    await expect.poll(() => attempts, { timeout: 12_000 }).toBe(2)
+    if (alwaysUnavailable) {
+      await page.waitForTimeout(5_500)
+      expect(attempts).toBe(2)
+      expect(
+        state.presenterActions.filter((action) => action === 'confirm'),
+      ).toHaveLength(0)
+    } else {
+      await expect(page.locator('.admin-presenter-review')).toBeVisible()
+      await confirmPresenterMaterial(page)
+      await expect(page.locator('.admin-presenter-active')).toBeVisible()
+    }
+    expect(
+      state.presenterActions.filter((action) => action === 'issue'),
+    ).toHaveLength(2)
+    await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
+  })
+}
+
+test('late startup pauses health while hidden, resumes on session refresh, and preserves manual handover', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const replacement = `${googleAdmin.appSessionToken.slice(0, -1)}Y`
+  const state = await installNetworkMocks(page, {
+    additionalAppToken: replacement,
+  })
+  let ready = false
+  let calls = 0
+  let active = 0
+  let maximum = 0
+  await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+    calls += 1
+    active += 1
+    maximum = Math.max(maximum, active)
+    await page.waitForTimeout(250)
+    await fulfillReadiness(route, ready)
+    active -= 1
+  })
+  await mountHookHarness(page, 'idle')
+  await expect.poll(() => calls).toBe(1)
+  await expect.poll(() => active).toBe(0)
+  await setPageVisibility(page, false)
+  await page.waitForTimeout(5_500)
+  expect(calls).toBe(1)
+  await setPageVisibility(page, true)
+  await expect.poll(() => calls, { timeout: 7_000 }).toBe(2)
+  await page.evaluate(async (token) => {
+    const path = '/e2e/helpers/presenterHookHarness.tsx'
+    const harness = await import(path)
+    harness.updatePresenterHookHarness({
+      adminToken: { kind: 'google', appSessionToken: token },
+    })
+  }, replacement)
+  await expect.poll(() => calls).toBe(3)
+  await expect.poll(() => active).toBe(0)
+  await page.getByRole('button', { name: 'Harness handover' }).click()
+  ready = true
+  const stoppedAt = calls
+  await setPageVisibility(page, false)
+  await setPageVisibility(page, true)
+  await page.waitForTimeout(5_500)
+  expect(calls).toBe(stoppedAt)
+  expect(maximum).toBe(1)
   expect(
-    state.presenterActions.filter((action) => action === 'confirm'),
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+})
+
+test('late startup discovers existing active ownership before a nonready health probe', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  state.connectionIssued = true
+  state.completeServerActivation()
+  let calls = 0
+  await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+    calls += 1
+    await fulfillReadiness(route, false)
+  })
+  await mountHookHarness(page)
+  await expect(page.getByTestId('presenter-hook-locked')).toHaveText('true')
+  expect(calls).toBe(0)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
+})
+
+test('late startup recovery adopts a successor instead of revoking it for an old local fault', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  await startAutomaticPresenterReview(page)
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  let observed = false
+  await page.route('http://127.0.0.1:43124/v1/status', async (route) => {
+    const response = await route.fetch()
+    observed = true
+    state.currentConnectionId = '72900000-0000-4000-8000-000000000009'
+    await route.fulfill({
+      response,
+      json: {
+        ok: true,
+        state: 'faulted',
+        lastErrorCode: 'presenter_session_stopped',
+        presentation: null,
+      },
+    })
+  })
+  await expect.poll(() => observed).toBe(true)
+  await page.waitForTimeout(5_500)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  expect(state.revokedConnectionIds).toHaveLength(0)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
   ).toHaveLength(1)
-  expect(loopbackRequests).toEqual(['/v1/health'])
-  expect(pageErrors).toEqual([])
+})
+
+test('late startup discards a delayed readiness response after unmount', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  const state = await installNetworkMocks(page)
+  const started = createDeferred()
+  const release = createDeferred()
+  let calls = 0
+  await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+    calls += 1
+    started.resolve()
+    await release.promise
+    await fulfillReadiness(route, true)
+  })
+  await page.goto('/admin')
+  await started.promise
+  await page.goto('/demo')
+  release.resolve()
+  await page.waitForTimeout(5_500)
+  expect(calls).toBe(1)
+  expect(
+    state.presenterActions.filter((action) => action === 'issue'),
+  ).toHaveLength(0)
 })
 
 test('moves an expired automatic ticket to the five-minute recovery path without confirming', async ({
@@ -772,7 +1605,7 @@ test('moves an expired automatic ticket to the five-minute recovery path without
   const review = await startAutomaticPresenterReview(page)
   await dispatchEnabledClick(
     review.getByRole('button', {
-      name: 'このPowerPointと講義資料を同期',
+      name: 'この組合せで同期する',
     }),
   )
 
@@ -807,9 +1640,7 @@ test('keeps the recovery code available when local activation fails after confir
   })
 
   const review = await startAutomaticPresenterReview(page)
-  await review
-    .getByRole('button', { name: 'このPowerPointと講義資料を同期' })
-    .click()
+  await confirmPresenterMaterial(page)
   await activationFailure.completed
 
   const recoveryCode = page.locator('.admin-presenter-recovery-code')
@@ -855,7 +1686,7 @@ for (const outcome of ['active', 'terminal'] as const) {
     const review = await startAutomaticPresenterReview(page)
     await dispatchEnabledClick(
       review.getByRole('button', {
-        name: 'このPowerPointと講義資料を同期',
+        name: 'この組合せで同期する',
       }),
     )
 
@@ -910,7 +1741,7 @@ test('keeps active when a delayed local activation fails after server activation
   const review = await startAutomaticPresenterReview(page)
   await dispatchEnabledClick(
     review.getByRole('button', {
-      name: 'このPowerPointと講義資料を同期',
+      name: 'この組合せで同期する',
     }),
   )
 

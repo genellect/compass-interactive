@@ -21,6 +21,19 @@ internal sealed partial class PresenterLoopbackSessions
     public static bool IsValidTokenSyntax(string? token) =>
         token is not null && SessionTokenPattern().IsMatch(token);
 
+    public bool HasLiveSession
+    {
+        get
+        {
+            lock (gate)
+            {
+                CleanupExpired();
+                return sessions.Values.Any(session =>
+                    session.State is "pending_confirmation" or "active");
+            }
+        }
+    }
+
     public Session Create(
         string origin,
         PairingTicketClaims claims,

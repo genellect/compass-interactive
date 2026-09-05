@@ -21,20 +21,25 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
 
     private readonly WebApplication application;
     private readonly SemaphoreSlim activationGate;
+    private readonly PresenterLoopbackSessions sessions;
     private readonly IPresenterSessionFaultSource? faultSource;
     private readonly EventHandler<PresenterSessionFaultedEventArgs>? faultHandler;
 
     private LoopbackPresenterServer(
         WebApplication application,
         SemaphoreSlim activationGate,
+        PresenterLoopbackSessions sessions,
         IPresenterSessionFaultSource? faultSource,
         EventHandler<PresenterSessionFaultedEventArgs>? faultHandler)
     {
         this.application = application;
         this.activationGate = activationGate;
+        this.sessions = sessions;
         this.faultSource = faultSource;
         this.faultHandler = faultHandler;
     }
+
+    public bool HasLiveSession => sessions.HasLiveSession;
 
     public int Port
     {
@@ -58,6 +63,7 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
         IPresenterSessionActivationHandler? activationHandler = null,
         int port = DefaultPort,
         int pairingAttemptsPerMinute = 5,
+        SemaphoreSlim? activityGate = null,
         CancellationToken cancellationToken = default)
     {
         if (port is < 0 or > 65535)
@@ -68,6 +74,7 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
         var guard = new LoopbackRequestGuard(allowedOrigins);
         var sessions = new PresenterLoopbackSessions();
         var limiter = new SlidingWindowAttemptLimiter(pairingAttemptsPerMinute);
+        var readinessProbe = new PresenterReadinessProbe(presentationSource);
         var activationGate = new SemaphoreSlim(1, 1);
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
         {
@@ -128,17 +135,39 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
                 return;
             }
 
-            await next(context);
+            if (activityGate is not null &&
+                context.Request.Path == "/v1/connect")
+            {
+                await activityGate.WaitAsync(context.RequestAborted);
+                try
+                {
+                    await next(context);
+                }
+                finally
+                {
+                    activityGate.Release();
+                }
+            }
+            else
+            {
+                await next(context);
+            }
         });
 
-        app.MapGet("/v1/health", () => Results.Json(
+        app.MapGet("/v1/health", async (HttpContext context) =>
+        {
+            var readiness = await readinessProbe.GetAsync(context.RequestAborted);
+            return Results.Json(
             new
             {
                 ok = true,
                 service = "compass-presenter-bridge",
                 protocolVersion = 1,
+                powerpointReady = readiness.Ready,
+                powerpointIssue = readiness.Issue,
             },
-            JsonOptions));
+            JsonOptions);
+        });
 
         app.MapPost("/v1/connect", async (HttpContext context) =>
         {
@@ -480,6 +509,7 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
         return new LoopbackPresenterServer(
             app,
             activationGate,
+            sessions,
             faultSource,
             faultHandler);
     }

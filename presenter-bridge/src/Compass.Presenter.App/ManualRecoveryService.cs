@@ -18,17 +18,20 @@ internal sealed class ManualRecoveryService
     private readonly string installationHash;
     private readonly IPresentationObservationSource presentationSource;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly SemaphoreSlim? activityGate;
 
     public ManualRecoveryService(
         EdgePresenterClient client,
         PresenterSessionCoordinator coordinator,
         IPresentationObservationSource presentationSource,
-        string installationHash)
+        string installationHash,
+        SemaphoreSlim? activityGate = null)
     {
         this.client = client;
         this.coordinator = coordinator;
         this.presentationSource = presentationSource;
         this.installationHash = installationHash;
+        this.activityGate = activityGate;
     }
 
     public async Task RecoverAsync(
@@ -40,8 +43,14 @@ internal sealed class ManualRecoveryService
         {
             throw new PresenterRemoteException("recovery_already_running");
         }
+        var activityAcquired = false;
         try
         {
+            if (activityGate is not null)
+            {
+                await activityGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                activityAcquired = true;
+            }
             reportStage(ManualRecoveryStage.Inspecting);
             var observation = await presentationSource.ObserveAsync(
                 cancellationToken).ConfigureAwait(false) ??
@@ -126,6 +135,10 @@ internal sealed class ManualRecoveryService
         }
         finally
         {
+            if (activityAcquired)
+            {
+                activityGate!.Release();
+            }
             gate.Release();
         }
     }
