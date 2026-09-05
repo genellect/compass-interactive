@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-09-06
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -45,8 +45,6 @@ secret change and paid call still require an explicit task.
 | Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
 | Presenter production release  | `docs/PRESENTER_PRODUCTION_RELEASE.md`                           |
 | Presenter Store submission    | `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`            |
-| Optional Presenter license draft | `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md`               |
-| Presenter privacy notice draft | `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md`                 |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
 | Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
@@ -154,17 +152,31 @@ Local writer while browser mode is active.
 ## 5. PowerPoint Presenter Bridge
 
 - Preferred Microsoft Store MSIX packaging, `runFullTrust` justification,
-  synthetic certification flow, listing copy and current HOLD items:
+  Partner Center values, bounded certification flow, listing copy and current
+  HOLD items:
   `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`
-- Optional custom Store-binary terms and Bridge-specific privacy draft:
-  `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md` and
-  `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md`
 - Current production release sequence and classroom acceptance:
   `docs/PRESENTER_PRODUCTION_RELEASE.md`
-- Store v1 uses package version `1.0.0.0`, requires Windows 11 24H2/build 26100
-  for `uap17:UpdateWhileInUse=defer`, and remains HOLD until clean local-account
-  and school-account acquisition tests prove that no added Microsoft account is
-  required.
+- The public privacy source is `public/presenter-bridge/privacy/index.html`; its
+  canonical URL is
+  `https://compass-interactive.pages.dev/presenter-bridge/privacy/`. A 200 SPA
+  fallback is not a published privacy notice and does not pass the route gate.
+- Store v1 is fixed to package version `1.0.0.0`, x64, `ja-JP`, Japan,
+  Windows 11 24H2/build 26100+, Free, Public audience, and available but not
+  discoverable through Direct link only. Microsoft Standard Application
+  License Terms apply; Additional license terms stay blank.
+- Store policy 10.14 account-type classification is unresolved. Partner Center
+  identity, WACK, Store signing, clean-device no-added-auth acquisition, Office
+  x86/x64 and rendered Display/student latency remain blocking gates.
+- The exact Partner Center `https://apps.microsoft.com/...` listing URL is the
+  only allowed production installer value for `VITE_PRESENTER_STORE_URL`.
+  Missing or invalid configuration hides the CTA. Do not retain the Direct EXE
+  or anonymous Velopack/R2 update feed as a production fallback.
+- Store review access is Owner-issued to a reviewer-controlled dedicated Google
+  account, fixes `instructor` and AI disabled, expires the invitation after
+  seven days and membership fourteen days after issuance, and is revoked
+  immediately after review. Passwords, TOTP seeds and recovery/session material
+  are never shared.
 - Design, threat boundary and rollback:
   `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`
 - Canonical rescue, dormant deployment and rollback:
@@ -175,13 +187,19 @@ Local writer while browser mode is active.
 - Disable the database runtime gate first for rollback, then verify all active
   bindings are terminal and manual page controls work before disabling Edge and
   frontend admission.
-- Do not treat browser/database tests as approval of a native binary. A signed
-  per-user installer, SmartScreen/update handling, Office x86/x64/build checks,
-  real Edge/Chrome HTTPS-to-loopback, 500 physical transitions, PowerPoint
-  restart and venue Extend-display evidence remain separate blocking gates.
+- Do not treat browser/database tests as approval of a native binary. The
+  current Store-compiled binary's 539 ms Office-readiness observation and the
+  earlier unsigned single-monitor 500/500 COM result do not prove Store signing
+  or acquisition, Office x86+x64, real Edge/Chrome HTTPS-to-loopback, final
+  Display/student rendering, Store servicing, PowerPoint restart or venue
+  Extend-display behavior. Those remain separate blocking gates.
 - If Windows Application Control blocks a native build/test, stop that process
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
+- Keep the existing five-second student snapshot/delta polling for this release.
+  Three-second transitions, selective Realtime for slides/polls/comments and a
+  possible Supabase Pro upgrade belong to a separate phase after the Presenter
+  Store release passes production acceptance.
 
 ## 6. Google Admin identity and MFA (A-D exact-head PASS; E/F external execution HOLD)
 

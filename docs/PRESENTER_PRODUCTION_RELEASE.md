@@ -1,202 +1,258 @@
 # Presenter production release candidate
 
-Decision date: 2026-09-05. This record extends the signed activation contract
-with the owner's current product requirements and delegated infrastructure
-selection. It does not claim that a release, signature or device test passed.
+Decision date: 2026-09-06. Baseline for this record:
+`fa99e4e9d822f2bbf75e08194c19bb0eb3a37931`.
 
-On 2026-09-06 the owner selected Microsoft Store MSIX as the preferred
-distribution path so the Store can sign the certified package without an
-annual public-trust certificate purchase. The MSIX engineering candidate is
-implemented; Partner Center identity injection, packaging preflight, onboarding
-and Store review are not complete. Version 1 is fixed at package version
-`1.0.0.0` with Windows 11 24H2/build 26100 as its minimum because safe
-update-in-use deferral depends on `uap17:UpdateWhileInUse=defer`. The release
-documents are:
+The production decision is Microsoft Store distribution of a packaged x64
+MSIX. The old Direct Velopack EXE and anonymous R2 update feed are not a
+production distribution path for this release. Source preparation has
+advanced, but the general PowerPoint feature remains **HOLD** until the Store,
+device, Office and rendered-latency gates in this record pass.
 
-- `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md` — packaging, listing,
-  `runFullTrust`, reviewer and submission gate;
-- `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md` — optional custom Store-binary
-  terms, used only if selected after owner/legal review; and
-- `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md` — Bridge-specific privacy
-  notice draft based on current code and migrations.
+The teacher outcome remains fixed: after one installation and the existing
+COMPASS educator sign-in, PowerPoint slide operations drive the lecture without
+a CLI, a Bridge-specific account, repeated recovery codes or routine use of a
+complex settings panel. Store acquisition must also pass on supported clean
+devices without requiring the teacher to add or sign in to another Microsoft
+account.
 
-## Owner decisions and deployment identity
+## Fixed release decisions
 
-The owner requested autonomous completion of the PowerPoint production
-release, accepted the proposed implementation, and identified the publisher as
-**Yuto Matsui / 松井優知**. Under the former certificate-dependent fallback, the
-certificate subject would have to use the actual CA-validated spelling; a
-locally self-signed certificate would not be a substitute. The Store package
-must instead use the exact Partner Center identity assigned after the owner's
-verification.
+| Field | Version 1 decision |
+| --- | --- |
+| Publisher | Yuto Matsui / 松井優知; manifest identity must use the exact Partner Center values |
+| Distribution | Microsoft Store packaged MSIX; no public Direct EXE or anonymous update feed |
+| Product | COMPASS Presenter Bridge, subject to Partner Center reservation |
+| Package version | `1.0.0.0` |
+| Architecture | x64 |
+| Minimum OS | Windows 11 version 24H2, build 26100 or later |
+| Package language | `ja-JP` |
+| Initial market | Japan only |
+| Price | Free |
+| Audience | Public audience |
+| Discoverability | Available but not discoverable; Direct link only |
+| Customer license | Microsoft Standard Application License Terms |
+| Additional license terms | Blank; no custom terms or additional-terms file |
+| Privacy URL | `https://compass-interactive.pages.dev/presenter-bridge/privacy/` |
+| Web install setting | Exact Store URL in `VITE_PRESENTER_STORE_URL` after reservation and publication |
 
-| Resource                  | Selected value                                                                |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| Cloudflare account        | `f60a242ad3132b1a7ba11839c23d76f7`                                            |
-| Zone                      | `yuto-matsui.com`, `68e9bb3faf02379bfcce2ee019e28326`                         |
-| Gateway                   | `compass-presenter-gateway-production`                                        |
-| Machine endpoint          | `https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session` |
-| Anonymous update feed     | `https://presenter-updates.yuto-matsui.com`                                   |
-| Production release bucket | `compass-presenter-updates-production`                                        |
-| Signing environment       | `presenter-production-signing`                                                |
-| Product                   | COMPASS Presenter Bridge                                                      |
+Public audience is an intentional initial choice. Microsoft documents that a
+submission first published to a Public audience cannot later be changed to a
+Private audience. Direct-link-only discoverability still lets anyone who has
+the link view and acquire the listing, while keeping it out of Store search and
+browse surfaces. Do not substitute a Private audience, because that path binds
+acquisition to listed Microsoft accounts and conflicts with the no-added-auth
+acceptance target.
 
-The active Full zone and all eight DNS records were inspected on 2026-09-05;
-neither proposed Presenter hostname conflicted with an existing record. The
-three existing Workers were inventoried. The asset Worker used only rate
-namespaces `6601` and `6602`; the two older application Workers had no
-bindings. The Presenter namespaces `72931` and `72932` were unused in that
-inventory. Recheck immediately before a delayed deployment.
+The publisher account type is not decided. Microsoft Store policy 10.14 says a
+Company account is required for an organization, business, or person acting in
+relation to a trade or profession, while an Individual account is usually
+appropriate for one developer working on their own. The personal publisher
+name alone does not decide this classification. Registration remains HOLD
+until the owner checks the actual publishing purpose and identity against the
+current policy and completes the appropriate Microsoft verification personally.
 
-Local `wrangler.jsonc` stays unrouted. The separate production config is
-selected explicitly; ordinary development does not deploy it. The existing
-apex website, email routes and private PDF bucket are separate resources.
+## Implemented source and verified scope
 
-The dedicated Standard R2 bucket was created in APAC on 2026-09-05. Its
-update custom domain has active ownership and TLS, with minimum TLS 1.2;
-the `r2.dev` public endpoint remains disabled. The bucket is empty. This is
-distribution infrastructure readiness, not a published installer or feed.
-The selected signing environment is a reserved name, not a created or
-credentialed signing service. No public-trust certificate has been issued.
-That certificate-dependent Velopack/EXE route is retained only as a historical
-fallback design. The preferred Store MSIX route instead requires the owner's
-Partner Center onboarding and identity verification, followed by package
-certification and Store re-signing.
+The following source exists on the release line:
+
+- a Store-specific build that removes Velopack code and feed access while
+  preserving the Direct build only as a legacy, non-production development lane;
+- an x64 self-contained MSIX manifest with `ja-JP`, build 26100 minimum,
+  `uap17:UpdateWhileInUse=defer`, packaged classic-app medium integrity, a
+  startup task and only the `runFullTrust` restricted capability;
+- a clean-source package builder and unpacking preflight that records source,
+  package, notice, runtime and tool hashes;
+- Microsoft Standard Application License Terms selection with no additional
+  terms in the inspected development receipt;
+- a bilingual privacy notice at
+  `public/presenter-bridge/privacy/index.html`;
+- browser-side first-use privacy consent before local inspection or hosted
+  pairing; and
+- an Owner-only **Microsoft Store審査用アクセスを発行** action. It fixes the
+  invitation to `role=instructor`, `can_use_ai=false`, a seven-day invitation
+  and membership expiry fourteen days after issuance.
+
+These are source or local-development results. They do not prove Partner Center
+acceptance, Store signing, production deployment or classroom behavior.
+
+The canonical privacy URL is fixed at
+`https://compass-interactive.pages.dev/presenter-bridge/privacy/`. On
+2026-09-06, an external GET returned HTTP 200 but served the main SPA shell,
+not the bilingual privacy document. The source page is implemented; its exact
+production route is not yet published and verified. Deploy it while Presenter
+admission remains OFF, then verify the title/body, English and Japanese
+sections, contact link, response headers and absence of console/network errors
+before using the URL in Partner Center.
+
+The inspected development receipt records source commit
+`1beea714b1f79089c2c1f78cf694c37307d565d9` and development identity
+`CompassPresenterBridge.Development`. Its package passed independent unpacking
+preflight with 413 published files and no Velopack/update-feed payload. A
+locally signed development copy was installed only for bounded device probing.
+On the current Windows/Office device, the Store-compiled native binary returned
+PowerPoint readiness in **539 ms**. This is one local readiness observation. It
+is not Store-signed, was not acquired from Microsoft Store, and does not cover
+clean installation, both Office architectures, browser pairing, hosted
+delivery, Display rendering or student rendering.
+
+The earlier 500-transition evidence has a separate and narrower scope: an x64
+unsigned harness, Office 16 32-bit, one monitor, a synthetic 12-page deck,
+Speaker full-screen with Presenter View off, native COM observation and the
+100 ms stable tracker. It completed 500/500 transitions with zero wrong-page
+commits, median 152 ms, p95 170 ms and maximum 206 ms. It excludes MSIX package
+identity, Store signing/acquisition, HTTPS/Gateway/Supabase transit, Display and
+student canvas rendering, 64-bit Office, a second monitor, Store update and
+uninstall behavior. Neither native result closes a remaining gate.
+
+## Distribution boundary
+
+The earlier `presenter-updates.yuto-matsui.com` domain, R2 bucket, Velopack
+installer and signing-environment design are retained only as historical or
+dormant infrastructure. Do not upload an EXE, publish an update index, expose an
+anonymous feed, or place that URL in the educator UI for this release. A future
+outside-Store distribution decision would require its own authorization,
+public-trust signing and device acceptance.
+
+After Partner Center creates the product URL, copy its exact
+`https://apps.microsoft.com/...` value into the Production build setting
+`VITE_PRESENTER_STORE_URL`. The frontend must reject any other scheme or host
+and hide the installation CTA while the value is absent or invalid. Never put
+credentials, product secrets, signing material or account identifiers in a
+`VITE_` setting. Verify the rendered CTA against the frozen production build;
+do not infer the link from a Product ID or retain the old EXE as a fallback.
 
 ## Classroom acceptance
 
-After installing the signed per-user application and preparing the lecture,
-the teacher advances the lecture using PowerPoint. The happy path has no
-CLI, recovery-code entry or fresh MFA challenge. The existing bounded Google
-Admin session supplies authority; live session, membership, ownership,
-factor-set, document and lecture validity are still checked on the server.
+The normal path is:
 
-One initial confirmation binds the exact PDF version to the inspected PPT
-content/order/settings. An unchanged binding may reuse a bounded nonsecret
-consent marker after fresh inspection. A changed file requires a new match
-confirmation; equal page counts alone never prove matching content. Tabs and
-browser reload must preserve or rediscover the active connection without
-silently issuing a competing connection. Routine operation must not require
-the teacher to revisit a settings panel.
+```text
+Store install -> Bridge starts -> existing COMPASS educator session
+  -> one privacy consent -> PowerPoint/PDF match confirmation when required
+  -> PowerPoint-only slide progression -> safe automatic convergence
+```
 
-The release fails acceptance if it requires complex UI work, extra
-authentication, teacher CLI use, or transitions slow enough to interrupt a
-lecture. A mock test does not establish classroom latency or reliable Office
-behavior.
+An unchanged, freshly inspected PDF/PPT binding may reuse its nonsecret local
+material-consent digest. A changed presentation, order, saved content,
+slideshow mode or PDF version requires a new match. Equal page counts alone are
+not a match. Tabs and reloads must rediscover ownership without creating a
+competing connection. Manual controls remain available after a safe handover.
 
-The owner's subsequent scope decision keeps the existing **five-second**
-foreground student snapshot/delta loop for this release, including its
-initial phase spread and no recurring jitter. The proposed three-second
-Presenter-specific interval was withdrawn before release. At 300 foreground
-students the existing model is 60 requests/second and 324,000 requests per
-90 minutes; this calculation is not a measured capacity or a guarantee of
-five-second rendered latency.
+The release fails if the normal path requires complex UI work, another product
+login or MFA challenge, teacher CLI use, a certificate trust action,
+`CheckNetIsolation`, repeated recovery-code entry, or a transition delay that
+can interrupt a lecture.
 
-Measure from a real PPT change to **rendered** Display and student page,
-including worst polling phase, cold/neighbor page loading and a full 300
-student fixture. Record p50/p95/p99/max and each missed or incorrect page.
-Record visible/following student latency without claiming a bound that the
-unchanged five-second polling period cannot establish.
-Hidden tabs, offline clients and deliberate student unfollow are separate
-states; restoring visibility/follow must converge without a teacher action.
-The Display target is p95 at most one second, with every outlier reviewed for
-classroom impact. Do not label the candidate accepted on a calculated budget.
+The current release keeps the existing **five-second** foreground student
+snapshot/delta polling, including its initial phase spread and no recurring
+jitter. It does not claim that every student canvas renders within five
+seconds, because polling, network and drawing time can exceed one interval. The
+current 300-student model of 60 requests/second and 324,000 requests per
+90-minute lecture is arithmetic, not capacity evidence.
+
+Measure real PPT action to rendered Display and rendered student canvas,
+including cold and cached neighboring pages, distant jumps and worst polling
+phase. Record p50, p95, p99, maximum, wrong pages and failure to converge. The
+Display target is p95 at most one second. Hidden, offline and intentionally
+unfollowed students are separate populations and must converge without a
+teacher action when visibility/following returns.
 
 ## Microsoft Store certification access
 
-Prepare one new Google account used only by the Microsoft Store certification
-reviewer. Do not reuse an owner, operator, personal, school or prior test
-account. In **教員管理**, enter that account's email address and use the
-explicit **Microsoft Store審査用アクセスを発行** action. This action creates an
-ordinary `instructor` invitation with AI disabled. The invitation link expires
-seven days after issuance, and an accepted membership expires fourteen days
-after the same issuance time. The ordinary **招待リンクを作成** action remains a
-48-hour invitation and does not inherit these Store-review terms.
+Only an Owner may issue Store-review access. The reviewer controls a new Google account used only by the Microsoft Store certification.
+Seed it only with a synthetic 12-page lecture and a matching synthetic PPTX/PDF
+pair. The owner invites its email address through **教員管理** and
+**Microsoft Store審査用アクセスを発行**. The owner must not create, receive or
+share the reviewer's Google password, TOTP seed, recovery codes or active
+session. If certification cannot be exercised with reviewer-controlled
+credentials, keep submission on HOLD instead of sharing an account or adding an
+authentication bypass.
 
-Supply the reviewer with a synthetic 12-page lecture and its matching PPTX/PDF
-material pair. Use generated text, shapes, charts, one sample poll and one
-sample comment prompt only; include no real student, patient, research,
-institutional or unpublished data. The 12 pages must cover opening the lecture,
-sequential slide changes, a rapid forward/backward change, Display following,
-student following, poll display, comment display, document reconnect and
-lecture close. Record the exact candidate version and material SHA-256 used for
-certification.
+The signed Store-review contract binds the request, environment and normalized
+email. The invitation expires seven days after issuance. If accepted in time,
+the `instructor` membership with AI disabled expires fourteen days after the
+same issuance time. It is not an Owner or operator role. Supply only the
+invitation link and minimum test steps. Never place an owner password, TOTP seed, recovery code, Presenter capability, Gateway secret, pairing secret,
+application token or active session in Partner Center notes, email, screenshots,
+files or logs. The fourteen-day absolute membership expiry is a backstop, not a
+reason to leave review access active after certification.
 
-Provide only the dedicated reviewer-account onboarding details, the invitation
-link, the synthetic lecture material and the steps required to exercise the
-submitted application. Never place an owner password, owner account, TOTP seed,
-recovery code, browser session, Admin app-session token, invitation signing
-secret, Presenter capability, Gateway secret or pairing secret in Partner
-Center notes, email, the deck, screenshots or packaged files. The reviewer uses
-the normal Google instructor onboarding path; after onboarding, routine
-PowerPoint-driven lecture progress must not ask for another login, TOTP code or
-CLI operation.
+After certification, the Owner immediately cancels a pending invitation or
+uses **教員権限を抹消** for an accepted membership and verifies that its Admin
+sessions are inactive. The fixed expiry is a backstop. A delayed review receives
+a newly issued bounded invitation; the old one is never extended or promoted.
 
-After certification, an Owner immediately cancels a still-pending invitation or
-uses **教員権限を抹消** for an accepted membership, then verifies that its Admin
-sessions are no longer active. The fourteen-day absolute membership expiry is
-a backstop, not a reason to leave completed reviewer access active. If
-certification continues beyond either fixed deadline, issue a new dedicated
-review invitation rather than extending or promoting the old membership.
+The Owner-only UI and server contract are implemented and locally covered at
+the source baseline. Hosted deployment, a real reviewer-owned account,
+invitation delivery, onboarding, expiry and post-review revocation are still
+unverified.
 
-## Release order
+## Release and verification order
 
-1. Freeze one reviewed candidate after native, UI, authority/lease, clean and
-   upgrade DB, concurrency and browser tests pass. Observe all five required
-   checks and preserve the exact merge/deployment revisions.
-2. Place additive DB fixes, the dedicated machine Edge and Gateway with
-   Presenter admission and the database runtime gate disabled. Inject
-   separately generated Gateway and capability secrets without displaying
-   them. Verify placement, disabled admission, and the Gateway's independent
-   method/Origin/proof-shape rejection. An admission-OFF Edge returns 503
-   before authentication; this does not prove Gateway-secret, cryptographic
-   proof or nonce-replay enforcement.
-3. Build a packaged MSIX using the exact Partner Center identity, package
-   version `1.0.0.0`, `TargetDeviceFamily MinVersion="10.0.26100.0"` and
-   `uap17:UpdateWhileInUse=defer`. Submit only through the Microsoft
-   Store path described in the Store runbook; do not publish the existing
-   Velopack EXE/update feed as the preferred public channel. Microsoft Store
-   certification, rather than an owner-purchased public-trust certificate, must
-   establish the distributed package signature. Outside-Store distribution
-   remains a separate signing decision.
-   For Store customer licensing, explicitly choose Microsoft Standard
-   Application License Terms by leaving **Additional license terms** blank, or
-   use only custom terms approved by owner/legal review.
-4. Complete Store-delivered fresh install/update/uninstall/rollback, real
-   Office architecture
-   coverage, Chrome/Edge local-network access and 500 native transitions,
-   document switching, rapid A–B–A, lost replies, COM loss, browser/native
-   restart and safe manual handover on that signed candidate.
-   Prove on real hardware that a Store update during an active lecture is
-   deferred without closing the Bridge. Keep Windows 10 and older Windows 11
-   outside the v1 support matrix until an equally safe update path passes real
-   update-in-use tests.
-5. Enable machine admission with the DB runtime gate still disabled. Verify
-   direct-Edge denial and Gateway-secret and cryptographic-proof enforcement.
-   Then enable the DB runtime gate and a bounded frontend canary. Verify
-   nonce replay, revoked authority and terminal lease behavior on synthetic
-   canary connections. Run the real teacher–Display–student path and record latency/load evidence.
-   Expand only after these pass. Roll back the DB gate, machine admission and
-   frontend flag in that order if they fail; retain the additive schema.
+1. Integrate the reviewed Store, privacy and consent fixes on one clean source
+   SHA. Pass focused tests, secret/static checks and the required exact-head CI.
+2. Publish and verify the canonical privacy route with all Presenter runtime
+   and frontend admission gates still OFF.
+3. Resolve Store policy 10.14 account type, complete owner-controlled Partner
+   Center registration, reserve the product, and copy the exact package
+   identity and Store URL without exposing personal verification data.
+4. Build the clean `1.0.0.0` Partner Center submission input with Microsoft
+   Standard Application License Terms and no additional terms. Run preflight
+   and WACK against that exact hash.
+5. Configure Japan, `ja-JP`, x64, Windows 11 24H2+, Free, Public audience and
+   available-but-not-discoverable Direct link only. Add the canonical privacy
+   URL, accurate Office dependency, `runFullTrust` justification and bounded
+   reviewer steps. Submit the unsigned ingestion input only to the matching
+   Partner Center product.
+6. Complete certification and obtain the Store-signed package/listing. Inject
+   its exact `https://apps.microsoft.com/...` URL through
+   `VITE_PRESENTER_STORE_URL`, rebuild with the feature still OFF and verify the
+   canonical CTA.
+7. On clean supported local-account and school-account profiles, verify Store
+   and Web Installer acquisition, install, first launch, sign-in startup,
+   disable/re-enable startup, update deferral during a lecture, update after
+   exit, repair, uninstall and reinstall. Both profiles must complete without
+   adding or signing in to another Microsoft account.
+8. On the Store-delivered exact package, verify real 32-bit and 64-bit desktop
+   PowerPoint, Chrome and Edge loopback, single and extended displays, document
+   changes, 500 transitions, rapid A-B-A, lost replies, COM loss, browser and
+   Bridge restart, consent withdrawal, CNG deletion and manual handover.
+9. With machine admission ON and the DB runtime gate OFF, verify direct-Edge,
+   Gateway-secret, signature and nonce rejection separately. Then enable a
+   bounded synthetic canary and measure teacher-to-Display/student rendering.
+   Expand only after every gate passes. Roll back DB gate, machine admission
+   and frontend flag in that order if acceptance fails.
 
-Current authorization covers the production work described here, subject to
-its release gates. The owner must personally control Microsoft-account sign-in,
-Partner Center identity verification, acceptance of Microsoft agreements and
-the transmission of identity documents or other sensitive personal data.
-Neither authorization nor submission alone constitutes evidence that Store
-certification, active-update safety or real-device acceptance passed.
+## Current HOLD
+
+- Store policy 10.14 account type, Partner Center onboarding, product
+  reservation and exact package identity are unresolved.
+- The public privacy URL currently serves the SPA shell rather than the privacy
+  document.
+- The final UI Store URL injection and canonical-host CTA proof are incomplete.
+- WACK, Store ingestion, `runFullTrust` approval, certification and Store
+  signing are incomplete.
+- Clean-device no-added-auth acquisition and startup/update/uninstall behavior
+  are unverified.
+- Store-delivered Office x86 and x64, extended-display operation and the full
+  500-transition device matrix are unverified.
+- Display and student rendered latency, including a staged 300-student load,
+  remains unmeasured for the Store candidate.
+- The Store reviewer path is implemented in source but has not passed hosted
+  and human issuance/onboarding/expiry/revocation evidence.
+
+General publication and the Presenter frontend/runtime gates remain OFF while
+any item above is unresolved.
 
 ## Follow-up after the PPT release
 
-The owner wants a separate, minimal classroom UX and synchronization release
-after this PPT integration reaches production. Evaluate a three-second or
-faster rendered transition using selective Realtime notifications for slide
-changes, live polls and comments. Keep snapshot/delta as the authoritative
-recovery path and retain load controls; do not subscribe every feature or
-send each student's state as high-frequency broadcast traffic.
+Only after the Store Presenter release is published and accepted, start a
+separate synchronization project. Evaluate three-second-or-faster rendered
+transitions and selective Realtime notifications for slide changes, live polls
+and comments. Keep snapshot/delta as the authoritative recovery path and do not
+subscribe every feature or broadcast every student's state.
 
-Assess a 300-student lecture on Supabase Pro, including measured concurrent
-connections, messages, database load, network use and cost. Pro and necessary
-paid expansion are acceptable in principle within an agreed budget. The
-exact budget, billing change and rollout belong to that follow-up; this
-release does not change the Supabase plan or student polling policy.
+That later project may evaluate Supabase Pro and budget-approved extensions for
+a 300-student lecture using measured connections, messages, database load,
+network use and cost. This release does not change the Supabase plan, the
+student five-second polling interval or the current Realtime publication.
