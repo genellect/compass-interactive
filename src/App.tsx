@@ -4,6 +4,7 @@ import { AppIcon } from './components/AppIcon'
 import { CompassContextMenu } from './components/CompassContextMenu'
 import { CompassStateProvider } from './context/CompassStateContext'
 import { useCompassState } from './hooks/useCompassState'
+import { getAdminOAuthFailure } from './lib/adminAuth/adminOAuthFailure'
 import './App.css'
 
 const AdminRoute = lazy(() =>
@@ -147,6 +148,18 @@ function AppShell() {
 
 function App() {
   const location = useLocation()
+  const rootOAuthFailure =
+    location.pathname === '/'
+      ? getAdminOAuthFailure(location.search, location.hash)
+      : null
+  if (rootOAuthFailure) {
+    return (
+      <Navigate
+        replace
+        to={`/admin/auth/callback?oauth_error=${rootOAuthFailure}`}
+      />
+    )
+  }
   if (location.pathname.startsWith('/admin')) {
     return (
       <Suspense fallback={<RouteFallback />}>

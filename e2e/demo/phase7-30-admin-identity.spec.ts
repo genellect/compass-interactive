@@ -339,6 +339,13 @@ async function installNetworkMocks(
     includeAbandonedFactor?: boolean
     invalidStatusToken?: string
     initialVerified?: boolean
+    expiredOAuthReturnOnce?: 'query' | 'fragment'
+    restoreFailureOnce?:
+      | 'service_unavailable'
+      | 'transport'
+      | 'gateway_unauthorized'
+      | 'gateway_rate_limited'
+    statusFailureOnce?: boolean
     sessionCanUseAi?: boolean
     sessionRole?: 'instructor' | 'owner'
     verifyRateLimited?: boolean
@@ -412,7 +419,22 @@ async function installNetworkMocks(
           return
         }
         const callbackUrl = new URL(redirectTo)
-        callbackUrl.searchParams.set('code', callbackCode)
+        if (
+          options.expiredOAuthReturnOnce &&
+          state.authorizeQueries.length === 1
+        ) {
+          callbackUrl.pathname = '/'
+          const failure = new URLSearchParams({
+            error: 'invalid_request',
+            error_code: 'bad_oauth_state',
+            error_description: 'OAuth state has expired',
+          }).toString()
+          if (options.expiredOAuthReturnOnce === 'fragment')
+            callbackUrl.hash = failure
+          else callbackUrl.search = failure
+        } else {
+          callbackUrl.searchParams.set('code', callbackCode)
+        }
         await route.fulfill({
           body: `<script>window.location.replace(${JSON.stringify(callbackUrl.toString())})</script>`,
           contentType: 'text/html',
@@ -564,6 +586,33 @@ async function installNetworkMocks(
         return
       }
       if (action === 'restore') {
+        if (
+          options.restoreFailureOnce &&
+          state.edgeCalls.filter((call) => call.action === 'restore').length ===
+            1
+        ) {
+          if (options.restoreFailureOnce === 'transport')
+            await route.abort('failed')
+          else if (options.restoreFailureOnce === 'gateway_unauthorized')
+            await fulfillJson(route, { message: 'Invalid JWT' }, 401)
+          else if (options.restoreFailureOnce === 'gateway_rate_limited')
+            await route.fulfill({
+              status: 429,
+              contentType: 'application/json',
+              headers: {
+                'retry-after': '3',
+                'access-control-expose-headers': 'Retry-After',
+              },
+              body: JSON.stringify({ message: 'Too many requests' }),
+            })
+          else
+            await fulfillJson(
+              route,
+              { code: 'service_unavailable', ok: false },
+              503,
+            )
+          return
+        }
         if (body.restoreSeed !== restoreSeed) {
           state.unexpectedRequests.push('restore seed binding mismatch')
           await fulfillJson(
@@ -581,6 +630,18 @@ async function installNetworkMocks(
         return
       }
       if (action === 'status') {
+        if (
+          options.statusFailureOnce &&
+          state.edgeCalls.filter((call) => call.action === 'status').length ===
+            1
+        ) {
+          await fulfillJson(
+            route,
+            { code: 'service_unavailable', ok: false },
+            503,
+          )
+          return
+        }
         if (body.appSessionToken !== appSessionToken) {
           if (body.appSessionToken !== options.invalidStatusToken) {
             state.unexpectedRequests.push('status app session binding mismatch')
@@ -1351,6 +1412,155 @@ test('preserves an invitation PKCE transaction when an older Admin tab signs out
   })
   expect(state.unexpectedRequests).toEqual([])
 })
+
+for (const delivery of ['query', 'fragment'] as const) {
+  test(`recovers an expired OAuth root ${delivery} return in the educator portal`, async ({
+    page,
+  }) => {
+    const student = anonymousStudentSession()
+    const { state } = await installNetworkMocks(page, student.accessToken, {
+      initialVerified: true,
+      expiredOAuthReturnOnce: delivery,
+    })
+    const invitationToken = 'i'.repeat(43)
+    await page.goto(`/admin#invite=${invitationToken}`)
+    await page
+      .getByRole('button', { name: 'Googleで続ける', exact: true })
+      .click()
+    await expect(page).toHaveURL('/admin')
+    await expect(page.getByRole('alert')).toHaveText(
+      'ログイン画面の有効期限が切れました。Googleで続けるから再度お進みください。',
+    )
+    expect(state.pkceBodies).toHaveLength(0)
+    expect(state.edgeCalls).toHaveLength(0)
+    expect(state.anonymousRequests).toBe(0)
+    await expect(page.locator('body')).not.toContainText(
+      'OAuth state has expired',
+    )
+
+    await page
+      .getByRole('button', { name: 'Googleで続ける', exact: true })
+      .click()
+    await expect(
+      page.getByRole('heading', { name: '2段階認証', exact: true }),
+    ).toBeVisible()
+    await page.getByLabel('認証コード', { exact: true }).fill('123456')
+    await page.getByRole('button', { name: '続ける', exact: true }).click()
+    await expect(page.locator('.admin-workflow')).toBeVisible()
+    expect(state.authorizeQueries).toHaveLength(2)
+    expect(state.pkceBodies).toHaveLength(1)
+    expect(state.factorVerifyBodies).toHaveLength(1)
+    expect(
+      state.edgeCalls.find((call) => call.action === 'admit')?.body
+        .invitationToken,
+    ).toBe(invitationToken)
+    expect(state.unexpectedRequests).toEqual([])
+  })
+}
+
+for (const failure of [
+  'service_unavailable',
+  'transport',
+  'status',
+  'gateway_unauthorized',
+  'gateway_rate_limited',
+] as const) {
+  test(`retries ${failure} session recovery without another Google or TOTP login`, async ({
+    page,
+  }) => {
+    const student = anonymousStudentSession()
+    const { aal2AccessToken, state } = await installNetworkMocks(
+      page,
+      student.accessToken,
+      {
+        initialVerified: true,
+        ...(failure === 'status'
+          ? { statusFailureOnce: true }
+          : { restoreFailureOnce: failure }),
+      },
+    )
+    const storedSession = {
+      ...authSession('aal2', { verified: true }),
+      access_token: aal2AccessToken,
+    }
+    await page.addInitScript(
+      ({
+        storedSession,
+        authKey,
+        seedKey,
+        seed,
+        appKey,
+        appToken,
+        failure,
+      }) => {
+        window.localStorage.setItem(authKey, JSON.stringify(storedSession))
+        window.localStorage.setItem(
+          seedKey,
+          JSON.stringify({
+            authSessionId: '73000000-0000-4000-8000-000000000002',
+            authUserId: '73000000-0000-4000-8000-000000000001',
+            seed,
+            version: 1,
+          }),
+        )
+        if (failure === 'status')
+          window.sessionStorage.setItem(appKey, appToken)
+      },
+      {
+        storedSession,
+        authKey: adminAuthStorageKey,
+        seedKey: adminAppSessionRestoreSeedStorageKey,
+        seed: restoreSeed,
+        appKey: adminAppSessionStorageKey,
+        appToken: appSessionToken,
+        failure,
+      },
+    )
+    await page.goto('/admin')
+    if (failure === 'gateway_unauthorized') {
+      await expect(
+        page.getByRole('button', { name: 'Googleで続ける', exact: true }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: '接続を再試行', exact: true }),
+      ).toHaveCount(0)
+      expect(state.authorizeQueries).toHaveLength(0)
+      expect(state.unexpectedRequests).toEqual([])
+      return
+    }
+    await expect(
+      page.getByRole('button', { name: '接続を再試行', exact: true }),
+    ).toBeVisible()
+    if (failure === 'gateway_rate_limited') {
+      await expect(
+        page.getByRole('button', { name: '接続を再試行', exact: true }),
+      ).toBeDisabled()
+      await expect(page.getByRole('status')).toContainText('再試行まで')
+      await expect(
+        page.getByRole('button', { name: '接続を再試行', exact: true }),
+      ).toBeEnabled()
+    }
+    await expect(
+      page.getByRole('button', { name: 'Googleで続ける', exact: true }),
+    ).toHaveCount(0)
+    expect(
+      await page.evaluate(
+        (key) => Boolean(window.localStorage.getItem(key)),
+        adminAppSessionRestoreSeedStorageKey,
+      ),
+    ).toBe(true)
+    await page
+      .getByRole('button', { name: '接続を再試行', exact: true })
+      .click()
+    await expect(page.locator('.admin-workflow')).toBeVisible()
+    expect(state.authorizeQueries).toHaveLength(0)
+    expect(state.factorVerifyBodies).toHaveLength(0)
+    expect(state.edgeCalls.map((call) => call.action)).toEqual(
+      failure === 'status' ? ['status', 'status'] : ['restore', 'restore'],
+    )
+    expect(state.unexpectedRequests).toEqual([])
+  })
+}
 
 test('restores the same app token only from its scoped live AAL2 Auth session', async ({
   page,

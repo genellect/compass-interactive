@@ -1,4 +1,8 @@
-import { FunctionsHttpError } from '@supabase/supabase-js'
+import {
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
+} from '@supabase/supabase-js'
 import { adminSupabase } from './adminSupabaseClient'
 import { notifyGoogleAdminSessionInvalid } from './adminOperationSessionEvents'
 
@@ -45,11 +49,18 @@ export type AdminLedgerOperationKey =
 export class AdminIdentityError extends Error {
   readonly code: string
   readonly retryAfterMs: number
+  readonly retryable: boolean
 
-  constructor(code: string, message: string, retryAfterMs = 0) {
+  constructor(
+    code: string,
+    message: string,
+    retryAfterMs = 0,
+    retryable = false,
+  ) {
     super(message)
     this.code = code
     this.retryAfterMs = retryAfterMs
+    this.retryable = retryable
     this.name = 'AdminIdentityError'
   }
 }
@@ -170,6 +181,10 @@ async function invoke(
     )
   if (error || !data?.ok) {
     const responseError = await readIdentityError(error)
+    const httpResponse =
+      error instanceof FunctionsHttpError && error.context instanceof Response
+        ? error.context
+        : null
     const code =
       (typeof data?.code === 'string' && data.code in ADMIN_IDENTITY_MESSAGES
         ? data.code
@@ -188,7 +203,18 @@ async function invoke(
     throw new AdminIdentityError(
       code,
       getIdentityMessage(code),
-      responseError?.retryAfterMs ?? 0,
+      responseError?.retryAfterMs ??
+        (httpResponse?.status === 429
+          ? readRetryAfterMs(httpResponse) || 60_000
+          : 0),
+      error instanceof FunctionsFetchError ||
+        error instanceof FunctionsRelayError ||
+        Boolean(
+          httpResponse &&
+          (httpResponse.status === 408 ||
+            httpResponse.status === 429 ||
+            httpResponse.status >= 500),
+        ),
     )
   }
   return data
