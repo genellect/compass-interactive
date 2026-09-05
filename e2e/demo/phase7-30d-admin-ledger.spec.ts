@@ -961,6 +961,14 @@ async function installMocks(
             body.action === 'revokeInvitation' ||
             body.action === 'enableAi')
         ) {
+          const isMicrosoftStoreReview =
+            body.action === 'issueInvitation' &&
+            typeof body.payload === 'object' &&
+            body.payload !== null &&
+            !Array.isArray(body.payload) &&
+            (body.payload as Record<string, unknown>).purpose ===
+              'microsoftStoreReview'
+          const reviewIssuedAt = Date.now()
           await fulfillJson(route, {
             controlStepUpAction:
               body.action === 'enableAi'
@@ -970,6 +978,20 @@ async function installMocks(
             ok: true,
             operationKey: `manage-admin-ledger.${String(body.action)}`,
             requestId: body.requestId,
+            ...(isMicrosoftStoreReview
+              ? {
+                  microsoftStoreReview: {
+                    contract: `msr1.${Math.floor(reviewIssuedAt / 1_000)}.${'r'.repeat(43)}`,
+                    expiresAt: new Date(
+                      reviewIssuedAt + 7 * 24 * 60 * 60_000,
+                    ).toISOString(),
+                    issuedAt: new Date(reviewIssuedAt).toISOString(),
+                    membershipExpiresAt: new Date(
+                      reviewIssuedAt + 14 * 24 * 60 * 60_000,
+                    ).toISOString(),
+                  },
+                }
+              : {}),
             targetId:
               body.action === 'enableAi'
                 ? instructorMembershipId
@@ -1191,6 +1213,9 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
     ).toBeEnabled()
   }
   await panel.getByText('招待履歴 (1)', { exact: true }).click()
+  await expect(
+    panel.getByText(/招待期限: .* \/ 教員権限の期限: /),
+  ).toBeVisible()
   await expect(
     panel.getByRole('button', { name: '招待を取り消す' }),
   ).toBeEnabled()
@@ -2257,6 +2282,112 @@ test('grants AI entitlement and policy from the teacher row with one TOTP even a
   ).toBe(true)
 })
 
+test('issues fixed Microsoft Store reviewer access without client-controlled authority', async ({
+  page,
+}) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const admin = adminSession()
+  await installStoredSessions(page, admin, studentSession().storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstInvitationCommit: false,
+  })
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByRole('button', { name: '新しい教員を追加' }).click()
+
+  await expect(
+    panel.getByRole('heading', { name: 'Microsoft Store 審査用' }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText(
+      '専用の新しいGoogleアカウントを、AI利用不可の教員として招待します。招待リンクは7日間、教員権限は発行から14日間だけ有効です。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await expect(
+    panel.getByText(
+      '認証完了後も期限に自動失効します。認定完了後は、招待履歴の「招待を取り消す」または教員一覧の「教員権限を抹消」で直ちに失効してください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('store-reviewer@example.test')
+  await panel
+    .getByRole('button', {
+      name: 'Microsoft Store審査用アクセスを発行',
+      exact: true,
+    })
+    .click()
+
+  await expect(
+    panel
+      .locator('.admin-ledger-confirmation')
+      .getByText('Microsoft Store審査用アクセスを発行', {
+        exact: true,
+      }),
+  ).toBeVisible()
+  await expect(
+    panel.getByText(/AI利用不可 \/ 招待期限 .* \/ 教員権限の自動失効/),
+  ).toBeVisible()
+  const intentCall = state.functionCalls.find(
+    ({ body, functionName }) =>
+      functionName === 'manage-admin-ledger' &&
+      body.stage === 'intent' &&
+      body.action === 'issueInvitation',
+  )
+  expect(intentCall?.body.payload).toEqual({
+    normalizedEmail: 'store-reviewer@example.test',
+    purpose: 'microsoftStoreReview',
+  })
+
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel
+    .getByRole('button', { name: 'この変更を実行', exact: true })
+    .click()
+  await expect(
+    panel.getByText(
+      'Microsoft Store審査用の招待リンクを作成しました。招待は7日間、教員権限は発行から14日間有効です。審査終了後は招待の取り消しまたは教員権限の抹消を行ってください。',
+      { exact: true },
+    ),
+  ).toBeVisible()
+  expect(state.commitBodies).toHaveLength(1)
+  expect(state.commitBodies[0]).toMatchObject({
+    action: 'issueInvitation',
+    microsoftStoreReviewContract: expect.stringMatching(/^msr1\./),
+    payload: {
+      normalizedEmail: 'store-reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+    },
+  })
+  expect(Object.keys(state.commitBodies[0]?.payload as object).sort()).toEqual([
+    'normalizedEmail',
+    'purpose',
+  ])
+  expect(state.ledgerGrantIssues).toBe(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true)
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include('.admin-ledger-store-review')
+        .analyze()
+    ).violations,
+  ).toEqual([])
+  expect(pageErrors).toEqual([])
+})
+
 test('keeps the settings route available to an Instructor without exposing Owner AI policy controls', async ({
   page,
 }) => {
@@ -2282,6 +2413,12 @@ test('keeps the settings route available to an Instructor without exposing Owner
     page.locator('summary').filter({ hasText: '講義AIの利用設定' }),
   ).toHaveCount(0)
   await expect(page.locator('.admin-ledger-panel')).toHaveCount(0)
+  await expect(
+    page.getByRole('button', {
+      name: 'Microsoft Store審査用アクセスを発行',
+      exact: true,
+    }),
+  ).toHaveCount(0)
   expect(
     state.functionCalls.filter(
       ({ body, functionName }) =>

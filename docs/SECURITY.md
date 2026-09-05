@@ -395,9 +395,10 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
   injects a separate server-only gateway secret and forwards to one fixed Edge
   upstream. Browser traffic, redirects, encoded/oversized bodies, missing
   Cloudflare network identity and unavailable rate bindings fail closed. The
-  Worker retains `workers_dev=false`, preview disabled and no route until an
-  owner approves the exact FQDN; 7.29C activation remains Hosted/Device/Human
-  HOLD.
+  release source fixes `presenter-api.yuto-matsui.com`, `workers_dev=false`,
+  preview disabled and the single production route/upstream. Source presence
+  does not prove Hosted DNS, Worker, Edge, rate-namespace or secret state;
+  7.29C activation remains Hosted/Store/Device/Human HOLD.
 - Database RPCs are service-role only, `SECURITY INVOKER`, execute with server
   time and recheck the runtime gate, tracked Admin session, lecture lifecycle,
   PDF/deck binding, sequence, rate and capability on every write or heartbeat.
@@ -410,10 +411,32 @@ legacy-link expiry, hosted policy tests, telemetry and human/device evidence.
 - A Presenter binding cannot authorize paid AI, captions, PDF publication or
   another lecture. Runtime disable, Admin revoke, close, expiry, mutation or
   explicit disconnect terminalizes it; stopping and handover remain free.
-- Production activation requires a signed per-user installer, SmartScreen and
-  update policy, x86/x64 Office matrix, real Edge/Chrome HTTPS-to-loopback tests
-  and venue/human evidence. Windows Application Control must never be disabled
-  or bypassed to make an unsigned native test pass.
+- Before any Presenter deployment, verify the existing Hosted Phase 7.30 Google
+  Admin identity, operations and ledger function versions, migrations/gates,
+  required secret-presence metadata and an Owner Google/TOTP AAL2 ledger smoke.
+  If that foundation is absent or dormant, complete Phase 7.30 in its
+  authoritative sequence; never deploy `manage-admin-ledger` alone as a
+  Presenter shortcut. Presenter ON also requires
+  `VITE_PHASE7_28_DISPLAY_REALTIME=true` and
+  `PHASE728_DISPLAY_REALTIME_ENABLED=true` on the exact release.
+- Build, verify and hash the certification frontend with Presenter ON,
+  `VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL, which mechanically
+  suppresses the installation CTA but does not create a reviewer-only server
+  cohort. Because Microsoft does not provide a predictable reviewer time,
+  submission requires an explicit go/no-go for global eligible-educator
+  activation throughout certification, continuous monitoring and immediate
+  rollback; otherwise it remains HOLD. The bounded classroom canary reuses that
+  exact artifact and limits the Direct listing URL to named acquisition
+  operators. Before the canary ends, build, verify and hash the same-SHA general
+  artifact with `VITE_PRESENTER_CERTIFICATION_MODE=false` and the exact Store
+  URL, then promote only that artifact after all gates pass.
+- Version 1 production activation requires exact Partner Center identity, WACK,
+  `runFullTrust` approval, Store certification/signing, clean-device acquisition
+  and update without added authentication, the x86/x64 Office matrix, real
+  Edge/Chrome HTTPS-to-loopback tests, rendered-latency evidence and venue/human
+  acceptance. Direct Velopack/EXE distribution and its anonymous update feed are
+  outside the version 1 release. Windows Application Control must never be
+  disabled or bypassed to make an unsigned native test pass.
 
 ## 17. Phase 7.30A-B1 identity controls
 

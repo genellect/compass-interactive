@@ -6,6 +6,11 @@ import {
 } from '../_shared/adminIdentity.ts'
 import { classifyAdminLedgerRpcFailure } from '../_shared/adminLedgerRpcFailure.ts'
 import { normalizeAdminLedgerAiPolicy as normalizeAiPolicy } from '../_shared/adminLedgerAiPolicy.ts'
+import {
+  createMicrosoftStoreReviewContract,
+  normalizeMicrosoftStoreReviewRequest,
+  verifyMicrosoftStoreReviewContract,
+} from '../_shared/adminMicrosoftStoreReview.ts'
 import { handleCors } from '../_shared/cors.ts'
 import {
   readJsonBody,
@@ -46,6 +51,7 @@ type LedgerRequest = {
   limit?: number
   payload?: unknown
   requestId?: string
+  microsoftStoreReviewContract?: string
   stage?: 'commit' | 'intent'
 }
 
@@ -391,6 +397,10 @@ Deno.serve(async (request) => {
     )
   }
   const action = body.action as MutationAction
+  const microsoftStoreReviewRequest =
+    action === 'issueInvitation'
+      ? normalizeMicrosoftStoreReviewRequest(body.payload)
+      : null
   if (
     !hasExactKeys(body, [
       'action',
@@ -398,7 +408,14 @@ Deno.serve(async (request) => {
       'payload',
       'requestId',
       'stage',
-      ...(body.stage === 'commit' ? ['intentDigest'] : []),
+      ...(body.stage === 'commit'
+        ? [
+            'intentDigest',
+            ...(microsoftStoreReviewRequest
+              ? ['microsoftStoreReviewContract']
+              : []),
+          ]
+        : []),
     ]) ||
     !body.requestId ||
     !UUID_PATTERN.test(body.requestId) ||
@@ -413,56 +430,93 @@ Deno.serve(async (request) => {
   }
 
   let invitationToken: string | null = null
+  let microsoftStoreReviewIntent: {
+    contract: string
+    expiresAt: string
+    issuedAt: string
+    membershipExpiresAt: string
+  } | null = null
   let payload: Record<string, unknown> | null = null
   if (action === 'issueInvitation') {
-    if (
-      !isRecord(body.payload) ||
-      !hasExactKeys(body.payload, [
-        'canUseAi',
-        'expiresAt',
-        'membershipExpiresAt',
-        'normalizedEmail',
-        'role',
-        ...('aiPolicy' in body.payload ? ['aiPolicy'] : []),
-      ]) ||
-      typeof body.payload.normalizedEmail !== 'string' ||
-      typeof body.payload.canUseAi !== 'boolean' ||
-      (body.payload.role !== 'owner' && body.payload.role !== 'instructor') ||
-      !isTimestamp(body.payload.expiresAt) ||
-      (body.payload.membershipExpiresAt !== null &&
-        !isTimestamp(body.payload.membershipExpiresAt))
-    ) {
-      return jsonResponse(
-        { code: 'request_invalid', message: 'Request is invalid.', ok: false },
-        400,
-      )
-    }
-    const aiPolicy =
-      'aiPolicy' in body.payload
-        ? normalizeAiPolicy(body.payload.aiPolicy)
-        : undefined
-    if (
-      'aiPolicy' in body.payload &&
-      (!aiPolicy ||
-        body.payload.role !== 'instructor' ||
-        body.payload.canUseAi !== true ||
-        body.payload.membershipExpiresAt !== null)
-    ) {
-      return jsonResponse(
-        { code: 'request_invalid', message: 'Request is invalid.', ok: false },
-        400,
-      )
-    }
-    const normalizedEmail = body.payload.normalizedEmail.trim().toLowerCase()
-    if (
-      normalizedEmail.length < 3 ||
-      normalizedEmail.length > 320 ||
-      !EMAIL_PATTERN.test(normalizedEmail)
-    ) {
-      return jsonResponse(
-        { code: 'request_invalid', message: 'Request is invalid.', ok: false },
-        400,
-      )
+    let aiPolicy: ReturnType<typeof normalizeAiPolicy> | undefined
+    let canUseAi: boolean
+    let expiresAt: string
+    let membershipExpiresAt: string | null
+    let normalizedEmail: string
+    let role: 'instructor' | 'owner'
+
+    if (microsoftStoreReviewRequest) {
+      normalizedEmail = microsoftStoreReviewRequest.normalizedEmail
+      canUseAi = false
+      role = 'instructor'
+      expiresAt = ''
+      membershipExpiresAt = null
+    } else {
+      if (
+        !isRecord(body.payload) ||
+        !hasExactKeys(body.payload, [
+          'canUseAi',
+          'expiresAt',
+          'membershipExpiresAt',
+          'normalizedEmail',
+          'role',
+          ...('aiPolicy' in body.payload ? ['aiPolicy'] : []),
+        ]) ||
+        typeof body.payload.normalizedEmail !== 'string' ||
+        typeof body.payload.canUseAi !== 'boolean' ||
+        (body.payload.role !== 'owner' && body.payload.role !== 'instructor') ||
+        !isTimestamp(body.payload.expiresAt) ||
+        (body.payload.membershipExpiresAt !== null &&
+          !isTimestamp(body.payload.membershipExpiresAt))
+      ) {
+        return jsonResponse(
+          {
+            code: 'request_invalid',
+            message: 'Request is invalid.',
+            ok: false,
+          },
+          400,
+        )
+      }
+      aiPolicy =
+        'aiPolicy' in body.payload
+          ? normalizeAiPolicy(body.payload.aiPolicy)
+          : undefined
+      if (
+        'aiPolicy' in body.payload &&
+        (!aiPolicy ||
+          body.payload.role !== 'instructor' ||
+          body.payload.canUseAi !== true ||
+          body.payload.membershipExpiresAt !== null)
+      ) {
+        return jsonResponse(
+          {
+            code: 'request_invalid',
+            message: 'Request is invalid.',
+            ok: false,
+          },
+          400,
+        )
+      }
+      normalizedEmail = body.payload.normalizedEmail.trim().toLowerCase()
+      canUseAi = body.payload.canUseAi
+      expiresAt = body.payload.expiresAt
+      membershipExpiresAt = body.payload.membershipExpiresAt
+      role = body.payload.role
+      if (
+        normalizedEmail.length < 3 ||
+        normalizedEmail.length > 320 ||
+        !EMAIL_PATTERN.test(normalizedEmail)
+      ) {
+        return jsonResponse(
+          {
+            code: 'request_invalid',
+            message: 'Request is invalid.',
+            ok: false,
+          },
+          400,
+        )
+      }
     }
     try {
       const identityPepper = readSecret('ADMIN_IDENTITY_PEPPER')
@@ -472,6 +526,50 @@ Deno.serve(async (request) => {
         identityPepper,
         'email',
       )
+      if (microsoftStoreReviewRequest) {
+        const preparedReview =
+          body.stage === 'intent'
+            ? await createMicrosoftStoreReviewContract({
+                emailHmac,
+                environmentId: verification.environmentId,
+                invitationSecret,
+                requestId: body.requestId,
+              })
+            : await verifyMicrosoftStoreReviewContract({
+                contract: body.microsoftStoreReviewContract ?? '',
+                emailHmac,
+                environmentId: verification.environmentId,
+                invitationSecret,
+                requestId: body.requestId,
+              }).then((terms) =>
+                terms
+                  ? {
+                      contract: body.microsoftStoreReviewContract!,
+                      terms,
+                    }
+                  : null,
+              )
+        if (!preparedReview) {
+          return jsonResponse(
+            {
+              code: 'request_invalid',
+              message: 'Request is invalid.',
+              ok: false,
+            },
+            400,
+          )
+        }
+        canUseAi = preparedReview.terms.canUseAi
+        expiresAt = preparedReview.terms.expiresAt
+        membershipExpiresAt = preparedReview.terms.membershipExpiresAt
+        role = preparedReview.terms.role
+        microsoftStoreReviewIntent = {
+          contract: preparedReview.contract,
+          expiresAt,
+          issuedAt: preparedReview.terms.issuedAt,
+          membershipExpiresAt,
+        }
+      }
       invitationToken = await deriveAdminInvitationToken(
         verification.environmentId,
         body.requestId,
@@ -480,14 +578,14 @@ Deno.serve(async (request) => {
       )
       payload = {
         ...(aiPolicy ? { ai_policy: aiPolicy } : {}),
-        can_use_ai: body.payload.canUseAi,
+        can_use_ai: canUseAi,
         email_hmac: emailHmac,
         email_pepper_version: verification.subjectPepperVersion,
-        expires_at: body.payload.expiresAt,
+        expires_at: expiresAt,
         invitation_token_hash: await sha256Hex(invitationToken),
-        membership_expires_at: body.payload.membershipExpiresAt,
+        membership_expires_at: membershipExpiresAt,
         normalized_email: normalizedEmail,
-        role: body.payload.role,
+        role,
       }
     } catch {
       return jsonResponse(
@@ -541,6 +639,12 @@ Deno.serve(async (request) => {
     return jsonResponse({
       ...(data as Record<string, unknown>),
       invitationToken,
+    })
+  }
+  if (body.stage === 'intent' && microsoftStoreReviewIntent) {
+    return jsonResponse({
+      ...(data as Record<string, unknown>),
+      microsoftStoreReview: microsoftStoreReviewIntent,
     })
   }
   return jsonResponse(data)

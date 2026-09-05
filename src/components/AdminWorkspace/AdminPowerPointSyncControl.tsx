@@ -28,10 +28,98 @@ type AdminPowerPointSyncControlProps = {
   showSetup: boolean
 }
 
-// The release controller enables the Presenter flag only after this immutable
-// signed package and the matching hosted/device gates have been verified.
-const PRESENTER_INSTALLER_URL =
-  'https://presenter-updates.yuto-matsui.com/versions/0.1.0/CompassPresenterBridge-0.1.0-win-x64-Setup.exe'
+function readPresenterStoreUrl(): string | null {
+  const value = import.meta.env.VITE_PRESENTER_STORE_URL?.trim()
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'apps.microsoft.com' ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !/^\/detail\/[A-Z0-9]{12}$/i.test(url.pathname)
+    )
+      return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+// The release controller injects the exact Store listing only after the
+// Store-signed package and matching hosted/device gates have been verified.
+const PRESENTER_INSTALLER_URL = readPresenterStoreUrl()
+const PRESENTER_PRIVACY_URL = '/presenter-bridge/privacy/'
+
+function PrivacyConsentDisclosure({
+  sync,
+}: {
+  sync: ReturnTypeOfPowerPointSync
+}) {
+  return (
+    <section
+      aria-labelledby="powerpoint-privacy-consent-title"
+      className="admin-presenter-sync admin-presenter-consent"
+      data-testid="powerpoint-sync-control"
+    >
+      <div className="admin-presenter-consent-copy">
+        <strong id="powerpoint-privacy-consent-title">
+          PowerPoint連携のデータ利用
+        </strong>
+        <p className="note">
+          Presenter Bridgeは、保存済みPPTXのバイト列、ファイル名、
+          スライドID、スライドショー設定をこのPC内で読み、講義資料との一致を確認します。
+        </p>
+        <p className="note">
+          COMPASSには、資料と順序のハッシュ、枚数、ページ遷移、教員と講義セッションの関連情報をCloudflare／Supabase経由で送信します。
+          PPTX本体、本文、文字、ノート、画像、動画は送信しません。
+        </p>
+        <a
+          href={PRESENTER_PRIVACY_URL}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          プライバシー情報を確認
+        </a>
+        {sync.message ? <p className="error-note">{sync.message}</p> : null}
+      </div>
+      <button
+        className="primary-button compact"
+        disabled={sync.busy}
+        onClick={sync.acceptPrivacyConsent}
+        type="button"
+      >
+        同意してPowerPoint連携を開始
+      </button>
+    </section>
+  )
+}
+
+function PrivacyConsentManagement({
+  sync,
+}: {
+  sync: ReturnTypeOfPowerPointSync
+}) {
+  if (!sync.privacyConsentAccepted) return null
+  return (
+    <div className="admin-presenter-privacy-management">
+      <a href={PRESENTER_PRIVACY_URL} rel="noopener noreferrer" target="_blank">
+        プライバシー情報
+      </a>
+      <button
+        className="text-button"
+        onClick={() => void sync.revokePrivacyConsent()}
+        type="button"
+      >
+        同意を取り消してブラウザのPresenter設定を削除
+      </button>
+    </div>
+  )
+}
 
 function RecoveryCode({ code }: { code: string }) {
   return (
@@ -52,6 +140,10 @@ export function AdminPowerPointSyncControl({
   sync,
   showSetup,
 }: AdminPowerPointSyncControlProps) {
+  if (sync.phase === 'consent') {
+    return <PrivacyConsentDisclosure sync={sync} />
+  }
+
   if (sync.phase === 'idle' || sync.phase === 'error') {
     return (
       <div
@@ -66,7 +158,7 @@ export function AdminPowerPointSyncControl({
           ) : null}
         </div>
         <div className="admin-presenter-actions">
-          {showSetup ? (
+          {showSetup && PRESENTER_INSTALLER_URL ? (
             <a
               className="secondary-button"
               href={PRESENTER_INSTALLER_URL}
@@ -75,6 +167,8 @@ export function AdminPowerPointSyncControl({
             >
               Bridgeをインストール
             </a>
+          ) : showSetup ? (
+            <span className="note">Microsoft Storeでの公開準備中です。</span>
           ) : null}
           <button
             className="secondary-button"
@@ -85,6 +179,7 @@ export function AdminPowerPointSyncControl({
             Bridgeの接続を確認
           </button>
         </div>
+        <PrivacyConsentManagement sync={sync} />
       </div>
     )
   }
@@ -93,6 +188,7 @@ export function AdminPowerPointSyncControl({
     return (
       <div className="admin-presenter-sync" aria-live="polite">
         <strong>PowerPointを確認中…</strong>
+        <PrivacyConsentManagement sync={sync} />
       </div>
     )
   }
@@ -132,6 +228,7 @@ export function AdminPowerPointSyncControl({
         >
           やめる
         </button>
+        <PrivacyConsentManagement sync={sync} />
       </div>
     )
   }
@@ -182,6 +279,7 @@ export function AdminPowerPointSyncControl({
             やめる
           </button>
         </div>
+        <PrivacyConsentManagement sync={sync} />
       </div>
     )
   }
@@ -211,6 +309,7 @@ export function AdminPowerPointSyncControl({
       >
         手動操作へ切り替える
       </button>
+      <PrivacyConsentManagement sync={sync} />
     </div>
   )
 }

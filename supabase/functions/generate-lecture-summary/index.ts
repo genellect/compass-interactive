@@ -391,15 +391,24 @@ Deno.serve(async (request) => {
           refreshRequired: true,
           results: null,
           skipped: true,
+          windowId: preflight.windowId,
         })
       }
-      if (preflight.resultStatus === 'final') {
+      if (
+        preflight.resultStatus === 'final' ||
+        (preflight.idempotentReplay &&
+          preflight.refreshRequired &&
+          ['succeeded', 'skipped', 'discarded'].includes(
+            preflight.windowStatus ?? '',
+          ))
+      ) {
         return jsonResponse({
           idempotentReplay: true,
           ok: true,
           refreshRequired: true,
           results: null,
           skipped: preflight.windowStatus === 'skipped',
+          windowId: preflight.windowId,
         })
       }
       if (preflight.refreshRequired) {

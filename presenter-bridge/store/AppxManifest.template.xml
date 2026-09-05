@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:uap17="http://schemas.microsoft.com/appx/manifest/uap/windows10/17"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap10 uap17 desktop rescap">
+  <!-- This template is deliberately not packageable. Build-PresenterStorePackage.ps1
+       must replace every REQUIRED value with the exact Partner Center identity. -->
+  <Identity Name="REQUIRED_PARTNER_CENTER_IDENTITY" Publisher="CN=REQUIRED_PARTNER_CENTER_PUBLISHER"
+    Version="0.0.0.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>COMPASS Presenter Bridge</DisplayName>
+    <PublisherDisplayName>REQUIRED_PARTNER_CENTER_PUBLISHER_DISPLAY_NAME</PublisherDisplayName>
+    <Description>COMPASS Interactive講義でPowerPointのページを同期します。</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <!-- Recognized on 26100+, matching the initial package MinVersion. Earlier
+         Windows builds require a later, separately tested compatibility expansion. -->
+    <uap17:UpdateWhileInUse>defer</uap17:UpdateWhileInUse>
+  </Properties>
+  <Resources>
+    <Resource Language="ja-JP" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.26100.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Applications>
+    <Application Id="PresenterBridge" Executable="COMPASS.PresenterBridge.exe"
+      uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="COMPASS Presenter Bridge"
+        Description="COMPASS Interactive講義でPowerPointのページを同期します。"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask"
+          Executable="COMPASS.PresenterBridge.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="CompassPresenterBridgeStartup"
+            Enabled="true" DisplayName="COMPASS Presenter Bridge" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

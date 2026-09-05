@@ -88,3 +88,35 @@ export function rememberPresenterMaterialConsent(key: string): void {
     // Storage restrictions only require another material check next time.
   }
 }
+
+export function clearPresenterMaterialPreferences(): boolean {
+  let removalSucceeded = true
+  for (const [key, emptyValue] of [
+    [STORAGE_KEY, '[]'],
+    [MANUAL_MODE_KEY, ''],
+  ] as const) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      removalSucceeded = false
+    }
+    try {
+      if (localStorage.getItem(key) !== null) {
+        removalSucceeded = false
+        localStorage.setItem(key, emptyValue)
+      }
+    } catch {
+      removalSucceeded = false
+    }
+  }
+  try {
+    return (
+      removalSucceeded &&
+      localStorage.getItem(STORAGE_KEY) === null &&
+      localStorage.getItem(MANUAL_MODE_KEY) === null
+    )
+  } catch {
+    /* No Presenter preference is required for a safe manual workflow. */
+    return false
+  }
+}

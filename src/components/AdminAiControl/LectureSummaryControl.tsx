@@ -484,7 +484,7 @@ export function LectureSummaryControl({
           ? `${label} は情報量不足のためAPIを呼ばずスキップしました。`
           : generated.published
             ? `${label} の要点を公開しました。`
-            : `${label} は低価値判定のため学生へ表示していません。`,
+            : `${label} の要約は学生へ表示していません。`,
       )
     } catch (error) {
       setMessage(

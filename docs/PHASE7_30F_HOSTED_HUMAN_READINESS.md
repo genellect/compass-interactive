@@ -126,7 +126,7 @@ one exact candidate SHA:
       while `phase730fBaseCommitSha` equals the independently verified E merge
       SHA; together they prove ancestry rather than merely repeating a base
       SHA.
-- [ ] `security:secrets`, type checks, lint, build, all 75 non-live groups,
+- [ ] `security:secrets`, type checks, lint, build, all 77 non-live groups,
       Demo Chromium/WebKit and the full local Supabase gate are green for the
       exact Phase F head.
 - [ ] Fresh and populated migrations, generated types, all pgTAP, DB lint,

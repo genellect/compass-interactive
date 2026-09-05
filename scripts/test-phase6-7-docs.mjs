@@ -285,7 +285,7 @@ assert.match(
 assert.match(docsIndex, /PHASE7_30B22A_ADMIN_CONTROL_HARDENING\.md/)
 assert.match(docsIndex, /PHASE7_30B22B_AI_UNLOCK_EDGE_BROWSER\.md/)
 assert.match(docsIndex, /PHASE7_30C1_GOOGLE_AI_MASTER_ADMISSION\.md/)
-assert.match(docsIndex, /110 documents/)
+assert.match(docsIndex, /113 documents/)
 for (const requiredText of [
   'Status: Planned',
   'COMPLEXITY_APPROVAL_REQUIRED',
@@ -346,7 +346,7 @@ for (const requiredText of [
   'Keep Codex agent-phase\ninternet OFF',
   'approved repository Actions ceiling of $15 or account\nActions ceiling of $35',
   'the controller may Squash merge without another\nprompt',
-  'all five required contexts green',
+  'all eight required contexts green',
   'LECTURE_CYCLE_STAGING_READONLY_INVENTORY',
 ]) {
   assert.ok(
@@ -521,12 +521,12 @@ assert.match(
 )
 assert.match(
   agentsContract,
-  /controller has standing authorization to execute \*\*Squash merge\*\*[\s\S]*expected head SHA[\s\S]*all five required contexts green[\s\S]*zero unresolved review threads[\s\S]*no head drift/,
+  /controller has standing authorization to execute \*\*Squash merge\*\*[\s\S]*expected head SHA[\s\S]*all eight required contexts green[\s\S]*zero unresolved review threads[\s\S]*no head or `main` drift/,
   'Controller merge delegation must remain exact-head and fail closed',
 )
 assert.match(
   lectureCycleAgents,
-  /lane agent hands off and never merges independently[\s\S]*controller may Squash merge[\s\S]*all five required contexts green[\s\S]*zero unresolved threads[\s\S]*no head drift/,
+  /lane agent hands off and never merges independently[\s\S]*controller may Squash merge[\s\S]*all eight required contexts green[\s\S]*zero unresolved threads[\s\S]*no head drift/,
   'Lecture Cycle playbook must delegate gated Squash merge only to the controller',
 )
 assert.match(
@@ -826,8 +826,8 @@ for (const [name, document] of [
 ]) {
   assert.match(
     document,
-    /75 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(75 groups\)/,
-    `${name} must record the 75-group non-live suite`,
+    /77 non-live(?: Phase 0-7\.30 test)? groups|`test:ci:nonlive` \(77 groups\)/,
+    `${name} must record the 77-group non-live suite`,
   )
 }
 for (const requiredText of [
@@ -953,8 +953,8 @@ assert.match(
 )
 assert.match(
   gateRouting,
-  /What the 116 `test:\*` scripts actually divide into/,
-  'Gate routing must record the 116-script inventory',
+  /What the 119 `test:\*` scripts actually divide into/,
+  'Gate routing must record the 119-script inventory',
 )
 assert.match(
   agentRouting,

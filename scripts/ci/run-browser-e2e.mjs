@@ -293,6 +293,9 @@ const appEnvironment = {
       ? 'true'
       : 'false',
   VITE_PHASE7_29_POWERPOINT_SYNC: mode === 'demo-presenter' ? 'true' : 'false',
+  VITE_PRESENTER_STORE_URL: presenterFixtureMode
+    ? 'https://apps.microsoft.com/detail/9TESTONLY729'
+    : '',
   VITE_PHASE7_30_ADMIN_IDENTITY: googleAdminIdentityMode ? 'true' : 'false',
   VITE_PHASE7_30_ADMIN_AI_UNLOCK:
     mode === 'local-ai' || mode === 'demo-admin-ledger' ? 'true' : 'false',

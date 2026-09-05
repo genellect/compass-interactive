@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   createAdminLoginNonce,
@@ -18,6 +19,7 @@ import {
   ADMIN_APP_SESSION_RESTORE_SEED_STORAGE_KEY,
   ADMIN_APP_SESSION_STORAGE_KEY,
   ADMIN_AUTH_STORAGE_KEY,
+  ADMIN_AUTH_REQUEST_TIMEOUT_MS,
   ADMIN_LEDGER_PENDING_STORAGE_KEY,
   ADMIN_OAUTH_ATTEMPT_STORAGE_KEY,
   adminAuthStorage,
@@ -371,6 +373,92 @@ assert.ok(
   getAdminAuthRateLimitRemainingMs() > 1_000,
   'Auth Retry-After must suppress immediate TOTP resubmission',
 )
+
+mock.timers.enable({ apis: ['setTimeout'] })
+try {
+  const seenSignals: Array<AbortSignal | null | undefined> = []
+  const slowFetch = createAdminAuthFetch(
+    (async (input, init) => {
+      const signal =
+        init?.signal ?? (input instanceof Request ? input.signal : null)
+      seenSignals.push(signal)
+      return new Promise<Response>((resolve, reject) => {
+        if (signal?.aborted)
+          return reject(new DOMException('Aborted', 'AbortError'))
+        signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        )
+        setTimeout(() => resolve(Response.json({ ok: true })), 12_000)
+      })
+    }) as typeof fetch,
+    'https://example.supabase.co',
+  )
+
+  const authRequest = slowFetch('https://example.supabase.co/auth/v1/token')
+  const timedOut = assert.rejects(authRequest, { name: 'AbortError' })
+  mock.timers.tick(ADMIN_AUTH_REQUEST_TIMEOUT_MS)
+  await timedOut
+
+  const edgeController = new AbortController()
+  const edgeRequest = slowFetch(
+    'https://example.supabase.co/functions/v1/generate-lecture-summary',
+    { signal: edgeController.signal },
+  )
+  mock.timers.tick(ADMIN_AUTH_REQUEST_TIMEOUT_MS + 1)
+  assert.equal(seenSignals.at(-1), edgeController.signal)
+  assert.equal(
+    seenSignals.at(-1)?.aborted,
+    false,
+    'AI retains its caller-owned deadline beyond ten seconds',
+  )
+  mock.timers.tick(2_000)
+  assert.equal((await edgeRequest).status, 200)
+
+  const upstream = new AbortController()
+  const abortedEdge = assert.rejects(
+    slowFetch(
+      new Request(
+        'https://example.supabase.co/functions/v1/generate-lecture-summary',
+        { signal: upstream.signal },
+      ),
+    ),
+    { name: 'AbortError' },
+  )
+  upstream.abort()
+  await abortedEdge
+
+  const authUpstream = new AbortController()
+  const abortedAuth = assert.rejects(
+    slowFetch('https://example.supabase.co/auth/v1/user', {
+      signal: authUpstream.signal,
+    }),
+    { name: 'AbortError' },
+  )
+  authUpstream.abort()
+  await abortedAuth
+
+  const originalInput = new URL('https://unrelated.example.test/auth/v1/token')
+  const originalInit = { signal: edgeController.signal }
+  const originalResponse = Response.json(
+    { provider_token: 'synthetic-unrelated-value' },
+    { status: 429 },
+  )
+  const backoffBefore = getAdminAuthRateLimitRemainingMs(0)
+  const passthrough = createAdminAuthFetch(
+    (async (input, init) => {
+      assert.equal(input, originalInput)
+      assert.equal(init, originalInit)
+      return originalResponse
+    }) as typeof fetch,
+    'https://example.supabase.co',
+  )
+  assert.equal(await passthrough(originalInput, originalInit), originalResponse)
+  assert.equal(getAdminAuthRateLimitRemainingMs(0), backoffBefore)
+} finally {
+  mock.timers.reset()
+}
 
 const migration = read(
   'supabase/migrations/20260809143000_phase7_30b1_admin_identity_aal2.sql',

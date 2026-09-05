@@ -1,6 +1,6 @@
 # COMPASS Interactive Runbook Index
 
-Last reviewed: 2026-08-14
+Last reviewed: 2026-09-06
 
 This file is the entrypoint for setup, verification, deployment, rollback and
 incident work. A runbook is not authorization: hosted mutation, deploy, push,
@@ -40,9 +40,11 @@ secret change and paid call still require an explicit task.
 | Phase 7.27 local evidence      | `docs/PHASE7_27_LOCAL_GATE_2026-07-22.md`                        |
 | Phase 7.28 design              | `docs/PHASE7_28_REQUIREMENTS_AND_DESIGN.md`                      |
 | Phase 7.28 local evidence      | `docs/PHASE7_28_LOCAL_GATE_2026-07-31.md`                        |
-| Phase 7.29 Presenter design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`                  |
-| Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
-| Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
+| Phase 7.29 technical design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`                  |
+| Phase 7.29 rescue (historical) | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
+| Phase 7.29C Store activation   | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
+| Presenter production release   | `docs/PRESENTER_PRODUCTION_RELEASE.md`                           |
+| Presenter Store submission     | `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`            |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
 | Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
@@ -149,25 +151,91 @@ Local writer while browser mode is active.
 
 ## 5. PowerPoint Presenter Bridge
 
+- Required version 1 Microsoft Store MSIX packaging, `runFullTrust`
+  justification, Partner Center values, certification flow, listing copy and current
+  HOLD items:
+  `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`
+- Current production release sequence and classroom acceptance:
+  `docs/PRESENTER_PRODUCTION_RELEASE.md`
+- The public privacy source is `public/presenter-bridge/privacy/index.html`; its
+  canonical URL is
+  `https://compass-interactive.pages.dev/presenter-bridge/privacy/`. A 200 SPA
+  fallback is not a published privacy notice and does not pass the route gate.
+- Store v1 is fixed to package version `1.0.0.0`, x64, `ja-JP`, Japan,
+  Windows 11 24H2/build 26100+, Free, Public audience, and available but not
+  discoverable through Direct link only. Microsoft Standard Application
+  License Terms apply; Additional license terms stay blank.
+- The Individual developer account is selected in Partner Center; identity
+  verification/onboarding, exact package identity, WACK, Store signing,
+  clean-device no-added-auth acquisition, Office x86/x64 and rendered
+  Display/student latency remain blocking gates.
+- The exact Partner Center `https://apps.microsoft.com/...` listing URL is the
+  only allowed production installer value for `VITE_PRESENTER_STORE_URL`.
+  Missing or invalid configuration hides the CTA. Do not retain the Direct EXE
+  or anonymous Velopack/R2 update feed as a production fallback.
+- Store review access is Owner-issued to an isolated publisher-controlled Google
+  test account, fixes `instructor` and AI disabled, expires the invitation after
+  seven days and membership fourteen days after issuance, and is revoked
+  immediately after review. Only its temporary username/password are entered
+  directly in protected Partner Center certification notes; the reviewer
+  enrolls normal app TOTP. Owner credentials, TOTP seeds and recovery/session
+  material are never shared.
+- Store review access depends on the existing Hosted Google Admin identity,
+  operations and ledger sequence. Verify its exact deployed function versions,
+  required secret-presence metadata, database gates and Owner Google/TOTP AAL2
+  ledger smoke before any Presenter deployment. If it is absent or dormant,
+  complete Phase 7.30 in its authoritative order; never deploy
+  `manage-admin-ledger` alone as a Presenter shortcut. Presenter ON also requires
+  `VITE_PHASE7_28_DISPLAY_REALTIME=true` and
+  `PHASE728_DISPLAY_REALTIME_ENABLED=true`.
+- The initial submission selects Partner Center's manual publishing hold. Keep
+  Presenter and every dependency online throughout Microsoft's unpredictably
+  timed certification. The current application has no reviewer-only Presenter
+  cohort, so submission first requires an explicit go/no-go accepting global
+  eligible-educator exposure, continuous monitoring and immediate rollback. If
+  that exposure is unacceptable, submission remains HOLD until a cohort exists.
+  Build, verify, hash and deploy the certification frontend with Presenter ON,
+  `VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL, which mechanically
+  hides the CTA; the classroom canary later reuses that exact artifact.
+  After certification, explicitly publish the Public, non-discoverable,
+  Direct-link-only listing while the canonical CTA remains OFF and the URL is
+  unadvertised. Only that published listing can provide the Store-signed package
+  for clean-device acquisition and classroom acceptance. Re-promote and
+  reverify the exact certification frontend before turning server admission ON
+  with DB OFF and DB admission ON last; close DB, server and frontend after the
+  bounded canary. Before that stage ends, build, verify and hash the same-SHA
+  general artifact with Presenter ON,
+  `VITE_PRESENTER_CERTIFICATION_MODE=false` and the exact Store URL. Expose the canonical CTA
+  only by promoting that exact artifact after the canary passes.
 - Design, threat boundary and rollback:
   `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`
-- Canonical rescue, dormant deployment and rollback:
+- Historical 7.29A/B rescue and dormant-placement record:
   `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`
+- `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md` is the current Gateway,
+  proof-of-possession, Store activation and rollback contract. The Store
+  submission and production release runbooks above provide its executable
+  Partner Center and classroom sequence.
 - Browser, Edge and database flags remain independently default OFF.
 - Local Publisher remains the separate recovery process on `43123`; Presenter
   Bridge uses only `127.0.0.1:43124`.
 - Disable the database runtime gate first for rollback, then verify all active
   bindings are terminal and manual page controls work before disabling Edge and
   frontend admission.
-- Do not treat browser/database tests as approval of a native binary. A signed
-  per-user installer, SmartScreen/update handling, Office x86/x64/build checks,
-  real Edge/Chrome HTTPS-to-loopback, 500 physical transitions, PowerPoint
-  restart and venue Extend-display evidence remain separate blocking gates.
+- Do not treat browser/database tests as approval of a native binary. The
+  current Store-compiled binary's 539 ms Office-readiness observation and the
+  earlier unsigned single-monitor 500/500 COM result do not prove Store signing
+  or acquisition, Office x86+x64, real Edge/Chrome HTTPS-to-loopback, final
+  Display/student rendering, Store servicing, PowerPoint restart or venue
+  Extend-display behavior. Those remain separate blocking gates.
 - If Windows Application Control blocks a native build/test, stop that process
   and preserve the evidence. Do not disable or bypass the control; record the
   native gate as HOLD and resume through an approved signed execution path.
+- Keep the existing five-second student snapshot/delta polling for this release.
+  Three-second transitions, selective Realtime for slides/polls/comments and a
+  possible Supabase Pro upgrade belong to a separate phase after the Presenter
+  Store release passes production acceptance.
 
-## 6. Google Admin identity and MFA (A-D exact-head PASS; E/F external execution HOLD)
+## 6. Google Admin identity and MFA (historical A-D baseline PASS; integrated exact-head CI pending; E/F external execution HOLD)
 
 - Detailed requirements, reuse matrix, AAL2/RBAC design and rollout:
   `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`.
@@ -233,8 +301,10 @@ Local writer while browser mode is active.
   separately verified Supabase Authenticator App TOTP AAL2 session in the
   initial implementation. The standard flow supports Google Authenticator;
   COMPASS configures no email MFA or custom MFA.
-- Phase 7.30D exact-head DB/Local Edge/browser CI is recorded as PASS. E source
-  evidence does not prove a Hosted release or authorize its irreversible
+- Phase 7.30D's historical baseline DB/Local Edge/browser CI is recorded as
+  PASS, and the current integrated candidate has passed its affected focused
+  checks. Fresh required exact-head CI for the integrated release remains
+  pending. E source evidence does not prove a Hosted release or authorize its irreversible
   database tombstone. Before E cutover, require fresh migration, pgTAP,
   two-connection concurrency, populated C2/D-head upgrades, generated types,
   DB lint, Google AAL2 browser coverage, an independently reviewed Hosted
@@ -297,11 +367,12 @@ Local writer while browser mode is active.
 
 - The authoritative contract is
   `docs/PHASE7_31_CONTEST_PUBLICATION_AND_COMMERCIAL_READINESS.md`.
-- GitHub Education is active. Main ruleset `20600565` enforces Pull Requests,
-  the five configured exact-head CI contexts, conversation resolution and
+- GitHub Education is active. Main rulesets `20600565` and `21259111` enforce
+  Pull Requests; the stricter `21259111` requires current `main`, linear history,
+  Squash merge, eight exact-head CI contexts, conversation resolution and
   force-push/deletion denial. Required approving reviews remain zero for
   solo-owner continuity, and manual Copilot review is advisory. Phase 7.31A
-  still requires the remaining supply-chain and protected-environment gates.
+  still requires the remaining protected-environment gates.
 - A reviewer is the existing `[2] AI-capable Admin`: an invited personal Google
   identity with TOTP AAL2, `role=instructor`, and `can_use_ai=true` in an
   isolated real contest environment. It is not a new role, owner account,
@@ -374,7 +445,11 @@ does not by itself authorize a rehearsal or production lecture.
 9. telemetry and cost review;
 10. gate record.
 
-If Phase 7.29B is in scope, deploy its additive schema, then only the
+The following paragraph is the historical Phase 7.29B dormant-placement rule,
+not the current Store activation sequence. The Store release must use
+`docs/PRESENTER_PRODUCTION_RELEASE.md` and its named machine Edge, secret,
+Gateway, certification and rollback order. For the historical 7.29B scope,
+deploy its additive schema, then only the
 JWT-protected `manage-presenter-connection` and compatible
 `update-display-state` by explicit function name with runtime/admission OFF.
 Leave `presenter-bridge-session`, its dedicated secret and the native Bridge

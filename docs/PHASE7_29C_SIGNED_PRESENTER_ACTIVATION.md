@@ -1,9 +1,10 @@
-# Phase 7.29C - Signed Presenter activation contract
+# Phase 7.29C - Store Presenter activation contract
 
-Status: **Local source implementation; Hosted, Device, Human and activation
-Production gates HOLD**
+Status: **General Production HOLD; Store certification requires a separately
+accepted, reversible global activation interval**
 
 Approved contract date: 2026-08-09
+Store revision date: 2026-09-06
 
 Scope: the machine Gateway, per-install request proof, signed Windows delivery,
 bounded recovery and the evidence required before Presenter activation
@@ -18,17 +19,18 @@ installer release, secret change or feature activation.
 
 ```text
 signed per-user Presenter Bridge
-  -> https://<owner-approved-fqdn>/functions/v1/presenter-bridge-session
+  -> https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session
   -> dedicated Cloudflare Presenter Gateway
   -> fixed Supabase Edge presenter-bridge-session URL
   -> server-only RPC and Presenter tables
 ```
 
-`<owner-approved-fqdn>` is a documentation placeholder, not a deployable
-hostname. Release builds currently pin `presenter-api.invalid` and therefore
-fail closed during startup. Debug overrides remain subject to the same exact
-host, HTTPS, default-port and path validator. The placeholder must not be
-replaced until the owner records the exact FQDN and Cloudflare zone.
+The owner-approved production hostname is
+`presenter-api.yuto-matsui.com`. Store release builds pin that HTTPS origin,
+default port and fixed path. Debug overrides remain subject to the same exact
+host, scheme, port and path validator. The corresponding production Worker is
+`compass-presenter-gateway-production`; `workers.dev` and preview URLs remain
+disabled.
 
 The Gateway is a separate least-privilege Worker. It receives no R2, Durable
 Object, Admin, AI, PDF or service-role binding. Its only upstream is the
@@ -110,56 +112,65 @@ accounting. The database proof-key, network and global buckets remain
 authoritative. The production namespace identifiers must be verified unique in
 the owner account before any deployment.
 
-## 5. Dormant Cloudflare configuration
+## 5. Production Cloudflare configuration
 
-Until the exact hostname is approved, the checked-in Gateway configuration
-must retain all of the following:
+The checked-in Gateway production configuration must retain all of the
+following:
 
 - `workers_dev: false`;
 - `preview_urls: false`;
-- no `route`, `routes` or `custom_domain`;
+- the exact Custom Domain `presenter-api.yuto-matsui.com`;
 - no configurable upstream URL;
 - `PRESENTER_BRIDGE_GATEWAY_SECRET` in `secrets.required`;
 - Gateway and capability-token secrets are independently generated and must
   not have the same value;
 - distinct location and network Rate Limiting bindings.
 
-There is no Gateway deploy script in the normal release path. Local
-`wrangler dev --local` is permitted with a synthetic secret. A deployed Worker,
-`workers.dev` preview or guessed hostname is not an acceptable substitute for
-the missing owner-approved Custom Domain.
+The Worker secret must exactly match the Supabase Edge
+`PRESENTER_BRIDGE_GATEWAY_SECRET`; only presence/version evidence is recorded.
+The separate Supabase Edge `PRESENTER_BRIDGE_TOKEN_SECRET` signs Presenter
+capabilities and must be a different random value. Both values must be at least
+32 bytes. Local `wrangler dev --local` remains permitted only with synthetic
+secrets. No `workers.dev`, preview or guessed hostname is an acceptable
+production substitute.
 
-## 6. Velopack delivery contract
+## 6. Microsoft Store delivery contract
 
-The Presenter SDK and local `vpk` tool are pinned to stable version `1.2.0`.
-NuGet source mapping, exact package constraints, committed tool manifest and
-locked restore are required. Prerelease Velopack builds and unpinned global
-tools are prohibited.
-
-`VelopackApp.Build().SetAutoApplyOnStartup(false).Run()` executes before OS,
-single-instance, COM or loopback initialization. Automatic apply is disabled:
-an update must never terminate a Presenter process during an active lecture.
-
-The first release is a signed, one-click, per-user Setup executable with a
-self-contained Windows payload. MSI/per-machine installation is outside the
-initial activation scope. If more than one architecture is distributed, each
-RID gets a non-colliding channel and its own install/update evidence.
+Version 1 is an x64, self-contained packaged MSIX submitted to Microsoft Store.
+The Store build excludes Velopack code and feed assets. The former Direct
+Velopack EXE, R2/update-feed domain and private signing design are historical
+development material only; they must not be uploaded, advertised or retained
+as an educator fallback for this release.
 
 Release requires:
 
-1. an owner-approved signing identity and profile;
-2. short-lived CI authentication, preferably Azure Artifact Signing through
-   GitHub OIDC rather than a repository PFX/password;
-3. Authenticode, SHA-256 file digest and RFC 3161 timestamp verification for
-   every shipped PE and Setup executable;
-4. fresh install, update, uninstall and known-good rollback tests;
-5. immutable versioned assets, with the release index published last;
-6. retention of the previous signed full package and Setup executable.
+1. exact Partner Center product and manifest identity owned by Yuto Matsui /
+   松井優知;
+2. package version `1.0.0.0`, `ja-JP`, Windows 11 24H2 build 26100 minimum,
+   medium-integrity packaged classic app, startup task, and only the justified
+   `runFullTrust` restricted capability;
+3. clean-source package build with restored packages and project-separated SDK
+   `obj`, `bin` and publish roots confined below a new external `OutputRoot`,
+   after Windows handle canonicalization proves a normal local path physically
+   outside the checkout across reparse and short-name aliases, plus unpacking
+   preflight, provenance/hash receipt and WACK on the exact
+   unsigned Partner Center ingestion input;
+4. Microsoft Standard Application License Terms with no additional terms;
+5. Japan, Free, Public audience, available-but-not-discoverable Direct link
+   only, with the verified privacy URL and accurate Office dependency; and
+6. Store acquisition, install, update, repair, uninstall and reinstall evidence
+   on supported clean local-account and school-account profiles without adding
+   or signing in to another Microsoft account.
 
-The update feed is unresolved. A private GitHub token must not be embedded in
-the application. The owner must choose an anonymous owner-controlled HTTPS/R2
-feed, a dedicated public release repository or Velopack Flow before update
-checking can be enabled.
+The initial `1.0.0.0` submission must select **Don't publish this submission
+until I select Publish now**. Microsoft Store package flights are available only after a
+non-flight submission has been published, so a flight cannot provide the
+initial pre-publication canary. After certification passes, the owner selects
+**Publish now** while general Presenter runtime and the canonical web CTA remain
+OFF. Microsoft then signs/publishes the direct-link-only listing. The exact
+Store-delivered package is acquired by named operators through the unadvertised
+link for clean-device canary evidence. Only after that canary passes may the
+exact `https://apps.microsoft.com/...` URL be exposed in the general CTA.
 
 ## 7. Pairing and manual-recovery lifetimes
 
@@ -191,46 +202,121 @@ exact cached transport envelope may receive the same success again; any fresh
 logical claim or inspect, including a manual-code inspect carrying another
 connection ID, fails closed.
 
-Native rollback remains a separate Device/Human exercise. Use a retained
-signed full package or Setup executable, prefer a tested higher-version
-known-good roll-forward, and never run a destructive database down migration
-as classroom recovery.
+Native rollback remains a separate Device/Human exercise. Store-installed
+clients cannot be remotely uninstalled. Stop their authority with the backend
+gates, stop new acquisition in Partner Center when required, and service a fix
+as a tested higher Store version. Never use the old Direct Setup/feed as a
+fallback and never run a destructive database down migration as classroom
+recovery.
 
 ## 8. Gate matrix
 
-| Gate                  | Required evidence                                                                                                                                         | Current decision                                          |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Cloud/local           | Gateway raw-byte, header, rate, error, dormant-config tests; strict TypeScript; native deterministic tests; clean/upgrade DB and Edge proof tests         | Implemented evidence must be rerun on the final candidate |
-| Hosted                | Exact FQDN/zone, unique rate namespaces, matching gateway secret, direct-Edge rejection, Gateway success, replay/rate/cleanup and timeout telemetry       | **HOLD**                                                  |
-| Device                | Signed installer, SmartScreen, x64/x86 and supported Office builds, install/update/uninstall/rollback, 500 real transitions and restart/COM-loss recovery | **HOLD**                                                  |
-| Human                 | Edge and Chrome HTTPS-to-loopback, hostile-Origin denial, PowerPoint/PDF confirmation, manual-code UX and Extend-display venue drill                      | **HOLD**                                                  |
-| Activation Production | All preceding evidence on the same signed release candidate, owner approval and controlled canary                                                         | **HOLD**                                                  |
+| Gate                     | Required evidence                                                                                                                                                                   | Current decision                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Cloud/local              | Gateway raw-byte, header, rate, error and config tests; strict TypeScript; native deterministic tests; clean/upgrade DB and Edge proof tests                                        | Implemented evidence must be rerun on the final candidate |
+| Hosted                   | Exact Custom Domain, unique rate namespaces, matching Gateway secret, direct-Edge rejection, Gateway success, replay/rate/cleanup and timeout telemetry                             | **HOLD**                                                  |
+| Store/Device             | Partner Center certification and Store signing; clean no-added-auth acquisition; Office 32/64 bit; install/update/repair/uninstall; 500 real transitions; restart/COM-loss recovery | **HOLD**                                                  |
+| Human                    | Edge and Chrome HTTPS-to-loopback, hostile-Origin denial, PowerPoint/PDF confirmation, manual-code UX and extended-display venue drill                                              | **HOLD**                                                  |
+| Certification activation | Global admission for all eligible educators throughout the unpredictably timed Microsoft review, after explicit go/no-go, continuous monitoring and immediate rollback              | Separate interval acceptance; evidence not yet complete   |
+| General Production       | All preceding evidence on the same Store candidate and every rendered-latency stop threshold                                                                                        | **HOLD**                                                  |
 
-An exact FQDN, signing identity or update feed must not be inferred by an agent.
-They require an explicit owner decision. Until all three are recorded, the
-`.invalid` endpoint, absent Cloudflare route and default-OFF server/database/UI
-gates are the required safe state.
+Measure PPT action to the rendered page, not only receipt or state-write time.
+For Display, any wrong-page render, any failure to converge, p95 above one
+second, p99 above two seconds or maximum above three seconds stops activation.
+Student delivery keeps the current five-second snapshot/delta polling. Visible
+terminals actively following the lecture must have zero wrong-page renders,
+zero failures to converge, no regression from the same-topology pre-Presenter
+baseline, and automatic convergence within at most two polling windows plus the
+separately measured communication and drawing budget. Hidden, offline and
+unfollowed terminals are measured separately and must converge automatically
+when they return.
+
+The runtime controls are global. `PHASE729_POWERPOINT_SYNC_ENABLED`, the
+singleton database gate and the compiled frontend flag have no reviewer-only
+cohort check and affect every otherwise eligible educator. Microsoft does not
+offer a predictable certification test time, so the dependent services must be
+available throughout its review. Before submission, the owner and release
+operator must explicitly accept or reject that global exposure, name continuous
+monitoring and rollback ownership, and notify affected educators. If it is not
+acceptable, activation and submission remain OFF until a reviewer-only cohort
+is implemented. Passing certification does not clear the general Production
+HOLD.
 
 ## 9. Rollout and rollback order
 
-After the HOLD items are resolved, rollout remains expand-first:
+Rollout remains expand-first and starts dormant. Before step 1, verify the
+existing Hosted Google Admin identity/operations/ledger foundation at its exact
+deployed versions, required secret-presence metadata, database gates and Owner
+Google/TOTP AAL2 smoke. If it is absent or dormant, stop and complete the
+authoritative Phase 7.30 sequence; do not deploy `manage-admin-ledger` as an
+isolated Presenter shortcut. Presenter ON also requires the existing
+`VITE_PHASE7_28_DISPLAY_REALTIME=true` and
+`PHASE728_DISPLAY_REALTIME_ENABLED=true` frontend/server state.
 
-1. record the production baseline and rollback owner;
-2. configure the exact Custom Domain, unique rate namespaces and matching
-   Worker/Edge gateway secret while all Presenter flags remain OFF;
-3. deploy only the dedicated Gateway and machine Edge function and prove that
-   direct Edge access is rejected;
-4. publish the signed canary installer and complete Device/Human evidence;
-5. enable machine admission, then the database runtime gate, then one frontend
-   cohort;
-6. verify page convergence, Display behavior, manual handover and telemetry;
-7. expand only after automatic-ticket expiry, five-minute manual-code expiry,
-   one-time positive/negative receipts and rollback behavior pass.
+1. record the exact source SHA, Pages deployment, Edge versions, Worker version,
+   migration state, gate states and rollback owner;
+2. with the database runtime gate OFF, apply or verify the additive migrations
+   in this order:
+   `20260801075917_phase7_29_powerpoint_presenter_bridge.sql`,
+   `20260809133000_phase7_29c_presenter_proof_and_cleanup.sql`, and
+   `20260905074220_presenter_bound_authority_and_terminal_lease.sql`; verify
+   service-role grants, RLS, one cleanup schedule and zero active connections;
+3. with `PHASE729_POWERPOINT_SYNC_ENABLED=false`, deploy the compatible named
+   Edge functions `manage-presenter-connection`, `update-display-state` and
+   `presenter-bridge-session`; use the prerequisite exact `manage-admin-ledger`
+   version already verified above and never use an unrelated bulk Edge deploy;
+4. deploy the frontend/privacy release with
+   `VITE_PHASE7_29_POWERPOINT_SYNC=false` and no advertised Store URL;
+5. set distinct 32-byte-or-longer secrets: Edge-only
+   `PRESENTER_BRIDGE_TOKEN_SECRET`, and one matching
+   `PRESENTER_BRIDGE_GATEWAY_SECRET` in Edge and Worker;
+6. deploy the pinned Gateway Worker and exact Custom Domain with unique rate
+   namespaces while server and DB admission remain OFF;
+7. prove the dormant boundary. Server flag OFF must return feature-disabled.
+   Then, with DB still OFF, turn the server flag ON briefly and separately prove
+   direct-Edge/gateway-secret rejection, malformed/stale/replayed proof denial,
+   valid Gateway passage and DB-gate mutation denial; return server OFF;
+8. prepare the exact MSIX under Partner Center manual publishing hold. Before
+   selecting **Submit for certification**, record the explicit go/no-go for
+   global eligible-educator exposure, build, verify, hash and deploy the
+   frontend-ON certification artifact with
+   `VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL, turn server machine
+   admission ON with DB OFF, rerun the negative tests, then turn DB runtime ON
+   last. Record the artifact hash and keep all dependent services ON and
+   continuously monitored throughout the unpredictable certification interval.
+   Close DB, server and frontend in that order immediately after certification
+   succeeds, fails or is canceled;
+9. after certification passes, select **Publish now** with runtime and CTA OFF.
+   Acquire the Store-signed package from the unadvertised direct listing and
+   re-promote/reverify the exact certification artifact with Presenter ON,
+   `VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL. With DB OFF, turn
+   server admission ON and rerun hosted evidence, turn DB ON last, complete the
+   Device/Human and rendered-latency canary evidence. After every canary gate
+   passes and before ending this stage, build, verify and hash from the same
+   frozen SHA a separate general artifact with the exact Store URL, Presenter
+   ON and `VITE_PRESENTER_CERTIFICATION_MODE=false`; do not deploy it during the
+   canary. Then close DB, server and frontend in that order; and
+10. only when every gate passes, deploy the same-SHA frontend-OFF production
+    candidate with the exact Store URL and
+    `VITE_PRESENTER_CERTIFICATION_MODE=false`. With DB OFF, turn server admission
+    ON and rerun hosted evidence. Recheck the recorded source SHA and immutable
+    hash of the frozen ON+Store-URL artifact from step 9, turn DB ON, then
+    promote that exact artifact without rebuilding it.
 
-Rollback starts with the database runtime gate, then machine admission and the
-frontend flag. The additive schema is retained. Existing manual Admin PDF
-controls, Display snapshot fallback and the student five-second path remain the
-recovery path.
+Rollback always starts by turning the database runtime gate OFF and verifying
+terminal revocation/manual-control recovery. Then set
+`PHASE729_POWERPOINT_SYNC_ENABLED=false`, promote the frontend-OFF deployment,
+revoke Store-review invitation/membership/sessions, and stop canary Bridges.
+Retain the additive schema and named Edge deployments dormant. Withdraw the
+Gateway Custom Domain only after DB and server admission are OFF.
+
+There is no dual-key rotation period. For secret compromise or planned
+rotation, complete the same DB-OFF, server-OFF and frontend-OFF sequence and
+verify zero active connections. Rotate `PRESENTER_BRIDGE_TOKEN_SECRET` in Edge,
+then rotate `PRESENTER_BRIDGE_GATEWAY_SECRET` to one new matching value in Edge
+and Worker. Redeploy/verify the pinned machine Edge and Worker, repeat the
+server-ON/DB-OFF negative tests, and return server OFF before any later
+activation. Never rotate an active lecture in place and never down-migrate.
 
 ## 10. Local verification commands
 
@@ -249,9 +335,6 @@ full non-live regression. Local PASS never clears Hosted, Device or Human HOLD.
 
 - [Cloudflare Workers Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
 - [Cloudflare Workers Rate Limiting bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)
-- [Velopack integration](https://docs.velopack.io/integrating/overview)
-- [Velopack packaging and release assets](https://docs.velopack.io/packaging/overview)
-- [Velopack code signing](https://docs.velopack.io/packaging/signing)
-- [Velopack release channels](https://docs.velopack.io/packaging/channels)
-- [Microsoft Artifact Signing integrations](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations)
-- [GitHub Actions to Azure through OIDC](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect)
+- [Microsoft Store package flights](https://learn.microsoft.com/en-us/windows/apps/publish/package-flights)
+- [Microsoft Store submission options](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/manage-submission-options)
+- [Microsoft Store certification process](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-certification-process)

@@ -11,11 +11,14 @@ internal sealed class WindowsInstallationProof : IPresenterRequestSigner, IDispo
     private static readonly CngProvider Provider =
         CngProvider.MicrosoftSoftwareKeyStorageProvider;
     private readonly CngKey key;
+    private readonly string keyName;
     private readonly PresenterRequestSigner signer;
+    private int disposed;
 
-    private WindowsInstallationProof(CngKey key)
+    private WindowsInstallationProof(CngKey key, string keyName)
     {
         this.key = key;
+        this.keyName = keyName;
         signer = new PresenterRequestSigner(new ECDsaCng(key));
     }
 
@@ -41,7 +44,7 @@ internal sealed class WindowsInstallationProof : IPresenterRequestSigner, IDispo
             }
 
             Validate(key);
-            return new WindowsInstallationProof(key);
+            return new WindowsInstallationProof(key, keyName);
         }
         catch (InstallationProofException)
         {
@@ -64,16 +67,7 @@ internal sealed class WindowsInstallationProof : IPresenterRequestSigner, IDispo
         ValidateKeyName(keyName);
         try
         {
-            if (CngKey.Exists(keyName, Provider, CngKeyOpenOptions.UserKey))
-            {
-                using (var existing = CngKey.Open(
-                    keyName,
-                    Provider,
-                    CngKeyOpenOptions.UserKey))
-                {
-                    existing.Delete();
-                }
-            }
+            DeletePersistedIdentity(keyName);
             return GetOrCreate(keyName);
         }
         catch (InstallationProofException)
@@ -85,6 +79,49 @@ internal sealed class WindowsInstallationProof : IPresenterRequestSigner, IDispo
         {
             throw new InstallationProofException(error);
         }
+    }
+
+    public void DeletePersistedIdentity()
+    {
+        Dispose();
+        DeletePersistedIdentity(keyName);
+    }
+
+    internal static void DeletePersistedIdentity(string keyName) =>
+        DeletePersistedIdentity(keyName, DeletePersistedKey);
+
+    internal static void DeletePersistedIdentity(
+        string keyName,
+        Action<string> deletePersistedKey)
+    {
+        ValidateKeyName(keyName);
+        ArgumentNullException.ThrowIfNull(deletePersistedKey);
+        try
+        {
+            deletePersistedKey(keyName);
+        }
+        catch (InstallationProofException)
+        {
+            throw;
+        }
+        catch (Exception error) when (
+            error is CryptographicException or ArgumentException)
+        {
+            throw new InstallationProofException(error);
+        }
+    }
+
+    private static void DeletePersistedKey(string keyName)
+    {
+        if (!CngKey.Exists(keyName, Provider, CngKeyOpenOptions.UserKey))
+        {
+            return;
+        }
+        using var existing = CngKey.Open(
+            keyName,
+            Provider,
+            CngKeyOpenOptions.UserKey);
+        existing.Delete();
     }
 
     private static CngKey CreateKey(string keyName) => CngKey.Create(
@@ -153,6 +190,10 @@ internal sealed class WindowsInstallationProof : IPresenterRequestSigner, IDispo
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
         signer.Dispose();
         key.Dispose();
     }

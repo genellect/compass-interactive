@@ -55,6 +55,11 @@ const repository = read(
 )
 const browserClient = read('src', 'presenter', 'presenterBridgeClient.ts')
 const browserProtocol = read('src', 'presenter', 'presenterBridgeProtocol.ts')
+const presenterPrivacyConsent = read(
+  'src',
+  'presenter',
+  'presenterPrivacyConsent.ts',
+)
 const flagOffBrowserSpec = read(
   'e2e',
   'demo',
@@ -66,7 +71,14 @@ const adminPresenterHook = read(
   'AdminWorkspace',
   'useAdminPowerPointSync.ts',
 )
+const adminPresenterControl = read(
+  'src',
+  'components',
+  'AdminWorkspace',
+  'AdminPowerPointSyncControl.tsx',
+)
 const featureFlags = read('src', 'lib', 'featureFlags.ts')
+const viteEnvironmentTypes = read('src', 'vite-env.d.ts')
 const envExample = read('.env.local.example')
 const supabaseConfig = read('supabase', 'config.toml')
 const displayPage = read('src', 'pages', 'DisplayPage.tsx')
@@ -296,6 +308,13 @@ assert.match(browserProtocol, /PRESENTER_BRIDGE_HEALTH_TIMEOUT_MS = 1_500/)
 assert.match(browserProtocol, /PRESENTER_BRIDGE_REQUEST_TIMEOUT_MS = 12_000/)
 assert.match(adminPresenterHook, /pairingTicketExpiresAtRef/)
 assert.match(adminPresenterHook, /transitionAutomaticPairingToRecovery/)
+assert.match(presenterPrivacyConsent, /Object\.keys\(value\)\.length === 2/)
+assert.match(presenterPrivacyConsent, /value\.status === 'withdrawn'/)
+assert.match(
+  presenterPrivacyConsent,
+  /isCurrentRetentionTimestamp\(value\.markedAt\)/,
+)
+assert.match(presenterPrivacyConsent, /timestamp <= now/)
 assert.match(browserClient, /credentials: 'omit'/)
 assert.match(browserClient, /redirect: 'manual'/)
 assert.match(browserClient, /referrerPolicy: 'no-referrer'/)
@@ -314,6 +333,17 @@ assert.doesNotMatch(
 )
 
 assert.match(envExample, /^VITE_PHASE7_29_POWERPOINT_SYNC=false$/m)
+assert.match(envExample, /^VITE_PRESENTER_CERTIFICATION_MODE=false$/m)
+assert.match(envExample, /^VITE_PRESENTER_STORE_URL=$/m)
+assert.match(viteEnvironmentTypes, /VITE_PRESENTER_CERTIFICATION_MODE/)
+assert.match(adminPresenterControl, /VITE_PRESENTER_STORE_URL/)
+assert.match(adminPresenterControl, /url\.hostname !== 'apps\.microsoft\.com'/)
+assert.match(adminPresenterControl, /url\.search/)
+assert.match(adminPresenterControl, /\\\/detail\\\/\[A-Z0-9\]\{12\}/)
+assert.doesNotMatch(
+  adminPresenterControl,
+  /presenter-updates\.yuto-matsui\.com/,
+)
 assert.match(envExample, /^PHASE729_POWERPOINT_SYNC_ENABLED=false$/m)
 assert.match(
   featureFlags,

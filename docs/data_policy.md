@@ -1,6 +1,6 @@
 # COMPASS Interactive Data Policy
 
-Last reviewed: 2026-08-12
+Last reviewed: 2026-09-06
 
 ## 1. Purpose
 
@@ -9,9 +9,10 @@ participation. It therefore collects the minimum data needed for a live class,
 does not create a student profile system and keeps paid AI and document delivery
 within explicit boundaries.
 
-This document describes the implemented repository policy. Institutional
-privacy review and an operator-facing privacy notice remain required before a
-formal production certification.
+This document describes the implemented repository policy. The bilingual
+Presenter notice is implemented at `/presenter-bridge/privacy/`; institutional
+privacy review and Production validation remain required before formal
+certification.
 
 ## 2. Data stored in Supabase
 
@@ -153,6 +154,16 @@ event, console log or long-term user profile. Server-side storage contains only
 Admin-token hashes, keyed rate-limit identifiers and resume revocation/version
 metadata, never plaintext Admin or resume tokens.
 
+The Presenter control may retain the privacy-policy version and acceptance time
+in local storage for at most one year, one content-free manual-mode digest and
+at most 32 content-free material-consent digests. The manual/material digests
+remain until the educator clears Presenter data from the control or clears the
+site's browser data. If that cleanup cannot be confirmed, a content-free
+withdrawal marker may remain for at most one year in local or session storage
+and a first-party `SameSite=Strict` cookie. The marker prevents another tab or
+reload from treating the withdrawn decision as consent; clearing the site's
+browser data removes it.
+
 ## 9. Retention lifecycle
 
 - Live write access ends when the lecture closes or reaches its server deadline.
@@ -257,6 +268,9 @@ rollback.
   placed in a URL, local/session storage, analytics, crash logs or clipboard by
   the application. The Bridge crash log must omit tokens and document
   names/paths.
+- Browser storage is limited to the bounded privacy decision, manual/material
+  digests and withdrawal marker described in Section 8. None contains slide
+  text, notes, file names, file paths, tokens or raw presentation identifiers.
 - A 200 ms PowerPoint observation loop is local and creates no backend record.
   The Bridge sends only stable changed pages plus a bounded heartbeat. Students
   receive no additional request, field, Realtime subscription or Presenter

@@ -6455,7 +6455,8 @@ input:disabled {
 }
 
 .display-main-stage {
-  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: start;
+  grid-template-rows: auto auto;
   min-height: 0;
 }
 
@@ -6463,7 +6464,6 @@ input:disabled {
 .display-main-stage .synced-pdf-viewer,
 .display-main-stage .pdf-stage {
   box-sizing: border-box;
-  height: 100%;
   min-height: 0;
   width: 100%;
 }
@@ -6478,7 +6478,6 @@ input:disabled {
 }
 
 .synced-pdf-viewer.is-projector .pdf-stage {
-  aspect-ratio: auto !important;
   border: 0;
   border-radius: 14px;
   margin: 0;
@@ -6591,6 +6590,22 @@ input:disabled {
   height: auto;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Only fullscreen has a definite height. Normal windows size the slide from
+   its aspect ratio, independently of the canvas watched by ResizeObserver. */
+.display-shell:fullscreen .display-main-stage {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.display-shell:fullscreen .slide-placeholder,
+.display-shell:fullscreen .synced-pdf-viewer,
+.display-shell:fullscreen .pdf-stage {
+  height: 100%;
+}
+
+.display-shell:fullscreen .pdf-stage {
+  aspect-ratio: auto !important;
 }
 
 .display-shell:fullscreen .display-side-rail,

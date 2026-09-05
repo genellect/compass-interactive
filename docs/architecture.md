@@ -357,6 +357,12 @@ available while paid admission is disabled.
 
 ## 15. Phase 7.29 Presenter Bridge boundary
 
+The reconciliation and trust boundaries below remain current. Native
+distribution and production activation are governed by
+[`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+[`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md):
+version 1 uses only the Microsoft Store x64 MSIX path.
+
 Phase 7.29 adds an optional Windows-native operating boundary without changing
 the student or Display transport contracts. PowerPoint COM events only request
 a reconciliation; the canonical source is a stable observation of the actual
@@ -364,12 +370,12 @@ a reconciliation; the canonical source is a stable observation of the actual
 missing, early, duplicate, back and jump events. Same-page observations do not
 advance the existing live-state version.
 
-The initial mapping is intentionally narrow: a normal all-slide, windowed show,
-no hidden slides, Custom Show or Presenter View, equal PPTX/PDF counts, and an
-explicit teacher confirmation after seeing both document identities and the
-PDF first page. Ordered Slide IDs and the PPTX digest are frozen for the active
-connection; a structural or save mutation revokes synchronization rather than
-guessing a mapping.
+The initial mapping is intentionally narrow: a normal all-slide windowed or
+`Speaker` full-screen show, no hidden slides, Custom Show or Presenter View,
+equal PPTX/PDF counts, and an explicit teacher confirmation after seeing both
+document identities and the PDF first page. Ordered Slide IDs and the PPTX
+digest are frozen for the active connection; a structural or save mutation
+revokes synchronization rather than guessing a mapping.
 
 The per-user Bridge binds only `127.0.0.1:43124`; Local Publisher remains on
 `43123`. Exact Host/Origin and bounded-request checks protect loopback. The
@@ -382,9 +388,12 @@ to the exact raw body, method, fixed path, timestamp and nonce. A dedicated
 Cloudflare Gateway forwards only those bounded bytes to one source-pinned Edge
 upstream, overwrites its server-only gateway/network headers and applies coarse
 location/network rate protection. Edge and the database remain authoritative
-for signature, replay, lifecycle, binding and global-rate decisions. Release
-builds retain a `.invalid` endpoint and the Worker has no public route until an
-owner-approved FQDN exists.
+for signature, replay, lifecycle, binding and global-rate decisions. The
+release client pins
+`https://presenter-api.yuto-matsui.com/functions/v1/presenter-bridge-session`,
+and source includes the matching fixed production Worker route and upstream.
+Hosted DNS, Worker, Edge and secret state still require independent release
+evidence.
 
 Database and Edge admission use independent default-OFF gates. At most one
 unrevoked Presenter binding may fence a lecture's manual page writes. Explicit
@@ -395,10 +404,13 @@ mutation, so Phase 7.28 Display acceleration remains unchanged and students
 continue the five-second snapshot with no Presenter request, table or Realtime
 subscription.
 
-Signed Velopack distribution, exact Custom Domain/update feed, physical Office
-and browser testing, and verification of the 55-second automatic ticket versus
-the five-minute manual recovery-code TTL are separate Phase 7.29C
-Hosted/Device/Human gates; source or CI PASS cannot activate them.
+Exact Partner Center identity, WACK, `runFullTrust` approval, Store
+certification/signing, clean-device acquisition without added authentication,
+physical Office/browser/extended-display/rendered-latency testing, and
+verification of the 55-second automatic ticket versus the five-minute manual
+recovery-code TTL are separate Hosted/Store/Device/Human gates; source or CI
+PASS cannot activate them. Direct Velopack distribution and its anonymous
+update feed are outside the version 1 production path.
 
 ## 16. Phase 7.30A-E Admin identity boundary
 

@@ -27,8 +27,8 @@ preserved. Decimal phases separate risk domains without rewriting history.
 |     8 | 7.26                       | High     | Browser-complete private PDF publication             |
 |     9 | 7.27                       | High     | Thin Journal Club operational preset                 |
 |    10 | 7.28                       | High     | Operational cleanup, Display Realtime, AI activation |
-|    11 | 7.29A/B                    | High     | PPT rescue and dormant hosted placement              |
-|    12 | 7.29C                      | High     | Signed Presenter activation                          |
+|    11 | 7.29A/B                    | High     | Historical PPT rescue and dormant foundation         |
+|    12 | 7.29C                      | High     | Microsoft Store Presenter activation                 |
 |    13 | 7.30A-F                    | Highest  | Google Admin identity, MFA, RBAC and migration       |
 |    14 | 7.31A                      | Highest  | GitHub protection and supply-chain governance        |
 |    15 | 7.31B                      | Highest  | Public-source history, rights and privacy readiness  |
@@ -515,27 +515,29 @@ deployment is authorized by this status.
 
 ## 13. Phase 7.29 - optional PowerPoint Presenter Bridge
 
-Status: canonical rescue and dormant placement in progress. The 2026-08-01
-automated web/database Local Gate is historical evidence from the former local
-branch and must be rerun against the current GitHub base. All browser, Edge and
-database flags remain default OFF. Signed distribution, Device, Human and
-activation gates remain HOLD until separately recorded.
+Status: the rescued Presenter source and Store-specific build path are
+integrated. The 2026-08-01 automated web/database Local Gate remains historical
+evidence from the former local branch; current focused source evidence does not
+replace the final exact-candidate Hosted, Store, Device or Human gates. All
+browser, Edge and database flags remain default OFF, and production activation
+remains HOLD until the current Store release record closes those gates.
 
 ### Tasks
 
 - Treat PowerPoint COM events only as reconciliation triggers. The canonical
   position is the stable actual `View.Slide.SlideID` and absolute slide index,
   observed after a short event delay and by a 200 ms local monitor.
-- Support only a normal all-slide, windowed show with no hidden slides, Custom
-  Show or Presenter View. Require equal PPTX/PDF counts and explicit teacher
-  confirmation of the displayed document pair.
+- Support only a normal all-slide windowed or `Speaker` full-screen show with no
+  hidden slides, Custom Show or Presenter View. Require equal PPTX/PDF counts
+  and explicit teacher confirmation of the displayed document pair.
 - Freeze ordered Slide IDs and the local PPTX fingerprint for the connection;
   stop rather than guess after add/delete/reorder/hide/save mutation.
 - Bind the Bridge only to `127.0.0.1:43124`, enforce exact Host/Origin and
   bounded requests, and exchange only short-lived single-use pairing material
   and short-lived lecture/deck bearer capabilities. Pin the native remote
-  endpoint to the canonical Supabase host. No Admin token, PIN, service-role
-  key or PPTX/PDF content enters loopback or browser storage.
+  endpoint to the canonical Cloudflare Presenter Gateway hostname, never the
+  public Supabase function URL. No Admin token, PIN, service-role key or
+  PPTX/PDF content enters loopback or browser storage.
 - Keep the server runtime gate, Edge admission and frontend flag independently
   default OFF. An active binding fences manual page writes; explicit handover,
   expiry, lecture close, Admin revoke or gate shutdown restores the established
@@ -554,42 +556,55 @@ activation gates remain HOLD until separately recorded.
 - Browser flag-OFF/ON, manual handover, loopback absence, exact CORS/Host/Private
   Network Access, keyboard/accessibility and Chromium/WebKit/Mobile regressions
   PASS locally.
-- Local automated success does not waive signed per-user installer, SmartScreen,
-  Office x86/x64/build matrix, real Edge/Chrome HTTPS-to-loopback, 500 physical
-  transitions, PowerPoint restart, venue Extend-display and teacher binding UX.
-  Those Native/Human/Hosted checks remain blocking before activation.
+- Local automated success does not waive exact Partner Center identity, WACK,
+  `runFullTrust` approval, Store certification/signing, clean-device acquisition
+  without added authentication, Office x86/x64/build matrix, real Edge/Chrome
+  HTTPS-to-loopback, 500 physical transitions, PowerPoint restart, venue
+  Extend-display and teacher binding UX. Those Store/Native/Human/Hosted checks
+  remain blocking before activation.
 - A local application-control block or untrusted native binary is a HOLD, not a
   reason to weaken Windows security or report the native gate as PASS.
 - The rescued 7.29C source now adds asymmetric per-install proof, the dedicated
   Gateway and server-side rate/cleanup controls. Activation still requires the
-  final-candidate Hosted/Device/Human evidence, signed distribution and
-  bounded recovery-credential proof defined below; source presence is not
-  acceptance.
+  final-candidate Hosted/Device/Human evidence, Store certification/signing and
+  acquisition, and bounded recovery-credential proof defined below; source
+  presence is not acceptance.
 
 ### 7.29A/B/C split
 
-- **7.29A rescue:** port the local source onto the current canonical main,
-  regenerate derived DB types and add Windows x64/x86 compile plus deterministic
-  Core/loopback CI. No unsigned artifact is distributed.
-- **7.29B dormant placement:** apply only additive schema and compatible Edge
-  and web code with DB, Edge and frontend gates independently OFF. Verify the
-  old manual PDF/Display/student paths and save Hosted evidence.
-  The public `presenter-bridge-session` machine endpoint, its secret and native
-  distribution are explicitly excluded from 7.29B.
-- **7.29C activation:** place the native machine endpoint behind the dedicated
-  fixed-upstream Cloudflare Gateway; require per-install P-256 request proof,
-  replay/rate controls and the fail-closed `.invalid` release placeholder;
-  package with pinned Velopack and a signed per-user install/update/rollback
-  path; prove the 55-second automatic ticket, five-minute manual recovery-code
-  TTL, one-time positive/negative receipts and real
-  Office/browser/PNA/500-transition/venue behavior before a controlled canary.
-  Hosted, Device and Human gates remain HOLD until the owner supplies the exact
-  FQDN/zone, signing identity and update feed.
+- **7.29A rescue (historical):** ported the local source onto canonical main,
+  regenerated derived DB types and added Windows compile plus deterministic
+  Core/loopback CI. It authorized no native distribution.
+- **7.29B dormant placement (historical):** defined additive schema and
+  compatible Edge/web placement with DB, Edge and frontend gates independently
+  OFF. The public machine endpoint, its secret and native distribution were
+  explicitly outside that historical stage.
+- **7.29C / Store activation (current):** retain the dedicated fixed-upstream
+  Cloudflare Gateway, per-install P-256 proof and replay/rate controls. The
+  release client now pins the approved Gateway hostname and version 1 packages
+  only as a Microsoft Store x64 MSIX. Prove Partner identity, WACK,
+  certification/signing, no-added-auth Store acquisition, recovery lifetimes,
+  real Office/browser/PNA/500-transition/venue/rendered-latency behavior. Because
+  the current admission gates have no reviewer-only cohort and Microsoft gives
+  no predictable review time, submission requires an explicit go/no-go for
+  globally enabling all eligible educators throughout certification, with
+  continuous monitoring and immediate rollback; otherwise it remains HOLD.
+  Certification and the later classroom canary reuse Presenter ON with
+  `VITE_PRESENTER_CERTIFICATION_MODE=true` and no Store URL. Before that canary
+  ends, freeze, verify and hash the same-SHA general artifact with certification
+  mode `VITE_PRESENTER_CERTIFICATION_MODE=false` and the exact Store URL, then
+  promote only that artifact after all gates pass.
 
-The complete ordering and rollback contract is
-[`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md).
-The signed activation contract is
-[`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md).
+[`PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`](PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md)
+is the historical 7.29A/B topology, threat and rollback record. Its `.invalid`,
+Direct/Velopack, signing-certificate and update-feed instructions are not the
+current release order.
+[`PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`](PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md)
+is the current fixed-Gateway, proof-of-possession and Store activation contract.
+Follow
+[`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
+[`PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`](PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md)
+for the Store release.
 
 ## 14. Legacy Phase 7 release checklist
 
@@ -626,13 +641,14 @@ browser/database evidence alone.
     older-phase rollback for unrelated failures;
 12. record human, hosted and production evidence before normal activation.
 
-For Phase 7.29B, apply its additive migration and deploy only the named
-JWT-protected management and compatible Display functions with all gates OFF;
-leave the machine endpoint, its secret and native Bridge undeployed. Phase
-7.29C separately requires the fixed-upstream Gateway, rate/PoP, signed-native,
-bounded automatic/manual recovery credentials and real HTTPS-to-loopback gates
-before machine admission, DB runtime and a controlled frontend cohort may be
-enabled. Rollback starts at the DB runtime gate and must leave manual Admin
+The Phase 7.29B dormant-placement steps in this legacy checklist are historical
+and must not be replayed as the Store version 1 release procedure. The current
+Store runbooks define the schema, named Edge, distinct secrets, fixed Gateway,
+certification-wide global activation decision, manual Store publication hold,
+bounded device/classroom canary and exact-artifact final activation order.
+Presenter ON additionally depends on the existing Hosted Phase 7.30 Google Admin
+identity/ledger foundation and both Phase 7.28 Display Realtime frontend/server
+flags. Rollback still starts at the DB runtime gate and must leave manual Admin
 navigation, Display snapshot fallback and the student five-second path intact.
 
 ## 15. Phase 7.30 - Google Admin identity, MFA and RBAC
@@ -916,7 +932,7 @@ separate review-only Production-equivalent environment. It may release the
 bounded corrections after its own exact-SHA local, CI and canonical-host
 acceptance without waiting for Phase 7.32 multi-tenancy or the unified Phase
 7.33 commercial certification. Success does not claim those later gates or a
-signed/native Presenter activation.
+Store-signed Presenter activation.
 
 The lane must use the simplest existing architecture, avoid unnecessary paid
 or long CI, and stop for a new explicit approval if an unavoidable material
@@ -929,8 +945,9 @@ fast Production procedure are in
 
 ### 7.31A - GitHub governance
 
-- GitHub Education is active. Main ruleset `20600565` enforces Pull Request
-  integration, the five configured exact-head CI contexts, conversation
+- GitHub Education is active. Main rulesets `20600565` and `21259111` enforce
+  Pull Request integration; the stricter `21259111` requires current `main`,
+  linear history, Squash merge, eight exact-head CI contexts, conversation
   resolution and force-push/deletion denial. Required approving reviews remain
   zero for solo-owner continuity; manual Copilot review is advisory and cannot
   substitute for a required check or human/Production decision.
@@ -1014,7 +1031,7 @@ precede this Gate under their own evidence, but they do not count as its PASS
 and do not authorize public visibility, reviewer invitation or commercial
 release.
 
-- Phase 7.29 signed/native/device/venue/rate-limit/cleanup activation blockers
+- Phase 7.29 Store-signed/device/venue/rate-limit/cleanup activation blockers
   resolved;
 - Phase 7.30 Google identity, TOTP AAL2, principal/RBAC, all Edge/RPC ownership,
   operator recovery and complete shared-PIN removal Hosted/Human evidence;

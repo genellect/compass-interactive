@@ -854,11 +854,12 @@ never signs in an Admin or grants owner authority.
   owner recovery, never a shared PIN.
 - Student anonymous Auth and the Admin Supabase client remain physically and
   logically separated.
-- GitHub Education is active and main ruleset `20600565` enforces Pull Requests,
-  five required CI contexts, conversation resolution and force-push/deletion
-  denial. Required approving reviews remain zero for solo-owner continuity;
-  manual Copilot review is advisory. Remaining Phase 7.31A supply-chain and
-  protected-environment work is still separate.
+- GitHub Education is active and main rulesets `20600565` and `21259111` enforce
+  Pull Requests, eight required exact-head contexts, current-`main` synchronization,
+  conversation resolution, linear history, Squash-only integration and
+  force-push/deletion denial. Required approving reviews remain zero for
+  solo-owner continuity; manual Copilot review is advisory. Remaining Phase
+  7.31A protected-environment work is still separate.
 - Contest reviewers reuse the normal `instructor + can_use_ai` authorization
   path in a separate real environment. No `judge` role, shared Google account,
   secret viewer, mock authorization path, or Production-data access is added.
