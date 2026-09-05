@@ -400,7 +400,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     }> = []
     const featureDisabledStatusConsoleMessage =
       'Failed to load resource: the server responded with a status of 409 (Conflict)'
-    const featureDisabledStatusConsoleErrors: string[] = []
     let captureFeatureDisabledStatusConflicts = false
     displayPage.on('request', (request) => {
       if (displayStatusAction(request) !== null)
@@ -419,15 +418,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         response.status() === 409
       ) {
         featureDisabledStatusConflicts.push({ action, url: response.url() })
-      }
-    })
-    displayPage.on('console', (message) => {
-      if (
-        captureFeatureDisabledStatusConflicts &&
-        message.type() === 'error' &&
-        message.text() === featureDisabledStatusConsoleMessage
-      ) {
-        featureDisabledStatusConsoleErrors.push(message.location().url)
       }
     })
     const realtimeFrames: string[] = []
@@ -796,27 +786,6 @@ test('claimed cross-browser Display receives private page/caption acceleration a
           (conflict) => conflict.url === featureDisabledStatusConflict.url(),
         ),
       ).toBe(true)
-      // Mobile Chromium can surface one failed fetch twice in the console.
-      // Bound that browser-only duplication to the exact observed responses.
-      expect(featureDisabledStatusConsoleErrors.length).toBeGreaterThanOrEqual(
-        featureDisabledStatusConflicts.length,
-      )
-      expect(featureDisabledStatusConsoleErrors.length).toBeLessThanOrEqual(
-        featureDisabledStatusConflicts.length * 2,
-      )
-      expect(
-        featureDisabledStatusConsoleErrors.every(
-          (url) => url === featureDisabledStatusConflict.url(),
-        ),
-      ).toBe(true)
-      await displaySafety.expectConsoleErrors(
-        {
-          message: featureDisabledStatusConsoleMessage,
-          url: featureDisabledStatusConflict.url(),
-        },
-        featureDisabledStatusConsoleErrors.length,
-      )
-
       await expect
         .poll(
           async () =>
@@ -856,7 +825,19 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       expect(bindingResult.error).toBeNull()
       expect(bindingResult.data?.admin_session_id).toBeTruthy()
       expect(bindingResult.data?.revoke_reason).toBe('feature_disabled')
-      await displaySafety.assertClean()
+      // Mobile Chromium can report one failed fetch twice, with the second
+      // event arriving later. Count in the safety monitor's final snapshot,
+      // bounded by the exact 409 responses already verified above.
+      await displaySafety.assertClean({
+        expectedConsoleErrors: [
+          {
+            message: featureDisabledStatusConsoleMessage,
+            url: featureDisabledStatusConflict.url(),
+            minCount: featureDisabledStatusConflicts.length,
+            maxCount: featureDisabledStatusConflicts.length * 2,
+          },
+        ],
+      })
       await displayPage.close()
       const displayProbePage = await displayContext.newPage()
       const displayProbeSafety =

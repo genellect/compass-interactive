@@ -1,7 +1,16 @@
 import { expect, type Page } from '@playwright/test'
 
+type BoundedConsoleError = {
+  message: string
+  url: string
+  minCount: number
+  maxCount: number
+}
+
 type BrowserSafetyMonitor = {
-  assertClean: () => Promise<void>
+  assertClean: (options?: {
+    expectedConsoleErrors?: BoundedConsoleError[]
+  }) => Promise<void>
   expectConsoleErrors: (
     expected: {
       message: string
@@ -85,19 +94,7 @@ export async function installBrowserSafetyMonitor(
   }
 
   return {
-    async assertClean() {
-      expect(
-        [...new Set(externalRequests)],
-        'E2E must not contact Hosted Supabase, Cloudflare, R2, OpenAI, or any other external host.',
-      ).toEqual([])
-      expect(
-        browserErrors.map((error) =>
-          error.locationUrl
-            ? `${error.message} (${error.locationUrl})`
-            : error.message,
-        ),
-        'The browser emitted runtime errors.',
-      ).toEqual([])
+    async assertClean(options = {}) {
       await expect
         .poll(() =>
           page.evaluate(
@@ -107,6 +104,46 @@ export async function installBrowserSafetyMonitor(
           ),
         )
         .toBe(true)
+
+      // Check one collector synchronously after the last asynchronous wait.
+      // These exact, bounded exceptions apply only to this assertion call.
+      const expectedErrors = new Set<BrowserError>()
+      for (const expected of options.expectedConsoleErrors ?? []) {
+        expect(Number.isSafeInteger(expected.minCount)).toBe(true)
+        expect(Number.isSafeInteger(expected.maxCount)).toBe(true)
+        expect(expected.minCount).toBeGreaterThanOrEqual(1)
+        expect(expected.maxCount).toBeGreaterThanOrEqual(expected.minCount)
+        const matching = browserErrors.filter(
+          (error) =>
+            error.message === `console: ${expected.message}` &&
+            error.locationUrl === expected.url,
+        )
+        expect(matching.length).toBeGreaterThanOrEqual(expected.minCount)
+        expect(matching.length).toBeLessThanOrEqual(expected.maxCount)
+        for (const error of matching) {
+          expect(
+            expectedErrors.has(error),
+            'Expectations must not overlap.',
+          ).toBe(false)
+          expectedErrors.add(error)
+        }
+      }
+      expect(
+        [...new Set(externalRequests)],
+        'E2E must not contact Hosted Supabase, Cloudflare, R2, OpenAI, or any other external host.',
+      ).toEqual([])
+      expect(
+        browserErrors
+          .map((error) =>
+            expectedErrors.has(error)
+              ? null
+              : error.locationUrl
+                ? `${error.message} (${error.locationUrl})`
+                : error.message,
+          )
+          .filter((error) => error !== null),
+        'The browser emitted runtime errors.',
+      ).toEqual([])
     },
     expectConsoleErrors,
     async expectConsoleErrorOnce(expected) {
