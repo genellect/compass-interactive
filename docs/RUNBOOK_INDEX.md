@@ -43,6 +43,10 @@ secret change and paid call still require an explicit task.
 | Phase 7.29 Presenter design    | `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`                  |
 | Phase 7.29 rescue/rollout      | `docs/PHASE7_29_CLOUD_RESCUE_AND_DORMANT_ROLLOUT.md`             |
 | Phase 7.29C signed activation  | `docs/PHASE7_29C_SIGNED_PRESENTER_ACTIVATION.md`                 |
+| Presenter production release  | `docs/PRESENTER_PRODUCTION_RELEASE.md`                           |
+| Presenter Store submission    | `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`            |
+| Optional Presenter license draft | `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md`               |
+| Presenter privacy notice draft | `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md`                 |
 | Phase 7.30 Google Admin plan   | `docs/PHASE7_30_GOOGLE_ADMIN_IDENTITY_PLAN.md`                   |
 | Phase 7.30A-B1 local record    | `docs/PHASE7_30A_B1_IMPLEMENTATION.md`                           |
 | Phase 7.30B2 source record     | `docs/PHASE7_30B2_AI_UNLOCK_FOUNDATION.md`                       |
@@ -149,6 +153,18 @@ Local writer while browser mode is active.
 
 ## 5. PowerPoint Presenter Bridge
 
+- Preferred Microsoft Store MSIX packaging, `runFullTrust` justification,
+  synthetic certification flow, listing copy and current HOLD items:
+  `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md`
+- Optional custom Store-binary terms and Bridge-specific privacy draft:
+  `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md` and
+  `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md`
+- Current production release sequence and classroom acceptance:
+  `docs/PRESENTER_PRODUCTION_RELEASE.md`
+- Store v1 uses package version `1.0.0.0`, requires Windows 11 24H2/build 26100
+  for `uap17:UpdateWhileInUse=defer`, and remains HOLD until clean local-account
+  and school-account acquisition tests prove that no added Microsoft account is
+  required.
 - Design, threat boundary and rollback:
   `docs/PHASE7_29_POWERPOINT_PRESENTER_BRIDGE.md`
 - Canonical rescue, dormant deployment and rollback:

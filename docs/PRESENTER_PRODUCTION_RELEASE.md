@@ -4,13 +4,31 @@ Decision date: 2026-09-05. This record extends the signed activation contract
 with the owner's current product requirements and delegated infrastructure
 selection. It does not claim that a release, signature or device test passed.
 
+On 2026-09-06 the owner selected Microsoft Store MSIX as the preferred
+distribution path so the Store can sign the certified package without an
+annual public-trust certificate purchase. The MSIX engineering candidate is
+implemented; Partner Center identity injection, packaging preflight, onboarding
+and Store review are not complete. Version 1 is fixed at package version
+`1.0.0.0` with Windows 11 24H2/build 26100 as its minimum because safe
+update-in-use deferral depends on `uap17:UpdateWhileInUse=defer`. The release
+documents are:
+
+- `docs/PRESENTER_BRIDGE_MICROSOFT_STORE_SUBMISSION.md` — packaging, listing,
+  `runFullTrust`, reviewer and submission gate;
+- `docs/PRESENTER_BRIDGE_BINARY_LICENSE_DRAFT.md` — optional custom Store-binary
+  terms, used only if selected after owner/legal review; and
+- `docs/PRESENTER_BRIDGE_PRIVACY_NOTICE_DRAFT.md` — Bridge-specific privacy
+  notice draft based on current code and migrations.
+
 ## Owner decisions and deployment identity
 
 The owner requested autonomous completion of the PowerPoint production
-release, accepted the proposed implementation, and named the individual
-signer as **Yuto Matsui / 松井優知**. The certificate subject must use the
-actual CA-validated spelling; a locally self-signed certificate is not a
-substitute.
+release, accepted the proposed implementation, and identified the publisher as
+**Yuto Matsui / 松井優知**. Under the former certificate-dependent fallback, the
+certificate subject would have to use the actual CA-validated spelling; a
+locally self-signed certificate would not be a substitute. The Store package
+must instead use the exact Partner Center identity assigned after the owner's
+verification.
 
 | Resource                  | Selected value                                                                |
 | ------------------------- | ----------------------------------------------------------------------------- |
@@ -39,9 +57,11 @@ update custom domain has active ownership and TLS, with minimum TLS 1.2;
 the `r2.dev` public endpoint remains disabled. The bucket is empty. This is
 distribution infrastructure readiness, not a published installer or feed.
 The selected signing environment is a reserved name, not a created or
-credentialed signing service. No public-trust certificate has been issued
-for this release. A paid certificate purchase and personal identity
-verification remain separate from the release authorization.
+credentialed signing service. No public-trust certificate has been issued.
+That certificate-dependent Velopack/EXE route is retained only as a historical
+fallback design. The preferred Store MSIX route instead requires the owner's
+Partner Center onboarding and identity verification, followed by package
+certification and Store re-signing.
 
 ## Classroom acceptance
 
@@ -94,13 +114,26 @@ classroom impact. Do not label the candidate accepted on a calculated budget.
    method/Origin/proof-shape rejection. An admission-OFF Edge returns 503
    before authentication; this does not prove Gateway-secret, cryptographic
    proof or nonce-replay enforcement.
-3. Use a CA-validated personal signing identity to sign/timestamp and verify
-   every distributed PE and Setup. Publish immutable packages first and the
-   update index last; retain the previous signed full package and Setup.
-4. Complete fresh install/update/uninstall/rollback, real Office architecture
+3. Build a packaged MSIX using the exact Partner Center identity, package
+   version `1.0.0.0`, `TargetDeviceFamily MinVersion="10.0.26100.0"` and
+   `uap17:UpdateWhileInUse=defer`. Submit only through the Microsoft
+   Store path described in the Store runbook; do not publish the existing
+   Velopack EXE/update feed as the preferred public channel. Microsoft Store
+   certification, rather than an owner-purchased public-trust certificate, must
+   establish the distributed package signature. Outside-Store distribution
+   remains a separate signing decision.
+   For Store customer licensing, explicitly choose Microsoft Standard
+   Application License Terms by leaving **Additional license terms** blank, or
+   use only custom terms approved by owner/legal review.
+4. Complete Store-delivered fresh install/update/uninstall/rollback, real
+   Office architecture
    coverage, Chrome/Edge local-network access and 500 native transitions,
    document switching, rapid A–B–A, lost replies, COM loss, browser/native
    restart and safe manual handover on that signed candidate.
+   Prove on real hardware that a Store update during an active lecture is
+   deferred without closing the Bridge. Keep Windows 10 and older Windows 11
+   outside the v1 support matrix until an equally safe update path passes real
+   update-in-use tests.
 5. Enable machine admission with the DB runtime gate still disabled. Verify
    direct-Edge denial and Gateway-secret and cryptographic-proof enforcement.
    Then enable the DB runtime gate and a bounded frontend canary. Verify
@@ -109,9 +142,12 @@ classroom impact. Do not label the candidate accepted on a calculated budget.
    Expand only after these pass. Roll back the DB gate, machine admission and
    frontend flag in that order if they fail; retain the additive schema.
 
-User authorization covers the release work; it does not supply a certificate,
-complete an identity provider's verification, authorize an unspecified
-purchase, or constitute evidence that real-device acceptance passed.
+Current authorization covers the production work described here, subject to
+its release gates. The owner must personally control Microsoft-account sign-in,
+Partner Center identity verification, acceptance of Microsoft agreements and
+the transmission of identity documents or other sensitive personal data.
+Neither authorization nor submission alone constitutes evidence that Store
+certification, active-update safety or real-device acceptance passed.
 
 ## Follow-up after the PPT release
 
