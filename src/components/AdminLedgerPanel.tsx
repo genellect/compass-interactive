@@ -36,6 +36,13 @@ import {
   type AdminLecture,
 } from '../repositories/supabaseAdminRepository'
 import { AdminAiPolicyPanel } from './AdminAiPolicyPanel'
+import type { AdminAiPolicyStatus } from '../lib/adminAuth/adminAiUnlockApi'
+import { AdminAiBudgetFields } from './AdminAiBudgetFields'
+import {
+  DEFAULT_AI_DAY_COST,
+  DEFAULT_AI_LECTURE_COST,
+  dollarsToMicrousd,
+} from '../lib/adminAuth/adminAiBudget'
 
 type PendingMutation = AdminLedgerMutationRequest & {
   controlStepUpNonce: string
@@ -229,6 +236,16 @@ export function AdminLedgerPanel({
   const [invitationLink, setInvitationLink] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteCanUseAi, setInviteCanUseAi] = useState(false)
+  const [inviteLectureCost, setInviteLectureCost] = useState(
+    DEFAULT_AI_LECTURE_COST,
+  )
+  const [inviteDayCost, setInviteDayCost] = useState(DEFAULT_AI_DAY_COST)
+  const [aiPolicyStatus, setAiPolicyStatus] =
+    useState<AdminAiPolicyStatus | null>(null)
+  const [aiPolicySelection, setAiPolicySelection] = useState<{
+    membershipId: string
+  } | null>(null)
+  const invitationFormRef = useRef<HTMLDetailsElement>(null)
 
   const pendingConfirmationRef = useRef<HTMLFormElement>(null)
   const awaitingTotp =
@@ -312,7 +329,7 @@ export function AdminLedgerPanel({
     const frame = window.requestAnimationFrame(() => {
       const form = pendingConfirmationRef.current
       if (!form) return
-      form.scrollIntoView({ block: 'nearest' })
+      form.scrollIntoView({ behavior: 'instant', block: 'nearest' })
       const nextControl = awaitingTotp
         ? form.querySelector<HTMLInputElement>(
             'input[autocomplete="one-time-code"]',
@@ -455,7 +472,13 @@ export function AdminLedgerPanel({
         nextPending.payload.sessionId === snapshot?.currentSessionId
 
       clearPendingMutation()
-      setMessage('管理台帳を更新しました。')
+      setMessage(
+        nextPending.action === 'issueInvitation'
+          ? '招待リンクを作成しました。リンクを教員へ共有してください。メールは自動送信されません。'
+          : nextPending.action === 'enableAi' && nextPending.payload.aiPolicy
+            ? 'AI権限と利用上限を設定しました。'
+            : '教員情報を更新しました。',
+      )
       if (currentMembershipChanged || currentSessionRevoked) {
         await onReloginRequired()
         return
@@ -587,6 +610,22 @@ export function AdminLedgerPanel({
       <div className="admin-ledger-heading">
         <h2>教員一覧</h2>
         <button
+          className="primary-button"
+          disabled={busy || mutationBlocked || !admissionEnabled}
+          onClick={() => {
+            const form = invitationFormRef.current
+            if (!form) return
+            form.open = true
+            form.scrollIntoView({ behavior: 'instant', block: 'nearest' })
+            form
+              .querySelector<HTMLInputElement>('input[type="email"]')
+              ?.focus({ preventScroll: true })
+          }}
+          type="button"
+        >
+          新しい教員を追加
+        </button>
+        <button
           className="secondary-button"
           disabled={busy}
           onClick={() =>
@@ -641,7 +680,21 @@ export function AdminLedgerPanel({
           disabled={busy || Boolean(pending)}
           factors={factors}
           memberships={snapshot.memberships}
+          onEnableAi={(membership, aiPolicy) =>
+            startMutation({
+              action: 'enableAi',
+              payload: {
+                aiPolicy,
+                expectedCanUseAi: false,
+                expectedStatus: 'active',
+                expectedUpdatedAt: membership.updatedAt,
+                membershipId: membership.membershipId,
+              },
+            })
+          }
           onPendingChange={setPolicyPending}
+          onStatusChange={setAiPolicyStatus}
+          selection={aiPolicySelection}
         />
       ) : null}
 
@@ -700,6 +753,20 @@ export function AdminLedgerPanel({
             )
           ) : awaitingTotp ? (
             <>
+              {'aiPolicy' in pending.payload && pending.payload.aiPolicy && (
+                <p>
+                  AI利用：1講義 $
+                  {(
+                    pending.payload.aiPolicy.maxCostMicrousdPerLecture /
+                    1_000_000
+                  ).toFixed(2)}
+                  {' / '}1日 $
+                  {(
+                    pending.payload.aiPolicy.maxCostMicrousdPerDay / 1_000_000
+                  ).toFixed(2)}
+                  ・30日間
+                </p>
+              )}
               <label className="field">
                 <span>確認に使う認証アプリ</span>
                 <select
@@ -788,6 +855,7 @@ export function AdminLedgerPanel({
                 <th scope="col">教員</th>
                 <th scope="col">権限</th>
                 <th scope="col">状態</th>
+                <th scope="col">AI利用</th>
                 <th scope="col">ログイン</th>
                 <th scope="col">権限・停止</th>
               </tr>
@@ -803,6 +871,9 @@ export function AdminLedgerPanel({
                     : membership.canUseAi
                       ? '教員（AI利用可）'
                       : '教員（AI利用不可）'
+                const policyCoverage = aiPolicyStatus?.memberships.find(
+                  (entry) => entry.membershipId === membership.membershipId,
+                )
 
                 return (
                   <tr key={membership.membershipId}>
@@ -816,6 +887,50 @@ export function AdminLedgerPanel({
                     <td data-label="状態">
                       {MEMBERSHIP_STATUS_LABELS[membership.status] ??
                         '状態確認中'}
+                    </td>
+                    <td data-label="AI利用">
+                      <span>
+                        {membership.status !== 'active'
+                          ? '利用不可'
+                          : !membership.canUseAi
+                            ? '許可なし'
+                            : !aiPolicyStatus
+                              ? '確認中'
+                              : policyCoverage?.covered
+                                ? '設定済み'
+                                : '上限未設定'}
+                      </span>
+                      {policyCoverage?.covered && (
+                        <small>
+                          $
+                          {(
+                            policyCoverage.maxCostMicrousdPerLecture! /
+                            1_000_000
+                          ).toFixed(2)}
+                          /講義
+                          {' · '}$
+                          {(
+                            policyCoverage.maxCostMicrousdPerDay! / 1_000_000
+                          ).toFixed(2)}
+                          /日
+                        </small>
+                      )}
+                      {isPhase730AdminAiUnlockEnabled &&
+                        membership.status === 'active' && (
+                          <button
+                            disabled={
+                              busy || mutationBlocked || !admissionEnabled
+                            }
+                            onClick={() =>
+                              setAiPolicySelection({
+                                membershipId: membership.membershipId,
+                              })
+                            }
+                            type="button"
+                          >
+                            AI利用を設定
+                          </button>
+                        )}
                     </td>
                     <td data-label="ログイン">
                       <span>{activeSessions.length}件</span>
@@ -906,14 +1021,8 @@ export function AdminLedgerPanel({
                                 busy || mutationBlocked || !admissionEnabled
                               }
                               onClick={() =>
-                                startMutation({
-                                  action: 'enableAi',
-                                  payload: {
-                                    expectedCanUseAi: false,
-                                    expectedStatus: 'active',
-                                    expectedUpdatedAt: membership.updatedAt,
-                                    membershipId: membership.membershipId,
-                                  },
+                                setAiPolicySelection({
+                                  membershipId: membership.membershipId,
                                 })
                               }
                               type="button"
@@ -1011,6 +1120,7 @@ export function AdminLedgerPanel({
       <details
         className="admin-ledger-add-teacher"
         open={invitationLink ? true : undefined}
+        ref={invitationFormRef}
       >
         <summary>教員を追加</summary>
         <form
@@ -1022,10 +1132,35 @@ export function AdminLedgerPanel({
               pendingInvitationsForInviteEmail.length > 0
             )
               return
+            const maxCostMicrousdPerLecture = dollarsToMicrousd(
+              inviteLectureCost,
+              5,
+            )
+            const maxCostMicrousdPerDay = dollarsToMicrousd(inviteDayCost, 20)
+            if (
+              inviteCanUseAi &&
+              (maxCostMicrousdPerLecture === null ||
+                maxCostMicrousdPerDay === null ||
+                maxCostMicrousdPerDay < maxCostMicrousdPerLecture)
+            ) {
+              setMessage(
+                'AI上限を確認してください。1日の上限は講義ごとの上限以上にしてください。',
+              )
+              return
+            }
             startMutation({
               action: 'issueInvitation',
               payload: {
                 canUseAi: inviteCanUseAi,
+                ...(inviteCanUseAi
+                  ? {
+                      aiPolicy: {
+                        maxCostMicrousdPerDay: maxCostMicrousdPerDay!,
+                        maxCostMicrousdPerLecture: maxCostMicrousdPerLecture!,
+                        validityDays: 30 as const,
+                      },
+                    }
+                  : {}),
                 expiresAt: new Date(
                   Date.now() + INVITATION_LIFETIME_MS,
                 ).toISOString(),
@@ -1054,6 +1189,20 @@ export function AdminLedgerPanel({
             />
             <span>AI利用を許可</span>
           </label>
+          {inviteCanUseAi && (
+            <>
+              <AdminAiBudgetFields
+                dayCost={inviteDayCost}
+                disabled={busy || mutationBlocked}
+                lectureCost={inviteLectureCost}
+                onDayCostChange={setInviteDayCost}
+                onLectureCostChange={setInviteLectureCost}
+              />
+              <p className="helper-note">
+                招待受諾時から30日間有効です。AI権限と上限をまとめて設定します。
+              </p>
+            </>
+          )}
           <p className="helper-note">招待リンクは作成から48時間有効です。</p>
           {pendingInvitationsForInviteEmail.length > 1 ? (
             <p className="helper-note" role="alert">

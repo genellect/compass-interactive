@@ -920,5 +920,483 @@ SELECT ok(
   'suspension drains the target session and persistent AI authority atomically'
 );
 
+-- One-step teacher AI administration reuses the verified Owner/grant fixture.
+-- These cases remain in the local test transaction; all identities are synthetic.
+CREATE TEMP TABLE teacher_ai_values(name text PRIMARY KEY, value jsonb) ON COMMIT DROP;
+GRANT SELECT ON teacher_ai_values TO service_role;
+
+INSERT INTO teacher_ai_values VALUES (
+  'terms',
+  '{"max_cost_microusd_per_lecture":3000000,"max_cost_microusd_per_day":6000000,"validity_days":30}'::jsonb
+), (
+  'sessions_before',
+  (SELECT jsonb_agg(jsonb_build_object(
+    'id', id, 'issued_at', issued_at, 'expires_at', expires_at,
+    'idle_expires_at', idle_expires_at, 'revoked_at', revoked_at,
+    'supabase_auth_session_id', supabase_auth_session_id
+  ) ORDER BY id) FROM public.admin_sessions
+  WHERE environment_id = '00000000-0000-4000-8000-00000000d101'::uuid)
+), (
+  'auth_sessions_before',
+  (SELECT jsonb_agg(to_jsonb(session) ORDER BY session.id)
+   FROM auth.sessions AS session WHERE user_id IN (
+     '00000000-0000-4000-8000-00000000d102'::uuid,
+     '00000000-0000-4000-8000-00000000d112'::uuid
+   ))
+);
+
+SELECT is(
+  private.normalize_teacher_ai_policy_terms_v1(
+    (SELECT value FROM teacher_ai_values WHERE name = 'terms')
+  ),
+  (SELECT value FROM teacher_ai_values WHERE name = 'terms'),
+  'one-step terms preserve the approved USD 3 / USD 6 / 30-day policy'
+);
+
+SELECT throws_ok(
+  format('SELECT private.normalize_teacher_ai_policy_terms_v1(%L::jsonb)', invalid_terms),
+  '22023', null, 'one-step terms reject ' || label
+)
+FROM (VALUES
+  ('non-object input', '[]'),
+  ('missing fields', '{"max_cost_microusd_per_lecture":3000000,"validity_days":30}'),
+  ('extra fields', '{"max_cost_microusd_per_lecture":3000000,"max_cost_microusd_per_day":6000000,"validity_days":30,"role":"owner"}'),
+  ('string amounts', '{"max_cost_microusd_per_lecture":"3000000","max_cost_microusd_per_day":6000000,"validity_days":30}'),
+  ('fractional amounts', '{"max_cost_microusd_per_lecture":3000000.5,"max_cost_microusd_per_day":6000000,"validity_days":30}'),
+  ('an excessive lecture limit', '{"max_cost_microusd_per_lecture":5000001,"max_cost_microusd_per_day":6000000,"validity_days":30}'),
+  ('a daily limit below the lecture limit', '{"max_cost_microusd_per_lecture":3000000,"max_cost_microusd_per_day":2000000,"validity_days":30}'),
+  ('an excessive daily limit', '{"max_cost_microusd_per_lecture":3000000,"max_cost_microusd_per_day":20000001,"validity_days":30}'),
+  ('an extended validity', '{"max_cost_microusd_per_lecture":3000000,"max_cost_microusd_per_day":6000000,"validity_days":31}')
+) AS cases(label, invalid_terms);
+
+SELECT ok(
+  (SELECT relrowsecurity FROM pg_class
+   WHERE oid = 'private.admin_invitation_ai_policy_contracts'::regclass)
+  AND NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'private' AND tablename = 'admin_invitation_ai_policy_contracts'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM (VALUES ('anon'), ('authenticated'), ('service_role')) AS roles(name)
+    WHERE has_table_privilege(name, 'private.admin_invitation_ai_policy_contracts',
+      'SELECT,INSERT,UPDATE,DELETE')
+  ),
+  'invitation AI contracts have RLS and no direct client or service-role table access'
+);
+
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1
+    FROM (VALUES ('anon'), ('authenticated'), ('service_role')) AS roles(name)
+    CROSS JOIN (VALUES
+      ('private.normalize_teacher_ai_policy_terms_v1(jsonb)'),
+      ('private.normalize_google_admin_ledger_payload_v1(text,jsonb)'),
+      ('private.normalize_google_admin_ledger_payload_pre_one_step_v1(text,jsonb)'),
+      ('private.apply_teacher_ai_policy_from_ledger_v1(uuid,uuid,jsonb)'),
+      ('private.manage_google_admin_ledger_pre_one_step_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,jsonb,text)'),
+      ('private.manage_google_admin_ledger_v1(text,uuid,uuid,text,text,integer,boolean,text,uuid,jsonb,text)'),
+      ('private.apply_accepted_invitation_ai_policy_v1()'),
+      ('private.reject_invitation_ai_policy_contract_change_v1()')
+    ) AS functions(signature)
+    WHERE has_function_privilege(roles.name, functions.signature, 'EXECUTE')
+  ),
+  'one-step normalizers, legacy body and policy writers are not directly executable'
+);
+
+-- Keep the historical fixture unchanged: use a separate active teacher and
+-- a separate Google invitee, while retaining the existing Owner session.
+INSERT INTO auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES
+  ('00000000-0000-0000-0000-000000000000'::uuid,
+   '00000000-0000-4000-8000-00000000d132'::uuid,
+   'authenticated', 'authenticated', 'teacher-ai-existing@example.test', '',
+   statement_timestamp() - interval '1 hour',
+   '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb,
+   statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000000000'::uuid,
+   '00000000-0000-4000-8000-00000000d142'::uuid,
+   'authenticated', 'authenticated', 'teacher-ai-invitee@example.test', '',
+   statement_timestamp() - interval '1 hour',
+   '{"provider":"google","providers":["google"]}'::jsonb, '{}'::jsonb,
+   statement_timestamp() - interval '1 hour', statement_timestamp() - interval '1 hour');
+
+INSERT INTO private.admin_principals (
+  id, auth_user_id, google_issuer, provider_subject_hmac,
+  subject_pepper_version, normalized_email, email_verified_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000d135'::uuid,
+  '00000000-0000-4000-8000-00000000d132'::uuid,
+  'https://accounts.google.com', repeat('8', 64), 1,
+  'teacher-ai-existing@example.test', statement_timestamp() - interval '1 hour'
+);
+INSERT INTO private.admin_environment_memberships (
+  id, environment_id, principal_id, role, status, can_use_ai, activated_at
+) VALUES (
+  '00000000-0000-4000-8000-00000000d136'::uuid,
+  '00000000-0000-4000-8000-00000000d101'::uuid,
+  '00000000-0000-4000-8000-00000000d135'::uuid,
+  'instructor', 'active', false, statement_timestamp() - interval '1 hour'
+);
+UPDATE private.admin_identity_runtime_gate SET google_admin_ledger_enabled = true WHERE singleton;
+
+CREATE FUNCTION pg_temp.teacher_ai_owner_intent(action text, request_id uuid, payload jsonb)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER AS $$
+  SELECT public.get_google_admin_ledger_intent_v1(
+    repeat('1', 64), '00000000-0000-4000-8000-00000000d102'::uuid,
+    '00000000-0000-4000-8000-00000000d103'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1, true,
+    action, request_id, payload
+  );
+$$;
+CREATE FUNCTION pg_temp.teacher_ai_owner_commit(
+  action text, request_id uuid, payload jsonb, intent jsonb
+)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER AS $$
+  SELECT public.manage_google_admin_ledger_v1(
+    repeat('1', 64), '00000000-0000-4000-8000-00000000d102'::uuid,
+    '00000000-0000-4000-8000-00000000d103'::uuid,
+    'https://accounts.google.com', repeat('a', 64), 1, true,
+    action, request_id, payload, intent ->> 'intentDigest'
+  );
+$$;
+CREATE FUNCTION pg_temp.teacher_ai_accept(request_id uuid, token_hash text)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER AS $$
+  SELECT public.consume_admin_identity_admission_v1(
+    '00000000-0000-4000-8000-00000000d101'::uuid,
+    '00000000-0000-4000-8000-00000000d142'::uuid,
+    'https://accounts.google.com', repeat('9', 64), 1,
+    'teacher-ai-invitee@example.test', repeat('7', 64), 'Teacher AI Invitee',
+    request_id, token_hash
+  );
+$$;
+GRANT EXECUTE ON FUNCTION pg_temp.teacher_ai_owner_intent(text, uuid, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION pg_temp.teacher_ai_owner_commit(text, uuid, jsonb, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION pg_temp.teacher_ai_accept(uuid, text) TO service_role;
+
+INSERT INTO teacher_ai_values VALUES (
+  'enable_payload', jsonb_build_object(
+    'membership_id', '00000000-0000-4000-8000-00000000d136',
+    'expected_status', 'active', 'expected_can_use_ai', false,
+    'expected_updated_at', (SELECT updated_at FROM private.admin_environment_memberships
+      WHERE id = '00000000-0000-4000-8000-00000000d136'::uuid),
+    'ai_policy', (SELECT value FROM teacher_ai_values WHERE name = 'terms')
+  )
+), (
+  'invite_payload', jsonb_build_object(
+    'normalized_email', 'teacher-ai-invitee@example.test',
+    'email_hmac', repeat('7', 64), 'email_pepper_version', 1,
+    'invitation_token_hash', repeat('6', 64), 'role', 'instructor',
+    'can_use_ai', true, 'membership_expires_at', null,
+    'expires_at', transaction_timestamp() + interval '48 hours',
+    'ai_policy', (SELECT value FROM teacher_ai_values WHERE name = 'terms')
+  )
+);
+
+SELECT is(
+  private.normalize_google_admin_ledger_payload_v1('enableAi', value - 'ai_policy'),
+  private.normalize_google_admin_ledger_payload_pre_one_step_v1('enableAi', value - 'ai_policy'),
+  'legacy entitlement payloads retain their exact canonical representation'
+) FROM teacher_ai_values WHERE name = 'enable_payload';
+SELECT isnt(
+  private.google_admin_ledger_payload_digest_v1('enableAi', value),
+  private.google_admin_ledger_payload_digest_v1('enableAi',
+    jsonb_set(value, '{ai_policy,max_cost_microusd_per_day}', '7000000'::jsonb)),
+  'the Owner intent digest binds the entire AI policy terms'
+) FROM teacher_ai_values WHERE name = 'enable_payload';
+SELECT throws_ok(
+  $$SELECT private.normalize_google_admin_ledger_payload_v1('issueInvitation',
+    (SELECT value || '{"role":"owner"}'::jsonb FROM teacher_ai_values WHERE name = 'invite_payload'))$$,
+  '22023', null, 'one-step AI invitation cannot elevate the recipient to Owner'
+);
+SELECT throws_ok(
+  $$SELECT private.normalize_google_admin_ledger_payload_v1('issueInvitation',
+    (SELECT value || '{"can_use_ai":false}'::jsonb FROM teacher_ai_values WHERE name = 'invite_payload'))$$,
+  '22023', null, 'an AI policy cannot be attached to an AI-disabled invitation'
+);
+SELECT throws_ok(
+  $$SELECT private.normalize_google_admin_ledger_payload_v1('disableAi',
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload'))$$,
+  '22023', null, 'other ledger actions cannot carry hidden AI policy authority'
+);
+
+INSERT INTO teacher_ai_values VALUES ('enable_intent', pg_temp.teacher_ai_owner_intent(
+  'enableAi', '00000000-0000-4000-8000-00000000d401'::uuid,
+  (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload')
+));
+SELECT pg_temp.seed_d_admin_control_grant(
+  '00000000-0000-4000-8000-00000000d108'::uuid,
+  value ->> 'controlStepUpAction', '00000000-0000-4000-8000-00000000d401'::uuid,
+  value ->> 'intentDigest'
+) FROM teacher_ai_values WHERE name = 'enable_intent';
+
+SET ROLE service_role;
+SELECT throws_ok(
+  $$SELECT pg_temp.teacher_ai_owner_commit('enableAi',
+    '00000000-0000-4000-8000-00000000d401'::uuid,
+    (SELECT jsonb_set(value, '{ai_policy,max_cost_microusd_per_day}', '7000000'::jsonb)
+     FROM teacher_ai_values WHERE name = 'enable_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_intent'))$$,
+  'P7335', 'Admin ledger intent changed before mutation',
+  'a confirmed Owner grant cannot be reused for changed AI policy limits'
+);
+RESET ROLE;
+
+-- Fault injection is a transaction-local test constraint, never product logic.
+ALTER TABLE private.admin_ai_policies ADD CONSTRAINT teacher_ai_test_enable_failure
+  CHECK (request_id <> '00000000-0000-4000-8000-00000000d401'::uuid) NOT VALID;
+SET ROLE service_role;
+SELECT throws_ok(
+  $$SELECT pg_temp.teacher_ai_owner_commit('enableAi',
+    '00000000-0000-4000-8000-00000000d401'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_intent'))$$,
+  '23514', null, 'a failed policy insert aborts the compound enable operation'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT NOT can_use_ai FROM private.admin_environment_memberships
+   WHERE id = '00000000-0000-4000-8000-00000000d136'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_ai_policies
+    WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_google_operation_receipts
+    WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid)
+  AND EXISTS (SELECT 1 FROM private.admin_control_step_up_grants
+    WHERE mutation_request_id = '00000000-0000-4000-8000-00000000d401'::uuid
+      AND status = 'available' AND consumed_at IS NULL),
+  'policy failure rolls back entitlement, policy, receipt and grant consumption together'
+);
+ALTER TABLE private.admin_ai_policies DROP CONSTRAINT teacher_ai_test_enable_failure;
+
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_owner_commit('enableAi',
+    '00000000-0000-4000-8000-00000000d401'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_intent'))
+    @> '{"ok":true,"idempotentReplay":false,"resultStatus":"ai_enabled"}'::jsonb,
+  'the same confirmed request enables entitlement and policy in one commit'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT role = 'instructor' AND status = 'active' AND can_use_ai
+   FROM private.admin_environment_memberships
+   WHERE id = '00000000-0000-4000-8000-00000000d136'::uuid)
+  AND (SELECT count(*) = 1 AND bool_and(
+    membership_id = '00000000-0000-4000-8000-00000000d136'::uuid
+    AND created_by_membership_id = '00000000-0000-4000-8000-00000000d106'::uuid
+    AND created_by_admin_session_id = '00000000-0000-4000-8000-00000000d108'::uuid
+    AND max_cost_microusd_per_lecture = 3000000 AND max_cost_microusd_per_day = 6000000
+    AND status = 'active' AND valid_until = valid_from + interval '30 days'
+    AND cardinality(allowed_actions) = 5 AND cardinality(allowed_models) = 2)
+   FROM private.admin_ai_policies
+   WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid)
+  AND (SELECT count(*) = 1 FROM private.admin_control_step_up_grants
+    WHERE mutation_request_id = '00000000-0000-4000-8000-00000000d401'::uuid
+      AND status = 'consumed'),
+  'one grant yields a bounded membership policy without Owner promotion'
+);
+
+-- A historical successful response is not permission to restore later-revoked AI.
+UPDATE private.admin_environment_memberships SET can_use_ai = false
+WHERE id = '00000000-0000-4000-8000-00000000d136'::uuid;
+UPDATE private.admin_ai_policies SET status = 'revoked', revoked_at = statement_timestamp()
+WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid;
+INSERT INTO teacher_ai_values VALUES ('revoked_policy', (
+  SELECT to_jsonb(policy) FROM private.admin_ai_policies AS policy
+  WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid
+));
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_owner_commit('enableAi',
+    '00000000-0000-4000-8000-00000000d401'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_intent'))
+    @> '{"ok":true,"idempotentReplay":true}'::jsonb,
+  'lost-response replay returns its historical result after teacher AI was revoked'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT NOT can_use_ai FROM private.admin_environment_memberships
+    WHERE id = '00000000-0000-4000-8000-00000000d136'::uuid)
+  AND (SELECT count(*) = 1 FROM private.admin_ai_policies
+    WHERE membership_id = '00000000-0000-4000-8000-00000000d136'::uuid)
+  AND (SELECT to_jsonb(policy) FROM private.admin_ai_policies AS policy
+    WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid)
+    = (SELECT value FROM teacher_ai_values WHERE name = 'revoked_policy'),
+  'replay cannot restore entitlement, recreate a policy or extend its lifetime'
+);
+
+INSERT INTO teacher_ai_values VALUES ('invite_intent', pg_temp.teacher_ai_owner_intent(
+  'issueInvitation', '00000000-0000-4000-8000-00000000d402'::uuid,
+  (SELECT value FROM teacher_ai_values WHERE name = 'invite_payload')
+));
+SELECT pg_temp.seed_d_admin_control_grant(
+  '00000000-0000-4000-8000-00000000d108'::uuid,
+  value ->> 'controlStepUpAction', '00000000-0000-4000-8000-00000000d402'::uuid,
+  value ->> 'intentDigest'
+) FROM teacher_ai_values WHERE name = 'invite_intent';
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_owner_commit('issueInvitation',
+    '00000000-0000-4000-8000-00000000d402'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'invite_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'invite_intent'))
+    @> '{"ok":true,"idempotentReplay":false}'::jsonb,
+  'one Owner confirmation issues the teacher invitation with its AI approval'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT count(*) = 1 AND bool_and(
+    invitation.role = 'instructor' AND invitation.status = 'pending' AND invitation.can_use_ai
+    AND invitation.membership_expires_at IS NULL
+    AND invitation.expires_at = transaction_timestamp() + interval '48 hours'
+    AND contract.policy_terms = (SELECT value FROM teacher_ai_values WHERE name = 'terms'))
+   FROM private.admin_invitations AS invitation
+   JOIN private.admin_invitation_ai_policy_contracts AS contract ON contract.invitation_id = invitation.id
+   WHERE invitation.request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_ai_policies
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid),
+  'the immutable 48-hour invitation stores approval without premature membership policy'
+);
+SELECT throws_ok(
+  $$UPDATE private.admin_invitation_ai_policy_contracts
+    SET policy_terms = jsonb_set(policy_terms, '{max_cost_microusd_per_day}', '7000000'::jsonb)
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid$$,
+  '55000', 'invitation AI policy approval is immutable',
+  'an issued invitation policy cannot be widened after Owner confirmation'
+);
+SELECT throws_ok(
+  $$DELETE FROM private.admin_invitation_ai_policy_contracts
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid$$,
+  '55000', 'invitation AI policy approval is immutable',
+  'an issued invitation policy approval cannot be deleted'
+);
+
+SET ROLE service_role;
+SELECT is(
+  pg_temp.teacher_ai_accept('00000000-0000-4000-8000-00000000d404'::uuid, repeat('5', 64)),
+  '{"eligible":false}'::jsonb,
+  'the AI contract does not bypass the invitation token check'
+);
+RESET ROLE;
+ALTER TABLE private.admin_ai_policies ADD CONSTRAINT teacher_ai_test_accept_failure
+  CHECK (request_id <> '00000000-0000-4000-8000-00000000d402'::uuid) NOT VALID;
+SET ROLE service_role;
+SELECT throws_ok(
+  $$SELECT pg_temp.teacher_ai_accept('00000000-0000-4000-8000-00000000d403'::uuid, repeat('6', 64))$$,
+  '23514', null, 'a failed policy materialization aborts invitation acceptance'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT status = 'pending' AND accepted_membership_id IS NULL
+   FROM private.admin_invitations WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_principals
+    WHERE auth_user_id = '00000000-0000-4000-8000-00000000d142'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_invitation_redemption_receipts
+    WHERE admission_request_id = '00000000-0000-4000-8000-00000000d403'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM private.admin_ai_policies
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid),
+  'failed acceptance rolls back principal, membership, acceptance receipt and policy'
+);
+ALTER TABLE private.admin_ai_policies DROP CONSTRAINT teacher_ai_test_accept_failure;
+
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_accept('00000000-0000-4000-8000-00000000d403'::uuid, repeat('6', 64))
+    @> '{"eligible":true,"idempotent_replay":false}'::jsonb,
+  'the same invitation acceptance succeeds with its already-approved AI policy'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT membership.role = 'instructor' AND membership.status = 'pending_mfa'
+      AND membership.can_use_ai AND invitation.status = 'accepted'
+      AND policy.status = 'active' AND policy.valid_until = policy.valid_from + interval '30 days'
+      AND policy.max_cost_microusd_per_lecture = 3000000 AND policy.max_cost_microusd_per_day = 6000000
+      AND policy.created_by_membership_id = invitation.inviter_membership_id
+      AND policy.created_by_admin_session_id = '00000000-0000-4000-8000-00000000d108'::uuid
+   FROM private.admin_invitations AS invitation
+   JOIN private.admin_environment_memberships AS membership ON membership.id = invitation.accepted_membership_id
+   JOIN private.admin_ai_policies AS policy ON policy.membership_id = membership.id
+     AND policy.environment_id = membership.environment_id AND policy.request_id = invitation.request_id
+   WHERE invitation.request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+  AND NOT EXISTS (SELECT 1 FROM public.admin_sessions
+    WHERE auth_user_id = '00000000-0000-4000-8000-00000000d142'::uuid),
+  'acceptance attaches policy to the exact pending-MFA teacher without issuing an Admin session'
+);
+INSERT INTO teacher_ai_values VALUES ('accepted_policy', (
+  SELECT to_jsonb(policy) FROM private.admin_ai_policies AS policy
+  WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid
+));
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_accept('00000000-0000-4000-8000-00000000d403'::uuid, repeat('6', 64))
+    @> '{"eligible":true,"idempotent_replay":true}'::jsonb,
+  'acceptance replay recovers the existing membership and approval'
+);
+SELECT ok(
+  pg_temp.teacher_ai_owner_commit('issueInvitation',
+    '00000000-0000-4000-8000-00000000d402'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'invite_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'invite_intent'))
+    @> '{"ok":true,"idempotentReplay":true}'::jsonb,
+  'Owner response replay remains safe after the invitation has been accepted'
+);
+RESET ROLE;
+SELECT ok(
+  (SELECT count(*) = 1 FROM private.admin_invitation_ai_policy_contracts
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+  AND (SELECT count(*) = 1 FROM private.admin_ai_policies
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+  AND (SELECT to_jsonb(policy) FROM private.admin_ai_policies AS policy
+    WHERE request_id = '00000000-0000-4000-8000-00000000d402'::uuid)
+    = (SELECT value FROM teacher_ai_values WHERE name = 'accepted_policy'),
+  'neither replay creates duplicate contracts or policies nor extends the 30-day approval'
+);
+
+SELECT is(
+  (SELECT jsonb_agg(jsonb_build_object(
+    'id', id, 'issued_at', issued_at, 'expires_at', expires_at,
+    'idle_expires_at', idle_expires_at, 'revoked_at', revoked_at,
+    'supabase_auth_session_id', supabase_auth_session_id
+  ) ORDER BY id) FROM public.admin_sessions
+  WHERE environment_id = '00000000-0000-4000-8000-00000000d101'::uuid),
+  (SELECT value FROM teacher_ai_values WHERE name = 'sessions_before'),
+  'one-step AI administration leaves Admin session identity, lifetime and revocation unchanged'
+);
+SELECT is(
+  (SELECT jsonb_agg(to_jsonb(session) ORDER BY session.id)
+   FROM auth.sessions AS session WHERE user_id IN (
+     '00000000-0000-4000-8000-00000000d102'::uuid,
+     '00000000-0000-4000-8000-00000000d112'::uuid
+   )),
+  (SELECT value FROM teacher_ai_values WHERE name = 'auth_sessions_before'),
+  'one-step AI administration does not renew or replace the backing Auth sessions'
+);
+
+-- Existing receipt replay intentionally does not require current Owner authority.
+-- Revoking the fixture Owner proves that the wrapper does not turn replay into
+-- a new policy grant; this occurs last and is rolled back with the whole suite.
+UPDATE public.admin_sessions SET revoked_at = statement_timestamp(),
+  revoke_reason = 'teacher_ai_test_owner_revoked', updated_at = statement_timestamp()
+WHERE id = '00000000-0000-4000-8000-00000000d108'::uuid;
+SET ROLE service_role;
+SELECT ok(
+  pg_temp.teacher_ai_owner_commit('enableAi',
+    '00000000-0000-4000-8000-00000000d401'::uuid,
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_payload'),
+    (SELECT value FROM teacher_ai_values WHERE name = 'enable_intent'))
+    @> '{"ok":true,"idempotentReplay":true}'::jsonb,
+  'a revoked Owner session can recover only the historical compound receipt'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT to_jsonb(policy) FROM private.admin_ai_policies AS policy
+    WHERE request_id = '00000000-0000-4000-8000-00000000d401'::uuid),
+  (SELECT value FROM teacher_ai_values WHERE name = 'revoked_policy'),
+  'Owner-session revocation cannot be bypassed to recreate policy through receipt replay'
+);
+
 SELECT * FROM finish();
 ROLLBACK;

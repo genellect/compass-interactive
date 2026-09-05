@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { sha256Hex } from '../supabase/functions/_shared/aiBilling.ts'
 import {
@@ -11,6 +12,7 @@ import {
   normalizePdfContext,
   normalizeTranscriptSegments,
   PHASE6_MAX_PDF_CHARACTERS,
+  PHASE6_MAX_OUTPUT_TOKENS,
   parseSummaryOpenAiResponse,
   PHASE6_MODEL,
 } from '../supabase/functions/_shared/lectureSummaries.ts'
@@ -173,6 +175,7 @@ test('normalizes source, validates PDF hash and keeps source injection as data',
     windowStart: startedAt,
   })
   assert.equal(request.model, PHASE6_MODEL)
+  assert.equal(request.max_output_tokens, PHASE6_MAX_OUTPUT_TOKENS)
   assert.equal(request.store, false)
   assert.equal(request.reasoning.effort, 'low')
   assert.equal(request.text.verbosity, 'low')
@@ -434,6 +437,38 @@ test('quality gates suppress weak comments, unsupported candidates, duplicate an
     (error: unknown) =>
       error instanceof LectureSummaryError && error.retryableSchemaFailure,
   )
+})
+
+test('both Google summary RPCs serialize the reserved provider output limit', () => {
+  const entrypoint = readFileSync(
+    new URL(
+      '../supabase/functions/generate-lecture-summary/index.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  )
+  const bindings = [
+    ...entrypoint.matchAll(/target_max_output_tokens:\s*reservation\.(\w+)/g),
+  ]
+  assert.equal(
+    bindings.length,
+    2,
+    'cover both child-grant and operation-start RPCs',
+  )
+  for (const sourceCharacters of [0, 1, 100_000]) {
+    const reservation: Record<string, number> =
+      estimateSummaryReservation(sourceCharacters)
+    for (const [, field] of bindings) {
+      const wire = JSON.parse(
+        JSON.stringify({ target_max_output_tokens: reservation[field] }),
+      )
+      assert.equal(
+        wire.target_max_output_tokens,
+        PHASE6_MAX_OUTPUT_TOKENS,
+        'the mandatory output limit must not disappear during RPC JSON serialization',
+      )
+    }
+  }
 })
 
 test('uses bounded conservative reservation with the Luna price snapshot', () => {

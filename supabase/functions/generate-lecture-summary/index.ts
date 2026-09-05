@@ -481,7 +481,7 @@ Deno.serve(async (request) => {
           PHASE6_INPUT_PRICE_MICROUSD_PER_MILLION,
         target_language_reason: languageResolution.reason,
         target_lecture_session_id: body.lectureSessionId,
-        target_max_output_tokens: reservation.maxOutputTokens,
+        target_max_output_tokens: reservation.estimatedOutputTokens,
         target_model_id: PHASE6_MODEL,
         target_nonce_hash: nonceHash,
         target_nonce_key_version: nonceKeyVersion,
@@ -539,7 +539,7 @@ Deno.serve(async (request) => {
             PHASE6_INPUT_PRICE_MICROUSD_PER_MILLION,
           target_language_reason: languageResolution.reason,
           target_lecture_session_id: body.lectureSessionId,
-          target_max_output_tokens: reservation.maxOutputTokens,
+          target_max_output_tokens: reservation.estimatedOutputTokens,
           target_model_id: PHASE6_MODEL,
           target_nonce_hash: nonceHash,
           target_output_price_microusd_per_million:

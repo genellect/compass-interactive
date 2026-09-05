@@ -81,6 +81,12 @@ export type AdminLedgerAuditEvent = {
   targetType: string
 }
 
+export type AdminLedgerAiPolicy = {
+  maxCostMicrousdPerDay: number
+  maxCostMicrousdPerLecture: number
+  validityDays: 30
+}
+
 export type AdminLedgerMutationPayloads = {
   demoteOwner: {
     expectedRole: 'owner'
@@ -97,6 +103,7 @@ export type AdminLedgerMutationPayloads = {
     membershipId: string
   }
   enableAi: {
+    aiPolicy?: AdminLedgerAiPolicy
     expectedCanUseAi: false
     expectedStatus: 'active'
     expectedUpdatedAt: string
@@ -104,6 +111,7 @@ export type AdminLedgerMutationPayloads = {
   }
   globalRevoke: { membershipId: string }
   issueInvitation: {
+    aiPolicy?: AdminLedgerAiPolicy
     canUseAi: boolean
     expiresAt: string
     membershipExpiresAt: string | null

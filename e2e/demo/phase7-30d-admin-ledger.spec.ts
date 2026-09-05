@@ -53,6 +53,7 @@ type MockState = {
   ledgerCompleteBodies: Record<string, unknown>[]
   ledgerCompleteAttempts: number
   ledgerGrantIssues: number
+  instructorAiEnabled: boolean
   openLecture: boolean
   pinControlBeganAtSeconds: number
   pinGrantAvailable: boolean
@@ -448,6 +449,7 @@ async function installMocks(
     ledgerCompleteBodies: [],
     ledgerCompleteAttempts: 0,
     ledgerGrantIssues: 0,
+    instructorAiEnabled: false,
     openLecture: true,
     pinControlBeganAtSeconds: 0,
     pinGrantAvailable: false,
@@ -577,7 +579,11 @@ async function installMocks(
           controlExpiries.set(String(body.controlRequestId), expiresAt)
           const controlStepUpNonce =
             body.controlStepUpNonce ?? `n.${'b'.repeat(41)}`
-          if (body.controlAction === 'admin_invitation_change') {
+          if (
+            ['admin_invitation_change', 'admin_membership_ai_change'].includes(
+              String(body.controlAction),
+            )
+          ) {
             ledgerControlIntentDigest = String(body.controlIntentDigest)
             ledgerControlNonce = String(controlStepUpNonce)
             ledgerControlRequestId = String(body.controlRequestId)
@@ -611,7 +617,11 @@ async function installMocks(
             )
             return
           }
-          if (body.controlAction === 'admin_invitation_change') {
+          if (
+            ['admin_invitation_change', 'admin_membership_ai_change'].includes(
+              String(body.controlAction),
+            )
+          ) {
             state.ledgerCompleteAttempts += 1
             state.ledgerCompleteBodies.push(JSON.parse(JSON.stringify(body)))
             if (
@@ -772,10 +782,29 @@ async function installMocks(
         if (action === 'policyStatus') {
           const now = Date.now()
           await fulfillJson(route, {
-            activeAiMembershipCount: 2,
+            activeAiMembershipCount: state.instructorAiEnabled ? 3 : 2,
             canonicalPolicyTopologyComplete: state.policyCovered,
-            coveredMembershipCount: state.policyCovered ? 2 : 1,
+            coveredMembershipCount:
+              (state.policyCovered ? 2 : 1) +
+              (state.instructorAiEnabled ? 1 : 0),
             memberships: [
+              ...(state.instructorAiEnabled
+                ? [
+                    {
+                      covered: true,
+                      maxCostMicrousdPerDay: 6_000_000,
+                      maxCostMicrousdPerLecture: 3_000_000,
+                      membershipId: instructorMembershipId,
+                      policyId: '730d0000-0000-4000-8000-000000000015',
+                      policyStatus: 'active',
+                      policyVersion: 1,
+                      validFrom: new Date(now - 60_000).toISOString(),
+                      validUntil: new Date(
+                        now + 30 * 24 * 60 * 60_000,
+                      ).toISOString(),
+                    },
+                  ]
+                : []),
               {
                 covered: true,
                 maxCostMicrousdPerDay: 2_000_000,
@@ -824,8 +853,12 @@ async function installMocks(
             JSON.stringify(receivedKeys) !==
               JSON.stringify([...expectedKeys].sort()) ||
             body.targetMembershipId !== aiInstructorMembershipId ||
-            body.maxCostMicrousdPerLecture !== 500_000 ||
-            body.maxCostMicrousdPerDay !== 2_000_000
+            !(
+              (body.maxCostMicrousdPerLecture === 500_000 &&
+                body.maxCostMicrousdPerDay === 2_000_000) ||
+              (body.maxCostMicrousdPerLecture === 3_000_000 &&
+                body.maxCostMicrousdPerDay === 6_000_000)
+            )
           ) {
             await fulfillJson(
               route,
@@ -886,6 +919,13 @@ async function installMocks(
             state.openLecture,
             duplicatePendingInvitations,
           )
+          if (state.instructorAiEnabled) {
+            snapshot.memberships = snapshot.memberships.map((membership) =>
+              membership.membershipId === instructorMembershipId
+                ? { ...membership, canUseAi: true }
+                : membership,
+            )
+          }
           if (priorInvitationRevoked) {
             snapshot.invitations = snapshot.invitations.map((invitation) => ({
               ...invitation,
@@ -918,18 +958,57 @@ async function installMocks(
         if (
           body.stage === 'intent' &&
           (body.action === 'issueInvitation' ||
-            body.action === 'revokeInvitation')
+            body.action === 'revokeInvitation' ||
+            body.action === 'enableAi')
         ) {
           await fulfillJson(route, {
-            controlStepUpAction: 'admin_invitation_change',
+            controlStepUpAction:
+              body.action === 'enableAi'
+                ? 'admin_membership_ai_change'
+                : 'admin_invitation_change',
             intentDigest,
             ok: true,
             operationKey: `manage-admin-ledger.${String(body.action)}`,
             requestId: body.requestId,
             targetId:
-              body.action === 'revokeInvitation'
-                ? priorInvitationId
-                : resultInvitationId,
+              body.action === 'enableAi'
+                ? instructorMembershipId
+                : body.action === 'revokeInvitation'
+                  ? priorInvitationId
+                  : resultInvitationId,
+          })
+          return
+        }
+        if (body.stage === 'commit' && body.action === 'enableAi') {
+          state.commitBodies.push(JSON.parse(JSON.stringify(body)))
+          commitAttempts += 1
+          if (
+            !ledgerGrantAvailable ||
+            body.requestId !== ledgerControlRequestId
+          ) {
+            await fulfillJson(
+              route,
+              { code: 'control_proof_required', ok: false },
+              409,
+            )
+            return
+          }
+          if (failFirstInvitationCommit && commitAttempts === 1) {
+            await fulfillJson(
+              route,
+              { code: 'service_unavailable', ok: false },
+              503,
+            )
+            return
+          }
+          state.instructorAiEnabled = true
+          ledgerGrantAvailable = false
+          await fulfillJson(route, {
+            idempotentReplay: false,
+            ok: true,
+            refreshRequired: true,
+            resultId: instructorMembershipId,
+            resultStatus: 'ai_enabled',
           })
           return
         }
@@ -1782,8 +1861,8 @@ test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and
   })
   await target.selectOption(aiInstructorMembershipId)
   await policyPanel.getByLabel('確認に使う認証アプリ').selectOption(factorId)
-  await expect(lectureCost).toHaveValue(/^(?:0\.5|0\.50)$/)
-  await expect(dailyCost).toHaveValue(/^(?:2|2\.0|2\.00)$/)
+  await expect(lectureCost).toHaveValue('3.00')
+  await expect(dailyCost).toHaveValue('6.00')
 
   await lectureCost.fill('2.01')
   await dailyCost.fill('2.00')
@@ -2022,7 +2101,7 @@ for (const surface of [
       expect(state.commitBodies).toHaveLength(1)
     } else if (surface === 'invitation-cancel') {
       await expect(
-        panel.getByText('管理台帳を更新しました。', { exact: true }),
+        panel.getByText('教員情報を更新しました。', { exact: true }),
       ).toBeVisible()
       expect(state.commitBodies).toHaveLength(1)
       expect(state.commitBodies[0]?.action).toBe('revokeInvitation')
@@ -2037,6 +2116,146 @@ for (const surface of [
     expect(state.unexpectedRequests).toEqual([])
   })
 }
+
+test('adds a teacher with AI entitlement and approved limits in one confirmed invitation', async ({
+  page,
+}) => {
+  const admin = adminSession()
+  await installStoredSessions(page, admin, studentSession().storageValue)
+  const state = await installMocks(page, admin, {
+    failFirstInvitationCommit: false,
+  })
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  await panel.getByRole('button', { name: '新しい教員を追加' }).click()
+  await expect(
+    panel.getByLabel('Googleアカウントのメールアドレス'),
+  ).toBeFocused()
+  await panel
+    .getByLabel('Googleアカウントのメールアドレス')
+    .fill('ai-teacher@example.test')
+  await panel.getByRole('checkbox', { name: 'AI利用を許可' }).check()
+  const invitation = panel.locator('.admin-ledger-add-teacher form')
+  await expect(invitation.getByLabel('講義ごとの上限（USD）')).toHaveValue(
+    '3.00',
+  )
+  await expect(invitation.getByLabel('1日ごとの上限（USD）')).toHaveValue(
+    '6.00',
+  )
+  await panel
+    .getByRole('button', { name: '招待リンクを作成', exact: true })
+    .click()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(1)
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel
+    .getByRole('button', { name: 'この変更を実行', exact: true })
+    .click()
+  await expect(
+    panel.getByText('今回だけ表示される招待リンク', { exact: true }),
+  ).toBeVisible()
+  expect(state.commitBodies).toHaveLength(1)
+  expect(state.commitBodies[0]?.payload).toMatchObject({
+    normalizedEmail: 'ai-teacher@example.test',
+    role: 'instructor',
+    canUseAi: true,
+    membershipExpiresAt: null,
+    aiPolicy: {
+      maxCostMicrousdPerLecture: 3_000_000,
+      maxCostMicrousdPerDay: 6_000_000,
+      validityDays: 30,
+    },
+  })
+  expect(state.ledgerGrantIssues).toBe(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(
+    state.functionCalls.filter(
+      ({ body }) =>
+        body.action === 'preparePolicyMutation' || body.action === 'setPolicy',
+    ),
+  ).toHaveLength(0)
+  expect(state.unexpectedRequests).toEqual([])
+})
+
+test('grants AI entitlement and policy from the teacher row with one TOTP even after retry', async ({
+  page,
+}) => {
+  const admin = adminSession()
+  await installStoredSessions(page, admin, studentSession().storageValue)
+  const state = await installMocks(page, admin)
+  const panel = await openLedger(page)
+  state.admissionEnabled = true
+  await panel.getByRole('button', { name: '最新状態を確認' }).click()
+  const teacherRow = panel
+    .getByRole('row')
+    .filter({ has: page.getByText('instructor@example.test', { exact: true }) })
+  await teacherRow
+    .getByRole('button', { name: 'AI利用を設定', exact: true })
+    .click()
+  const policyPanel = panel
+    .locator('summary')
+    .filter({ hasText: '講義AIの利用設定' })
+    .locator('..')
+  await expect(policyPanel.getByLabel('対象の教員')).toHaveValue(
+    instructorMembershipId,
+  )
+  await expect(policyPanel.getByLabel('対象の教員')).toBeFocused()
+  await policyPanel
+    .getByRole('button', { name: 'この設定で利用を許可' })
+    .click()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(1)
+  await panel.getByLabel('6桁コード').fill('123456')
+  await panel
+    .getByRole('button', { name: 'この変更を実行', exact: true })
+    .click()
+  await expect(
+    panel.getByRole('button', { name: '変更の完了を確認する' }),
+  ).toBeVisible()
+  await expect(panel.getByLabel('6桁コード')).toHaveCount(0)
+  await panel.getByRole('button', { name: '変更の完了を確認する' }).click()
+  await expect(
+    panel.getByText('AI権限と利用上限を設定しました。', { exact: true }),
+  ).toBeVisible()
+  await expect(teacherRow.getByText('設定済み', { exact: true })).toBeVisible()
+  await expect(
+    teacherRow.getByText('$3.00/講義 · $6.00/日', { exact: true }),
+  ).toBeVisible()
+  expect(state.commitBodies).toHaveLength(2)
+  expect(state.commitBodies[0]).toEqual(state.commitBodies[1])
+  expect(state.commitBodies[0]).toMatchObject({
+    action: 'enableAi',
+    payload: {
+      membershipId: instructorMembershipId,
+      expectedCanUseAi: false,
+      expectedStatus: 'active',
+      aiPolicy: {
+        maxCostMicrousdPerLecture: 3_000_000,
+        maxCostMicrousdPerDay: 6_000_000,
+        validityDays: 30,
+      },
+    },
+  })
+  expect(state.ledgerGrantIssues).toBe(1)
+  expect(
+    state.authRequests.filter(({ pathname }) => pathname.includes('/verify')),
+  ).toHaveLength(1)
+  expect(
+    state.functionCalls.filter(
+      ({ body }) =>
+        body.action === 'preparePolicyMutation' || body.action === 'setPolicy',
+    ),
+  ).toHaveLength(0)
+  expect(state.unexpectedRequests).toEqual([])
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true)
+})
 
 test('keeps the settings route available to an Instructor without exposing Owner AI policy controls', async ({
   page,
