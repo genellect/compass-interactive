@@ -323,6 +323,7 @@ assert.match(envExample, /^VITE_PHASE7_29_POWERPOINT_SYNC=false$/m)
 assert.match(envExample, /^VITE_PRESENTER_STORE_URL=$/m)
 assert.match(adminPresenterControl, /VITE_PRESENTER_STORE_URL/)
 assert.match(adminPresenterControl, /url\.hostname !== 'apps\.microsoft\.com'/)
+assert.match(adminPresenterControl, /url\.search/)
 assert.match(adminPresenterControl, /\\\/detail\\\/\[A-Z0-9\]\{12\}/)
 assert.doesNotMatch(
   adminPresenterControl,

@@ -39,6 +39,7 @@ function readPresenterStoreUrl(): string | null {
       url.port ||
       url.username ||
       url.password ||
+      url.search ||
       url.hash ||
       !/^\/detail\/[A-Z0-9]{12}$/i.test(url.pathname)
     )

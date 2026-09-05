@@ -105,6 +105,14 @@ assert.match(
   }).join('\n'),
   /must be an exact HTTPS apps\.microsoft\.com listing URL/,
 )
+assert.match(
+  validateProductionEnvironment({
+    ...safeEnvironment,
+    VITE_PRESENTER_STORE_URL:
+      'https://apps.microsoft.com/detail/9TESTONLY729?hl=ja-JP',
+  }).join('\n'),
+  /must be an exact HTTPS apps\.microsoft\.com listing URL/,
+)
 assert.deepEqual(
   validateProductionEnvironment({
     ...safeEnvironment,
