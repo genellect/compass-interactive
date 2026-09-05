@@ -33,6 +33,7 @@ BEGIN
     );
     SELECT result || jsonb_build_object(
       'settled', accounting_settled_at IS NOT NULL,
+      'operationStatus', status,
       'actualCost', actual_microusd,
       'expectedCost', CASE WHEN unknown_usage THEN reserved.reserved_microusd ELSE 0 END
     ) INTO result FROM public.ai_usage_ledger WHERE id = operation;
@@ -2966,7 +2967,7 @@ SELECT ok(
 );
 RESET ROLE;
 SELECT ok(
-  (SELECT result ->> 'accepted' = 'true'
+  (SELECT result ->> 'operationStatus' = 'failed'
     AND result ->> 'settled' = 'true'
     AND result ->> 'actualCost' = '0'
    FROM pg_temp.probe_summary_failure(false) AS result),
@@ -3010,14 +3011,14 @@ SELECT ok(
   'rejected late failure leaves the live operation unmodified'
 );
 SELECT ok(
-  (SELECT result ->> 'accepted' = 'true'
+  (SELECT result ->> 'operationStatus' = 'failed'
     AND result ->> 'settled' = 'true'
     AND result ->> 'actualCost' = '0'
    FROM pg_temp.probe_summary_failure(true) AS result),
   'a real dispatched HTTP429 can still settle zero usage with its claim ID'
 );
 SELECT ok(
-  (SELECT result ->> 'accepted' = 'true'
+  (SELECT result ->> 'operationStatus' = 'failed'
     AND result ->> 'settled' = 'true'
     AND result ->> 'actualCost' = result ->> 'expectedCost'
    FROM pg_temp.probe_summary_failure(true, true) AS result),
