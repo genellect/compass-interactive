@@ -110,14 +110,19 @@ export type AdminLedgerMutationPayloads = {
     membershipId: string
   }
   globalRevoke: { membershipId: string }
-  issueInvitation: {
-    aiPolicy?: AdminLedgerAiPolicy
-    canUseAi: boolean
-    expiresAt: string
-    membershipExpiresAt: string | null
-    normalizedEmail: string
-    role: 'instructor' | 'owner'
-  }
+  issueInvitation:
+    | {
+        aiPolicy?: AdminLedgerAiPolicy
+        canUseAi: boolean
+        expiresAt: string
+        membershipExpiresAt: string | null
+        normalizedEmail: string
+        role: 'instructor' | 'owner'
+      }
+    | {
+        normalizedEmail: string
+        purpose: 'microsoftStoreReview'
+      }
   promoteOwner: {
     expectedRole: 'instructor'
     expectedStatus: 'active'
@@ -163,6 +168,12 @@ export type AdminLedgerMutationIntent = {
   operationKey: AdminLedgerOperationKey
   requestId: string
   targetId: string
+  microsoftStoreReview?: {
+    contract: string
+    expiresAt: string
+    issuedAt: string
+    membershipExpiresAt: string
+  }
 }
 
 export type AdminLedgerMutationResult = {
@@ -279,6 +290,28 @@ export async function prepareAdminLedgerMutation(
   ) {
     throw new AdminLedgerError('service_unavailable')
   }
+  const reviewRequest =
+    request.action === 'issueInvitation' &&
+    'purpose' in request.payload &&
+    request.payload.purpose === 'microsoftStoreReview'
+  const reviewIntent = result.microsoftStoreReview
+  const reviewIssuedAt = Date.parse(String(reviewIntent?.issuedAt ?? ''))
+  const reviewExpiresAt = Date.parse(String(reviewIntent?.expiresAt ?? ''))
+  const reviewMembershipExpiresAt = Date.parse(
+    String(reviewIntent?.membershipExpiresAt ?? ''),
+  )
+  if (
+    reviewRequest &&
+    (!reviewIntent ||
+      typeof reviewIntent !== 'object' ||
+      typeof reviewIntent.contract !== 'string' ||
+      !/^msr1\.[0-9]{1,12}\.[A-Za-z0-9_-]{43}$/.test(reviewIntent.contract) ||
+      !Number.isFinite(reviewIssuedAt) ||
+      reviewExpiresAt - reviewIssuedAt !== 7 * 24 * 60 * 60 * 1_000 ||
+      reviewMembershipExpiresAt - reviewIssuedAt !== 14 * 24 * 60 * 60 * 1_000)
+  ) {
+    throw new AdminLedgerError('service_unavailable')
+  }
   return result as AdminLedgerMutationIntent
 }
 
@@ -286,6 +319,7 @@ export async function commitAdminLedgerMutation(
   request: AdminLedgerMutationRequest & {
     adminToken: AdminOperationCredential
     intentDigest: string
+    microsoftStoreReviewContract?: string
     requestId: string
   },
 ) {

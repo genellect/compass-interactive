@@ -2,6 +2,132 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { classifyAdminLedgerRpcFailure } from '../supabase/functions/_shared/adminLedgerRpcFailure.ts'
 import { normalizeAdminLedgerAiPolicy } from '../supabase/functions/_shared/adminLedgerAiPolicy.ts'
+import {
+  createMicrosoftStoreReviewContract,
+  MICROSOFT_STORE_REVIEW_INVITATION_SECONDS,
+  MICROSOFT_STORE_REVIEW_MEMBERSHIP_SECONDS,
+  normalizeMicrosoftStoreReviewRequest,
+  verifyMicrosoftStoreReviewContract,
+} from '../supabase/functions/_shared/adminMicrosoftStoreReview.ts'
+
+const reviewEnvironmentId = '00000000-0000-4000-8000-000000000101'
+const reviewRequestId = '00000000-0000-4000-8000-000000000102'
+const reviewEmailHmac = 'a'.repeat(64)
+const reviewInvitationSecret = 'review-invitation-secret-for-tests-1234567890'
+const reviewIssuedAtMs = Date.parse('2026-09-06T00:00:00.000Z')
+
+test('accepts only the minimal Microsoft Store review request shape', () => {
+  assert.deepEqual(
+    normalizeMicrosoftStoreReviewRequest({
+      normalizedEmail: ' Store.Reviewer@Example.Test ',
+      purpose: 'microsoftStoreReview',
+    }),
+    {
+      normalizedEmail: 'store.reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+    },
+  )
+
+  for (const broaderPayload of [
+    {
+      normalizedEmail: 'store.reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+      role: 'owner',
+    },
+    {
+      canUseAi: true,
+      normalizedEmail: 'store.reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+    },
+    {
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      normalizedEmail: 'store.reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+    },
+    {
+      membershipExpiresAt: '2099-01-01T00:00:00.000Z',
+      normalizedEmail: 'store.reviewer@example.test',
+      purpose: 'microsoftStoreReview',
+    },
+  ]) {
+    assert.equal(normalizeMicrosoftStoreReviewRequest(broaderPayload), null)
+  }
+})
+
+test('server contract fixes Store review role, AI and absolute expiries', async () => {
+  const issued = await createMicrosoftStoreReviewContract({
+    emailHmac: reviewEmailHmac,
+    environmentId: reviewEnvironmentId,
+    issuedAtMs: reviewIssuedAtMs,
+    invitationSecret: reviewInvitationSecret,
+    requestId: reviewRequestId,
+  })
+
+  assert.deepEqual(issued.terms, {
+    canUseAi: false,
+    expiresAt: new Date(
+      reviewIssuedAtMs + MICROSOFT_STORE_REVIEW_INVITATION_SECONDS * 1_000,
+    ).toISOString(),
+    issuedAt: new Date(reviewIssuedAtMs).toISOString(),
+    membershipExpiresAt: new Date(
+      reviewIssuedAtMs + MICROSOFT_STORE_REVIEW_MEMBERSHIP_SECONDS * 1_000,
+    ).toISOString(),
+    role: 'instructor',
+  })
+  assert.deepEqual(
+    await verifyMicrosoftStoreReviewContract({
+      contract: issued.contract,
+      emailHmac: reviewEmailHmac,
+      environmentId: reviewEnvironmentId,
+      invitationSecret: reviewInvitationSecret,
+      nowMs: reviewIssuedAtMs,
+      requestId: reviewRequestId,
+    }),
+    issued.terms,
+  )
+})
+
+test('rejects altered, cross-scope and expired Store review contracts', async () => {
+  const issued = await createMicrosoftStoreReviewContract({
+    emailHmac: reviewEmailHmac,
+    environmentId: reviewEnvironmentId,
+    issuedAtMs: reviewIssuedAtMs,
+    invitationSecret: reviewInvitationSecret,
+    requestId: reviewRequestId,
+  })
+  const common = {
+    contract: issued.contract,
+    emailHmac: reviewEmailHmac,
+    environmentId: reviewEnvironmentId,
+    invitationSecret: reviewInvitationSecret,
+    nowMs:
+      reviewIssuedAtMs + MICROSOFT_STORE_REVIEW_INVITATION_SECONDS * 1_000 - 1,
+    requestId: reviewRequestId,
+  }
+  assert.ok(await verifyMicrosoftStoreReviewContract(common))
+  const changedLastCharacter = issued.contract.endsWith('A') ? 'B' : 'A'
+
+  for (const changed of [
+    {
+      ...common,
+      contract: `${issued.contract.slice(0, -1)}${changedLastCharacter}`,
+    },
+    { ...common, emailHmac: 'b'.repeat(64) },
+    {
+      ...common,
+      environmentId: '00000000-0000-4000-8000-000000000103',
+    },
+    { ...common, invitationSecret: `${reviewInvitationSecret}-changed` },
+    { ...common, requestId: '00000000-0000-4000-8000-000000000104' },
+    {
+      ...common,
+      nowMs:
+        reviewIssuedAtMs + MICROSOFT_STORE_REVIEW_INVITATION_SECONDS * 1_000,
+    },
+  ]) {
+    assert.equal(await verifyMicrosoftStoreReviewContract(changed), null)
+  }
+})
 
 test('normalizes the single-action AI budget with exact approved terms', () => {
   assert.deepEqual(

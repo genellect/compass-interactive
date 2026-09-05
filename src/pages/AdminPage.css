@@ -630,6 +630,20 @@
   inline-size: auto;
 }
 
+.admin-ledger-store-review {
+  background: color-mix(in srgb, var(--panel) 88%, var(--accent));
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+}
+
+.admin-ledger-store-review h3,
+.admin-ledger-store-review p {
+  margin: 0;
+}
+
 .admin-ledger-invitation-link {
   display: grid;
   gap: 0.7rem;

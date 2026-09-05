@@ -70,6 +70,20 @@ const MUTATION_LABELS = {
 
 const INVITATION_LIFETIME_MS = 48 * 60 * 60 * 1_000
 
+function isMicrosoftStoreReviewInvitation(request: AdminLedgerMutationRequest) {
+  return (
+    request.action === 'issueInvitation' &&
+    'purpose' in request.payload &&
+    request.payload.purpose === 'microsoftStoreReview'
+  )
+}
+
+function mutationLabel(request: AdminLedgerMutationRequest) {
+  return isMicrosoftStoreReviewInvitation(request)
+    ? 'Microsoft Store審査用アクセスを発行'
+    : MUTATION_LABELS[request.action]
+}
+
 const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
   active: '利用中',
   pending_mfa: '認証アプリ登録待ち',
@@ -126,6 +140,12 @@ function restorePendingMutation(): PendingMutation | null {
     const pending = stored.pending
     const phase = String(pending?.phase)
     const intent = pending?.intent as Record<string, unknown> | undefined
+    const payload = pending?.payload as Record<string, unknown> | undefined
+    const storedMicrosoftStoreReview =
+      pending?.action === 'issueInvitation' &&
+      payload?.purpose === 'microsoftStoreReview'
+    const storedMicrosoftStoreReviewIntent = intent?.microsoftStoreReview as
+      Record<string, unknown> | undefined
     if (
       typeof stored.createdAt !== 'number' ||
       !Number.isSafeInteger(stored.createdAt) ||
@@ -151,7 +171,20 @@ function restorePendingMutation(): PendingMutation | null {
           !/^[0-9a-f]{64}$/.test(intent.intentDigest) ||
           intent.requestId !== pending.requestId ||
           intent.operationKey !==
-            `manage-admin-ledger.${String(pending.action)}`))
+            `manage-admin-ledger.${String(pending.action)}` ||
+          (storedMicrosoftStoreReview &&
+            (!storedMicrosoftStoreReviewIntent ||
+              typeof storedMicrosoftStoreReviewIntent.contract !== 'string' ||
+              !/^msr1\.[0-9]{1,12}\.[A-Za-z0-9_-]{43}$/.test(
+                storedMicrosoftStoreReviewIntent.contract,
+              ) ||
+              !['expiresAt', 'issuedAt', 'membershipExpiresAt'].every(
+                (key) =>
+                  typeof storedMicrosoftStoreReviewIntent[key] === 'string' &&
+                  Number.isFinite(
+                    Date.parse(String(storedMicrosoftStoreReviewIntent[key])),
+                  ),
+              )))))
     ) {
       throw new Error('invalid pending Admin ledger operation')
     }
@@ -448,10 +481,24 @@ export function AdminLedgerPanel({
         recoveryPhase = 'authorized'
         rememberPendingMutation(nextPending)
       }
+      const microsoftStoreReviewContract = isMicrosoftStoreReviewInvitation(
+        nextPending,
+      )
+        ? nextPending.intent.microsoftStoreReview?.contract
+        : undefined
+      if (
+        isMicrosoftStoreReviewInvitation(nextPending) &&
+        !microsoftStoreReviewContract
+      ) {
+        throw new AdminLedgerError('service_unavailable')
+      }
       const result = await commitAdminLedgerMutation({
         action: nextPending.action,
         adminToken: adminCredential,
         intentDigest: nextPending.intent.intentDigest,
+        ...(microsoftStoreReviewContract
+          ? { microsoftStoreReviewContract }
+          : {}),
         payload: nextPending.payload,
         requestId: nextPending.requestId,
       } as Parameters<typeof commitAdminLedgerMutation>[0])
@@ -473,11 +520,13 @@ export function AdminLedgerPanel({
 
       clearPendingMutation()
       setMessage(
-        nextPending.action === 'issueInvitation'
-          ? '招待リンクを作成しました。リンクを教員へ共有してください。メールは自動送信されません。'
-          : nextPending.action === 'enableAi' && nextPending.payload.aiPolicy
-            ? 'AI権限と利用上限を設定しました。'
-            : '教員情報を更新しました。',
+        isMicrosoftStoreReviewInvitation(nextPending)
+          ? 'Microsoft Store審査用の招待リンクを作成しました。招待は7日間、教員権限は発行から14日間有効です。審査終了後は招待の取り消しまたは教員権限の抹消を行ってください。'
+          : nextPending.action === 'issueInvitation'
+            ? '招待リンクを作成しました。リンクを教員へ共有してください。メールは自動送信されません。'
+            : nextPending.action === 'enableAi' && nextPending.payload.aiPolicy
+              ? 'AI権限と利用上限を設定しました。'
+              : '教員情報を更新しました。',
       )
       if (currentMembershipChanged || currentSessionRevoked) {
         await onReloginRequired()
@@ -723,7 +772,20 @@ export function AdminLedgerPanel({
                     ? '変更を反映しています'
                     : '変更の承認は完了しています'}
           </h3>
-          <p>{MUTATION_LABELS[pending.action]}</p>
+          <p>{mutationLabel(pending)}</p>
+          {isMicrosoftStoreReviewInvitation(pending) &&
+          pending.intent?.microsoftStoreReview ? (
+            <p className="helper-note">
+              AI利用不可 / 招待期限{' '}
+              {new Date(
+                pending.intent.microsoftStoreReview.expiresAt,
+              ).toLocaleString('ja-JP')}{' '}
+              / 教員権限の自動失効{' '}
+              {new Date(
+                pending.intent.microsoftStoreReview.membershipExpiresAt,
+              ).toLocaleString('ja-JP')}
+            </p>
+          ) : null}
           <p className="helper-note" id="admin-ledger-confirmation-instruction">
             {pending.phase === 'preparing'
               ? busy
@@ -887,6 +949,14 @@ export function AdminLedgerPanel({
                     <td data-label="状態">
                       {MEMBERSHIP_STATUS_LABELS[membership.status] ??
                         '状態確認中'}
+                      {membership.expiresAt ? (
+                        <small>
+                          利用期限:{' '}
+                          {new Date(membership.expiresAt).toLocaleString(
+                            'ja-JP',
+                          )}
+                        </small>
+                      ) : null}
                     </td>
                     <td data-label="AI利用">
                       <span>
@@ -1246,6 +1316,47 @@ export function AdminLedgerPanel({
           >
             招待リンクを作成
           </button>
+          <section
+            aria-labelledby="microsoft-store-review-access-title"
+            className="admin-ledger-store-review"
+          >
+            <h3 id="microsoft-store-review-access-title">
+              Microsoft Store 審査用
+            </h3>
+            <p className="helper-note">
+              専用の新しいGoogleアカウントを、AI利用不可の教員として招待します。招待リンクは7日間、教員権限は発行から14日間だけ有効です。
+            </p>
+            <button
+              className="secondary-button"
+              disabled={
+                busy ||
+                mutationBlocked ||
+                !admissionEnabled ||
+                pendingInvitationsForInviteEmail.length > 0
+              }
+              onClick={(event) => {
+                if (
+                  !event.currentTarget.form?.reportValidity() ||
+                  !admissionEnabled ||
+                  pendingInvitationsForInviteEmail.length > 0
+                )
+                  return
+                startMutation({
+                  action: 'issueInvitation',
+                  payload: {
+                    normalizedEmail: inviteEmail.trim().toLowerCase(),
+                    purpose: 'microsoftStoreReview',
+                  },
+                })
+              }}
+              type="button"
+            >
+              Microsoft Store審査用アクセスを発行
+            </button>
+            <p className="helper-note">
+              認証完了後も期限に自動失効します。認定完了後は、招待履歴の「招待を取り消す」または教員一覧の「教員権限を抹消」で直ちに失効してください。
+            </p>
+          </section>
         </form>
         {invitationLink ? (
           <div className="admin-ledger-invitation-link">
@@ -1357,6 +1468,16 @@ export function AdminLedgerPanel({
                     ? '教員（AI利用可）'
                     : '教員（AI利用不可）'}{' '}
                 / {INVITATION_STATUS_LABELS[invitation.status] ?? '状態確認中'}
+              </p>
+              <p className="helper-note">
+                招待期限:{' '}
+                {new Date(invitation.expiresAt).toLocaleString('ja-JP')}
+                {' / '}教員権限の期限:{' '}
+                {invitation.membershipExpiresAt
+                  ? new Date(invitation.membershipExpiresAt).toLocaleString(
+                      'ja-JP',
+                    )
+                  : '期限なし'}
               </p>
               {invitation.status === 'pending' ? (
                 <button

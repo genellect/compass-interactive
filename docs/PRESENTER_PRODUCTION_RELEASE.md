@@ -102,6 +102,43 @@ states; restoring visibility/follow must converge without a teacher action.
 The Display target is p95 at most one second, with every outlier reviewed for
 classroom impact. Do not label the candidate accepted on a calculated budget.
 
+## Microsoft Store certification access
+
+Prepare one new Google account used only by the Microsoft Store certification
+reviewer. Do not reuse an owner, operator, personal, school or prior test
+account. In **教員管理**, enter that account's email address and use the
+explicit **Microsoft Store審査用アクセスを発行** action. This action creates an
+ordinary `instructor` invitation with AI disabled. The invitation link expires
+seven days after issuance, and an accepted membership expires fourteen days
+after the same issuance time. The ordinary **招待リンクを作成** action remains a
+48-hour invitation and does not inherit these Store-review terms.
+
+Supply the reviewer with a synthetic 12-page lecture and its matching PPTX/PDF
+material pair. Use generated text, shapes, charts, one sample poll and one
+sample comment prompt only; include no real student, patient, research,
+institutional or unpublished data. The 12 pages must cover opening the lecture,
+sequential slide changes, a rapid forward/backward change, Display following,
+student following, poll display, comment display, document reconnect and
+lecture close. Record the exact candidate version and material SHA-256 used for
+certification.
+
+Provide only the dedicated reviewer-account onboarding details, the invitation
+link, the synthetic lecture material and the steps required to exercise the
+submitted application. Never place an owner password, owner account, TOTP seed,
+recovery code, browser session, Admin app-session token, invitation signing
+secret, Presenter capability, Gateway secret or pairing secret in Partner
+Center notes, email, the deck, screenshots or packaged files. The reviewer uses
+the normal Google instructor onboarding path; after onboarding, routine
+PowerPoint-driven lecture progress must not ask for another login, TOTP code or
+CLI operation.
+
+After certification, an Owner immediately cancels a still-pending invitation or
+uses **教員権限を抹消** for an accepted membership, then verifies that its Admin
+sessions are no longer active. The fourteen-day absolute membership expiry is
+a backstop, not a reason to leave completed reviewer access active. If
+certification continues beyond either fixed deadline, issue a new dedicated
+review invitation rather than extending or promoting the old membership.
+
 ## Release order
 
 1. Freeze one reviewed candidate after native, UI, authority/lease, clean and
