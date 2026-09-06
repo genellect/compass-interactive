@@ -192,22 +192,26 @@ export function AdminLectureControl(props: AdminLectureControlProps) {
                         {isActive ? '操作対象' : '選択'}
                       </button>
                     ) : null}
-                    <button
-                      className="secondary-button"
-                      disabled={isLoading || lecture.status !== 'draft'}
-                      onClick={() => onStart(lecture.id)}
-                      type="button"
-                    >
-                      開始
-                    </button>
-                    <button
-                      className="secondary-button danger-button"
-                      disabled={isLoading || lecture.status !== 'open'}
-                      onClick={() => onClose(lecture.id)}
-                      type="button"
-                    >
-                      終了
-                    </button>
+                    {lecture.status === 'draft' ? (
+                      <button
+                        className="secondary-button"
+                        disabled={isLoading}
+                        onClick={() => onStart(lecture.id)}
+                        type="button"
+                      >
+                        開始
+                      </button>
+                    ) : null}
+                    {lecture.status === 'open' ? (
+                      <button
+                        className="secondary-button danger-button"
+                        disabled={isLoading}
+                        onClick={() => onClose(lecture.id)}
+                        type="button"
+                      >
+                        終了
+                      </button>
+                    ) : null}
                     {lecture.status === 'closed' && !lecture.journalClub ? (
                       <button
                         className="secondary-button"

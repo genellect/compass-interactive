@@ -3887,7 +3887,7 @@ input:disabled {
   display: grid;
   font: inherit;
   gap: 2px 10px;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 1fr;
   padding: 14px 18px;
   text-align: left;
 }

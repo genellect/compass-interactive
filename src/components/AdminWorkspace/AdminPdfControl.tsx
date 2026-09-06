@@ -277,7 +277,7 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               onClick={onSetDocument}
               type="button"
             >
-              この資料を表示
+              {pdfDocumentInput ? '1ページ目から表示' : '資料の表示を解除'}
             </button>
           </div>
         </div>

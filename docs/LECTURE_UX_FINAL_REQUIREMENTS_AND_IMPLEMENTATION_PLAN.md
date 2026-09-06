@@ -12,6 +12,12 @@ This document is the canonical contract for the approved lecture UX correction
 and Production-completion lane. Every agent that plans, implements, reviews,
 tests, integrates, or releases any part of this lane must read it before acting.
 
+For the owner's 2026-09-06 minimum-risk teacher UX correction, also read
+[`TEACHER_UX_MINIMAL_CHANGE_REASSESSMENT.md`](TEACHER_UX_MINIMAL_CHANGE_REASSESSMENT.md).
+It preserves the tested lecture logic and narrows the immediate change to
+presentation and confirmed status defects; it does not add native lecture
+authority or make a background teacher browser mandatory.
+
 Presenter Store version 1 distribution and activation were approved after this
 baseline. For that bounded native release,
 [`PRESENTER_PRODUCTION_RELEASE.md`](PRESENTER_PRODUCTION_RELEASE.md) and
