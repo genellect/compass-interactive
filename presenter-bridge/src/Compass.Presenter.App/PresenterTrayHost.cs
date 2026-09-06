@@ -248,7 +248,13 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             var code = PromptForRecoveryCode();
             if (code is null)
             {
-                SetStatus("状態: 待機中");
+                SetStatus(
+                    (PresenterSessionState)Volatile.Read(ref presenterSessionState) switch
+                    {
+                        PresenterSessionState.Active => "状態: PowerPoint同期中",
+                        PresenterSessionState.Faulted => "状態: 同期が停止しました",
+                        _ => "状態: 待機中",
+                    });
                 return;
             }
             SetStatus("状態: 接続を確認中…");
@@ -595,7 +601,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             "状態: スライドショーを1つだけ開いてください",
         "page_count_mismatch" =>
             "状態: PowerPointと資料の枚数が一致しません",
-        "powerpoint_not_running" => "状態: PowerPointを開始してください",
+        "powerpoint_not_running" => "状態: PowerPointのスライドショーを開始してください",
         "presenter_view_must_be_disabled" =>
             "状態: 発表者ツールをオフにしてください",
         "rate_limited" => "状態: 少し待ってから再試行してください",

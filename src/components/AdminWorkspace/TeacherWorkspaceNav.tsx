@@ -12,31 +12,26 @@ type Props = {
 const items: Array<{
   description: string
   label: string
-  number: string
   view: TeacherWorkspaceView
 }> = [
   {
     description: '資料・タイトル',
     label: '準備',
-    number: '1',
     view: 'setup',
   },
   {
     description: 'ページ操作',
     label: 'スライド',
-    number: '2',
     view: 'slides',
   },
   {
     description: '投票・コメント',
     label: '参加',
-    number: '3',
     view: 'participation',
   },
   {
     description: '任意で有効化',
     label: 'AI',
-    number: '4',
     view: 'ai',
   },
 ]
@@ -84,7 +79,6 @@ export function TeacherWorkspaceNav({
             role="tab"
             type="button"
           >
-            <span>{item.number}</span>
             <strong>{item.label}</strong>
             <small>{description}</small>
           </button>

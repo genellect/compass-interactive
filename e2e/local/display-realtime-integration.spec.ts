@@ -15,6 +15,10 @@ const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 const pdfSha256 = 'c'.repeat(64)
+const samplePdfPageCount = 3
+
+// Preserve the first failing attempt when the rendered-latency gate misses.
+test.use({ trace: 'retain-on-failure' })
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
   const result = await new AxeBuilder({ page }).analyze()
@@ -68,7 +72,7 @@ async function installPdfMock(page: Page) {
               document_id: 'phase728b-local-pdf',
               document_version: pdfSha256,
               download_enabled: true,
-              page_count: 34,
+              page_count: samplePdfPageCount,
               text_char_count: 1_000,
               visible: true,
             },
@@ -283,7 +287,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
       target_download_enabled: true,
       target_lecture_session_id: lecture.id,
       target_manifest_version: 1,
-      target_page_count: 34,
+      target_page_count: samplePdfPageCount,
       target_pdf_sha256: pdfSha256,
       target_text_char_count: 1_000,
       target_text_sha256: 'd'.repeat(64),
@@ -298,7 +302,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         target_pdf_document_id: 'phase728b-local-pdf',
         target_pdf_document_version: pdfSha256,
         target_pdf_manifest_version: 1,
-        target_pdf_page_count: 34,
+        target_pdf_page_count: samplePdfPageCount,
         target_pdf_visible: true,
       },
     )
@@ -339,7 +343,7 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await lectureRow.locator('.lecture-row-actions button').first().click()
     await expect(lectureRow).toHaveClass(/is-active/)
     await expect(adminPage.locator('.admin-pdf-page-controller')).toContainText(
-      '1 / 34',
+      `1 / ${samplePdfPageCount}`,
     )
     await expect.poll(() => maxConcurrentAdminPdfRequests).toBe(1)
     await expect.poll(() => pendingAdminPdfRequests.size).toBe(0)
@@ -447,6 +451,9 @@ test('claimed cross-browser Display receives private page/caption acceleration a
     await expect(displayPage.locator('.pdf-canvas')).toBeVisible({
       timeout: 20_000,
     })
+    await expect(
+      displayPage.getByText('資料情報を更新できませんでした。', { exact: true }),
+    ).toBeHidden()
     await expect
       .poll(
         () => displayPage.locator('html').getAttribute('data-display-realtime'),
