@@ -178,7 +178,6 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                 SetStatus("状態: 終了しています…");
                 requestShutdown();
             };
-            icon.DoubleClick += (_, _) => StartRecovery(icon);
             uiContext = SynchronizationContext.Current ??
                 new WindowsFormsSynchronizationContext();
             ready.TrySetResult();
@@ -528,7 +527,7 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         {
             AutoSize = true,
             Location = new Point(20, 18),
-            Text = "教員画面に表示された8文字の復旧コードを入力してください。",
+            Text = "教員画面の復旧コード（8文字）",
         };
         using var input = new TextBox
         {
