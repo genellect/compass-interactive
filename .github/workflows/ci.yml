@@ -85,7 +85,7 @@ jobs:
       - run: npm run security:secrets
       - name: Verify isolated local Auth and gateway recovery
         if: needs.classify.outputs.docs_only != 'true'
-        run: node --test scripts/ci/restart-local-auth.test.mjs
+        run: node --test scripts/ci/restart-local-auth.test.mjs scripts/ci/collect-local-failure-diagnostics.test.mjs
       - name: Verify the documentation contract
         if: needs.classify.outputs.docs_only == 'true'
         run: npm run test:phase6-7-docs
@@ -392,6 +392,11 @@ jobs:
       - name: Run teacher-student browser lifecycle three times
         run: npm run test:e2e:local:triple
 
+      - name: Collect local database and REST failure categories
+        if: failure()
+        continue-on-error: true
+        run: node scripts/ci/collect-local-failure-diagnostics.mjs
+
       - name: Upload local integration evidence
         if: ${{ failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -401,6 +406,7 @@ jobs:
             test-results/local/
             test-results/reports/local/
             ${{ runner.temp }}/compass-edge.log
+            ${{ runner.temp }}/compass-local-failure-diagnostics.json
           if-no-files-found: ignore
           retention-days: 7
 

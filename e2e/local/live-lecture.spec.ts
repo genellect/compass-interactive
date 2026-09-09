@@ -39,6 +39,7 @@ function isFunctionActionRequest(
 }
 
 test.describe.configure({ retries: 0 })
+test.use({ trace: 'retain-on-failure' })
 
 async function openMonitoredPage(context: BrowserContext) {
   const page = await context.newPage()
