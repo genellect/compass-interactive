@@ -83,6 +83,9 @@ jobs:
       - if: needs.classify.outputs.docs_only != 'true'
         run: npm run cloud:doctor
       - run: npm run security:secrets
+      - name: Verify isolated local Auth and gateway recovery
+        if: needs.classify.outputs.docs_only != 'true'
+        run: node --test scripts/ci/restart-local-auth.test.mjs
       - name: Verify the documentation contract
         if: needs.classify.outputs.docs_only == 'true'
         run: npm run test:phase6-7-docs
@@ -380,7 +383,7 @@ jobs:
       - name: Restore a clean database before general lifecycle E2E
         run: npx supabase db reset --local --no-seed
 
-      - name: Restart local Auth after database reset
+      - name: Restart local Auth and gateway after database reset
         run: node scripts/ci/restart-local-auth.mjs
 
       - name: Wait for local Auth after database reset
