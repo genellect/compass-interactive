@@ -109,6 +109,8 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
         try
         {
             using var menu = new ContextMenuStrip();
+            using var portalItem = new ToolStripMenuItem("教員画面を開く");
+            using var guideItem = new ToolStripMenuItem("PowerPoint連携の始め方");
             using var recoveryItem = new ToolStripMenuItem("復旧コードを入力");
             using var localIdentityRemovalItem =
                 new ToolStripMenuItem("ローカル接続IDを削除")
@@ -126,6 +128,9 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
                 Enabled = false,
             };
             using var exitItem = new ToolStripMenuItem("終了");
+            menu.Items.Add(portalItem);
+            menu.Items.Add(guideItem);
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(localStatusItem);
             menu.Items.Add(recoveryItem);
             menu.Items.Add(localIdentityRemovalItem);
@@ -150,6 +155,9 @@ internal sealed class PresenterTrayHost : IAsyncDisposable
             updateItem = localUpdateItem;
 #endif
             statusItem = localStatusItem;
+            portalItem.Click += (_, _) => PresenterPortal.OpenTeacher();
+            guideItem.Click += (_, _) => PresenterPortal.OpenGuide();
+            icon.DoubleClick += (_, _) => PresenterPortal.OpenTeacher();
             recoveryItem.Click += (_, _) => StartRecovery(icon);
             localIdentityRemovalItem.Click += (_, _) =>
             {

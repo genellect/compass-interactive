@@ -28,6 +28,7 @@ internal static class Program
         using var singleInstance = SingleInstanceLease.TryAcquire();
         if (singleInstance is null)
         {
+            if (PresenterPortal.ShouldOpenOnLaunch(args)) PresenterPortal.OpenTeacher();
             return 0;
         }
 
@@ -183,6 +184,7 @@ internal static class Program
             try
             {
                 tray.ReportSessionState(coordinator.SessionState);
+                if (PresenterPortal.ShouldOpenOnLaunch(args)) PresenterPortal.OpenTeacher();
                 await shutdown.Task.ConfigureAwait(false);
             }
             finally

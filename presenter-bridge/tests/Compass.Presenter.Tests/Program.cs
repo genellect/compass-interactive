@@ -8,6 +8,7 @@ internal static class Program
             throw new PlatformNotSupportedException("Presenter requires Windows 10 2004 or later.");
         var tests = new (string Name, Func<Task> Run)[]
         {
+            (nameof(PortalTests.BackgroundLaunchDoesNotOpenTheBrowser), PortalTests.BackgroundLaunchDoesNotOpenTheBrowser),
             (nameof(CoreTests.OrdinaryFullScreenSupportsStablePagesButNotKioskOrPresenterView), CoreTests.OrdinaryFullScreenSupportsStablePagesButNotKioskOrPresenterView),
             (nameof(PowerPointIdentityTests.DisplayedSlideMustBelongToObservedPresentation), PowerPointIdentityTests.DisplayedSlideMustBelongToObservedPresentation),
             (nameof(CoreTests.EligibilityRejectsUnsupportedDecks), CoreTests.EligibilityRejectsUnsupportedDecks),

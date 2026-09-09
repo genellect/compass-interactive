@@ -35,7 +35,8 @@
         Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
       <Extensions>
         <desktop:Extension Category="windows.startupTask"
-          Executable="COMPASS.PresenterBridge.exe" EntryPoint="Windows.FullTrustApplication">
+          Executable="COMPASS.PresenterBridge.exe" EntryPoint="Windows.FullTrustApplication"
+          uap10:Parameters="--background">
           <desktop:StartupTask TaskId="CompassPresenterBridgeStartup"
             Enabled="true" DisplayName="COMPASS Presenter Bridge" />
         </desktop:Extension>

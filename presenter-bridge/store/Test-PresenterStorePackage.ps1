@@ -132,6 +132,7 @@ try {
     $startup = $manifest.SelectSingleNode('/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension/desktop:StartupTask', $namespaces)
     if ($null -eq $startup) { throw 'The startup task is missing.' }
     Assert-Exact $startup.GetAttribute('Enabled') 'true' 'StartupTask Enabled'
+    Assert-Exact $startup.ParentNode.GetAttribute('Parameters', 'http://schemas.microsoft.com/appx/manifest/uap/windows10/10') '--background' 'StartupTask background launch'
     $capabilities = @($manifest.SelectNodes('/f:Package/f:Capabilities/*', $namespaces))
     if ($capabilities.Count -ne 1 -or $capabilities[0].LocalName -cne 'Capability' -or
         $capabilities[0].NamespaceURI -cne 'http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities' -or

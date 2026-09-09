@@ -709,6 +709,35 @@ async function installNetworkMocks(
   }
 }
 
+async function reviewAccountHelp(page: Page) {
+  const popup = page.waitForEvent('popup')
+  await page
+    .getByRole('link', { name: '初めて利用する方・教員アカウントの申し込み' })
+    .click()
+  const guide = await popup
+  await expect(guide).toHaveURL(/\/presenter-bridge\/index\.html#account$/)
+  await expect(
+    guide.getByRole('heading', { name: '初めて利用する方' }),
+  ).toBeVisible()
+  await expect(
+    guide.getByRole('link', { name: '利用申請：contact@yuto-matsui.com' }),
+  ).toHaveAttribute('href', /^mailto:contact@yuto-matsui\.com\?/)
+  await expect(
+    guide.locator('ol[aria-label="PowerPoint連携の手順"] > li'),
+  ).toHaveCount(3)
+  await guide.setViewportSize({ width: 390, height: 844 })
+  await expect
+    .poll(() =>
+      guide.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth + 1,
+      ),
+    )
+    .toBe(true)
+  await guide.close()
+}
+
 test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app session, and preserves student storage on logout', async ({
   page,
 }) => {
@@ -736,16 +765,19 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     card.getByRole('heading', { name: '教員ポータル', exact: true }),
   ).toBeVisible()
   await expect(
-    card.getByText(
-      '登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。',
-      { exact: true },
-    ),
-  ).toBeVisible()
-  await expect(
-    card.getByText('セキュリティ保護のため、2段階認証が必要です。', {
+    card.getByText('招待を受けたGoogleアカウントでログインしてください。', {
       exact: true,
     }),
   ).toBeVisible()
+  await expect(
+    card.getByText('ログイン時に認証アプリで本人確認します。', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    card.getByRole('button', { name: 'Googleで続ける', exact: true }),
+  ).toBeVisible()
+  await reviewAccountHelp(page)
   await expect(
     card.getByRole('button', { name: 'Googleで続ける', exact: true }),
   ).toBeVisible()
@@ -1114,6 +1146,7 @@ test('redeems one scrubbed invitation into an Instructor without exposing Owner 
 
   await page.goto(`/admin#invite=${invitationToken}`)
   await expect(page).toHaveURL(/\/admin$/)
+  await reviewAccountHelp(page)
   const storageBeforeOAuth = await page.evaluate(() => ({
     hash: window.location.hash,
     localValues: Array.from(
