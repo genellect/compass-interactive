@@ -466,6 +466,13 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         )
       })
 
+    // Measure an ordinary page change after the initial PDF render is acknowledged.
+    await expect(displayPage.locator('html')).toHaveAttribute(
+      'data-display-delivery',
+      'ready',
+      { timeout: 20_000 },
+    )
+
     await displayPage.evaluate(() => {
       const root = document.documentElement
       root.removeAttribute('data-display-page-probe-elapsed-ms')

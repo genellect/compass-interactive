@@ -34,6 +34,13 @@ the owner's request. The added login slogan is removed, the original login and
 Presenter labels are retained, and the guide heading is simply "PowerPoint連携".
 Account help, native first-launch navigation and slide-tab discovery remain intact.
 
+Local integration evidence is also tightened without changing product behavior:
+the Display's ordinary page-transition probe waits for the initial rendered ACK,
+while retaining its 2,000 ms limit; the AI response-loss scenario checks the stop
+response, zero active DB authorizations and the UI separately. Failed initial
+attempts retain a trace. These checks improve attribution of intermittent failures;
+they do not establish that an unidentified server failure has been repaired.
+
 ## Validation and remaining gates
 
 Local Release native tests: 36/36. Store configuration compile: zero errors/warnings.
