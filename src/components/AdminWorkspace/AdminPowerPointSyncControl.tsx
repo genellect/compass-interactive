@@ -68,32 +68,23 @@ function PrivacyConsentDisclosure({
     >
       <div className="admin-presenter-consent-copy">
         <strong id="powerpoint-privacy-consent-title">
-          PowerPointでスライドを進める
+          PowerPoint連携のデータ利用
         </strong>
         <p className="note">
-          このPCでPresenter
-          BridgeとPowerPointを開き、スライドショーを開始してください。
-          講義資料との組合せを確認すると、PowerPointのページ操作が講義に反映されます。
+          Presenter Bridgeは、保存済みPPTXのバイト列、ファイル名、
+          スライドID、スライドショー設定をこのPC内で読み、講義資料との一致を確認します。
         </p>
         <p className="note">
-          連携のため、このPC内でPPTXを読み取り、資料を識別する情報とページ遷移をCOMPASSへ送信します。
-          PPTX本体やスライドの内容は送信しません。
+          COMPASSには、資料と順序のハッシュ、枚数、ページ遷移、教員と講義セッションの関連情報をCloudflare／Supabase経由で送信します。
+          PPTX本体、本文、文字、ノート、画像、動画は送信しません。
         </p>
-        <details>
-          <summary>データ利用の詳細</summary>
-          <p className="note">
-            このPC内で保存済みPPTXのバイト列、ファイル名、スライドID、スライドショー設定を確認します。
-            資料と順序のハッシュ、枚数、ページ遷移、教員と講義セッションの関連情報をCloudflare／Supabase経由で送信します。
-            本文、ノート、画像、動画は送信しません。
-          </p>
-          <a
-            href={PRESENTER_PRIVACY_URL}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            プライバシー情報を確認
-          </a>
-        </details>
+        <a
+          href={PRESENTER_PRIVACY_URL}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          プライバシー情報を確認
+        </a>
         <a
           href="/presenter-bridge/index.html"
           rel="noopener noreferrer"
@@ -132,9 +123,8 @@ function PrivacyConsentManagement({
         onClick={() => void sync.revokePrivacyConsent()}
         type="button"
       >
-        データ利用への同意を取り消す
+        同意を取り消してブラウザのPresenter設定を削除
       </button>
-      <p className="note">同期を停止し、このブラウザの連携設定を削除します。</p>
     </details>
   )
 }
@@ -169,12 +159,7 @@ export function AdminPowerPointSyncControl({
         data-testid="powerpoint-sync-control"
       >
         <div>
-          <strong>PowerPointでスライドを進める</strong>
-          {!sync.message ? (
-            <p className="note">
-              このPCでPowerPointのスライドショーを開始して接続します。
-            </p>
-          ) : null}
+          <strong>PowerPointと同期</strong>
           {sync.message ? <p className="note">{sync.message}</p> : null}
           {sync.manualRecoveryRequired && sync.manualCode ? (
             <RecoveryCode code={sync.manualCode} />
@@ -205,7 +190,7 @@ export function AdminPowerPointSyncControl({
             onClick={() => void sync.start()}
             type="button"
           >
-            PowerPointを接続
+            Bridgeの接続を確認
           </button>
         </div>
         <PrivacyConsentManagement sync={sync} />

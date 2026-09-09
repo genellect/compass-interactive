@@ -919,15 +919,12 @@ test('first use explains data handling, blocks ticket and inspect, then resumes 
   await page.goto('/admin')
 
   const disclosure = page.getByTestId('powerpoint-sync-control')
-  await expect(disclosure).toContainText('PowerPointでスライドを進める')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   await expect(disclosure).toContainText(
-    'PPTX本体やスライドの内容は送信しません',
+    'PPTX本体、本文、文字、ノート、画像、動画は送信しません',
   )
   expect(state.presenterActions).toEqual([])
   expect(loopbackRequests).toEqual([])
-  const details = disclosure.locator('summary', { hasText: 'データ利用の詳細' })
-  await details.focus()
-  await page.keyboard.press('Enter')
   await expect(
     disclosure.getByRole('link', { name: 'プライバシー情報を確認' }),
   ).toBeVisible()
@@ -983,7 +980,7 @@ test('privacy consent older than one year requires one fresh acceptance before i
   await page.goto('/admin')
 
   const disclosure = page.getByTestId('powerpoint-sync-control')
-  await expect(disclosure).toContainText('PowerPointでスライドを進める')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   expect(
     await page.evaluate(
       (key) => localStorage.getItem(key),
@@ -1010,7 +1007,7 @@ test('future-dated privacy consent is removed and requires fresh acceptance befo
   await page.goto('/admin')
 
   const disclosure = page.getByTestId('powerpoint-sync-control')
-  await expect(disclosure).toContainText('PowerPointでスライドを進める')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   expect(
     await page.evaluate(
       (key) => localStorage.getItem(key),
@@ -1054,7 +1051,7 @@ for (const markerCase of [
     await page.goto('/admin')
 
     const disclosure = page.getByTestId('powerpoint-sync-control')
-    await expect(disclosure).toContainText('PowerPointでスライドを進める')
+    await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
     expect(
       await page.evaluate(
         ({ localKey, sessionKey }) => ({
@@ -1210,7 +1207,7 @@ test('an active Presenter connection withdraws within one status interval when c
   )
 
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
-    'PowerPointでスライドを進める',
+    'PowerPoint連携のデータ利用',
     { timeout: 6_000 },
   )
   expect(Date.now() - expiryStartedAt).toBeLessThan(5_750)
@@ -1248,12 +1245,12 @@ test('privacy withdrawal disconnects locally and revokes a hosted replacement be
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
 
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
-    'PowerPointでスライドを進める',
+    'PowerPoint連携のデータ利用',
   )
   expect(state.presenterActions).toContain('revoke')
   await expect
@@ -1296,7 +1293,7 @@ test('privacy withdrawal attempts the final observed hosted connection at the re
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
 
@@ -1328,12 +1325,12 @@ test('privacy withdrawal clears local state when the hosted revoke fails', async
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
 
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
-    'PowerPointでスライドを進める',
+    'PowerPoint連携のデータ利用',
   )
   expect(state.presenterActions).toContain('revoke')
   expect(loopbackActions).toContain('/v1/disconnect')
@@ -1385,12 +1382,12 @@ test('privacy withdrawal fails closed when browser storage cannot be cleared', a
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
 
   const disclosure = page.getByTestId('powerpoint-sync-control')
-  await expect(disclosure).toContainText('PowerPointでスライドを進める')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   await expect(disclosure).toContainText(
     'ブラウザ設定からこのサイトのデータを削除',
   )
@@ -1471,7 +1468,7 @@ test('privacy withdrawal survives reload when local consent cannot be removed or
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
@@ -1480,7 +1477,7 @@ test('privacy withdrawal survives reload when local consent cannot be removed or
 
   await page.reload()
   const disclosure = page.getByTestId('powerpoint-sync-control')
-  await expect(disclosure).toContainText('PowerPointでスライドを進める')
+  await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   await disclosure
     .getByRole('button', { name: '同意してPowerPoint連携を開始' })
     .click()
@@ -1556,7 +1553,7 @@ test('privacy withdrawal aborts a peer tab while its readiness check is in fligh
     await page.getByText('連携設定', { exact: true }).click()
     await page
       .getByRole('button', {
-        name: 'データ利用への同意を取り消す',
+        name: '同意を取り消してブラウザのPresenter設定を削除',
       })
       .click()
 
@@ -1593,7 +1590,7 @@ test('privacy withdrawal immediately after reload discovers and revokes an activ
   try {
     await page.getByText('連携設定', { exact: true }).click()
     const withdrawal = page.getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     await expect(withdrawal).toBeEnabled()
     await withdrawal.click()
@@ -1619,7 +1616,7 @@ test('privacy withdrawal immediately after reload discovers and revokes an activ
 
   await expect(page.locator('.admin-presenter-active')).toHaveCount(0)
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
-    'PowerPointでスライドを進める',
+    'PowerPoint連携のデータ利用',
   )
 })
 
@@ -1641,7 +1638,7 @@ test('reload withdrawal requires Bridge shutdown when hosted discovery fails dur
   try {
     await page.getByText('連携設定', { exact: true }).click()
     const withdrawal = page.getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     await expect(withdrawal).toBeEnabled()
     await withdrawal.click()
@@ -1683,7 +1680,7 @@ test('privacy withdrawal is durable before a delayed disconnect and unmount', as
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
   await disconnect.started
@@ -1802,7 +1799,7 @@ test('privacy withdrawal reports a failed local disconnect even after hosted rev
 
   await page
     .getByRole('button', {
-      name: 'データ利用への同意を取り消す',
+      name: '同意を取り消してブラウザのPresenter設定を削除',
     })
     .click()
 
@@ -1869,7 +1866,7 @@ test('privacy withdrawal in another tab stops PowerPoint readiness observation',
   )
 
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
-    'PowerPointでスライドを進める',
+    'PowerPoint連携のデータ利用',
   )
   const healthRequestsAfterWithdrawal = healthRequests
   await page.waitForTimeout(10_500)
@@ -1890,7 +1887,7 @@ test('keeps the PowerPoint setup action accessible on the lecture slide view whe
   await page.route('http://127.0.0.1:43124/v1/health', (route) => route.abort())
   await page.goto('/admin')
   await expect(
-    page.getByRole('button', { name: 'PowerPointを接続', exact: true }),
+    page.getByRole('button', { name: 'Bridgeの接続を確認', exact: true }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await page
@@ -1900,14 +1897,14 @@ test('keeps the PowerPoint setup action accessible on the lecture slide view whe
     .getByRole('tab', { name: 'スライド ページ操作', exact: true })
     .click()
   await expect(
-    page.getByRole('button', { name: 'PowerPointを接続', exact: true }),
+    page.getByRole('button', { name: 'Bridgeの接続を確認', exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByRole('button', { name: 'データ利用への同意を取り消す' }),
+    page.getByRole('button', { name: '同意を取り消してブラウザのPresenter設定を削除' }),
   ).toBeHidden()
   await page.getByText('連携設定', { exact: true }).click()
   await expect(
-    page.getByRole('button', { name: 'データ利用への同意を取り消す' }),
+    page.getByRole('button', { name: '同意を取り消してブラウザのPresenter設定を削除' }),
   ).toBeVisible()
 })
 
@@ -2087,7 +2084,7 @@ test('reuses one material confirmation after restart for the exact same deck and
   expect(
     state.presenterActions.filter((action) => action === 'issue'),
   ).toHaveLength(1)
-  await page.getByRole('button', { name: 'PowerPointを接続' }).click()
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
   await expect(page.locator('.admin-presenter-active')).toBeVisible()
   await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
   expect(
@@ -2123,9 +2120,9 @@ test('requires a new material check when the deck fingerprint changes', async ({
   await page.reload()
   await page.getByRole('tab', { name: '準備' }).click()
   await expect(
-    page.getByRole('button', { name: 'PowerPointを接続' }),
+    page.getByRole('button', { name: 'Bridgeの接続を確認' }),
   ).toBeEnabled()
-  await page.getByRole('button', { name: 'PowerPointを接続' }).click()
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
   await expect(review).toBeVisible()
   await expect(
     review.getByRole('button', { name: 'この組合せで同期する' }),
@@ -2166,7 +2163,7 @@ test('prepares local-network access before lecture start without issuing server 
   await expect(
     page.getByRole('link', { name: 'Bridgeをインストール' }),
   ).toHaveAttribute('href', 'https://apps.microsoft.com/detail/9TESTONLY729')
-  await page.getByRole('button', { name: 'PowerPointを接続' }).click()
+  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
     'Bridgeの準備ができました',
   )
