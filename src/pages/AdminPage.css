@@ -166,11 +166,16 @@
 }
 
 .admin-presenter-privacy-management {
-  align-items: center;
-  display: flex;
   flex-basis: 100%;
-  flex-wrap: wrap;
-  gap: 10px;
+  font-size: 0.875rem;
+}
+
+.admin-presenter-sync summary {
+  cursor: pointer;
+}
+
+.admin-presenter-privacy-management[open] > :not(summary) {
+  margin: 10px 10px 0 0;
 }
 
 .admin-presenter-recovery {

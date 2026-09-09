@@ -1051,8 +1051,10 @@ export function AdminRoute() {
           </span>
           <p className="eyebrow">EDUCATOR PORTAL</p>
           <h1>教員ポータル</h1>
-          <p>登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。</p>
-          <p>セキュリティ保護のため、2段階認証が必要です。</p>
+          <p>講義の準備と進行を、ここから。</p>
+          <p className="helper-note">
+            招待を受けたGoogleアカウントでログインしてください。
+          </p>
           {errorMessage ? (
             <p className="error-note" role="alert">
               {errorMessage}
@@ -1070,6 +1072,16 @@ export function AdminRoute() {
           >
             Googleで続ける
           </button>
+          <a
+            href="/presenter-bridge/index.html#account"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            初めて利用する方・教員アカウントの申し込み
+          </a>
+          <p className="helper-note">
+            ログイン時に認証アプリで本人確認します。
+          </p>
         </section>
       </main>
     )

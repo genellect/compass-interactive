@@ -1185,7 +1185,7 @@ export function AdminPage({
             onManualNavigationLockChange={setPowerpointManualNavigationLocked}
             pdfPageCount={activePdfPageCount}
             pdfTitle={selectedPdfAsset?.title ?? '講義資料'}
-            showSetup={workspaceView === 'setup'}
+            showSetup={workspaceView === 'setup' || workspaceView === 'slides'}
           />
         </Suspense>
       ) : null}
