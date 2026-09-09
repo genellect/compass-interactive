@@ -7,6 +7,8 @@ import { installGoogleAdminSession } from '../helpers/googleAdminSession.js'
 const supabaseUrl = process.env.TEST_SUPABASE_URL?.trim() ?? ''
 const serviceRoleKey = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ?? ''
 
+test.use({ trace: 'retain-on-failure' })
+
 async function expectNoSeriousAccessibilityViolations(page: Page) {
   const result = await new AxeBuilder({ page }).analyze()
   expect(
@@ -508,8 +510,49 @@ test('lost AI admission response does not poison revoke and one-click re-enable'
   await expect(master).toContainText('許可済み')
   expect(admissionRequestIds).toHaveLength(1)
 
+  const revokeResponsePromise = page.waitForResponse((response) => {
+    const request = response.request()
+    return (
+      response.url().endsWith('/functions/v1/admin-ai-unlock') &&
+      request.method() === 'POST' &&
+      request.postDataJSON()?.action === 'revokeMaster'
+    )
+  })
   await master.getByRole('button', { name: 'すべて停止' }).click()
-  await expect(master).toContainText('未許可')
+  await Promise.all([
+    expect(master).toContainText('未許可'),
+    (async () => {
+      const revokeResponse = await revokeResponsePromise
+      const revokeResult = (await revokeResponse.json().catch(() => null)) as {
+        ok?: boolean
+        code?: string
+        authorization?: { status?: string }
+      } | null
+      // Keep failure output to control status; never serialize session/request bodies.
+      expect({
+        httpStatus: revokeResponse.status(),
+        ok: revokeResult?.ok ?? null,
+        code: revokeResult?.code ?? null,
+        authorizationStatus: revokeResult?.authorization?.status ?? null,
+      }).toEqual({
+        httpStatus: 200,
+        ok: true,
+        code: null,
+        authorizationStatus: 'revoked',
+      })
+      await expect
+        .poll(async () => {
+          const { count, error } = await service
+            .from('lecture_ai_master_authorizations')
+            .select('id', { count: 'exact', head: true })
+            .eq('lecture_session_id', lecture!.id)
+            .eq('status', 'active')
+          expect(error).toBeNull()
+          return count
+        })
+        .toBe(0)
+    })(),
+  ])
   await master.getByRole('button', { name: 'AI機能を有効にする' }).click()
   await expect(master).toContainText('許可済み')
   expect(admissionRequestIds).toHaveLength(2)

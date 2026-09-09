@@ -765,12 +765,12 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     card.getByRole('heading', { name: '教員ポータル', exact: true }),
   ).toBeVisible()
   await expect(
-    card.getByText('招待を受けたGoogleアカウントでログインしてください。', {
+    card.getByText('登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。', {
       exact: true,
     }),
   ).toBeVisible()
   await expect(
-    card.getByText('ログイン時に認証アプリで本人確認します。', {
+    card.getByText('セキュリティ保護のため、2段階認証が必要です。', {
       exact: true,
     }),
   ).toBeVisible()

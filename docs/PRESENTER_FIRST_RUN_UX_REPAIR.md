@@ -17,8 +17,8 @@ alone did not demonstrate a successful first login.
   Keeping the original tab preserves an invitation awaiting Google login. The guide
   never receives invitation tokens, credentials or application-session values.
 - The existing slide workspace also exposes the connection setup entry. Consent
-  shows material data handling beside its action; detailed information and consent
-  withdrawal remain available in expandable sections.
+  shows the original production data-handling text beside its action; consent
+  withdrawal remains available in an expandable section.
 - The guide follows the existing flow: select a PDF and create/publish the lecture,
   start the lecture and saved PowerPoint slideshow, confirm the material pair, then
   advance pages. Presenter View is disabled. Ending the lecture remains a Web action.
@@ -28,6 +28,18 @@ Display synchronization or paid-service behavior changes. No new native credenti
 store or arbitrary URL launch is introduced. The ordinary five-second student
 snapshot interval is unchanged. This does not implement full PPT-only start/end,
 guarantee cross-browser authentication reuse or certify rendering latency.
+
+The educator-facing wording is restored to the preceding production version at
+the owner's request. The added login slogan is removed, the original login and
+Presenter labels are retained, and the guide heading is simply "PowerPoint連携".
+Account help, native first-launch navigation and slide-tab discovery remain intact.
+
+Local integration evidence is also tightened without changing product behavior:
+the Display's ordinary page-transition probe waits for the initial rendered ACK,
+while retaining its 2,000 ms limit; the AI response-loss scenario checks the stop
+response, zero active DB authorizations and the UI separately. Failed initial
+attempts retain a trace. These checks improve attribution of intermittent failures;
+they do not establish that an unidentified server failure has been repaired.
 
 ## Validation and remaining gates
 
