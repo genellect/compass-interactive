@@ -48,6 +48,12 @@ Application Control blocks the installed native canvas binding. The same failure
 occurs outside the sandbox. Do not disable that policy or change application logic
 to mask it; the exact-source CI gate must complete on its normal test environment.
 
+The initial PR CI also found the newly indexed sharp advisory
+[GHSA-rgj7-g3m4-5g8c](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c).
+The existing development-tool override is patched from 0.35.3 to 0.35.4 and only
+sharp's distribution dependencies change. The regenerated lockfile audit reports
+zero findings; this is independent of the earlier runtime shutdown.
+
 Before resubmission, require green exact-source CI, a newly built package and its
 preflight/WACK, then a permitted Windows test window covering real Google login,
 lecture/PDF preparation, native launch/relaunch, PPT connection, actual student and
