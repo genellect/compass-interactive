@@ -1,6 +1,9 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 
+// This suite runs without retries, so retain the first failure's navigation trace.
+test.use({ trace: 'retain-on-failure' })
+
 test.skip(
   process.env.VITE_PHASE7_30_ADMIN_IDENTITY !== 'true' ||
     process.env.VITE_PHASE7_30_GOOGLE_ADMIN_OPERATIONS !== 'true' ||
@@ -1125,6 +1128,11 @@ async function installMocks(
 
 async function openLedger(page: Page) {
   await page.goto('/admin/settings')
+  return waitForLedger(page)
+}
+
+// After reload, inspect that document's recovery without starting another navigation.
+async function waitForLedger(page: Page) {
   await expect(
     page.getByRole('heading', { name: '教員管理', exact: true }),
   ).toBeVisible()
@@ -1321,7 +1329,7 @@ test('keeps safe owner controls available while OFF and exactly recovers one inv
   expect(storedPending?.raw).not.toContain(invitationToken)
 
   await page.reload()
-  panel = await openLedger(page)
+  panel = await waitForLedger(page)
   await expect(
     panel.getByRole('heading', {
       name: '変更の承認は完了しています',
@@ -1694,7 +1702,7 @@ test('resumes a verified invitation change without another TOTP challenge', asyn
     .toBe('completing')
 
   await page.reload()
-  panel = await openLedger(page)
+  panel = await waitForLedger(page)
   await expect(
     panel.getByRole('heading', {
       name: '本人確認は完了しています',
@@ -2103,7 +2111,7 @@ for (const surface of [
     now += 10 * 60_000
     await page.clock.setFixedTime(new Date(now))
     await page.reload()
-    panel = await openLedger(page)
+    panel = await waitForLedger(page)
     if (surface === 'ai-policy') {
       const summary = page
         .locator('summary')
