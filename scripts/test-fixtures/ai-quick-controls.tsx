@@ -197,7 +197,13 @@ Object.assign(window, {
               academicEnabled: false,
             }
           : {}),
-        ...(options.draft ? { lectureStatus: 'draft' as const } : {}),
+        ...(options.draft === undefined
+          ? {}
+          : {
+              lectureStatus: options.draft
+                ? ('draft' as const)
+                : ('open' as const),
+            }),
       }
       render()
     },

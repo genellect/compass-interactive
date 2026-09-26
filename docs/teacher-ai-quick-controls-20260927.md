@@ -21,8 +21,8 @@ Network failure can prevent confirmation of server cleanup after leaving a lectu
 ## Continuing regression
 
 - `test:teacher-ai-controls`: six Node-only cases load the actual master repository with mocked transport and the actual quick-start helper. This runs in the mandatory non-live suite.
-- `test:teacher-ai-controls:browser`: ten cases mount the real AI panel and handlers in a fresh Vite server on an allocated localhost port. Repository transport and microphone responses are synthetic; all non-local browser traffic is rejected. This runs in the existing Demo browser E2E job after its existing Chromium install.
+- `test:teacher-ai-controls:browser`: eleven cases mount the real AI panel and handlers in a fresh Vite server on an allocated localhost port. Repository transport and microphone responses are synthetic; all non-local browser traffic is rejected. This runs in the existing Demo browser E2E job after its existing Chromium install.
 - The browser cases cover separate caption consent, partial failure, double-click exclusion, lecture/session changes during admission, pending admission cancellation, cancellation surviving lecture change, and captions-only availability.
-- Existing local Supabase AI-master E2E opens `AIの詳細` before its unchanged permission-only assertions. Static master and draft reservation checks retain their guards with the new scoped-result predicate.
+- Existing local Supabase AI-master E2E opens `AIの詳細` before its unchanged permission-only assertions. The full lecture lifecycle also opens it after lecture start before changing summary settings. A component regression covers that draft-to-open transition and visible settings interaction. Static master and draft reservation checks retain their guards with the new scoped-result predicate.
 
 Before release, address the two UX limitations above or obtain an explicitly reviewed staged scope, then run local Supabase integration and authorized real microphone/provider E2E. No production deployment, app distribution, or Store submission is performed by this candidate.

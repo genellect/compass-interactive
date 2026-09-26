@@ -247,7 +247,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
       { timeout: 15_000 },
     )
 
+    await admin.page.getByText('AIの詳細', { exact: true }).click()
     const summaryLanguage = admin.page.getByLabel('要約言語')
+    await expect(summaryLanguage).toBeVisible()
     await expect(summaryLanguage).toHaveValue('auto')
     await summaryLanguage.selectOption('en')
     await expect(

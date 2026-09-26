@@ -44,6 +44,7 @@ const server = await createServer({
       'VITE_PHASE1_SYNC_PROTOCOL',
       'VITE_PHASE3_PRIVATE_PDF',
       'VITE_PHASE6_SUMMARIES',
+      'VITE_PHASE7_1_CLASSROOM_EXTENSIONS',
       'VITE_PHASE7_2_ACADEMIC_ANSWERS',
       'VITE_PHASE7_25_AUTO_ACADEMIC_ANSWERS',
       'VITE_PHASE7_26_BROWSER_PDF_PUBLISHING',
@@ -77,6 +78,24 @@ try {
   const calls = (page) => page.evaluate(() => window.aiHarness.calls)
   const bulk = (page) =>
     page.getByRole('button', { name: '字幕以外を一括有効化', exact: true })
+  await run(
+    'draft-to-open lecture keeps detailed settings reachable through their visible summary',
+    async (page) => {
+      await page.evaluate(() => window.aiHarness.configure({ draft: true }))
+      await page
+        .getByRole('button', { name: '講義開始時にAI機能を有効にする' })
+        .waitFor({ state: 'visible' })
+      const language = page.getByLabel('要約言語')
+      await page.evaluate(() => window.aiHarness.configure({ draft: false }))
+      await language.waitFor({ state: 'attached' })
+      assert.equal(await language.isVisible(), false)
+      await page.getByText('AIの詳細', { exact: true }).click()
+      await language.waitFor({ state: 'visible' })
+      await language.selectOption('en')
+      assert.equal(await language.inputValue(), 'en')
+      assert.deepEqual(await calls(page), [])
+    },
+  )
   await run(
     'bulk starts summary, leaves missing material explicit, never requests microphone',
     async (page) => {
