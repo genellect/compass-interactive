@@ -120,8 +120,13 @@ assert.match(control, /Promise\.race\(\[/)
 assert.match(control, /const startAttemptGenerationRef = useRef\(0\)/)
 assert.match(
   control,
-  /const startAttemptGeneration = \+\+startAttemptGenerationRef\.current[\s\S]*?stream = await requestMicrophoneStream\(\)[\s\S]*?startAttemptGenerationRef\.current !== startAttemptGeneration[\s\S]*?stream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)[\s\S]*?return/,
+  /const startAttemptGeneration = \+\+startAttemptGenerationRef\.current[\s\S]*?stream = await requestMicrophoneStream\(\)[\s\S]*?startAttemptGenerationRef\.current !== startAttemptGeneration[\s\S]*?return await cancelStart\(\)/,
   'a late microphone result from an invalidated start attempt must stop before provider IDs or Edge dispatch',
+)
+assert.match(
+  control,
+  /const cancelStart = async[\s\S]*?startedSession\?\.stop\(\)[\s\S]*?stream\?\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/,
+  'cancelled caption starts must close the prepared session and all acquired audio tracks',
 )
 assert.match(
   control,

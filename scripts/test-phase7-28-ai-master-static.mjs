@@ -120,8 +120,13 @@ assert.match(
 )
 assert.match(
   masterControl,
-  /if \(busy \|\| authorization\?\.status !== 'active'\) return/,
+  /revokeInFlightRef\.current\.has\(revokeKey\) \|\|[\s\S]*admittedAuthorization === undefined &&[\s\S]*authorization\?\.status !== 'active'/,
   'a replacement app session can revoke the same-principal master before reauthorizing',
+)
+assert.match(
+  masterControl,
+  /authorizeInFlightRef\.current && admittedAuthorization === undefined[\s\S]*stopRequested = true/,
+  'stop during admission must cancel the intent instead of silently returning because it is busy',
 )
 assert.doesNotMatch(masterControl, /getUserMedia|createRealtimeCaptionCall/)
 assert.match(masterHelpers, /masterAuthorizesFeature/)

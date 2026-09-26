@@ -1,9 +1,11 @@
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useRef,
   useState,
+  type Ref,
 } from 'react'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { AdminAiUnlockError } from '../../lib/adminAuth/adminAiUnlockApi'
@@ -14,8 +16,12 @@ import type {
   AiMasterAuthorizationScope,
 } from '../../repositories/supabaseAdminRepository'
 import { supabaseAdminRepository } from '../../repositories/supabaseAdminRepository'
+import type { AiMasterControlHandle } from './aiQuickStart'
 
 type Props = {
+  controlRef?: Ref<AiMasterControlHandle>
+  quickStartBusy?: boolean
+  onStopRequested?: () => void
   adminToken: AdminOperationCredentialInput
   identityScope: RememberedBrowserIdentityScope
   lectureSessionId: string
@@ -43,6 +49,9 @@ function admissionBlockedMessage(reason: string | null) {
 }
 
 export function AiMasterAuthorizationControl({
+  controlRef,
+  quickStartBusy = false,
+  onStopRequested,
   adminToken,
   lectureSessionId,
   lectureStatus,
@@ -57,6 +66,11 @@ export function AiMasterAuthorizationControl({
   >([])
   const [serverLectureOpen, setServerLectureOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const authorizeInFlightRef = useRef(false)
+  const authorizationAttemptRef = useRef<{ stopRequested: boolean } | null>(
+    null,
+  )
+  const revokeInFlightRef = useRef(new Set<string>())
   const [consumeBusy, setConsumeBusy] = useState(false)
   const [consumeRetryVersion, setConsumeRetryVersion] = useState(0)
   const [message, setMessage] = useState('')
@@ -376,25 +390,123 @@ export function AiMasterAuthorizationControl({
     }
   }, [lectureStatus, refresh])
 
-  const authorize = useCallback(
-    async (activationIntentVersion?: number) => {
-      const targetLectureSessionId = lectureSessionId
-      const scope: AiMasterAuthorizationScope | null = allowedScopes.includes(
-        'all_including_captions',
+  const revoke = useCallback(
+    async (admittedAuthorization?: AiMasterAuthorization | null) => {
+      onStopRequested?.()
+      if (authorizeInFlightRef.current && admittedAuthorization === undefined) {
+        if (authorizationAttemptRef.current)
+          authorizationAttemptRef.current.stopRequested = true
+        setMessage('AI機能の開始を取り消しています…')
+        return
+      }
+      const revokeKey = `${adminToken.appSessionToken}:${lectureSessionId}`
+      if (
+        revokeInFlightRef.current.has(revokeKey) ||
+        (admittedAuthorization === undefined &&
+          authorization?.status !== 'active')
       )
-        ? 'all_including_captions'
-        : allowedScopes.includes('all_except_captions')
-          ? 'all_except_captions'
-          : null
+        return
+      revokeInFlightRef.current.add(revokeKey)
+      const targetLectureSessionId = lectureSessionId
+      const targetAppSessionToken = adminToken.appSessionToken
+      const isCurrent = () =>
+        lectureSessionIdRef.current === targetLectureSessionId &&
+        activationIntentScopeRef.current.appSessionToken ===
+          targetAppSessionToken
+      statusRequestVersionRef.current += 1
+      setBusy(true)
+      setMessage('AI機能を停止しています…')
+      let intentCancelConfirmed = false
+      try {
+        try {
+          const intent = await supabaseAdminRepository.setAiActivationIntent({
+            adminToken,
+            enabled: false,
+            lectureSessionId: targetLectureSessionId,
+          })
+          if (isCurrent()) {
+            activationIntentRef.current = intent.armed
+            activationIntentVersionRef.current = intent.version
+            setActivationIntentState(intent.armed)
+          }
+          intentCancelConfirmed = !intent.armed
+        } catch {
+          if (isCurrent()) {
+            activationIntentRef.current = false
+            setActivationIntentState(false)
+          }
+        }
+        if (isCurrent()) {
+          activationHandoffLectureRef.current = null
+          activationHandoffVersionRef.current = null
+        }
+        await supabaseAdminRepository.revokeAiMasterAuthorization({
+          adminToken,
+          lectureSessionId: targetLectureSessionId,
+          reason: 'admin_manual_revoke',
+        })
+        if (!isCurrent()) return
+        statusRequestVersionRef.current += 1
+        applyAuthorization(null)
+        setMessage(
+          intentCancelConfirmed
+            ? 'AI機能を停止しました。'
+            : 'AI機能を停止しました。開始時予約の状態は次回の手動有効化時に再確認します。',
+        )
+      } catch (error) {
+        if (!isCurrent()) return
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : 'AI機能を停止できませんでした。',
+        )
+      } finally {
+        revokeInFlightRef.current.delete(revokeKey)
+        if (isCurrent()) {
+          setBusy(false)
+        }
+      }
+    },
+    [
+      adminToken,
+      applyAuthorization,
+      authorization,
+      lectureSessionId,
+      onStopRequested,
+    ],
+  )
+
+  const authorize = useCallback(
+    async (
+      activationIntentVersion?: number,
+      requestedScope?: AiMasterAuthorizationScope,
+    ): Promise<AiMasterAuthorization | null> => {
+      const targetLectureSessionId = lectureSessionId
+      const targetAppSessionToken = adminToken.appSessionToken
+      const isCurrent = () =>
+        lectureSessionIdRef.current === targetLectureSessionId &&
+        activationIntentScopeRef.current.appSessionToken ===
+          targetAppSessionToken
+      const scope: AiMasterAuthorizationScope | null =
+        requestedScope ??
+        (allowedScopes.includes('all_including_captions')
+          ? 'all_including_captions'
+          : allowedScopes.includes('all_except_captions')
+            ? 'all_except_captions'
+            : null)
       if (
         !scope ||
         lectureStatus !== 'open' ||
         !serverLectureOpen ||
         !admissionEnabled ||
         !allowedScopes.includes(scope) ||
-        busy
+        busy ||
+        authorizeInFlightRef.current
       )
-        return
+        return null
+      authorizeInFlightRef.current = true
+      const attempt = { stopRequested: false }
+      authorizationAttemptRef.current = attempt
       statusRequestVersionRef.current += 1
       setBusy(true)
       setMessage('講義状態とAI利用権限を確認しています…')
@@ -406,9 +518,21 @@ export function AiMasterAuthorizationControl({
             lectureSessionId: targetLectureSessionId,
             masterScope: scope,
           })
-        if (lectureSessionIdRef.current !== targetLectureSessionId) return
+        if (!isCurrent()) {
+          if (attempt.stopRequested)
+            await supabaseAdminRepository.revokeAiMasterAuthorization({
+              adminToken,
+              lectureSessionId: targetLectureSessionId,
+              reason: 'admin_manual_revoke',
+            })
+          return null
+        }
         statusRequestVersionRef.current += 1
         applyAuthorization(status.authorization)
+        if (attempt.stopRequested) {
+          await revoke(status.authorization)
+          return null
+        }
         if (activationIntentVersion !== undefined) {
           activationIntentRef.current = false
           setActivationIntentState(false)
@@ -421,8 +545,24 @@ export function AiMasterAuthorizationControl({
             ? 'すべてのAI機能を講義終了まで許可しました。字幕と各AI機能は個別に開始します。'
             : '字幕以外のAI機能を講義終了まで許可しました。各AI機能は個別に開始します。',
         )
+        return status.authorization
       } catch (error) {
-        if (lectureSessionIdRef.current !== targetLectureSessionId) return
+        if (!isCurrent()) {
+          if (attempt.stopRequested)
+            await supabaseAdminRepository
+              .revokeAiMasterAuthorization({
+                adminToken,
+                lectureSessionId: targetLectureSessionId,
+                reason: 'admin_manual_revoke',
+              })
+              .catch(() => undefined)
+          return null
+        }
+        if (attempt.stopRequested) {
+          // Revoke also reconciles an admission whose HTTP response was lost.
+          await revoke(null)
+          return null
+        }
         const retryable =
           error instanceof AdminAiUnlockError && error.code === 'request_failed'
         setMessage(
@@ -432,8 +572,12 @@ export function AiMasterAuthorizationControl({
               ? error.message
               : '講義中のAI機能を許可できませんでした。',
         )
+        return null
       } finally {
-        if (lectureSessionIdRef.current === targetLectureSessionId) {
+        authorizeInFlightRef.current = false
+        if (authorizationAttemptRef.current === attempt)
+          authorizationAttemptRef.current = null
+        if (isCurrent()) {
           setBusy(false)
         }
       }
@@ -447,9 +591,15 @@ export function AiMasterAuthorizationControl({
       lectureSessionId,
       lectureStatus,
       onReadinessChange,
+      revoke,
       serverLectureOpen,
     ],
   )
+
+  useImperativeHandle(controlRef, () => ({
+    authorize: (scope) => authorize(undefined, scope),
+    stop: revoke,
+  }))
 
   const consumeActivationIntent = useCallback(async () => {
     if (consumeInFlightRef.current) return
@@ -560,58 +710,6 @@ export function AiMasterAuthorizationControl({
     lectureStatus,
   ])
 
-  async function revoke() {
-    if (busy || authorization?.status !== 'active') return
-    const targetLectureSessionId = lectureSessionId
-    statusRequestVersionRef.current += 1
-    setBusy(true)
-    setMessage('AI機能を停止しています…')
-    let intentCancelConfirmed = false
-    try {
-      try {
-        const intent = await supabaseAdminRepository.setAiActivationIntent({
-          adminToken,
-          enabled: false,
-          lectureSessionId: targetLectureSessionId,
-        })
-        if (lectureSessionIdRef.current !== targetLectureSessionId) return
-        activationIntentRef.current = intent.armed
-        activationIntentVersionRef.current = intent.version
-        setActivationIntentState(intent.armed)
-        intentCancelConfirmed = !intent.armed
-      } catch {
-        activationIntentRef.current = false
-        setActivationIntentState(false)
-      }
-      activationHandoffLectureRef.current = null
-      activationHandoffVersionRef.current = null
-      await supabaseAdminRepository.revokeAiMasterAuthorization({
-        adminToken,
-        lectureSessionId: targetLectureSessionId,
-        reason: 'admin_manual_revoke',
-      })
-      if (lectureSessionIdRef.current !== targetLectureSessionId) return
-      statusRequestVersionRef.current += 1
-      applyAuthorization(null)
-      setMessage(
-        intentCancelConfirmed
-          ? 'AI機能を停止しました。'
-          : 'AI機能を停止しました。開始時予約の状態は次回の手動有効化時に再確認します。',
-      )
-    } catch (error) {
-      if (lectureSessionIdRef.current !== targetLectureSessionId) return
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : 'AI機能を停止できませんでした。',
-      )
-    } finally {
-      if (lectureSessionIdRef.current === targetLectureSessionId) {
-        setBusy(false)
-      }
-    }
-  }
-
   const active =
     authorization?.status === 'active' && authorization.ownedByRequester
   const heldByOther =
@@ -643,7 +741,7 @@ export function AiMasterAuthorizationControl({
           {lectureStatus === 'open' ? (
             <button
               className="primary-button"
-              disabled={busy || !canAdmit || !hasAllowedScope}
+              disabled={busy || quickStartBusy || !canAdmit || !hasAllowedScope}
               onClick={() => void authorize()}
               type="button"
             >
@@ -655,7 +753,7 @@ export function AiMasterAuthorizationControl({
               className={
                 activationIntent ? 'secondary-button' : 'primary-button'
               }
-              disabled={busy}
+              disabled={busy || quickStartBusy}
               onClick={() => {
                 void updateActivationIntent(!activationIntent)
               }}

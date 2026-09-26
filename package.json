@@ -8,6 +8,8 @@
     "node": ">=22.22.0"
   },
   "scripts": {
+    "test:teacher-ai-controls": "node --experimental-strip-types scripts/test-ai-quick-start.mjs",
+    "test:teacher-ai-controls:browser": "node scripts/test-ai-quick-controls.mjs",
     "dev": "vite",
     "dev:cloud": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build && node scripts/create-route-entrypoints.mjs",
