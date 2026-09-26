@@ -47,6 +47,7 @@ import {
   buildAdminPageView,
   deriveTeacherWorkspacePresentation,
   fromDatetimeLocalValue,
+  getPollCreateInput,
   makeJoinedLecture,
   type TeacherWorkspaceView,
 } from './admin/adminPageViewModel'
@@ -65,6 +66,7 @@ import {
 } from './admin/adminMessages'
 import { useAdminLectureSelectionGuard } from './admin/useAdminLectureSelectionGuard'
 import { useAdminPollAutoRefresh } from './admin/useAdminPollAutoRefresh'
+import { useAdminPollDraft } from './admin/useAdminPollDraft'
 import { useAdminPollRefreshCoordinator } from './admin/useAdminPollRefreshCoordinator'
 import { useAdminDisplayMutation } from './admin/useAdminDisplayMutation'
 import { useAdminDisplayStatus } from './admin/useAdminDisplayStatus'
@@ -138,9 +140,13 @@ export function AdminPage({
   const [commentModerationPendingId, setCommentModerationPendingId] = useState<
     string | null
   >(null)
-  const [newPollQuestion, setNewPollQuestion] = useState('')
-  const [newPollType, setNewPollType] = useState<AdminPoll['type']>('single')
-  const [newPollOptions, setNewPollOptions] = useState('賛成\n反対')
+  const {
+    newPollQuestion, setNewPollQuestion,
+    newPollType, setNewPollType,
+    newPollOptionCount, setNewPollOptionCount,
+    newPollOptions, setNewPollOptions,
+    resetPollDraft,
+  } = useAdminPollDraft()
   const [adminPdfDocuments, setAdminPdfDocuments] = useState<
     AdminPdfDocument[]
   >([])
@@ -978,13 +984,9 @@ export function AdminPage({
       return
     }
 
-    const optionLabels = newPollOptions
-      .split('\n')
-      .map((option) => option.trim())
-      .filter(Boolean)
-
-    if (!newPollQuestion.trim() || optionLabels.length < 2) {
-      setAdminPollsError('質問と2件以上の選択肢を入力してください。')
+    const pollDraft = getPollCreateInput(newPollQuestion, newPollOptions, newPollOptionCount)
+    if (!pollDraft) {
+      setAdminPollsError('質問とすべての選択肢を入力してください。')
       return
     }
 
@@ -996,14 +998,12 @@ export function AdminPage({
         adminToken,
         includeHistory: showPollHistory || Boolean(activeJournalClubRun),
         lectureSessionId,
-        optionLabels,
-        question: newPollQuestion.trim(),
+        ...pollDraft,
         type: newPollType,
       })
       if (!pollMutationIsCurrent(pollMutation)) return
       applyAdminPollList(result, lectureSessionId)
-      setNewPollQuestion('')
-      setNewPollOptions('賛成\n反対')
+      resetPollDraft()
     } catch (error) {
       if (pollMutationIsCurrent(pollMutation)) {
         setAdminPollsError(
@@ -1360,10 +1360,12 @@ export function AdminPage({
           error={adminPollsError}
           isLoading={adminPollsLoading}
           lectureStatus={activeLectureStatus}
+          newOptionCount={newPollOptionCount}
           newOptions={newPollOptions}
           newQuestion={newPollQuestion}
           newType={newPollType}
           onCreate={handleCreatePoll}
+          onOptionCountChange={setNewPollOptionCount}
           onOptionsChange={setNewPollOptions}
           onQuestionChange={setNewPollQuestion}
           onRefresh={() => void refreshAdminPolls()}

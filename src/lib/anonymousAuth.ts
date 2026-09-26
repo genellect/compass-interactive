@@ -14,15 +14,15 @@ const ANONYMOUS_SESSION_CHECK_TIMEOUT_MS = 6_000
 const ANONYMOUS_SESSION_CREATE_TIMEOUT_MS = 12_000
 
 async function createAnonymousSession(providedCaptchaToken?: string) {
-  const challengeSignal = AbortSignal.timeout(
-    ANONYMOUS_SESSION_CREATE_TIMEOUT_MS,
-  )
+  // Human verification has its own deadline; it must not consume signup's network budget.
+  // A dedicated signal also keeps Student and Display from sharing a single-use CAPTCHA token.
+  const captchaToken =
+    providedCaptchaToken ??
+    (await getAnonymousSignInCaptchaToken(new AbortController().signal))
+  const signupSignal = AbortSignal.timeout(ANONYMOUS_SESSION_CREATE_TIMEOUT_MS)
   try {
-    const captchaToken =
-      providedCaptchaToken ??
-      (await getAnonymousSignInCaptchaToken(challengeSignal))
     const { data, error } = await runWithAnonymousSignupAbortSignal(
-      challengeSignal,
+      signupSignal,
       () =>
         supabase.auth.signInAnonymously(
           captchaToken ? { options: { captchaToken } } : undefined,
@@ -39,7 +39,7 @@ async function createAnonymousSession(providedCaptchaToken?: string) {
 
     return data.user.id
   } catch (error) {
-    if (challengeSignal.aborted) {
+    if (signupSignal.aborted) {
       throw new RequestDeadlineError(
         '匿名セッションの開始',
         ANONYMOUS_SESSION_CREATE_TIMEOUT_MS,

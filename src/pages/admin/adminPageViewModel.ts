@@ -5,6 +5,21 @@ import type {
 
 export type TeacherWorkspaceView = 'setup' | 'slides' | 'participation' | 'ai'
 
+export function getPollCreateInput(
+  question: string,
+  options: string[],
+  optionCount: number,
+) {
+  const optionLabels = options.slice(0, optionCount).map((option) => option.trim())
+  if (
+    !question.trim() ||
+    optionLabels.length < 2 ||
+    optionLabels.length > 8 ||
+    optionLabels.some((option) => !option)
+  ) return null
+  return { optionLabels, question: question.trim() }
+}
+
 export function deriveTeacherWorkspacePresentation(input: {
   activeLecture: AdminLecture | undefined
   hasPublishedMaterial: boolean

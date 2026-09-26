@@ -147,8 +147,8 @@ assert.doesNotMatch(
 )
 assert.match(
   anonymousAuth,
-  /AbortSignal\.timeout\([\s\S]*runWithAnonymousSignupAbortSignal\([\s\S]*challengeSignal/,
-  'anonymous signup must share one physical abort deadline with its challenge',
+  /await getAnonymousSignInCaptchaToken\([\s\S]*AbortSignal\.timeout\([\s\S]*runWithAnonymousSignupAbortSignal\([\s\S]*signupSignal/,
+  'anonymous signup must start its physical network abort deadline after the challenge',
 )
 assert.match(
   supabaseClient,

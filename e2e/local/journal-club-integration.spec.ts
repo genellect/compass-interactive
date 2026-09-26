@@ -630,7 +630,7 @@ test('prepares isolated Journal Club rehearsal and production drafts through rea
       }),
     ).toBeVisible()
 
-    await page.getByRole('tab', { name: /参加/ }).click()
+  await page.getByRole('tab', { name: /ライブ投票/ }).click()
     await expect(page.locator('#teacher-workspace-participation')).toBeVisible()
 
     let previousOpenPollRow: Locator | null = null
