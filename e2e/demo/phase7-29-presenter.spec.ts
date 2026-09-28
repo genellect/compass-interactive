@@ -2045,7 +2045,7 @@ test('health precedes issuance, and tab changes and reload preserve native owner
   expect(operations.indexOf('health')).toBeLessThan(operations.indexOf('issue'))
   await confirmPresenterMaterial(page)
   await expect(page.locator('.admin-presenter-active')).toBeVisible()
-  for (const name of ['参加', 'AI', 'スライド']) {
+  for (const name of ['ライブ投票', 'AI', 'スライド']) {
     await page.getByRole('tab', { name }).click()
     await expect(page.locator('.admin-presenter-active')).toBeVisible()
     await expect(page.getByRole('button', { name: '次へ →' })).toBeDisabled()
@@ -2534,7 +2534,7 @@ test('keeps absent Bridge readiness checks local without issuing pairing materia
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await expect(pdfPanel.getByLabel('PDF資料')).toBeEnabled()
   await page.getByRole('tab', { name: 'スライド' }).click()
-  await page.getByRole('tab', { name: '参加' }).click()
+  await page.getByRole('tab', { name: 'ライブ投票' }).click()
   await expect
     .poll(() => loopbackRequests.length, { timeout: 8_000 })
     .toBeGreaterThan(1)

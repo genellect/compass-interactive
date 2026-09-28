@@ -26,6 +26,17 @@ const googleAdmin = createMockGoogleAdminSession()
 type PublicationAction =
   'abort' | 'discover' | 'finalize' | 'initiate' | 'status'
 
+type MockPoll = {
+  createdAt: string
+  id: string
+  lectureSessionId: string
+  options: Array<{ id: string; label: string; order: number; responseCount: number }>
+  question: string
+  status: 'draft'
+  type: 'single' | 'multiple'
+  updatedAt: string
+}
+
 type MockState = {
   active: boolean
   committed: boolean
@@ -626,6 +637,217 @@ async function openTeacherSetup(page: Page) {
   await expect(page.locator('#teacher-workspace-material')).toBeVisible()
 }
 
+async function installPollUiMocks(page: Page) {
+  const state = {
+    creations: [] as Array<{ optionLabels: string[]; question: string; type: MockPoll['type'] }>,
+    failNextCreate: false,
+    polls: [] as MockPoll[],
+  }
+  await page.route('**/functions/v1/manage-polls', async (route) => {
+    const body = route.request().postDataJSON()
+    if (body.action === 'create') {
+      state.creations.push({
+        optionLabels: body.optionLabels,
+        question: body.question,
+        type: body.type,
+      })
+      if (state.failNextCreate) {
+        state.failNextCreate = false
+        await fulfillJson(route, { message: 'Mock poll creation failure.' }, 503)
+        return
+      }
+      state.polls.unshift({
+        createdAt: new Date().toISOString(),
+        id: `poll-ui-${state.creations.length}`,
+        lectureSessionId,
+        options: body.optionLabels.map((label: string, index: number) => ({
+          id: `option-${index}`, label, order: index, responseCount: 0,
+        })),
+        question: body.question,
+        status: 'draft',
+        type: body.type,
+        updatedAt: new Date().toISOString(),
+      })
+    }
+    await fulfillJson(route, { hasMore: false, ok: true, polls: state.polls })
+  })
+  return state
+}
+
+test('Teacher poll fields preserve drafts and submit only the selected 2 to 8 options', async ({ page }) => {
+  await installAdminState(page, false)
+  await installNetworkMocks(page)
+  const state = await installPollUiMocks(page)
+  await page.goto('/admin')
+  await page.locator('#teacher-workspace-participation-tab').click()
+  const panel = page.locator('.admin-poll-control')
+  const count = panel.getByRole('combobox', { name: '選択肢数', exact: true })
+  const question = panel.getByLabel('質問', { exact: true })
+  const create = panel.getByRole('button', { name: '投票を作成', exact: true })
+  const option = (index: number) => panel.getByLabel(`選択肢 ${index}`, { exact: true })
+  await expect(count).toHaveValue('4')
+  await expect(panel.locator('.admin-poll-options input')).toHaveCount(4)
+  await question.fill('入力保持の確認')
+  await count.selectOption('8')
+  for (let index = 1; index <= 8; index += 1) await option(index).fill(`項目 ${index}`)
+  await count.selectOption('2')
+  await openTeacherSetup(page)
+  await page.locator('#teacher-workspace-participation-tab').click()
+  await expect(question).toHaveValue('入力保持の確認')
+  await expect(count).toHaveValue('2')
+  await count.selectOption('8')
+  for (let index = 1; index <= 8; index += 1) await expect(option(index)).toHaveValue(`項目 ${index}`)
+  await count.selectOption('2')
+  await option(2).fill('   ')
+  await expect(create).toBeDisabled()
+  expect(state.creations).toHaveLength(0)
+  await option(2).fill('項目 2')
+  await create.click()
+  await expect.poll(() => state.creations.length).toBe(1)
+  expect(state.creations[0].optionLabels).toEqual(['項目 1', '項目 2'])
+  await expect(count).toHaveValue('4')
+  await expect(question).toHaveValue('')
+  await expect(option(1)).toHaveValue('')
+  await count.selectOption('8')
+  for (let index = 1; index <= 8; index += 1) await expect(option(index)).toHaveValue('')
+
+  for (const optionCount of [4, 8]) {
+    await count.selectOption(String(optionCount))
+    await question.fill(`${optionCount}件の投票`)
+    for (let index = 1; index <= optionCount; index += 1) await option(index).fill(`回答 ${index}`)
+    if (optionCount === 4) {
+      state.failNextCreate = true
+      await create.click()
+      await expect(panel.locator('.error-note')).toContainText('投票の作成に失敗しました')
+      await expect(question).toHaveValue('4件の投票')
+      await expect(count).toHaveValue('4')
+      for (let index = 1; index <= 4; index += 1) await expect(option(index)).toHaveValue(`回答 ${index}`)
+    }
+    await panel.getByRole('combobox', { name: '回答形式', exact: true }).selectOption('multiple')
+    await create.click()
+    await expect(question).toHaveValue('')
+    expect(state.creations.at(-1)).toMatchObject({
+      question: `${optionCount}件の投票`,
+      optionLabels: Array.from({ length: optionCount }, (_, index) => `回答 ${index + 1}`),
+      type: 'multiple',
+    })
+  }
+  await expect(page.locator('#teacher-workspace-participation').getByRole('heading', { name: 'みんなの声を管理' })).toBeVisible()
+  await stopAdminOperatorPolling(page)
+})
+
+test('Teacher poll presets fill the requested wording without an extra confirmation', async ({ page }) => {
+  await installAdminState(page, false)
+  await installNetworkMocks(page)
+  const state = await installPollUiMocks(page)
+  const dialogs: string[] = []
+  page.on('dialog', async (dialog) => { dialogs.push(dialog.type()); await dialog.dismiss() })
+  await page.goto('/admin')
+  await page.locator('#teacher-workspace-participation-tab').click()
+  const panel = page.locator('.admin-poll-control')
+  const presets = [
+    { question: '今日の講義の理解度は？', options: ['よく理解できた', 'だいたい理解できた', 'あまり理解できなかった', 'ほとんど理解できなかった'] },
+    { question: 'COMPASS Interactiveを、今後の授業でも導入してほしいと思いますか？', options: ['導入してほしい', 'どちらでもよい', '導入してほしくない'] },
+    { question: 'COMPASS Interactiveを使うことで、今後の講義内容をより理解しやすくなると思いますか？', options: ['そう思う', 'どちらともいえない', 'そう思わない'] },
+  ]
+  await panel.getByLabel('質問', { exact: true }).fill('書きかけの質問')
+  await panel.getByRole('combobox', { name: '定型文', exact: true }).selectOption('1')
+  await expect(panel.getByLabel('質問', { exact: true })).toHaveValue('書きかけの質問')
+  for (const [index, preset] of presets.entries()) {
+    await panel.getByRole('combobox', { name: '定型文', exact: true }).selectOption(String(index))
+    await panel.getByRole('button', { name: /定型文(を入力|に置き換える)/ }).click()
+    await expect(panel.getByLabel('質問', { exact: true })).toHaveValue(preset.question)
+    await expect(panel.getByRole('combobox', { name: '選択肢数', exact: true })).toHaveValue(String(preset.options.length))
+    for (const [optionIndex, value] of preset.options.entries()) {
+      await expect(panel.getByLabel(`選択肢 ${optionIndex + 1}`, { exact: true })).toHaveValue(value)
+    }
+    await panel.getByRole('button', { name: '投票を作成', exact: true }).click()
+    await expect(panel.getByLabel('質問', { exact: true })).toHaveValue('')
+    expect(state.creations.at(-1)).toMatchObject({ question: preset.question, optionLabels: preset.options })
+  }
+  expect(dialogs).toEqual([])
+  await stopAdminOperatorPolling(page)
+})
+
+test('Teacher preparation and slides keep major controls compact without horizontal overflow', async ({ page, isMobile }, testInfo) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page)
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const publication = page.locator('.admin-pdf-publication-form')
+  await publication.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  const viewports = isMobile
+    ? [{ width: 390, height: 844 }]
+    : [{ width: 1440, height: 900 }, { width: 1366, height: 768 }, { width: 1280, height: 720 }, { width: 1024, height: 768 }, { width: 768, height: 1024 }]
+  const assertNoOverflow = async () => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await assertNoOverflow()
+    if (!isMobile && viewport.width >= 1280) {
+      await expect(publication.locator('input[type="file"]')).toBeInViewport({ ratio: 1 })
+      await expect(publication.getByRole('button', { name: '学生に講義資料を公開する' })).toBeInViewport({ ratio: 1 })
+    }
+    await page.screenshot({ path: testInfo.outputPath(`teacher-setup-${viewport.width}.png`), fullPage: true })
+  }
+  await publication.getByRole('button', { name: '学生に講義資料を公開する' }).click()
+  await expect.poll(() => state.active).toBe(true)
+  await page.locator('#teacher-workspace-slides-tab').click()
+  await expect(page.locator('.publisher-control-panel')).toBeHidden()
+  const stage = page.locator('.admin-current-pdf-preview .pdf-stage')
+  await expect(stage.locator('canvas')).toBeVisible()
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await assertNoOverflow()
+    await expect(page.getByRole('button', { name: '次へ →' })).toBeInViewport({ ratio: 1 })
+    const size = await stage.boundingBox()
+    expect(size?.height).toBeLessThanOrEqual(320)
+    const previewSize = await page.locator('.admin-current-pdf-preview').boundingBox()
+    expect(size!.x).toBeGreaterThanOrEqual(previewSize!.x)
+    expect(size!.x + size!.width).toBeLessThanOrEqual(previewSize!.x + previewSize!.width + 1)
+    const canvasSize = await stage.locator('canvas').boundingBox()
+    expect(canvasSize!.width).toBeLessThanOrEqual(size!.width + 1)
+    expect(canvasSize!.height).toBeLessThanOrEqual(size!.height + 1)
+    if (!isMobile && viewport.width >= 1280) await expect(stage).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: testInfo.outputPath(`teacher-slides-${viewport.width}.png`), fullPage: true })
+  }
+  if (!isMobile && (await page.evaluate(() => document.fullscreenEnabled))) {
+    await page.locator('.admin-current-pdf-preview').getByRole('button', { name: '大きく表示' }).click()
+    await expect.poll(() => stage.evaluate((element) => document.fullscreenElement === element)).toBe(true)
+    await page.evaluate(() => document.exitFullscreen())
+    await expect.poll(() => stage.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(320)
+  }
+  await page.setViewportSize(isMobile ? { width: 390, height: 844 } : { width: 1366, height: 768 })
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+  await page.locator('#teacher-workspace-participation-tab').click()
+  await testInfo.attach('poll-tab-click-scroll.json', {
+    body: Buffer.from(JSON.stringify(await page.evaluate(() => ({ scrollY: window.scrollY, width: window.innerWidth, height: window.innerHeight })))),
+    contentType: 'application/json',
+  })
+  await page.screenshot({ path: testInfo.outputPath('teacher-poll-tab-click.png') })
+  const panel = page.locator('.admin-poll-control')
+  await panel.getByLabel('質問', { exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(panel.getByRole('combobox', { name: '回答形式', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(panel.getByRole('combobox', { name: '選択肢数', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(panel.getByLabel('選択肢 1', { exact: true })).toBeFocused()
+  await panel.getByRole('button', { name: '定型文を入力' }).click()
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await assertNoOverflow()
+    if (!isMobile && viewport.width >= 1280) await expect(panel.getByRole('button', { name: '投票を作成', exact: true })).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: testInfo.outputPath(`teacher-poll-${viewport.width}.png`), fullPage: true })
+  }
+  expect(errors).toEqual([])
+  await stopAdminOperatorPolling(page)
+})
+
 test('Admin clears a restored closed lecture before preparing the next PDF', async ({
   page,
 }) => {
@@ -1198,6 +1420,7 @@ test('Admin creates a draft and publishes a preselected PDF with one CTA', async
     draftSnapshotNotFound: true,
     startWithoutLecture: true,
   })
+  const pollState = await installPollUiMocks(page)
 
   await page.goto('/admin')
   await openTeacherSetup(page)
@@ -1252,6 +1475,13 @@ test('Admin creates a draft and publishes a preselected PDF with one CTA', async
       name: '操作対象',
     }),
   ).toBeVisible()
+  await page.locator('#teacher-workspace-participation-tab').click()
+  const pollPanel = page.locator('.admin-poll-control')
+  await pollPanel.getByRole('button', { name: '定型文を入力' }).click()
+  await pollPanel.getByRole('button', { name: '投票を作成', exact: true }).click()
+  await expect.poll(() => pollState.polls.length).toBe(1)
+  await expect(pollPanel.locator('.poll-admin-row')).toContainText('準備中')
+  await expect(pollPanel.getByRole('button', { name: '開始する', exact: true })).toBeDisabled()
   await stopAdminOperatorPolling(page)
 })
 

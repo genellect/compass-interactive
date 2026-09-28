@@ -191,6 +191,9 @@ test('teacher and student complete a lecture lifecycle on local Supabase', async
     const pollPanel = admin.page.locator('#teacher-workspace-participation')
     await expect(pollPanel).toBeVisible({ timeout: 10_000 })
     await pollPanel.getByLabel('質問').fill('講義前に準備した投票')
+    await pollPanel.getByRole('combobox', { name: '選択肢数', exact: true }).selectOption('2')
+    await pollPanel.getByLabel('選択肢 1', { exact: true }).fill('賛成')
+    await pollPanel.getByLabel('選択肢 2', { exact: true }).fill('反対')
     await pollPanel.getByRole('button', { name: '投票を作成' }).click()
     const preparedPoll = admin.page
       .locator('.poll-admin-row')

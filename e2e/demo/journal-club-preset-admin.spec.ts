@@ -134,8 +134,8 @@ function anonymousSessionResponse(
   }
 }
 
-async function installTurnstileMock(page: Page) {
-  await page.addInitScript(() => {
+async function installTurnstileMock(page: Page, anonymousDelayMs = 0) {
+  await page.addInitScript((delayMs) => {
     type TurnstileTestState = {
       mode: 'resolve' | 'stall'
       removeCount: number
@@ -147,7 +147,7 @@ async function installTurnstileMock(page: Page) {
         remove: (widgetId: string) => void
         render: (
           container: HTMLElement,
-          options: { callback: (token: string) => void },
+          options: { action: string; callback: (token: string) => void },
         ) => string
       }
     }
@@ -159,22 +159,49 @@ async function installTurnstileMock(page: Page) {
       renderCount: 0,
     }
     testWindow.__compassTurnstileTest = state
+    const timers = new Map<string, number>()
     testWindow.turnstile = {
-      remove: () => {
+      remove: (widgetId) => {
         state.removeCount += 1
+        window.clearTimeout(timers.get(widgetId))
+        timers.delete(widgetId)
       },
       render: (_container, options) => {
         state.renderCount += 1
         const widgetId = `turnstile-widget-${state.renderCount}`
         if (state.mode === 'resolve') {
-          queueMicrotask(() =>
-            options.callback(`turnstile-token-${state.renderCount}`),
-          )
+          const complete = () => options.callback(`turnstile-token-${widgetId}`)
+          if (options.action === 'anonymous-sign-in' && delayMs > 0) {
+            timers.set(widgetId, window.setTimeout(complete, delayMs))
+          } else {
+            queueMicrotask(complete)
+          }
         }
         return widgetId
       },
     }
-  })
+  }, anonymousDelayMs)
+}
+
+async function ensureTestAnonymousSession(
+  page: Page,
+  kind: 'student' | 'display',
+) {
+  return await page.evaluate(async (clientKind) => {
+    const modulePath =
+      clientKind === 'student'
+        ? '/src/lib/anonymousAuth.ts'
+        : '/src/lib/displaySupabaseClient.ts'
+    const auth = (await import(/* @vite-ignore */ modulePath)) as {
+      ensureAnonymousAuthSession: () => Promise<string>
+      ensureDisplayAnonymousAuthSession: () => Promise<string>
+    }
+    const ensure =
+      clientKind === 'student'
+        ? auth.ensureAnonymousAuthSession
+        : auth.ensureDisplayAnonymousAuthSession
+    return await Promise.all([ensure(), ensure()])
+  }, kind)
 }
 
 function makeLecture(runKind: JournalClubRunKind): Lecture {
@@ -623,6 +650,153 @@ test.describe('Phase 7.27 flag ON', () => {
     process.env.VITE_PHASE7_28_JOURNAL_CLUB_PRESET_CREATION !== 'true',
     'Phase 7.27 preset creation requires its dedicated recovery runner.',
   )
+
+  for (const kind of ['student', 'display'] as const) {
+    for (const timing of [
+      { challengeMs: 13_000, signupMs: 0 },
+      { challengeMs: 11_000, signupMs: 2_000 },
+    ]) {
+      test(`${kind} gives signup its full network deadline after a ${timing.challengeMs}ms challenge and ${timing.signupMs}ms signup`, async ({
+        page,
+      }) => {
+        const userId = '72700000-0000-4000-8000-000000000103'
+        const lectureTitle = 'Cold QR lecture entry'
+        await installTurnstileMock(page, timing.challengeMs)
+        const state = await installNetworkMocks(page, {
+          anonymousSignupDelayMs: [timing.signupMs],
+          anonymousSignupUserIds: [userId],
+          liveJoinLecture: {
+            ends_at: null,
+            lecture_session_id: '72700000-0000-4000-8000-000000000777',
+            participant_id: '72700000-0000-4000-8000-000000000778',
+            starts_at: null,
+            status: 'open',
+            title: lectureTitle,
+          },
+        })
+        await page.route('https://pdf.example/v1/archives/resolve', (route) =>
+          route.fulfill({ status: 404, body: '{}' }),
+        )
+
+        if (kind === 'student') {
+          // A fresh QR URL must finish without a second form submission.
+          await page.goto('/join?code=731042')
+          await expect(
+            page.getByRole('heading', { name: lectureTitle }),
+          ).toBeVisible({ timeout: 20_000 })
+          expect(state.liveJoinRequests).toBe(1)
+        } else {
+          await page.goto('/join')
+          expect(await ensureTestAnonymousSession(page, kind)).toEqual([
+            userId,
+            userId,
+          ])
+        }
+
+        expect(state.anonymousSignupRequests).toBe(1)
+        expect(state.anonymousSignupRequestFailures).toBe(0)
+        await expect(page.locator('.turnstile-challenge-layer')).toHaveCount(0)
+        const renderCount = await page.evaluate(
+          () =>
+            (
+              window as unknown as {
+                __compassTurnstileTest: { renderCount: number }
+              }
+            ).__compassTurnstileTest.renderCount,
+        )
+        expect(await ensureTestAnonymousSession(page, kind)).toEqual([
+          userId,
+          userId,
+        ])
+        expect(state.anonymousSignupRequests).toBe(1)
+        expect(
+          await page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  __compassTurnstileTest: { renderCount: number }
+                }
+              ).__compassTurnstileTest.renderCount,
+          ),
+        ).toBe(renderCount)
+      })
+    }
+  }
+
+  test('keeps single-use CAPTCHA tokens separate for concurrent Student and Display signup', async ({
+    page,
+  }) => {
+    await installTurnstileMock(page, 50)
+    const state = await installNetworkMocks(page)
+    const signupTokens: string[] = []
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (
+        url.origin === 'https://example.supabase.co' &&
+        url.pathname === '/auth/v1/signup'
+      ) {
+        const body = request.postDataJSON() as {
+          gotrue_meta_security: { captcha_token: string }
+        }
+        signupTokens.push(body.gotrue_meta_security.captcha_token)
+      }
+    })
+    await page.goto('/join')
+    await Promise.all([
+      ensureTestAnonymousSession(page, 'student'),
+      ensureTestAnonymousSession(page, 'display'),
+    ])
+    expect(state.anonymousSignupRequests).toBe(2)
+    expect(signupTokens).toHaveLength(2)
+    expect(
+      signupTokens.every((token) => token.startsWith('turnstile-token-')),
+    ).toBe(true)
+    expect(new Set(signupTokens).size).toBe(2)
+  })
+
+  test('physically aborts stalled Display signup, deduplicates callers, and preserves the retry session', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name.startsWith('mobile-'),
+      'The network abort is exercised once per browser engine.',
+    )
+    const staleUserId = '72700000-0000-4000-8000-000000000104'
+    const retryUserId = '72700000-0000-4000-8000-000000000105'
+    await installTurnstileMock(page)
+    const state = await installNetworkMocks(page, {
+      anonymousSignupDelayMs: [16_000, 0],
+      anonymousSignupUserIds: [staleUserId, retryUserId],
+    })
+    await page.goto('/join')
+    const startedAt = Date.now()
+    await expect(ensureTestAnonymousSession(page, 'display')).rejects.toThrow(
+      'Display匿名セッションの開始に時間がかかっています',
+    )
+    expect(Date.now() - startedAt).toBeLessThan(15_000)
+    expect(state.anonymousSignupRequests).toBe(1)
+    expect(
+      await page.evaluate(() =>
+        window.localStorage.getItem(
+          'compass-interactive-display-supabase-auth-v1',
+        ),
+      ),
+    ).toBeNull()
+    expect(await ensureTestAnonymousSession(page, 'display')).toEqual([
+      retryUserId,
+      retryUserId,
+    ])
+    expect(state.anonymousSignupRequests).toBe(2)
+    await expect
+      .poll(() => state.anonymousSignupHandlerSettled, { timeout: 6_000 })
+      .toBe(2)
+    expect(await ensureTestAnonymousSession(page, 'display')).toEqual([
+      retryUserId,
+      retryUserId,
+    ])
+    expect(state.anonymousSignupRequests).toBe(2)
+    expect(state.anonymousSignupRequestFailures).toBeGreaterThanOrEqual(1)
+  })
 
   test('bounds a stalled archive lookup and opens the live lecture before resume-token delivery', async ({
     page,
