@@ -9,6 +9,7 @@ if (!npmCli) {
   throw new Error('Run this suite through npm so npm_execpath is available.')
 }
 const safeTestScripts = [
+  'test:teacher-ai-controls',
   'test:demo',
   'test:live-state',
   'test:phase1-load',

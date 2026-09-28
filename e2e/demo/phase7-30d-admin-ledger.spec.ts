@@ -2407,6 +2407,11 @@ test('keeps the settings route available to an Instructor without exposing Owner
   const state = await installMocks(page, admin, { role: 'instructor' })
 
   await page.goto('/admin')
+  // Absence alone also passes on the loading screen. Observe the authenticated
+  // workspace before checking Instructor controls or leaving this document.
+  await expect(
+    page.getByRole('tablist', { name: '教員ワークスペース', exact: true }),
+  ).toBeVisible()
   await expect(
     page.getByRole('link', { name: '教員管理', exact: true }),
   ).toHaveCount(0)

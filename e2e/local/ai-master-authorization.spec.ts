@@ -71,6 +71,7 @@ test('browser authorizes master AI, starts the provider-free summary scheduler, 
   await startResponsePromise
   await expect(lectureRow).toContainText('受付中')
   await page.locator('#teacher-workspace-ai-tab').click()
+  await page.getByText('AIの詳細', { exact: true }).click()
 
   const { data: lecture, error: lectureError } = await service
     .from('lecture_sessions')
@@ -399,6 +400,7 @@ test('503 master status keeps AI readiness blocked and cannot reach authorizatio
   await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
   await expect(lectureRow).toContainText('受付中')
   await page.locator('#teacher-workspace-ai-tab').click()
+  await page.getByText('AIの詳細', { exact: true }).click()
 
   const aiPanel = page.locator('.ai-readiness-panel')
   const readinessBadge = aiPanel.locator(
@@ -455,6 +457,7 @@ test('lost AI admission response does not poison revoke and one-click re-enable'
   await lectureRow.getByRole('button', { name: '開始', exact: true }).click()
   await expect(lectureRow).toContainText('受付中')
   await page.locator('#teacher-workspace-ai-tab').click()
+  await page.getByText('AIの詳細', { exact: true }).click()
 
   const { data: lecture, error: lectureError } = await service
     .from('lecture_sessions')

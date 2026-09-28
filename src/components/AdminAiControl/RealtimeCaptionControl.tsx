@@ -1,4 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from 'react'
+import {
+  inactiveQuickStart,
+  type AiQuickStartHandle,
+  type AiQuickStartRequest,
+  type AiQuickStartResult,
+} from './aiQuickStart'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import {
   appendCompletedCaptionSegment,
@@ -43,6 +55,7 @@ type CaptionControlStatus =
 type RealtimeDuration = '600' | '1800' | 'remaining'
 
 type RealtimeCaptionControlProps = {
+  controlRef?: Ref<AiQuickStartHandle>
   admissionEnabled: boolean
   adminToken: AdminOperationCredentialInput
   hardStopAt?: string | null
@@ -169,6 +182,7 @@ function triggerTranscriptExport(
 }
 
 export function RealtimeCaptionControl({
+  controlRef,
   admissionEnabled,
   adminToken,
   hardStopAt,
@@ -483,25 +497,36 @@ export function RealtimeCaptionControl({
     }
   }
 
-  async function handleStart() {
+  async function handleStart(
+    quickStart?: AiQuickStartRequest,
+  ): Promise<AiQuickStartResult> {
+    if (quickStart && !quickStart.isCurrent()) return inactiveQuickStart
+    if (statusRef.current === 'running')
+      return { status: 'already_active', message: '配信中です。' }
+    const startAuthorization = quickStart?.authorization ?? masterAuthorization
     if (
       [
         'requesting_microphone',
         'authorizing',
         'connecting',
         'running',
-      ].includes(status) ||
-      masterHeldByOther ||
+      ].includes(statusRef.current) ||
+      statusRef.current === 'stopping' ||
+      masterAuthorizationHeldByOther(startAuthorization) ||
       !admissionEnabled ||
-      !masterAuthorized
+      !masterAuthorizesFeature(startAuthorization, 'captions')
     )
-      return
+      return { status: 'skipped', message: '開始条件を満たしていません。' }
     if (lectureStatus !== 'open') {
       updateStatus('error')
       setMessage('開始済みで終了前の講義だけ字幕を開始できます。')
-      return
+      return { status: 'skipped', message: '講義開始後に利用できます。' }
     }
 
+    const startAttemptGeneration = ++startAttemptGenerationRef.current
+    const isCurrent = () =>
+      startAttemptGenerationRef.current === startAttemptGeneration &&
+      (!quickStart || quickStart.isCurrent())
     if (unresolvedGoogleStartRef.current) {
       updateStatus('authorizing')
       setMessage('前回の字幕開始が確定したか確認しています。')
@@ -511,6 +536,7 @@ export function RealtimeCaptionControl({
           adminToken,
           lectureSessionId,
         })
+        if (!isCurrent()) return inactiveQuickStart
         const runningOperationId = findRunningCaptionOperation(
           response.recentOperations,
         )
@@ -520,34 +546,63 @@ export function RealtimeCaptionControl({
           setMessage(
             '前回の字幕開始を確認しました。音声は自動再接続せず、停止操作を実行してください。',
           )
-          return
+          return {
+            status: 'failed',
+            message: '前回の処理を停止してから再開してください。',
+          }
         }
         unresolvedGoogleStartRef.current = null
       } catch {
+        if (!isCurrent()) return inactiveQuickStart
         updateStatus('error')
         setMessage(
           '前回の字幕開始を確認できません。重複開始を防ぐため、停止を押して状態確認を再試行してください。',
         )
-        return
+        return {
+          status: 'failed',
+          message: '前回の開始結果を確認してください。',
+        }
       }
     }
 
     transportSequenceRef.current = 0
     transportStreamIdRef.current = crypto.randomUUID()
-    const startAttemptGeneration = ++startAttemptGenerationRef.current
 
     updateStatus('requesting_microphone')
     setMessage('ブラウザのマイク使用を確認しています。')
     let stream: MediaStream | null = null
+    let startedSession: RealtimeCaptionSession | null = null
+    const cancelStart = async (
+      operationId?: string,
+    ): Promise<AiQuickStartResult> => {
+      startedSession?.stop()
+      stream?.getTracks().forEach((track) => track.stop())
+      if (startAttemptGenerationRef.current === startAttemptGeneration) {
+        if (operationId) operationIdRef.current = operationId
+        await failClosed('字幕開始を中止しました。')
+      } else if (operationId) {
+        // The old component no longer owns the UI; release its late server admission.
+        await supabaseAdminRepository
+          .manageAiControl({
+            action: 'stopFeature',
+            adminToken,
+            lectureSessionId,
+            operationId,
+            reason: 'client_unmount',
+          })
+          .catch(() => undefined)
+      }
+      return inactiveQuickStart
+    }
     let providerStartAttempted = false
     try {
       stream = await requestMicrophoneStream()
       if (
         startAttemptGenerationRef.current !== startAttemptGeneration ||
-        statusRef.current !== 'requesting_microphone'
+        statusRef.current !== 'requesting_microphone' ||
+        (quickStart && !quickStart.isCurrent())
       ) {
-        stream.getTracks().forEach((track) => track.stop())
-        return
+        return await cancelStart()
       }
       updateStatus('authorizing')
       setMessage('講義のAI許可、選択時間、利用上限を確認しています。')
@@ -556,8 +611,15 @@ export function RealtimeCaptionControl({
         onEvent: handleRealtimeEvent,
         onFailure: (failureMessage) => void failClosed(failureMessage),
       })
+      startedSession = session
       sessionRef.current = session
       const sdpOffer = await session.createOffer()
+      if (
+        startAttemptGenerationRef.current !== startAttemptGeneration ||
+        (quickStart && !quickStart.isCurrent())
+      ) {
+        return await cancelStart()
+      }
       const grantRequestId = crypto.randomUUID()
       const startRequestId = crypto.randomUUID()
       unresolvedGoogleStartRef.current = { grantRequestId, startRequestId }
@@ -573,6 +635,12 @@ export function RealtimeCaptionControl({
           maxAudioSeconds: requestedAudioSeconds,
           sdpOffer,
         })
+      if (
+        startAttemptGenerationRef.current !== startAttemptGeneration ||
+        (quickStart && !quickStart.isCurrent())
+      ) {
+        return await cancelStart(providerCall.operationId)
+      }
       setPricingRateMicrousdPerMinute(providerCall.pricingRateMicrousdPerMinute)
       operationIdRef.current = providerCall.operationId
       startRequestIdRef.current = startRequestId ?? null
@@ -580,6 +648,12 @@ export function RealtimeCaptionControl({
       updateStatus('connecting')
       setMessage('OpenAI Realtimeへ短寿命接続を準備しています。')
       await session.connect(providerCall.sdpAnswer)
+      if (
+        startAttemptGenerationRef.current !== startAttemptGeneration ||
+        (quickStart && !quickStart.isCurrent())
+      ) {
+        return await cancelStart(providerCall.operationId)
+      }
       updateStatus('running')
       setMessage(
         `字幕を開始しました。最大${Math.ceil(providerCall.reservedAudioSeconds / 60)}分、上限概算$${(
@@ -608,8 +682,10 @@ export function RealtimeCaptionControl({
           ),
         )
       }, 15_000)
+      return { status: 'started', message: '配信を開始しました。' }
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop())
+      if (!isCurrent()) return await cancelStart()
       await failClosed(
         statusRef.current === 'requesting_microphone'
           ? microphoneErrorMessage(error)
@@ -617,6 +693,7 @@ export function RealtimeCaptionControl({
             ? error.message
             : '字幕を開始できませんでした。',
       )
+      if (!isCurrent()) return inactiveQuickStart
       if (providerStartAttempted) {
         try {
           const response = await supabaseAdminRepository.manageAiControl({
@@ -624,6 +701,7 @@ export function RealtimeCaptionControl({
             adminToken,
             lectureSessionId,
           })
+          if (!isCurrent()) return inactiveQuickStart
           const runningOperationId = findRunningCaptionOperation(
             response.recentOperations,
           )
@@ -642,8 +720,14 @@ export function RealtimeCaptionControl({
           )
         }
       }
+      return {
+        status: 'failed',
+        message: '開始できませんでした。マイクとAIの詳細を確認してください。',
+      }
     }
   }
+
+  useImperativeHandle(controlRef, () => ({ start: handleStart }))
 
   async function stopAtSelectedDuration() {
     if (statusRef.current !== 'running') return

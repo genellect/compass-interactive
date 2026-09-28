@@ -1,4 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react'
+import {
+  inactiveQuickStart,
+  type AiQuickStartHandle,
+  type AiQuickStartRequest,
+  type AiQuickStartResult,
+} from './aiQuickStart'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { isPhase726BrowserPdfPublishingEnabled } from '../../lib/featureFlags'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
@@ -17,6 +31,7 @@ import {
 } from './aiMasterAuthorization'
 
 type MaterialAnalysisControlProps = {
+  controlRef?: Ref<AiQuickStartHandle>
   adminToken: AdminOperationCredentialInput
   documents: AdminPdfDocument[]
   generationEnabled: boolean
@@ -61,6 +76,7 @@ function createDefaultSummaryBody(
 }
 
 export function MaterialAnalysisControl({
+  controlRef,
   adminToken,
   documents,
   generationEnabled,
@@ -82,6 +98,16 @@ export function MaterialAnalysisControl({
   const [pageStart, setPageStart] = useState('1')
   const [pageEnd, setPageEnd] = useState('1')
   const [busy, setBusy] = useState(false)
+  const startInFlightRef = useRef(false)
+  const startScopeRef = useRef(0)
+  useLayoutEffect(() => {
+    startScopeRef.current += 1
+    startInFlightRef.current = false
+    setBusy(false)
+    return () => {
+      startScopeRef.current += 1
+    }
+  }, [adminToken.appSessionToken, lectureSessionId, lectureStatus])
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftQuestion, setDraftQuestion] = useState('')
@@ -156,19 +182,41 @@ export function MaterialAnalysisControl({
     }
   }, [adminToken, lectureSessionId])
 
-  async function runAnalysis(action: 'material_analysis' | 'poll_suggestions') {
+  async function runAnalysis(
+    action: 'material_analysis' | 'poll_suggestions',
+    quickStart?: AiQuickStartRequest,
+  ): Promise<AiQuickStartResult> {
+    const scope = startScopeRef.current
+    const isCurrent = () =>
+      scope === startScopeRef.current && (!quickStart || quickStart.isCurrent())
+    if (quickStart && !quickStart.isCurrent()) return inactiveQuickStart
+    if (
+      quickStart &&
+      action === 'material_analysis' &&
+      results.analysis?.sourceDocumentId === selectedDocument?.documentId &&
+      results.analysis?.sourceDocumentVersion ===
+        selectedDocument?.documentVersion &&
+      results.analysis
+    )
+      return { status: 'already_active', message: 'この資料は分析済みです。' }
+    if (busy || startInFlightRef.current || lectureStatus !== 'open')
+      return { status: 'skipped', message: '開始条件を満たしていません。' }
+    const startAuthorization = quickStart?.authorization ?? masterAuthorization
+    const startMasterAuthorized =
+      masterAuthorizesFeature(startAuthorization, 'material_analysis') &&
+      masterAuthorizesFeature(startAuthorization, 'poll_suggestions')
     let googleAttemptKey: string | null = null
     if (!generationEnabled) {
       setMessage(
         'AI生成は現在停止中です。既存結果の確認・非表示・非採用は引き続き利用できます。',
       )
-      return
+      return { status: 'skipped', message: '新しい分析は停止中です。' }
     }
     if (
       !selectedDocument ||
       (!publisherSessionToken && !isPhase726BrowserPdfPublishingEnabled) ||
-      masterHeldByOther ||
-      !masterAuthorized
+      masterAuthorizationHeldByOther(startAuthorization) ||
+      !startMasterAuthorized
     ) {
       setMessage(
         masterHeldByOther
@@ -177,7 +225,10 @@ export function MaterialAnalysisControl({
             ? 'PDFの公開状態を確認してください。'
             : 'PDFの公開状態と講義中のAI許可を確認してください。',
       )
-      return
+      return {
+        status: 'skipped',
+        message: '公開資料とAI利用許可を確認してください。',
+      }
     }
     const start = Number(pageStart)
     const end = Number(pageEnd)
@@ -190,9 +241,10 @@ export function MaterialAnalysisControl({
         end > selectedDocument.pageCount)
     ) {
       setMessage('追加提案のページ範囲を確認してください。')
-      return
+      return { status: 'skipped', message: 'ページ範囲を確認してください。' }
     }
 
+    startInFlightRef.current = true
     setBusy(true)
     setMessage(
       action === 'material_analysis'
@@ -206,6 +258,7 @@ export function MaterialAnalysisControl({
         lectureSessionId,
         publisherSessionToken,
       })
+      if (!isCurrent()) return inactiveQuickStart
       const analysisId =
         action === 'poll_suggestions' ? (results.analysis?.id ?? null) : null
       googleAttemptKey = JSON.stringify({
@@ -240,6 +293,7 @@ export function MaterialAnalysisControl({
         pageStart: action === 'poll_suggestions' ? start : null,
         previousAnalysisId: results.analysis?.id ?? null,
       })
+      if (!isCurrent()) return inactiveQuickStart
       if (googleAttemptKey) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
       }
@@ -250,12 +304,31 @@ export function MaterialAnalysisControl({
               createDefaultSummaryBody(nextResults.analysis))
           : null,
       )
+      if (
+        quickStart &&
+        (!nextResults.analysis ||
+          nextResults.analysis.sourceDocumentId !==
+            selectedDocument.documentId ||
+          nextResults.analysis.sourceDocumentVersion !==
+            selectedDocument.documentVersion)
+      ) {
+        setMessage('この資料の分析結果を確認できませんでした。')
+        return {
+          status: 'failed',
+          message: 'この資料の分析結果を確認できませんでした。',
+        }
+      }
       setMessage(
         action === 'material_analysis'
           ? '分析が完了しました。投票候補は教員確認前の下書きです。'
           : '追加候補を作成しました。採用前に根拠と選択肢を確認してください。',
       )
+      return {
+        status: 'started',
+        message: '分析が完了しました。投票候補は下書きです。',
+      }
     } catch (error) {
+      if (!isCurrent()) return inactiveQuickStart
       const retainAttempt = shouldRetainAdminProviderAttempt(error)
       if (googleAttemptKey && !retainAttempt) {
         googleProviderAttemptsRef.current.delete(googleAttemptKey)
@@ -269,10 +342,21 @@ export function MaterialAnalysisControl({
             ? `AI処理を完了できませんでした: ${error.message}`
             : 'AI処理を完了できませんでした。',
       )
+      return {
+        status: 'failed',
+        message: '分析を完了できませんでした。AIの詳細で確認してください。',
+      }
     } finally {
-      setBusy(false)
+      if (scope === startScopeRef.current) {
+        startInFlightRef.current = false
+        setBusy(false)
+      }
     }
   }
+
+  useImperativeHandle(controlRef, () => ({
+    start: (request) => runAnalysis('material_analysis', request),
+  }))
 
   function beginEditing(proposal: AdminPollProposal) {
     setEditingId(proposal.id)

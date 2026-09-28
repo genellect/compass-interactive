@@ -163,6 +163,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit
       - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:teacher-ai-controls:browser
       - run: npm run test:e2e:demo:triple
       - run: npm run test:e2e:phase7-26
       - run: npm run test:e2e:phase7-26:flag-off

@@ -274,10 +274,16 @@ assert.match(repository, /activationExpiresAt: value\.activationExpiresAt/)
 assert.match(control, /const lectureSessionIdRef = useRef\(lectureSessionId\)/)
 assert.ok(
   (
-    control.match(/lectureSessionIdRef\.current !== targetLectureSessionId/g) ??
-    []
+    control.match(
+      /lectureSessionIdRef\.current !== targetLectureSessionId|if \(!isCurrent\(\)\)/g,
+    ) ?? []
   ).length >= 5,
   'late intent, status, master, consume and revoke responses must not cross lectures',
+)
+assert.match(
+  control,
+  /const isCurrent = \(\) =>[\s\S]*lectureSessionIdRef\.current === targetLectureSessionId &&[\s\S]*activationIntentScopeRef\.current\.appSessionToken ===[\s\S]*targetAppSessionToken/,
+  'shared late-result checks bind both the lecture and app session',
 )
 assert.match(
   control,

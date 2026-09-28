@@ -1,4 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react'
+import {
+  inactiveQuickStart,
+  type AiQuickStartHandle,
+  type AiQuickStartRequest,
+  type AiQuickStartResult,
+} from './aiQuickStart'
 import type { AdminOperationCredentialInput } from '../../lib/adminAuth/adminOperationCredential'
 import { listCompletedCaptionSegments } from '../../caption/captionTranscriptStore'
 import { getAdminPdfExtraction } from '../../pdf/adminPdfExtraction'
@@ -30,6 +45,7 @@ import {
 } from './aiMasterAuthorization'
 
 type LectureSummaryControlProps = {
+  controlRef?: Ref<AiQuickStartHandle>
   admissionEnabled: boolean
   adminToken: AdminOperationCredentialInput
   displayState: DisplayState | null
@@ -71,6 +87,7 @@ function reviewLabel(summary: AdminLectureSummary) {
 }
 
 export function LectureSummaryControl({
+  controlRef,
   admissionEnabled,
   adminToken,
   displayState,
@@ -87,6 +104,16 @@ export function LectureSummaryControl({
   const [results, setResults] = useState<AdminSummaryResults>(emptyResults)
   const [runToken, setRunToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const startInFlightRef = useRef(false)
+  const startScopeRef = useRef(0)
+  useLayoutEffect(() => {
+    startScopeRef.current += 1
+    startInFlightRef.current = false
+    setBusy(false)
+    return () => {
+      startScopeRef.current += 1
+    }
+  }, [adminToken.appSessionToken, lectureSessionId, lectureStatus])
   const [message, setMessage] = useState('')
   const [schedulerRevision, setSchedulerRevision] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -540,14 +567,41 @@ export function LectureSummaryControl({
     if (lectureStatus !== 'open') setRunToken(null)
   }, [lectureStatus])
 
-  async function startRun() {
+  async function startRun(
+    quickStart?: AiQuickStartRequest,
+  ): Promise<AiQuickStartResult> {
+    const scope = startScopeRef.current
+    const isCurrent = () =>
+      scope === startScopeRef.current && (!quickStart || quickStart.isCurrent())
+    if (quickStart && !quickStart.isCurrent()) return inactiveQuickStart
+    if (quickStart && runTokenRef.current)
+      return {
+        status: 'already_active',
+        message:
+          quickStart.includeAcademicAnswers && !autoAcademicAnswers
+            ? '要約は実行中です。参考回答はAIの詳細で設定してください。'
+            : '実行中です。',
+      }
+    const startAuthorization = quickStart?.authorization ?? masterAuthorization
+    const startAcademicAnswers = quickStart
+      ? Boolean(
+          quickStart.includeAcademicAnswers &&
+          isPhase725AutoAcademicAnswersEnabled &&
+          masterAuthorizesFeature(startAuthorization, 'academic_answers'),
+        )
+      : autoAcademicAnswers
     if (
+      busy ||
+      startInFlightRef.current ||
       !admissionEnabled ||
-      !masterAuthorizedForStart ||
-      masterHeldByOther ||
+      !masterAuthorizesFeature(startAuthorization, 'summaries') ||
+      (startAcademicAnswers &&
+        !masterAuthorizesFeature(startAuthorization, 'academic_answers')) ||
+      masterAuthorizationHeldByOther(startAuthorization) ||
       lectureStatus !== 'open'
     )
-      return
+      return { status: 'skipped', message: '開始条件を満たしていません。' }
+    startInFlightRef.current = true
     setBusy(true)
     setMessage('講義中のAI許可と講義状態を確認しています…')
     try {
@@ -556,24 +610,49 @@ export function LectureSummaryControl({
         academicSourcePolicy,
         adminToken,
         autoAcademicAnswers:
-          isPhase725AutoAcademicAnswersEnabled && autoAcademicAnswers,
+          isPhase725AutoAcademicAnswersEnabled && startAcademicAnswers,
         lectureSessionId,
       })
+      if (!isCurrent()) return inactiveQuickStart
       setResults(started.results)
       setRunToken(started.runToken)
+      if (!started.runToken || started.results.run?.status !== 'running') {
+        setMessage('要約の開始を確認できませんでした。状態を確認してください。')
+        return {
+          status: 'failed',
+          message: '開始を確認できませんでした。AIの詳細で確認してください。',
+        }
+      }
+      setAutoAcademicAnswers(startAcademicAnswers)
       setMessage(
-        autoAcademicAnswers
+        startAcademicAnswers
           ? '5分要約と参考回答の自動生成を開始しました。各windowはサーバー時刻で判定します。'
           : '5分要約を開始しました。各windowはサーバー時刻で判定します。',
       )
+      return {
+        status: 'started',
+        message: startAcademicAnswers
+          ? '要約と参考回答の自動生成を有効にしました。'
+          : '要約の自動生成を有効にしました。',
+      }
     } catch (error) {
+      if (!isCurrent()) return inactiveQuickStart
       setMessage(
         error instanceof Error ? error.message : '要約を開始できませんでした。',
       )
+      return {
+        status: 'failed',
+        message: '開始できませんでした。AIの詳細で確認してください。',
+      }
     } finally {
-      setBusy(false)
+      if (scope === startScopeRef.current) {
+        startInFlightRef.current = false
+        setBusy(false)
+      }
     }
   }
+
+  useImperativeHandle(controlRef, () => ({ start: startRun }))
 
   async function updateSummaryLanguage(next: SummaryLanguagePreference) {
     if (busy || lectureStatus === 'closed') return

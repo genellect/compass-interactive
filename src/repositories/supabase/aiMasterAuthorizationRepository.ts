@@ -204,7 +204,9 @@ export const aiMasterAuthorizationRepository = {
     if (
       request.activationIntentVersion === undefined &&
       currentAuthorization?.status === 'active' &&
-      currentAuthorization.ownedByRequester
+      currentAuthorization.ownedByRequester &&
+      (currentAuthorization.scope === request.masterScope ||
+        currentAuthorization.scope === 'all_including_captions')
     ) {
       if (status.policy) {
         completeReconciledAal2MasterRequest(
@@ -272,7 +274,9 @@ export const aiMasterAuthorizationRepository = {
     completeAdminOperationRequestId(reserved.key, reserved.requestId)
     if (
       admittedAuthorization?.status !== 'active' ||
-      !admittedAuthorization.ownedByRequester
+      !admittedAuthorization.ownedByRequester ||
+      (request.masterScope === 'all_including_captions' &&
+        admittedAuthorization.scope !== request.masterScope)
     ) {
       throw new AdminAiUnlockError(
         'master_admission_unavailable',
