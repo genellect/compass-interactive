@@ -2,6 +2,204 @@
   margin-top: 14px;
 }
 
+.admin-page-shell {
+  padding-top: 20px;
+}
+
+.admin-page-shell > .page-header,
+.admin-page-shell .admin-workflow {
+  margin-bottom: 14px;
+}
+
+.admin-page-shell .admin-workflow button {
+  padding: 10px 14px;
+}
+
+.admin-page-shell .teacher-workspace-stage,
+.admin-page-shell .teacher-setup-stack {
+  gap: 14px;
+}
+
+.admin-page-shell .teacher-workspace-stage > .panel,
+.admin-page-shell .teacher-setup-stack > .panel {
+  padding: 18px;
+}
+
+.admin-page-shell .panel-heading h2,
+.admin-page-shell .panel-heading h3 {
+  margin: 0;
+}
+
+.admin-page-shell .panel-heading .eyebrow {
+  margin-bottom: 4px;
+}
+
+.admin-page-shell .admin-material-workspace .publisher-control-panel[hidden],
+.admin-page-shell .admin-current-pdf-preview[hidden] {
+  display: none;
+}
+
+.admin-page-shell .admin-pdf-publication-form {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.4fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  gap: 12px;
+}
+
+.admin-page-shell .admin-pdf-publication-form .field {
+  margin: 0;
+  max-width: none;
+  min-width: 0;
+}
+
+.admin-page-shell .admin-pdf-upload-field input {
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-page-shell .admin-pdf-upload-field input::file-selector-button {
+  background: var(--accent-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  margin-right: 8px;
+  padding: 8px 12px;
+}
+
+.admin-page-shell .admin-poll-presets {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.admin-page-shell .admin-poll-control .field {
+  gap: 4px;
+}
+
+.admin-page-shell .admin-poll-control input,
+.admin-page-shell .admin-poll-control select {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.admin-page-shell .admin-poll-presets .field {
+  align-items: center;
+  grid-template-columns: auto minmax(140px, 1fr);
+  margin: 0;
+  min-width: 0;
+}
+
+.admin-page-shell .lecture-transport-bar input {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.admin-page-shell .admin-pdf-page-jump span {
+  white-space: nowrap;
+}
+
+.admin-page-shell .poll-create-form {
+  grid-template-columns: minmax(0, 1fr) 140px 110px auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-page-shell .poll-create-form .admin-poll-question {
+  grid-column: auto;
+}
+
+.admin-page-shell .admin-poll-options {
+  display: grid;
+  gap: 8px 14px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-page-shell .poll-create-form > button {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  min-width: 160px;
+}
+
+.admin-page-shell .admin-current-pdf-preview {
+  padding-top: 8px;
+}
+
+.admin-page-shell .admin-material-workspace.is-slides .pdf-document-control .field {
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin: 4px 0;
+}
+
+.admin-page-shell .admin-material-workspace.is-slides .pdf-document-control select {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.admin-page-shell .admin-current-pdf-preview > h3 {
+  margin-bottom: 4px;
+}
+
+.admin-page-shell .admin-current-pdf-preview .pdf-toolbar {
+  padding-top: 4px;
+}
+
+.admin-page-shell .admin-current-pdf-preview .local-pdf-viewer {
+  gap: 6px;
+}
+
+.admin-page-shell .admin-current-pdf-preview .pdf-stage:not(:fullscreen) {
+  height: clamp(180px, calc(100dvh - 580px), 320px);
+  width: calc(100% - 36px);
+}
+
+.admin-page-shell .admin-current-pdf-preview .pdf-stage:not(:fullscreen) .pdf-canvas {
+  object-fit: contain;
+}
+
+@media (max-width: 1100px) {
+  .admin-page-shell .admin-pdf-publication-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-page-shell .admin-current-pdf-preview .pdf-stage:not(:fullscreen) {
+    height: 180px;
+  }
+
+  .admin-page-shell .admin-workflow button {
+    padding: 10px 4px;
+  }
+
+  .admin-page-shell .admin-pdf-publication-form,
+  .admin-page-shell .poll-create-form,
+  .admin-page-shell .admin-poll-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-page-shell .poll-create-form .field {
+    max-width: none;
+    min-width: 0;
+  }
+
+  .admin-page-shell .admin-poll-presets .field,
+  .admin-page-shell .poll-create-form > button {
+    width: 100%;
+  }
+
+  .admin-page-shell .poll-create-form > button {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
 .teacher-workspace-stage {
   display: grid;
   gap: 22px;

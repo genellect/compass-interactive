@@ -26,7 +26,7 @@ const items: Array<{
   },
   {
     description: '投票・コメント',
-    label: '参加',
+    label: 'ライブ投票',
     view: 'participation',
   },
   {

@@ -256,7 +256,7 @@ assert.match(
 )
 assert.match(
   anonymousAuth,
-  /runWithAnonymousSignupAbortSignal\([\s\S]*challengeSignal/,
+  /runWithAnonymousSignupAbortSignal\([\s\S]*signupSignal/,
 )
 assert.match(anonymousAuth, /getOrCreateAnonymousSignInRequest/)
 assert.doesNotMatch(

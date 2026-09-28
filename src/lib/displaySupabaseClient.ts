@@ -92,9 +92,13 @@ export const displaySupabase = createClient<Database>(
 let anonymousSignInRequest: Promise<string> | null = null
 
 async function createAnonymousSession() {
+  // Keep the Turnstile interaction deadline separate from signup's network deadline.
+  // A separate challenge prevents sharing a single-use token with the Student client.
+  const captchaToken = await getAnonymousSignInCaptchaToken(
+    new AbortController().signal,
+  )
   const signal = AbortSignal.timeout(SESSION_CREATE_TIMEOUT_MS)
   try {
-    const captchaToken = await getAnonymousSignInCaptchaToken(signal)
     const { data, error } = await runWithDisplaySignupAbortSignal(signal, () =>
       displaySupabase.auth.signInAnonymously(
         captchaToken ? { options: { captchaToken } } : undefined,

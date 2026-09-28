@@ -161,8 +161,8 @@ export function AdminPdfControl(props: AdminPdfControlProps) {
               </div>
             </details>
           ) : null}
-          <div className="display-control-form">
-            <label className="field compact-field">
+          <div className="display-control-form admin-pdf-publication-form">
+            <label className="field compact-field admin-pdf-upload-field">
               <span>
                 {requiredDocument
                   ? `講義資料を選択（${requiredDocument.expectedPageCount}ページ・${(
