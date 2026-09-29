@@ -848,6 +848,53 @@ test('Teacher preparation and slides keep major controls compact without horizon
   await stopAdminOperatorPolling(page)
 })
 
+test('Teacher page controls remain below the header after deep scrolling', async ({
+  page,
+  isMobile,
+}) => {
+  await installAdminState(page, false)
+  const state = await installNetworkMocks(page)
+  await page.goto('/admin')
+  await openTeacherSetup(page)
+  const publication = page.locator('.admin-pdf-publication-form')
+  await publication.locator('input[type="file"]').setInputFiles(samplePdfPath)
+  await publication
+    .getByRole('button', { name: '学生に講義資料を公開する' })
+    .click()
+  await expect.poll(() => state.active).toBe(true)
+  await page.locator('#teacher-workspace-participation-tab').click()
+  const controls = page.getByRole('region', { name: '講義資料のページ操作' })
+  const viewports = isMobile
+    ? [{ width: 390, height: 844 }]
+    : [
+        { width: 1280, height: 585 },
+        { width: 1366, height: 768 },
+        { width: 821, height: 1024 },
+        { width: 820, height: 1024 },
+        { width: 768, height: 1024 },
+        { width: 721, height: 1024 },
+        { width: 720, height: 1024 },
+      ]
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() =>
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' }),
+    )
+    await expect(controls).toBeInViewport({ ratio: 1 })
+    const header = await page.locator('.app-header').boundingBox()
+    const bar = await controls.boundingBox()
+    expect(bar!.y).toBeGreaterThanOrEqual(header!.y + header!.height + 4)
+    if (isMobile)
+      expect(bar!.y + bar!.height).toBeLessThanOrEqual(viewport.height - 7)
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true)
+  }
+  await stopAdminOperatorPolling(page)
+})
+
 test('Admin clears a restored closed lecture before preparing the next PDF', async ({
   page,
 }) => {

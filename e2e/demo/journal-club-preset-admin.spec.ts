@@ -651,6 +651,120 @@ test.describe('Phase 7.27 flag ON', () => {
     'Phase 7.27 preset creation requires its dedicated recovery runner.',
   )
 
+  for (const entry of ['QR', 'code'] as const) {
+    test(`${entry} live entry clears demo content while the first snapshot is pending`, async ({
+      page,
+    }) => {
+      const lectureTitle = 'Fresh live lecture'
+      await installTurnstileMock(page)
+      await installNetworkMocks(page, {
+        liveJoinLecture: {
+          ends_at: null,
+          lecture_session_id: '72700000-0000-4000-8000-000000000777',
+          participant_id: '72700000-0000-4000-8000-000000000778',
+          starts_at: null,
+          status: 'open',
+          title: lectureTitle,
+        },
+      })
+      await page.route('https://pdf.example/v1/archives/resolve', (route) =>
+        route.fulfill({ status: 404, body: '{}' }),
+      )
+      let releaseSnapshot!: () => void
+      const snapshotGate = new Promise<void>((resolve) => {
+        releaseSnapshot = resolve
+      })
+      let snapshotRequests = 0
+      await page.route(
+        '**/rest/v1/rpc/get_lecture_public_snapshot_v*',
+        async (route) => {
+          snapshotRequests += 1
+          await snapshotGate
+          await fulfillJson(route, {
+            contract_version: 2,
+            server_time: new Date().toISOString(),
+            versions: {
+              caption: 1,
+              comments: 1,
+              lecture: 1,
+              likes: 1,
+              metrics: 1,
+              pdf: 1,
+              polls: 1,
+              summaries: 1,
+            },
+            changed: {
+              comments: {
+                has_more: false,
+                has_older: false,
+                items: [],
+                mode: 'initial',
+              },
+              polls: [],
+              metrics: {
+                participant_count_approximate: 2,
+                participant_count_mode: 'active_90s',
+                updated_at: new Date().toISOString(),
+                visible_comment_count: 0,
+              },
+            },
+          })
+        },
+      )
+      await page.goto('/demo')
+      await expect(
+        page.getByRole('heading', { name: 'AI時代の英語と学び' }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('heading', {
+          name: '翻訳AIが使える今、英語を学ぶ価値として最も大きいものは？',
+        }),
+      ).toBeVisible()
+      // Keep the real persisted demo session, as on a phone that tried the demo
+      // before scanning the classroom QR. No state/auth injection is needed.
+      await page.goto(entry === 'QR' ? '/join?code=731042' : '/join')
+      if (entry === 'code') {
+        await page.getByLabel('講義コード', { exact: true }).fill('731042')
+        await page
+          .getByRole('button', { name: '参加する', exact: true })
+          .click()
+      }
+      try {
+        await expect(
+          page.getByRole('heading', { name: lectureTitle }),
+        ).toBeVisible()
+        await expect.poll(() => snapshotRequests).toBeGreaterThan(0)
+        await expect(page.getByLabel('講義の現在状況')).toContainText('約1')
+        await expect(page.getByLabel('講義の現在状況')).toContainText('0件の声')
+        await expect(
+          page.getByText('いま講義とつながっています', { exact: true }),
+        ).toHaveCount(0)
+        await expect(
+          page.getByText('翻訳できる時代に、なぜ英語を学ぶのか。', {
+            exact: true,
+          }),
+        ).toHaveCount(0)
+        await expect(
+          page.getByText('TOEIC申し込んでみようと思います！', { exact: true }),
+        ).toHaveCount(0)
+        await expect(
+          page.getByRole('heading', {
+            name: '翻訳AIが使える今、英語を学ぶ価値として最も大きいものは？',
+          }),
+        ).toHaveCount(0)
+        await expect(
+          page.getByRole('heading', { name: 'AIによる参考回答' }),
+        ).toHaveCount(0)
+      } finally {
+        releaseSnapshot()
+      }
+      await expect(page.getByLabel('講義の現在状況')).toContainText('約2')
+      await expect(
+        page.getByText('いま講義とつながっています', { exact: true }),
+      ).toBeVisible()
+    })
+  }
+
   for (const kind of ['student', 'display'] as const) {
     for (const timing of [
       { challengeMs: 13_000, signupMs: 0 },

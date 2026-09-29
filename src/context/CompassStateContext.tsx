@@ -380,6 +380,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       setPolls([])
       setPollResults([])
       setPollResponses([])
+      latestDisplayStateRef.current = null
       setDisplayState(null)
       setCaption(null)
       setSummaries([])
@@ -1188,8 +1189,7 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             undefined,
           )
 
-          clearArchiveResume()
-          persistJoinedLectureSession(joinedLecture)
+          selectLectureSession(joinedLecture)
           persistLocalParticipantIdentity(participantId, joinedLecture.id)
           if (resumeTokenRequest) {
             void resumeTokenRequest.then((resumeToken) => {
@@ -1202,7 +1202,6 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
               })
             })
           }
-          setSessionSyncPauseReason(null)
           recordSessionActivity()
 
           const joinedLectureForParticipant: LectureSession = {
@@ -1216,21 +1215,15 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
             title: joinedLecture.title,
           }
 
-          setJoinedLectureSession(joinedLecture)
           setCurrentParticipantId(participantId)
           setParticipants(
-            (current) =>
-              createOrUpdateParticipant({
-                lecture: joinedLectureForParticipant,
-                participantId,
-                participants: current,
-              }).participants,
+            createOrUpdateParticipant({
+              lecture: joinedLectureForParticipant,
+              participantId,
+              participants: [],
+            }).participants,
           )
-          setParticipantCount((current) => Math.max(current, 1))
-          setCommentsError(null)
-          setPollsError(null)
-          setCommentLikesError(null)
-          setPollResultsError(null)
+          setParticipantCount(1)
           return {
             destination: 'lecture',
             ok: true,
@@ -1538,7 +1531,6 @@ export function CompassStateProvider({ children }: { children: ReactNode }) {
       hasOlderComments,
       commentLikesError,
       canInteract,
-      clearArchiveResume,
       currentParticipantId,
       hasActiveLectureSessionId,
       hiddenCommentCount,
