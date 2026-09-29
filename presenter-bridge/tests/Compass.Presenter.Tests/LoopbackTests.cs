@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Compass.Presenter.Contracts;
 using Compass.Presenter.Loopback;
 
 namespace Compass.Presenter.Tests;
@@ -13,6 +14,92 @@ internal static class LoopbackTests
         $"{new string('T', 43)}.{new string('S', 43)}";
     private static readonly Guid LectureId =
         Guid.Parse("72900000-0000-4000-8000-000000000001");
+
+    public static async Task HealthReportsPolicyFailureWithoutLeakingDetails()
+    {
+        foreach (var asynchronous in new[] { false, true })
+        {
+            var calls = 0;
+            var source = new HealthSource(_ =>
+            {
+                calls++;
+                return asynchronous ? FailAfterAwait() : throw HealthFailureTests.BlockedAssembly();
+            });
+            await using var fixture = await ServerFixture.CreateAsync(source: source);
+            using var hostile = fixture.Request(HttpMethod.Get, "/v1/health");
+            hostile.Headers.Remove("Origin");
+            hostile.Headers.Add("Origin", "https://evil.example");
+            using var rejected = await fixture.Client.SendAsync(hostile);
+            Assert.Equal(HttpStatusCode.Forbidden, rejected.StatusCode);
+            Assert.Equal(0, calls);
+            Assert.False(rejected.Headers.Contains("Access-Control-Allow-Origin"));
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                using var request = fixture.Request(HttpMethod.Get, "/v1/health");
+                using var response = await fixture.Client.SendAsync(request);
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+                Assert.True(response.Headers.CacheControl?.NoStore == true);
+                Assert.Equal(AllowedOrigin, response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+                var payload = await ReadJsonAsync(response);
+                Assert.Equal(3, payload.EnumerateObject().Count());
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal("bridge_installation_blocked", payload.GetProperty("code").GetString());
+                Assert.Equal("Windows blocked Presenter Bridge execution.", payload.GetProperty("message").GetString());
+            }
+            Assert.Equal(1, calls);
+            Assert.False(fixture.Server.HasLiveSession);
+        }
+
+        static async ValueTask<PresentationObservation?> FailAfterAwait()
+        {
+            await Task.Yield();
+            throw HealthFailureTests.BlockedAssembly();
+        }
+    }
+
+    public static async Task HealthPreservesDelayedAbsentFaultedAndHungObservations()
+    {
+        foreach (var scenario in new[] { "ready", "absent", "fault", "hung" })
+        {
+            var calls = 0;
+            var source = new HealthSource(async cancellationToken =>
+            {
+                calls++;
+                if (scenario == "hung")
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                await Task.Yield();
+                if (scenario == "fault") throw new FileLoadException("Not a policy block.");
+                return scenario == "ready" ? TestData.Observation(1, 0) : null;
+            });
+            await using var fixture = await ServerFixture.CreateAsync(source: source);
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                using var request = fixture.Request(HttpMethod.Get, "/v1/health");
+                using var response = await fixture.Client.SendAsync(request);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var payload = await ReadJsonAsync(response);
+                Assert.Equal(5, payload.EnumerateObject().Count());
+                Assert.True(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal(scenario == "ready", payload.GetProperty("powerpointReady").GetBoolean());
+                Assert.Equal(scenario switch
+                {
+                    "ready" => null,
+                    "absent" => "powerpoint_not_running",
+                    _ => "observation_unavailable",
+                }, payload.GetProperty("powerpointIssue").GetString());
+            }
+            Assert.Equal(1, calls);
+        }
+    }
+
+    private sealed class HealthSource(
+        Func<CancellationToken, ValueTask<PresentationObservation?>> observe) : IPresentationObservationSource
+    {
+        public event EventHandler? ReconcileRequested { add { } remove { } }
+        public ValueTask<PresentationObservation?> ObserveAsync(CancellationToken token) => observe(token);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 
     public static async Task CorsPnaAndHostAreStrict()
     {
@@ -221,9 +308,10 @@ internal static class LoopbackTests
         public HttpClient Client { get; }
 
         public static async Task<ServerFixture> CreateAsync(
-            IPresenterSessionActivationHandler? activationHandler = null)
+            IPresenterSessionActivationHandler? activationHandler = null,
+            IPresentationObservationSource? source = null)
         {
-            var source = new FakePresentationSource(TestData.Observation(1, 0));
+            source ??= new FakePresentationSource(TestData.Observation(1, 0));
             var verifier = new FakePairingTicketVerifier(Ticket);
             var server = await LoopbackPresenterServer.StartAsync(
                 [AllowedOrigin],

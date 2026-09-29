@@ -135,7 +135,12 @@ public sealed class LoopbackPresenterServer : IAsyncDisposable
                 return;
             }
 
-            if (activityGate is not null &&
+            if (HttpMethods.IsGet(context.Request.Method) &&
+                context.Request.Path == "/v1/health")
+            {
+                await PresenterHealthFailure.InvokeAsync(context, next);
+            }
+            else if (activityGate is not null &&
                 context.Request.Path == "/v1/connect")
             {
                 await activityGate.WaitAsync(context.RequestAborted);
