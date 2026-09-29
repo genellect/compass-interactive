@@ -133,6 +133,34 @@ do not infer the link from a Product ID or retain the old EXE as a fallback.
 
 ## Classroom acceptance
 
+### Installed-package preflight before activation
+
+An MSIX installation or WACK pass does not prove that Windows will load the
+packaged application assemblies. Before enabling any hosted Presenter gate,
+record the exact candidate source and package hashes, launch that installed
+candidate as the normal user with Windows protections unchanged, and call
+`GET http://127.0.0.1:43124/v1/health` from the canonical educator Origin.
+Verify the five-field success contract first with no slideshow (not ready),
+then with the supported synthetic slideshow (ready). Both responses must be
+HTTP 200, valid JSON and `no-store`; only then start a bounded hosted canary.
+
+A confirmed Application Control assembly-load refusal (`0x800711C7`) returns
+the sanitized HTTP 503 code `bridge_installation_blocked`. Older packages may
+return an empty HTTP 500 instead; the Web UI must not call that an unstarted
+Bridge or guess that it is a policy refusal. Both failures stop automatic
+readiness retries while preserving manual Web slide controls. Recovery codes
+cannot repair a blocked assembly. Do not disable Windows protections or claim
+that this error handling makes a development signature trusted.
+
+Source/unit/mock tests do not satisfy this installed-package preflight, Store
+acquisition, PowerPoint synchronization or rendered-latency acceptance. If the
+package cannot execute under the existing policy, keep hosted gates OFF and
+resolve the trusted distribution/test-device path before asking the teacher
+to repeat the slideshow steps. Store submission and distribution still need
+their applicable authorization.
+
+### Lecture workflow and rendered acceptance
+
 The normal path is:
 
 ```text

@@ -2509,6 +2509,103 @@ test('does not restart an explicitly unavailable native session', async ({
   await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
 })
 
+for (const failure of ['policy-blocked', 'empty-500'] as const) {
+  for (const entry of ['initial', 'poll', 'draft', 'ticket-recheck'] as const) {
+    test(`Bridge health failure ${failure} at ${entry} stops automatic retries and preserves manual slides`, async ({
+      page,
+    }) => {
+      await installAdminState(page)
+      const state = await installNetworkMocks(page, {
+        lectureStatus: entry === 'draft' ? 'draft' : 'open',
+      })
+      let healthCalls = 0
+      let repaired = false
+      await page.route('http://127.0.0.1:43124/v1/health', async (route) => {
+        healthCalls += 1
+        if (repaired || (healthCalls === 1 && entry === 'ticket-recheck')) {
+          await fulfillReadiness(route, true)
+          return
+        }
+        if (healthCalls === 1 && entry === 'poll') {
+          await fulfillReadiness(route, false)
+          return
+        }
+        await route.fulfill({
+          status: failure === 'policy-blocked' ? 503 : 500,
+          headers: {
+            'Access-Control-Allow-Origin': new URL(
+              process.env.PLAYWRIGHT_BASE_URL!,
+            ).origin,
+            'Cache-Control': 'no-store',
+          },
+          ...(failure === 'policy-blocked'
+            ? {
+                json: {
+                  ok: false,
+                  code: 'bridge_installation_blocked',
+                  message: 'untrusted private path must not be shown',
+                },
+              }
+            : { body: '' }),
+        })
+      })
+      if (entry === 'ticket-recheck') {
+        await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
+          if (repaired) return route.fallback()
+          const response = await route.fetch()
+          await route.fulfill({
+            response,
+            status: 401,
+            json: { ok: false, code: 'ticket_invalid', message: 'Expired.' },
+          })
+        })
+      }
+      await page.goto('/admin')
+      await page.getByRole('tab', { name: '準備' }).click()
+      if (entry === 'draft')
+        await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+      const presenter = page.getByTestId('powerpoint-sync-control')
+      await expect(presenter).toContainText(
+        failure === 'policy-blocked'
+          ? 'WindowsがPresenter Bridgeの実行をブロックしています'
+          : 'Bridgeから正常な応答を確認できません',
+      )
+      await expect(presenter).not.toContainText('untrusted private path')
+      await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(
+        0,
+      )
+      if (entry !== 'draft') {
+        await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
+        await expect(
+          page.locator('#admin-live').getByLabel('PDF資料'),
+        ).toBeEnabled()
+      }
+      const stoppedAt = healthCalls
+      await page.waitForTimeout(5_500)
+      expect(healthCalls).toBe(stoppedAt)
+      expect(
+        state.presenterActions.filter((action) => action === 'issue'),
+      ).toHaveLength(entry === 'ticket-recheck' ? 1 : 0)
+      expect(
+        state.presenterActions.filter((action) => action === 'confirm'),
+      ).toHaveLength(0)
+      if (entry === 'ticket-recheck')
+        expect(
+          state.presenterActions.filter((action) => action === 'revoke'),
+        ).toHaveLength(1)
+      // Fixing the installation allows an explicit retry; no persisted lockout.
+      repaired = true
+      await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+      if (entry === 'draft') {
+        await expect(presenter).toContainText('Bridgeの準備ができました')
+        expect(state.presenterActions).toEqual([])
+      } else {
+        await expect(page.locator('.admin-presenter-review')).toBeVisible()
+      }
+    })
+  }
+}
+
 test('keeps absent Bridge readiness checks local without issuing pairing material', async ({
   page,
 }) => {

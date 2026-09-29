@@ -76,6 +76,8 @@ const AUTOMATIC_RECOVERY_REASONS = new Set([
 ])
 type PresenterConnectionStage = 'active' | 'pending' | 'terminal'
 const bridgeErrorMessages: Readonly<Record<string, string>> = {
+  bridge_installation_blocked:
+    'WindowsがPresenter Bridgeの実行をブロックしています。教員画面のスライド操作は続けられます。',
   bridge_unavailable:
     'Presenter Bridgeへ直接接続できません。復旧コードで接続できます。',
   connector_conflict:
@@ -106,6 +108,17 @@ const bridgeErrorMessages: Readonly<Record<string, string>> = {
   ticket_invalid: '接続確認の期限が切れました。もう一度接続してください。',
   windowed_slide_show_required:
     'PowerPointを通常のスライドショー（全画面またはウィンドウ）で開いてください。',
+}
+
+function terminalHealthFailureMessage(error: unknown): string | null {
+  const failure = error as PresenterBridgeClientError | undefined
+  if (failure?.code === 'bridge_installation_blocked')
+    return bridgeErrorMessages.bridge_installation_blocked
+  // Older Bridge versions can return an empty HTTP 500. An actual response
+  // proves a failure, but does not identify its cause as a Windows policy.
+  if (failure?.code === 'invalid_response' && (failure.status ?? 0) >= 500)
+    return 'Bridgeから正常な応答を確認できません。教員画面のスライド操作は続けられます。'
+  return null
 }
 
 function friendlyBridgeError(error: unknown) {
@@ -729,9 +742,12 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           if (epoch === epochRef.current) {
             setMessage('Bridgeの準備ができました。講義開始時に自動接続します。')
           }
-        } catch {
+        } catch (error) {
           if (epoch === epochRef.current) {
-            setMessage('Bridgeを起動してから、もう一度接続を確認してください。')
+            setMessage(
+              terminalHealthFailureMessage(error) ??
+                'Bridgeを起動してから、もう一度接続を確認してください。',
+            )
           }
         } finally {
           if (epoch === epochRef.current) {
@@ -904,8 +920,15 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
             setMessage(readinessMessage(health))
             return
           }
-        } catch {
+        } catch (error) {
           if (epoch !== epochRef.current) return
+          const failure = terminalHealthFailureMessage(error)
+          if (failure) {
+            setWaitingForReadiness(false)
+            setPhase('error')
+            setMessage(failure)
+            return
+          }
           setPhase('idle')
           setWaitingForReadiness(true)
           setMessage(
@@ -1030,6 +1053,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           )
         } catch (bridgeError) {
           if (epoch !== epochRef.current) return
+          let failure = terminalHealthFailureMessage(bridgeError)
           const bridgeCode = (
             bridgeError as PresenterBridgeClientError | undefined
           )?.code
@@ -1040,10 +1064,22 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
               waitingForPowerPoint =
                 !health.powerpointReady &&
                 health.powerpointIssue === 'powerpoint_not_running'
-            } catch {
-              /* An unknown failure retains the existing recovery flow. */
+            } catch (healthError) {
+              failure = terminalHealthFailureMessage(healthError)
+              // An unreachable Bridge retains the existing recovery flow.
             }
             if (epoch !== epochRef.current || !mountedRef.current) return
+          }
+          if (failure) {
+            await supabasePresenterBridgeRepository
+              .revoke({ adminToken, connectionId: issued.connectionId })
+              .catch(() => undefined)
+            if (epoch !== epochRef.current || !mountedRef.current) return
+            setManualCode('')
+            setWaitingForReadiness(false)
+            setPhase('error')
+            setMessage(failure)
+            return
           }
           if (automatic && waitingForPowerPoint) {
             readinessPendingConnectionRef.current = issued.connectionId
@@ -1523,8 +1559,17 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           return
         }
         setMessage(readinessMessage(health))
-      } catch {
-        // Keep readiness local and quiet. No server retry or ticket is issued.
+      } catch (error) {
+        if (disposed || epoch !== epochRef.current || !mountedRef.current)
+          return
+        const failure = terminalHealthFailureMessage(error)
+        if (failure) {
+          setWaitingForReadiness(false)
+          setPhase('error')
+          setMessage(failure)
+          return
+        }
+        // Keep absence retries local. No server retry or ticket is issued.
       }
       if (!disposed && epoch === epochRef.current)
         timer = window.setTimeout(() => void check(), READINESS_INTERVAL_MS)

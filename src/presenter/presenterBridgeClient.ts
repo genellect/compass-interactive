@@ -37,6 +37,7 @@ type ResponseParser<T> = (value: unknown) => T | null
 
 const safeErrorMessages: Readonly<Record<string, string>> = {
   bridge_unavailable: 'Presenter Bridge is not available.',
+  bridge_installation_blocked: 'Windows blocked Presenter Bridge execution.',
   connector_conflict: 'Another PowerPoint presentation is already connected.',
   current_slide_order_mismatch:
     'The current PowerPoint slide order is not supported.',

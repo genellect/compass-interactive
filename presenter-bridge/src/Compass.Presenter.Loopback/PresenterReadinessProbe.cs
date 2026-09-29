@@ -44,7 +44,7 @@ internal sealed class PresenterReadinessProbe(
                 observation, observation.SlideCount);
             return new(eligibility.Eligible, eligibility.Issues.FirstOrDefault());
         }
-        catch
+        catch (Exception error) when (!PresenterHealthFailure.IsInstallationBlocked(error))
         {
             return new(false, "observation_unavailable");
         }
