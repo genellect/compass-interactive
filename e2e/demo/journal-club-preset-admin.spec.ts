@@ -982,47 +982,62 @@ test.describe('Phase 7.27 flag ON', () => {
   test('keeps the ordinary six-second deadline while a concurrent join waits for the same refresh', async ({
     page,
   }) => {
-    const fixture = await installSavedSessionRestore(page, { delayMs: 7_000 })
-    await page.goto('/join')
-    const results = await page.evaluate(async () => {
-      const modulePath = '/src/lib/anonymousAuth.ts'
-      const auth = (await import(/* @vite-ignore */ modulePath)) as {
-        ensureAnonymousAuthSession: (
-          captchaToken?: string,
-          options?: { purpose?: 'lecture-join' },
-        ) => Promise<string>
-      }
-      const startedAt = Date.now()
-      const capture = async (request: Promise<string>) => {
-        try {
-          return { value: await request, elapsedMs: Date.now() - startedAt }
-        } catch (error) {
-          return {
-            message: error instanceof Error ? error.message : String(error),
-            elapsedMs: Date.now() - startedAt,
+    const fixture = await installSavedSessionRestore(page, { hold: true })
+    await page.exposeFunction(
+      'releaseSavedSessionRestore',
+      fixture.releaseRestore,
+    )
+    try {
+      await page.goto('/join')
+      const results = await page.evaluate(async () => {
+        const modulePath = '/src/lib/anonymousAuth.ts'
+        const auth = (await import(/* @vite-ignore */ modulePath)) as {
+          ensureAnonymousAuthSession: (
+            captchaToken?: string,
+            options?: { purpose?: 'lecture-join' },
+          ) => Promise<string>
+        }
+        const startedAt = Date.now()
+        const capture = async (request: Promise<string>) => {
+          try {
+            return { value: await request, elapsedMs: Date.now() - startedAt }
+          } catch (error) {
+            return {
+              message: error instanceof Error ? error.message : String(error),
+              elapsedMs: Date.now() - startedAt,
+            }
           }
         }
-      }
-      return await Promise.all([
-        capture(auth.ensureAnonymousAuthSession()),
-        capture(
+        const ordinary = capture(auth.ensureAnonymousAuthSession())
+        const lectureJoin = capture(
           auth.ensureAnonymousAuthSession(undefined, {
             purpose: 'lecture-join',
           }),
-        ),
-      ])
-    })
-    expect(results[0].message).toContain(
-      '匿名セッションの確認に時間がかかっています',
-    )
-    expect(results[0].elapsedMs).toBeGreaterThanOrEqual(5_800)
-    expect(results[0].elapsedMs).toBeLessThan(7_000)
-    expect(results[1].value).toBe(fixture.userId)
-    expect(fixture.restore.requests).toBe(1)
-    expect(fixture.state.anonymousSignupRequests).toBe(0)
-    expect(fixture.state.liveJoinRequests).toBe(0)
-    expect(fixture.browserErrors).toEqual([])
-    expect(fixture.unexpectedOrigins).toEqual([])
+        )
+        const ordinaryResult = await ordinary
+        // Release after the ordinary deadline, not seven seconds after page
+        // load: a slow import must not allow refresh to finish before callers.
+        await (
+          window as unknown as {
+            releaseSavedSessionRestore: () => Promise<void>
+          }
+        ).releaseSavedSessionRestore()
+        return [ordinaryResult, await lectureJoin]
+      })
+      expect(results[0].message).toContain(
+        '匿名セッションの確認に時間がかかっています',
+      )
+      expect(results[0].elapsedMs).toBeGreaterThanOrEqual(5_800)
+      expect(results[0].elapsedMs).toBeLessThan(7_000)
+      expect(results[1].value).toBe(fixture.userId)
+      expect(fixture.restore.requests).toBe(1)
+      expect(fixture.state.anonymousSignupRequests).toBe(0)
+      expect(fixture.state.liveJoinRequests).toBe(0)
+      expect(fixture.browserErrors).toEqual([])
+      expect(fixture.unexpectedOrigins).toEqual([])
+    } finally {
+      fixture.releaseRestore()
+    }
   })
 
   test('rejects a saved non-anonymous session instead of creating a student identity', async ({
