@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { isAdminAuthServiceUnavailable } from '../_shared/adminAuthErrors.ts'
 import {
   canonicalizeBrowserAssertionPayload,
   createOpaqueBrowserToken,
@@ -673,6 +674,14 @@ async function handleRequest(request: Request) {
   })
   const { data: userData, error: userError } =
     await serviceClient.auth.getUser(bearerToken)
+  if (isAdminAuthServiceUnavailable(userError)) {
+    return errorResponse(
+      jsonResponse,
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   const claims = decodeVerifiedAdminJwtClaims(bearerToken)
   const trustedGoogleIdentity = getTrustedGoogleIdentity(
     userData.user?.identities,
@@ -700,6 +709,14 @@ async function handleRequest(request: Request) {
 
   const { data: assurance, error: assuranceError } =
     await serviceClient.auth.mfa.getAuthenticatorAssuranceLevel(bearerToken)
+  if (isAdminAuthServiceUnavailable(assuranceError)) {
+    return errorResponse(
+      jsonResponse,
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   if (
     assuranceError ||
     assurance?.currentLevel !== 'aal2' ||
@@ -718,8 +735,15 @@ async function handleRequest(request: Request) {
     { target_environment_id: environmentId },
   )
   const environment = environmentResult.data as EnvironmentConfig | null
+  if (environmentResult.error) {
+    return errorResponse(
+      jsonResponse,
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   if (
-    environmentResult.error ||
     !environment ||
     environment.environment_id !== environmentId ||
     environment.status !== 'active' ||

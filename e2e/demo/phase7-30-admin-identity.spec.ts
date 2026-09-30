@@ -1653,6 +1653,137 @@ for (const failure of [
   })
 }
 
+for (const failure of [
+  'domain-unavailable',
+  'identity-unavailable',
+  'identity-invalid',
+] as const) {
+  test(`mounted teacher handles ${failure} without confusing availability with authentication`, async ({
+    page,
+  }) => {
+    const student = anonymousStudentSession()
+    const { aal2AccessToken, state } = await installNetworkMocks(
+      page,
+      student.accessToken,
+      { initialVerified: true },
+    )
+    const storedSession = {
+      ...authSession('aal2', { verified: true }),
+      access_token: aal2AccessToken,
+    }
+    await page.addInitScript(
+      ({ storedSession, authKey, appKey, appToken }) => {
+        window.localStorage.setItem(authKey, JSON.stringify(storedSession))
+        window.sessionStorage.setItem(appKey, appToken)
+      },
+      {
+        storedSession,
+        authKey: adminAuthStorageKey,
+        appKey: adminAppSessionStorageKey,
+        appToken: appSessionToken,
+      },
+    )
+    await page.goto('/admin')
+    await expect(page.locator('.admin-workflow')).toBeVisible()
+    await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+    await installExistingStudentStorage(page, student.storageValue)
+    const prepare = page.locator('#admin-prepare')
+    const refresh = prepare.getByRole('button', {
+      name: '再読み込み',
+      exact: true,
+    })
+    await expect(refresh).toBeEnabled()
+
+    const initialStatusCount = state.edgeCalls.filter(
+      (call) => call.action === 'status',
+    ).length
+    let domainFaults = 0
+    let identityFaults = 0
+    const lectureUrl =
+      'https://example.supabase.co/functions/v1/manage-lectures'
+    const identityUrl =
+      'https://example.supabase.co/functions/v1/admin-identity-session'
+    await page.route(lectureUrl, async (route) => {
+      expect(route.request().postDataJSON().action).toBe('list')
+      domainFaults += 1
+      await fulfillJson(
+        route,
+        {
+          ok: false,
+          code:
+            failure === 'identity-invalid'
+              ? 'identity_invalid'
+              : 'service_unavailable',
+        },
+        failure === 'identity-invalid' ? 401 : 503,
+      )
+    })
+    if (failure === 'identity-unavailable') {
+      await page.route(identityUrl, async (route) => {
+        if (route.request().postDataJSON().action !== 'status')
+          return route.fallback()
+        identityFaults += 1
+        await fulfillJson(
+          route,
+          { ok: false, code: 'service_unavailable' },
+          503,
+        )
+      })
+    }
+    await refresh.click()
+    await expect.poll(() => domainFaults).toBe(1)
+    if (failure === 'identity-invalid') {
+      await expect(page.locator('.admin-workflow')).toHaveCount(0)
+      await expect(
+        page.getByRole('button', { name: 'Googleで続ける', exact: true }),
+      ).toBeVisible()
+      expect(
+        await page.evaluate(
+          (key) => window.sessionStorage.getItem(key),
+          adminAppSessionStorageKey,
+        ),
+      ).toBeNull()
+    } else {
+      await expect(prepare).toContainText('講義一覧の取得に失敗しました')
+      await expect(refresh).toBeEnabled()
+      await expect(page.locator('.admin-workflow')).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: 'Googleで続ける', exact: true }),
+      ).toHaveCount(0)
+      expect(
+        await page.evaluate(
+          (key) => window.sessionStorage.getItem(key),
+          adminAppSessionStorageKey,
+        ),
+      ).toBe(appSessionToken)
+      if (failure === 'identity-unavailable') expect(identityFaults).toBe(1)
+      if (failure === 'domain-unavailable') {
+        expect(
+          state.edgeCalls.filter((call) => call.action === 'status'),
+        ).toHaveLength(initialStatusCount + 1)
+      }
+      await page.unroute(lectureUrl)
+      await page.unroute(identityUrl)
+      const initialListCount = state.lectureCalls.length
+      await refresh.click()
+      await expect
+        .poll(() => state.lectureCalls.length)
+        .toBeGreaterThan(initialListCount)
+      await expect(prepare).not.toContainText('講義一覧の取得に失敗しました')
+      await expect(refresh).toBeEnabled()
+    }
+    expect(state.authorizeQueries).toHaveLength(0)
+    expect(state.factorVerifyBodies).toHaveLength(0)
+    expect(
+      await page.evaluate(
+        (key) => window.localStorage.getItem(key),
+        studentAuthStorageKey,
+      ),
+    ).toBe(student.storageValue)
+    expect(state.unexpectedRequests).toEqual([])
+  })
+}
+
 test('restores the same app token only from its scoped live AAL2 Auth session', async ({
   page,
 }) => {

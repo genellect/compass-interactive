@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { isAdminAuthServiceUnavailable } from './adminAuthErrors.ts'
 import {
   decodeVerifiedAdminJwtClaims,
   getTrustedGoogleIdentity,
@@ -136,6 +137,13 @@ export async function verifyGoogleAdminOperationRequest(
   })
   const { data: userData, error: userError } =
     await serviceClient.auth.getUser(bearerToken)
+  if (isAdminAuthServiceUnavailable(userError)) {
+    return failure(
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   const claims = decodeVerifiedAdminJwtClaims(bearerToken)
   const userIdentities = userData.user?.identities ?? []
   const appMetadataProviders = userData.user?.app_metadata?.providers
@@ -168,6 +176,13 @@ export async function verifyGoogleAdminOperationRequest(
 
   const { data: assurance, error: assuranceError } =
     await serviceClient.auth.mfa.getAuthenticatorAssuranceLevel(bearerToken)
+  if (isAdminAuthServiceUnavailable(assuranceError)) {
+    return failure(
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   if (
     assuranceError ||
     assurance?.currentLevel !== 'aal2' ||
@@ -185,8 +200,14 @@ export async function verifyGoogleAdminOperationRequest(
     { target_environment_id: environmentId },
   )
   const environment = environmentResult.data as EnvironmentConfig | null
+  if (environmentResult.error) {
+    return failure(
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   if (
-    environmentResult.error ||
     !environment ||
     environment.environment_id !== environmentId ||
     environment.status !== 'active' ||
