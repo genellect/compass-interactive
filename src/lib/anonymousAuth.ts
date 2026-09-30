@@ -11,6 +11,7 @@ import {
 
 let anonymousSignInRequest: Promise<string> | null = null
 const ANONYMOUS_SESSION_CHECK_TIMEOUT_MS = 6_000
+const ANONYMOUS_LECTURE_JOIN_SESSION_CHECK_TIMEOUT_MS = 12_000
 const ANONYMOUS_SESSION_CREATE_TIMEOUT_MS = 12_000
 
 async function createAnonymousSession(providedCaptchaToken?: string) {
@@ -65,12 +66,17 @@ function getOrCreateAnonymousSignInRequest(captchaToken?: string) {
   return request
 }
 
-export async function ensureAnonymousAuthSession(captchaToken?: string) {
+export async function ensureAnonymousAuthSession(
+  captchaToken?: string,
+  options?: { purpose?: 'lecture-join' },
+) {
   assertSupabaseConfigured()
 
   const { data, error } = await waitForPromiseWithDeadline(
     supabase.auth.getSession(),
-    ANONYMOUS_SESSION_CHECK_TIMEOUT_MS,
+    options?.purpose === 'lecture-join'
+      ? ANONYMOUS_LECTURE_JOIN_SESSION_CHECK_TIMEOUT_MS
+      : ANONYMOUS_SESSION_CHECK_TIMEOUT_MS,
     '匿名セッションの確認',
   )
 

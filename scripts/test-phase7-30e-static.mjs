@@ -530,6 +530,50 @@ assert.match(
   /claim-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?claim\/cutover environment serialization diverged/,
   'claim versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
 )
+const pgTapClaimRetry =
+  pgTap.match(
+    /create function pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\([\s\S]*?\n\$\$;/i,
+  )?.[0] ?? ''
+assert.match(
+  pgTapClaimRetry,
+  /return private\.claim_approved_google_admin_lecture_ownership_v1\([\s\S]*?exception[\s\S]*?when lock_not_available then[\s\S]*?attempt_count >= 20\b[\s\S]*?raise;[\s\S]*?pg_catalog\.pg_sleep\(0\.05\)/i,
+  'the claim fixture retry must preserve Production NOWAIT and remain bounded',
+)
+assert.equal(
+  (pgTapClaimRetry.match(/\bwhen\b/gi) ?? []).length,
+  1,
+  'the claim fixture must catch only lock_not_available, never authorization or serialization failures',
+)
+const pgTapOutsideClaimRetry = pgTap.replace(pgTapClaimRetry, '')
+assert.equal(
+  pgTapOutsideClaimRetry.match(
+    /pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\(/gi,
+  )?.length,
+  1,
+  'only the first positive claim assertion may use the bounded test retry',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\(\s*'00000000-0000-4000-8000-00000000e120'::uuid,\s*'00000000-0000-4000-8000-00000000e122'::uuid\s*\)\s*->> 'replayed',\s*'false',\s*'reviewed ownership claim atomically creates provenance'/i,
+  'the claim fixture must still prove the first immutable ownership mapping',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*private\.claim_approved_google_admin_lecture_ownership_v1\([\s\S]*?'true',\s*'ownership claim exact replay returns the committed mapping'/i,
+  'claim exact replay must call the Production function directly',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*private\.claim_approved_google_admin_lecture_ownership_v1\([^;]*?'true',\s*'committed ownership replay remains available after cutover'/i,
+  'claim replay after cutover must also bypass the test-only retry',
+)
+for (const productionSource of [migration, concurrency]) {
+  assert.doesNotMatch(
+    productionSource,
+    /claim_google_admin_lecture_ownership_with_bounded_retry/i,
+    'the positive pgTAP retry must never enter Production or concurrency tests',
+  )
+}
 const pgTapCutoverRetry =
   pgTap.match(
     /create function pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?\n\$\$;/i,
@@ -887,9 +931,60 @@ assert.match(
 )
 assert.match(
   ci,
-  /name: demo-e2e-evidence-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/demo\/[\s\S]*test-results\/reports\/demo\//,
+  /name: demo-e2e-evidence-\$\{\{ matrix\.suite \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/demo\/[\s\S]*test-results\/reports\/demo\//,
   'failed demo integration evidence must retain both raw traces and the HTML report',
 )
+const demoSuiteStart = ci.indexOf('\n  demo-e2e-suites:\n')
+const demoGateStart = ci.indexOf('\n  demo-e2e:\n')
+const localGateStart = ci.indexOf('\n  local-supabase:\n')
+assert.ok(demoSuiteStart >= 0 && demoGateStart > demoSuiteStart)
+assert.ok(localGateStart > demoGateStart)
+const demoSuites = ci.slice(demoSuiteStart, demoGateStart)
+const demoGate = ci.slice(demoGateStart, localGateStart)
+assert.match(demoSuites, /needs: \[classify, quality\]/)
+assert.match(demoSuites, /timeout-minutes: 60/)
+assert.match(demoSuites, /fail-fast: false/)
+assert.match(demoSuites, /suite: \[core-identity, journal-presenter-ledger\]/)
+assert.deepEqual(
+  [
+    ...demoSuites.matchAll(
+      /- if: \$\{\{ matrix\.suite == '([^']+)' \}\}\n\s+run: npm run ([\w:-]+)\n/g,
+    ),
+  ].map((match) => [match[1], match[2]]),
+  [
+    ['core-identity', 'test:teacher-ai-controls:browser'],
+    ['core-identity', 'test:e2e:demo:triple'],
+    ['core-identity', 'test:e2e:phase7-26'],
+    ['core-identity', 'test:e2e:phase7-26:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-27'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-27:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-29:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-29'],
+    ['core-identity', 'test:e2e:phase7-30:flag-off'],
+    ['core-identity', 'test:e2e:phase7-30'],
+    ['core-identity', 'test:e2e:phase7-30b22b-browser'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-30d-browser'],
+  ],
+  'all twelve existing Demo entries must run exactly once in the isolated suite partition, without altered arguments',
+)
+assert.match(demoGate, /name: Demo browser E2E\n/)
+assert.match(demoGate, /needs: \[classify, quality, demo-e2e-suites\]/)
+assert.match(demoGate, /if: \$\{\{ always\(\)/)
+assert.match(demoGate, /QUALITY_RESULT: \$\{\{ needs\.quality\.result \}\}/)
+assert.match(
+  demoGate,
+  /DEMO_SUITES_RESULT: \$\{\{ needs\.demo-e2e-suites\.result \}\}/,
+)
+assert.deepEqual(
+  demoGate
+    .match(/        run: \|\n((?:          [^\n]*\n)+)/)?.[1]
+    .trim()
+    .split('\n')
+    .map((line) => line.trim()),
+  ['test "$QUALITY_RESULT" = success', 'test "$DEMO_SUITES_RESULT" = success'],
+  'the protected aggregate must reject anything except success, without masking either shell failure',
+)
+assert.doesNotMatch(demoGate + demoSuites, /continue-on-error/)
 assert.match(
   ci,
   /ADMIN_AI_CHILD_GRANT_SECRET=compass-ci-only-admin-ai-child-grant-secret-at-least-32-bytes[\s\S]*ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1/,

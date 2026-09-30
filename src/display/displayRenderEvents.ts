@@ -1,6 +1,6 @@
 const DISPLAY_PDF_RENDERED_EVENT = 'compass:display-pdf-rendered'
 
-export type DisplayPdfRenderedDetail = {
+type DisplayPdfRenderIdentity = {
   documentId: string
   documentVersion: string
   lectureSessionId: string
@@ -8,7 +8,12 @@ export type DisplayPdfRenderedDetail = {
   page: number
 }
 
-export function getDisplayPdfRenderKey(input: DisplayPdfRenderedDetail) {
+export type DisplayPdfRenderedDetail = DisplayPdfRenderIdentity & {
+  // Local canvas proof only; never serialized into a delivery request.
+  isStillRendered: () => boolean
+}
+
+export function getDisplayPdfRenderKey(input: DisplayPdfRenderIdentity) {
   return [
     input.lectureSessionId,
     input.documentId,

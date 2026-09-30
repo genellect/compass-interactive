@@ -137,7 +137,7 @@ export const supabaseLectureRepository = {
       throw new Error('講義コードを入力してください。')
     }
 
-    await ensureAnonymousAuthSession(captchaToken)
+    await ensureAnonymousAuthSession(captchaToken, { purpose: 'lecture-join' })
 
     const { data, error } = await supabase
       .rpc(

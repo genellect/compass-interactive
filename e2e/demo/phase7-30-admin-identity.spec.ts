@@ -348,6 +348,7 @@ async function installNetworkMocks(
     statusFailureOnce?: boolean
     sessionCanUseAi?: boolean
     sessionRole?: 'instructor' | 'owner'
+    requiredInvitationToken?: string
     verifyRateLimited?: boolean
   } = {},
 ) {
@@ -548,6 +549,17 @@ async function installNetworkMocks(
       const action = typeof body.action === 'string' ? body.action : ''
       state.edgeCalls.push({ action, authorization, body })
       if (action === 'admit') {
+        if (
+          options.requiredInvitationToken &&
+          body.invitationToken !== options.requiredInvitationToken
+        ) {
+          await fulfillJson(
+            route,
+            { code: 'membership_unavailable', ok: false },
+            403,
+          )
+          return
+        }
         await fulfillJson(route, { eligible: true, ok: true })
         return
       }
@@ -765,9 +777,12 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     card.getByRole('heading', { name: '教員ポータル', exact: true }),
   ).toBeVisible()
   await expect(
-    card.getByText('登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。', {
-      exact: true,
-    }),
+    card.getByText(
+      '登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。',
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible()
   await expect(
     card.getByText('セキュリティ保護のため、2段階認証が必要です。', {
@@ -1134,122 +1149,170 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
   expect(pageErrors).toEqual([])
 })
 
-test('redeems one scrubbed invitation into an Instructor without exposing Owner controls', async ({
+for (const entry of ['fresh-document', 'signed-out', 'denied'] as const) {
+  test(`redeems one scrubbed invitation from ${entry} into an Instructor without exposing Owner controls`, async ({
+    page,
+  }) => {
+    const invitationToken = 'i'.repeat(43)
+    const student = anonymousStudentSession()
+    const { state } = await installNetworkMocks(page, student.accessToken, {
+      sessionCanUseAi: true,
+      sessionRole: 'instructor',
+      requiredInvitationToken: invitationToken,
+    })
+
+    if (entry !== 'fresh-document') {
+      await page.goto('/admin')
+      await expect(
+        page.getByRole('heading', { name: '教員ポータル', exact: true }),
+      ).toBeVisible()
+      if (entry === 'denied') {
+        await page
+          .getByRole('button', { name: 'Googleで続ける', exact: true })
+          .click()
+        await expect(page.getByRole('alert')).toContainText(
+          '教員権限を確認できません',
+        )
+        expect(state.edgeCalls.map(({ action }) => action)).toEqual(['admit'])
+        expect(state.factorChallengeBodies).toEqual([])
+        state.edgeCalls.length = 0
+      }
+    }
+    await page.goto(`/admin#invite=${invitationToken}`)
+    await expect(page).toHaveURL(/\/admin$/)
+    await reviewAccountHelp(page)
+    const storageBeforeOAuth = await page.evaluate(() => ({
+      hash: window.location.hash,
+      localValues: Array.from(
+        { length: window.localStorage.length },
+        (_, index) => {
+          const key = window.localStorage.key(index)
+          return key ? (window.localStorage.getItem(key) ?? '') : ''
+        },
+      ),
+      sessionValues: Array.from(
+        { length: window.sessionStorage.length },
+        (_, index) => {
+          const key = window.sessionStorage.key(index)
+          return key ? (window.sessionStorage.getItem(key) ?? '') : ''
+        },
+      ),
+    }))
+    expect(storageBeforeOAuth.hash).toBe('')
+    expect(storageBeforeOAuth.localValues.join('\n')).not.toContain(
+      invitationToken,
+    )
+    expect(storageBeforeOAuth.sessionValues.join('\n')).not.toContain(
+      invitationToken,
+    )
+
+    await page
+      .getByRole('button', { name: 'Googleで続ける', exact: true })
+      .click()
+    await expect
+      .poll(() => state.edgeCalls.map(({ action }) => action))
+      .toEqual(['admit'])
+    await expect(page).toHaveURL(/\/admin$/)
+    const storageAfterCallback = await page.evaluate(() => ({
+      hash: window.location.hash,
+      localValues: Array.from(
+        { length: window.localStorage.length },
+        (_, index) => {
+          const key = window.localStorage.key(index)
+          return key ? (window.localStorage.getItem(key) ?? '') : ''
+        },
+      ),
+      oauthAttempt: window.sessionStorage.getItem(
+        'compass-interactive-admin-oauth-attempt-v1',
+      ),
+      sessionValues: Array.from(
+        { length: window.sessionStorage.length },
+        (_, index) => {
+          const key = window.sessionStorage.key(index)
+          return key ? (window.sessionStorage.getItem(key) ?? '') : ''
+        },
+      ),
+    }))
+    expect(storageAfterCallback.hash).toBe('')
+    expect(storageAfterCallback.oauthAttempt).toBeNull()
+    expect(storageAfterCallback.localValues.join('\n')).not.toContain(
+      invitationToken,
+    )
+    expect(storageAfterCallback.sessionValues.join('\n')).not.toContain(
+      invitationToken,
+    )
+    expect(JSON.stringify(state.authorizeQueries)).not.toContain(
+      invitationToken,
+    )
+    expect(JSON.stringify(state.authRequests)).not.toContain(invitationToken)
+
+    const admitCall = state.edgeCalls[0]
+    expect(admitCall?.body).toEqual({
+      action: 'admit',
+      invitationToken,
+      loginRequestId: expect.stringMatching(uuidPattern),
+    })
+    const loginRequestId = admitCall?.body.loginRequestId
+
+    const card = page.locator('main .admin-identity-card')
+    await card.locator('input[autocomplete="one-time-code"]').fill('123456')
+    await card.locator('button[type="submit"]').click()
+    await expect(page.locator('.admin-workflow')).toBeVisible()
+    expect(state.edgeCalls.map(({ action }) => action)).toEqual([
+      'admit',
+      'beginStepUp',
+      'completeStepUp',
+    ])
+    expect(state.edgeCalls[1]?.body).toEqual({
+      action: 'beginStepUp',
+      challengedFactorId: factorId,
+      invitationToken,
+      loginRequestId,
+    })
+    expect(state.edgeCalls[2]?.body).toMatchObject({
+      action: 'completeStepUp',
+      loginRequestId,
+    })
+    expect(state.edgeCalls[2]?.body).not.toHaveProperty('invitationToken')
+    await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+    await expect(
+      page.getByRole('link', { name: '教員管理', exact: true }),
+    ).toHaveCount(0)
+
+    await page.goto('/admin/settings')
+    await expect(
+      page.getByRole('heading', { name: 'AI PINの設定', exact: true }),
+    ).toBeVisible()
+    await expect(page.locator('.admin-ledger-panel')).toHaveCount(0)
+    expect(state.ledgerCalls).toEqual([])
+    expect(state.unexpectedRequests).toEqual([])
+  })
+}
+
+test('ignores an ordinary hash but rejects an invalid invitation on an already open Admin page', async ({
   page,
 }) => {
-  const invitationToken = 'i'.repeat(43)
   const student = anonymousStudentSession()
-  const { state } = await installNetworkMocks(page, student.accessToken, {
-    sessionCanUseAi: true,
-    sessionRole: 'instructor',
-  })
-
-  await page.goto(`/admin#invite=${invitationToken}`)
-  await expect(page).toHaveURL(/\/admin$/)
-  await reviewAccountHelp(page)
-  const storageBeforeOAuth = await page.evaluate(() => ({
-    hash: window.location.hash,
-    localValues: Array.from(
-      { length: window.localStorage.length },
-      (_, index) => {
-        const key = window.localStorage.key(index)
-        return key ? (window.localStorage.getItem(key) ?? '') : ''
-      },
-    ),
-    sessionValues: Array.from(
-      { length: window.sessionStorage.length },
-      (_, index) => {
-        const key = window.sessionStorage.key(index)
-        return key ? (window.sessionStorage.getItem(key) ?? '') : ''
-      },
-    ),
-  }))
-  expect(storageBeforeOAuth.hash).toBe('')
-  expect(storageBeforeOAuth.localValues.join('\n')).not.toContain(
-    invitationToken,
-  )
-  expect(storageBeforeOAuth.sessionValues.join('\n')).not.toContain(
-    invitationToken,
-  )
-
-  await page
-    .getByRole('button', { name: 'Googleで続ける', exact: true })
-    .click()
-  await expect
-    .poll(() => state.edgeCalls.map(({ action }) => action))
-    .toEqual(['admit'])
-  await expect(page).toHaveURL(/\/admin$/)
-  const storageAfterCallback = await page.evaluate(() => ({
-    hash: window.location.hash,
-    localValues: Array.from(
-      { length: window.localStorage.length },
-      (_, index) => {
-        const key = window.localStorage.key(index)
-        return key ? (window.localStorage.getItem(key) ?? '') : ''
-      },
-    ),
-    oauthAttempt: window.sessionStorage.getItem(
-      'compass-interactive-admin-oauth-attempt-v1',
-    ),
-    sessionValues: Array.from(
-      { length: window.sessionStorage.length },
-      (_, index) => {
-        const key = window.sessionStorage.key(index)
-        return key ? (window.sessionStorage.getItem(key) ?? '') : ''
-      },
-    ),
-  }))
-  expect(storageAfterCallback.hash).toBe('')
-  expect(storageAfterCallback.oauthAttempt).toBeNull()
-  expect(storageAfterCallback.localValues.join('\n')).not.toContain(
-    invitationToken,
-  )
-  expect(storageAfterCallback.sessionValues.join('\n')).not.toContain(
-    invitationToken,
-  )
-  expect(JSON.stringify(state.authorizeQueries)).not.toContain(invitationToken)
-  expect(JSON.stringify(state.authRequests)).not.toContain(invitationToken)
-
-  const admitCall = state.edgeCalls[0]
-  expect(admitCall?.body).toEqual({
-    action: 'admit',
-    invitationToken,
-    loginRequestId: expect.stringMatching(uuidPattern),
-  })
-  const loginRequestId = admitCall?.body.loginRequestId
-
-  const card = page.locator('main .admin-identity-card')
-  await card.locator('input[autocomplete="one-time-code"]').fill('123456')
-  await card.locator('button[type="submit"]').click()
-  await expect(page.locator('.admin-workflow')).toBeVisible()
-  expect(state.edgeCalls.map(({ action }) => action)).toEqual([
-    'admit',
-    'beginStepUp',
-    'completeStepUp',
-  ])
-  expect(state.edgeCalls[1]?.body).toEqual({
-    action: 'beginStepUp',
-    challengedFactorId: factorId,
-    invitationToken,
-    loginRequestId,
-  })
-  expect(state.edgeCalls[2]?.body).toMatchObject({
-    action: 'completeStepUp',
-    loginRequestId,
-  })
-  expect(state.edgeCalls[2]?.body).not.toHaveProperty('invitationToken')
-  await expect.poll(() => state.lectureCalls.length).toBeGreaterThan(0)
+  const { state } = await installNetworkMocks(page, student.accessToken)
+  await page.goto('/admin')
   await expect(
-    page.getByRole('link', { name: '教員管理', exact: true }),
-  ).toHaveCount(0)
-
-  await page.goto('/admin/settings')
-  await expect(
-    page.getByRole('heading', { name: 'AI PINの設定', exact: true }),
+    page.getByRole('heading', { name: '教員ポータル', exact: true }),
   ).toBeVisible()
-  await expect(page.locator('.admin-ledger-panel')).toHaveCount(0)
-  expect(state.ledgerCalls).toEqual([])
-  expect(state.unexpectedRequests).toEqual([])
+  const originalDocument = await page.evaluate(() => performance.timeOrigin)
+  await page.goto('/admin#account')
+  await expect(page).toHaveURL(/\/admin#account$/)
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(
+    originalDocument,
+  )
+  expect(state.authRequests).toEqual([])
+  expect(state.edgeCalls).toEqual([])
+  await page.goto('/admin#invite=invalid')
+  await expect(page.getByRole('alert')).toContainText(
+    '招待リンクが正しくありません',
+  )
+  await expect(page).toHaveURL(/\/admin$/)
+  expect(state.authRequests).toEqual([])
+  expect(state.edgeCalls).toEqual([])
 })
 
 test('preserves an invitation PKCE transaction when an older Admin tab signs out late', async ({
