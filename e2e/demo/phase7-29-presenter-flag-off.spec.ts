@@ -336,6 +336,38 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
   expect(pageErrors).toEqual([])
 })
 
+test('Display starts once by keyboard from a scrolled teacher workspace', async ({
+  page,
+}) => {
+  await installAdminState(page)
+  await installNetworkMocks(page)
+  let issuedSessions = 0
+  await page.route('**/functions/v1/issue-display-session', (route) => {
+    issuedSessions += 1
+    return fulfillJson(route, {
+      ok: true,
+      displayToken: 'synthetic-keyboard-only',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      lectureSessionId,
+      realtime: null,
+    })
+  })
+  await page.setViewportSize({ width: 1272, height: 554 })
+  await page.goto('/admin')
+  await page.locator('#teacher-workspace-ai-tab').click()
+  await page.evaluate(() => window.scrollTo(0, 108))
+  const launchDisplayButton = page.getByRole('button', {
+    name: '画面共有を開始する',
+    exact: true,
+  })
+  await launchDisplayButton.focus()
+  await expect(launchDisplayButton).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'URLをコピー' })).toBeVisible()
+  await expect(page.locator('.display-launch-instructions')).toBeVisible()
+  expect(issuedSessions).toBe(1)
+})
+
 test('teacher controls remain visible with a long lecture title and Display instructions', async ({
   page,
   context,

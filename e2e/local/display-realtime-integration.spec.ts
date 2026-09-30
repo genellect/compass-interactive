@@ -359,7 +359,14 @@ test('claimed cross-browser Display receives private page/caption acceleration a
         response.url().endsWith('/functions/v1/issue-display-session') &&
         response.status() === 200,
     )
-    await adminPage.getByRole('button', { name: '画面共有を開始する' }).click()
+    const launchDisplayButton = adminPage.getByRole('button', {
+      name: '画面共有を開始する',
+    })
+    // Smooth scrolling can move the pointer target beneath the sticky header.
+    // Keep the real UI action, using keyboard activation as for URL copy below.
+    await launchDisplayButton.focus()
+    await expect(launchDisplayButton).toBeFocused()
+    await adminPage.keyboard.press('Enter')
     const issueResponse = await issueResponsePromise
     const copyButton = adminPage.getByRole('button', {
       name: 'URLをコピー',
