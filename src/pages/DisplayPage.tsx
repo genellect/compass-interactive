@@ -24,6 +24,7 @@ import {
 import {
   getDisplayPdfRenderKey,
   subscribeDisplayPdfRendered,
+  type DisplayPdfRenderedDetail,
 } from '../display/displayRenderEvents'
 import { getLatestPublicSummary } from '../display/displaySummary'
 
@@ -61,7 +62,8 @@ export function DisplayPage() {
   refreshDisplayStateRef.current = refreshDisplayState
   const displayStateRef = useRef(displayState)
   displayStateRef.current = displayState
-  const lastPdfRenderKeyRef = useRef<string | null>(null)
+  // PDF rendering may finish before the private channel subscribes.
+  const lastPdfRenderRef = useRef<DisplayPdfRenderedDetail | null>(null)
   const displayClaimRef = useRef<Promise<ClaimedDisplayRealtimeSession> | null>(
     null,
   )
@@ -69,6 +71,10 @@ export function DisplayPage() {
     useState<ClaimedDisplayRealtimeSession | null>(null)
   const [displayRealtimeSubscribed, setDisplayRealtimeSubscribed] =
     useState(false)
+  const displayRealtimeSubscribedRef = useRef(displayRealtimeSubscribed)
+  displayRealtimeSubscribedRef.current = displayRealtimeSubscribed
+  const displayRealtimeSessionRef = useRef(displayRealtimeSession)
+  displayRealtimeSessionRef.current = displayRealtimeSession
   const displayReporterRef = useRef<ReturnType<
     typeof createDisplaySessionReporter
   > | null>(null)
@@ -210,41 +216,61 @@ export function DisplayPage() {
     }
   }, [displayLaunch.displayToken, displayRealtimeSession])
 
-  const reportRenderedDisplayState = useCallback(
-    (rendered: { displayUpdatedAt: string; renderedPage: number }) => {
-      if (!displayRealtimeSubscribed) return
-      displayReporterRef.current?.reportRendered(rendered)
-    },
-    [displayRealtimeSubscribed],
-  )
+  const reportRenderedDisplayState = useCallback(() => {
+    const current = displayStateRef.current
+    const session = displayRealtimeSessionRef.current
+    if (
+      !displayRealtimeSubscribedRef.current ||
+      !session ||
+      !current ||
+      current.lectureSessionId !== session.lectureSessionId
+    ) {
+      return
+    }
+    if (current.pdfVisible && current.pdfDocumentId) {
+      const rendered = lastPdfRenderRef.current
+      if (
+        !current.pdfDocumentVersion ||
+        current.pdfManifestVersion < 1 ||
+        !rendered ||
+        !rendered.isStillRendered() ||
+        getDisplayPdfRenderKey(rendered) !==
+          getDisplayPdfRenderKey({
+            documentId: current.pdfDocumentId,
+            documentVersion: current.pdfDocumentVersion,
+            lectureSessionId: session.lectureSessionId,
+            manifestVersion: current.pdfManifestVersion,
+            page: current.currentPdfPage,
+          })
+      ) {
+        return
+      }
+    }
+    displayReporterRef.current?.reportRendered({
+      displayUpdatedAt: current.updatedAt,
+      renderedPage: current.currentPdfPage,
+    })
+  }, [])
 
   useEffect(() => {
-    lastPdfRenderKeyRef.current = null
-    if (!displayRealtimeSession || !displayRealtimeSubscribed) return
     return subscribeDisplayPdfRendered((rendered) => {
       const current = displayStateRef.current
       if (
         !current ||
-        current.lectureSessionId !== displayRealtimeSession.lectureSessionId ||
-        rendered.lectureSessionId !== displayRealtimeSession.lectureSessionId ||
+        current.lectureSessionId !== displayLaunch.lectureSessionId ||
+        rendered.lectureSessionId !== displayLaunch.lectureSessionId ||
         rendered.documentId !== current.pdfDocumentId ||
         rendered.documentVersion !== current.pdfDocumentVersion ||
         rendered.manifestVersion !== current.pdfManifestVersion ||
-        rendered.page !== current.currentPdfPage
+        rendered.page !== current.currentPdfPage ||
+        !rendered.isStillRendered()
       ) {
         return
       }
-      lastPdfRenderKeyRef.current = getDisplayPdfRenderKey(rendered)
-      reportRenderedDisplayState({
-        displayUpdatedAt: current.updatedAt,
-        renderedPage: current.currentPdfPage,
-      })
+      lastPdfRenderRef.current = rendered
+      reportRenderedDisplayState()
     })
-  }, [
-    displayRealtimeSession,
-    displayRealtimeSubscribed,
-    reportRenderedDisplayState,
-  ])
+  }, [displayLaunch.lectureSessionId, reportRenderedDisplayState])
 
   useEffect(() => {
     if (
@@ -255,27 +281,9 @@ export function DisplayPage() {
     ) {
       return
     }
-    if (displayState.pdfVisible && displayState.pdfDocumentId) {
-      if (
-        !displayState.pdfDocumentVersion ||
-        displayState.pdfManifestVersion < 1
-      ) {
-        return
-      }
-      const expectedRenderKey = getDisplayPdfRenderKey({
-        documentId: displayState.pdfDocumentId,
-        documentVersion: displayState.pdfDocumentVersion,
-        lectureSessionId: displayRealtimeSession.lectureSessionId,
-        manifestVersion: displayState.pdfManifestVersion,
-        page: displayState.currentPdfPage,
-      })
-      if (lastPdfRenderKeyRef.current !== expectedRenderKey) return
-    }
     const frame = window.requestAnimationFrame(() => {
-      reportRenderedDisplayState({
-        displayUpdatedAt: displayState.updatedAt,
-        renderedPage: displayState.currentPdfPage,
-      })
+      // Recheck the live canvas and latest state after the scheduled frame.
+      reportRenderedDisplayState()
     })
     return () => window.cancelAnimationFrame(frame)
   }, [

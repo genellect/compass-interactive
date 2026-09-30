@@ -199,6 +199,7 @@ export function SyncedPdfViewer({
   const adjacentRenderGenerationRef = useRef(0)
   const renderEnvironmentKeyRef = useRef('')
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
+  const loadedPdfDocumentRef = useRef<PDFDocumentProxy | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const [followPresenter, setFollowPresenter] = useState(true)
@@ -235,6 +236,8 @@ export function SyncedPdfViewer({
     useArchiveDelivery || usePrivateDelivery
       ? runtimeUrl
       : (legacyAsset?.url ?? '')
+  const renderSourceRef = useRef({ assetUrl, pdfLoadAttempt })
+  renderSourceRef.current = { assetUrl, pdfLoadAttempt }
   const expectedPageCount =
     archivedPdf?.pageCount ??
     runtimeDocument?.pageCount ??
@@ -515,6 +518,7 @@ export function SyncedPdfViewer({
       const requestId = renderRequestRef.current + 1
       renderRequestRef.current = requestId
       const renderDisplayMetadata = displayRenderMetadataRef.current
+      const renderSource = renderSourceRef.current
       const canvas = canvasRef.current
       const stage = stageRef.current
       if (!canvas || !stage) {
@@ -528,6 +532,17 @@ export function SyncedPdfViewer({
           displayRenderMetadataRef.current,
           renderDisplayMetadata,
         )
+      const isStillRendered = () =>
+        canvas.isConnected &&
+        stage.isConnected &&
+        canvas.width > 0 &&
+        canvas.height > 0 &&
+        isCurrentRequest() &&
+        loadedPdfDocumentRef.current === pdfDocument &&
+        renderSourceRef.current.assetUrl === renderSource.assetUrl &&
+        renderSourceRef.current.pdfLoadAttempt ===
+          renderSource.pdfLoadAttempt &&
+        (!remotePageRef.current || remotePageRef.current === pageNumber)
 
       adjacentRenderGenerationRef.current += 1
       adjacentRenderTaskRef.current?.cancel()
@@ -579,6 +594,7 @@ export function SyncedPdfViewer({
         if (isCurrentRequest() && renderDisplayMetadata) {
           publishDisplayPdfRendered({
             ...renderDisplayMetadata,
+            isStillRendered,
             page: pageNumber,
           })
         }
@@ -620,6 +636,7 @@ export function SyncedPdfViewer({
         if (renderDisplayMetadata) {
           publishDisplayPdfRendered({
             ...renderDisplayMetadata,
+            isStillRendered,
             page: pageNumber,
           })
         }
@@ -674,6 +691,7 @@ export function SyncedPdfViewer({
     adjacentRenderGenerationRef.current += 1
     releaseCachedPageRenders(adjacentPageCache)
     renderEnvironmentKeyRef.current = ''
+    loadedPdfDocumentRef.current = null
     setPdfDocument(null)
     setCurrentPage(1)
     setTotalPages(0)
@@ -723,6 +741,7 @@ export function SyncedPdfViewer({
           loadedPdf.numPages,
         )
         privateDeliveryRetryPageRef.current = initialPage
+        loadedPdfDocumentRef.current = loadedPdf
         setPdfDocument(loadedPdf)
         setCurrentPage(initialPage)
         setTotalPages(loadedPdf.numPages)
@@ -761,6 +780,7 @@ export function SyncedPdfViewer({
       releaseCachedPageRenders(adjacentPageCache)
       renderEnvironmentKeyRef.current = ''
       renderRequestRef.current += 1
+      loadedPdfDocumentRef.current = null
       renderTaskRef.current?.cancel()
       adjacentRenderTaskRef.current?.cancel()
       adjacentRenderTaskRef.current = null
