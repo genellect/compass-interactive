@@ -183,6 +183,144 @@ async function installTurnstileMock(page: Page, anonymousDelayMs = 0) {
   }, anonymousDelayMs)
 }
 
+async function installSavedSessionRestore(
+  page: Page,
+  { delayMs = 0, hold = false, expired = true, isAnonymous = true } = {},
+) {
+  const userId = '72700000-0000-4000-8000-000000000103'
+  const participantId = '72700000-0000-4000-8000-000000000778'
+  const title = 'Saved session lecture entry'
+  const unexpectedOrigins: string[] = []
+  const browserErrors: string[] = []
+  page.on('pageerror', (error) => browserErrors.push(error.message))
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url())
+    if (
+      ['http:', 'https:'].includes(url.protocol) &&
+      !['127.0.0.1', 'localhost'].includes(url.hostname)
+    ) {
+      unexpectedOrigins.push(url.origin)
+      await route.abort('blockedbyclient')
+      return
+    }
+    await route.continue()
+  })
+  await installTurnstileMock(page)
+  const state = await installNetworkMocks(page, {
+    liveJoinLecture: {
+      ends_at: null,
+      lecture_session_id: '72700000-0000-4000-8000-000000000777',
+      participant_id: participantId,
+      starts_at: null,
+      status: 'open',
+      title,
+    },
+  })
+  await page.route('https://pdf.example/v1/archives/resolve', (route) =>
+    route.fulfill({ status: 404, body: '{}' }),
+  )
+  const session = anonymousSessionResponse(userId)
+  const expiresAt = Math.floor(Date.now() / 1_000) + (expired ? -60 : 3_600)
+  const tokenParts = session.access_token.split('.')
+  const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64url').toString())
+  tokenParts[1] = encodeJwtPart({ ...payload, exp: expiresAt })
+  await page.addInitScript(
+    (savedSession) => {
+      window.localStorage.setItem(
+        'sb-example-auth-token',
+        JSON.stringify(savedSession),
+      )
+    },
+    {
+      ...session,
+      access_token: tokenParts.join('.'),
+      expires_at: expiresAt,
+      user: { ...session.user, is_anonymous: isAnonymous },
+    },
+  )
+  const restore = { requests: 0, startedAt: 0, finished: false }
+  let releaseRestore!: () => void
+  const gate = new Promise<void>((resolve) => {
+    releaseRestore = resolve
+  })
+  await page.route(
+    'https://example.supabase.co/auth/v1/token?grant_type=refresh_token',
+    async (route) => {
+      restore.requests += 1
+      restore.startedAt = Date.now()
+      if (hold) await gate
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
+      await fulfillJson(route, anonymousSessionResponse(userId))
+      restore.finished = true
+    },
+  )
+  const joinedUsers: string[] = []
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname !== '/rest/v1/rpc/join_lecture_by_code_v2'
+    )
+      return
+    const token = (request.headers().authorization ?? '').replace(
+      /^Bearer /i,
+      '',
+    )
+    const claims = JSON.parse(
+      Buffer.from(token.split('.')[1], 'base64url').toString(),
+    )
+    joinedUsers.push(claims.sub)
+  })
+  await page.route('**/rest/v1/rpc/get_lecture_participant_state_v2', (route) =>
+    fulfillJson(route, {
+      contract_version: 2,
+      membership: { participant_id: participantId },
+      commenting: { allowed: true, max_length: 120, next_allowed_at: null },
+      liked_comment_ids: [],
+      poll_responses: [],
+    }),
+  )
+  await page.route('**/rest/v1/rpc/get_lecture_public_snapshot_v*', (route) =>
+    fulfillJson(route, {
+      contract_version: 2,
+      server_time: new Date().toISOString(),
+      versions: {
+        caption: 1,
+        comments: 1,
+        lecture: 1,
+        likes: 1,
+        metrics: 1,
+        pdf: 1,
+        polls: 1,
+        summaries: 1,
+      },
+      changed: {
+        comments: {
+          has_more: false,
+          has_older: false,
+          items: [],
+          mode: 'initial',
+        },
+        polls: [],
+        metrics: {
+          participant_count_approximate: 1,
+          participant_count_mode: 'active_90s',
+          updated_at: new Date().toISOString(),
+          visible_comment_count: 0,
+        },
+      },
+    }),
+  )
+  return {
+    browserErrors,
+    joinedUsers,
+    releaseRestore,
+    restore,
+    state,
+    title,
+    unexpectedOrigins,
+    userId,
+  }
+}
+
 async function ensureTestAnonymousSession(
   page: Page,
   kind: 'student' | 'display',
@@ -764,6 +902,146 @@ test.describe('Phase 7.27 flag ON', () => {
       ).toBeVisible()
     })
   }
+
+  for (const entry of ['QR', 'code'] as const) {
+    test(`${entry} restores a saved anonymous session after a 7000ms refresh without another submission`, async ({
+      page,
+    }) => {
+      const fixture = await installSavedSessionRestore(page, { delayMs: 7_000 })
+      await page.goto(entry === 'QR' ? '/join?code=731042' : '/join')
+      if (entry === 'code') {
+        await page.getByLabel('講義コード', { exact: true }).fill('731042')
+        await page
+          .getByRole('button', { name: '参加する', exact: true })
+          .click()
+      }
+      await expect(
+        page.getByRole('heading', { name: fixture.title }),
+      ).toBeVisible({ timeout: 10_000 })
+      await expect(page).toHaveURL(/\/lecture$/)
+      await expect(
+        page.getByText('いま講義とつながっています', { exact: true }),
+      ).toBeVisible()
+      expect(fixture.restore.requests).toBe(1)
+      expect(fixture.state.anonymousSignupRequests).toBe(0)
+      expect(fixture.state.liveJoinRequests).toBe(1)
+      expect(fixture.joinedUsers).toEqual([fixture.userId])
+      const savedUser = await page.evaluate(() => {
+        const saved = JSON.parse(
+          window.localStorage.getItem('sb-example-auth-token') ?? 'null',
+        )
+        return saved?.user.id ?? null
+      })
+      expect(savedUser).toBe(fixture.userId)
+      expect(fixture.browserErrors).toEqual([])
+      expect(fixture.unexpectedOrigins).toEqual([])
+    })
+  }
+
+  test('bounds a stalled join session restore at twelve seconds and ignores its late completion', async ({
+    page,
+  }) => {
+    const fixture = await installSavedSessionRestore(page, { hold: true })
+    try {
+      await page.goto('/join?code=731042')
+      await expect(page.getByRole('alert')).toHaveText(
+        '匿名セッションの確認に時間がかかっています。通信状態を確認して、もう一度お試しください。',
+        { timeout: 15_000 },
+      )
+      const waitedMs = Date.now() - fixture.restore.startedAt
+      expect(waitedMs).toBeGreaterThanOrEqual(11_500)
+      expect(waitedMs).toBeLessThan(15_000)
+      expect(fixture.state.liveJoinRequests).toBe(0)
+      fixture.releaseRestore()
+      const restoredUser = await page.evaluate(async () => {
+        const modulePath = '/src/lib/supabaseClient.ts'
+        const client = (await import(/* @vite-ignore */ modulePath)) as {
+          supabase: {
+            auth: {
+              getSession: () => Promise<{
+                data: { session: { user: { id: string } } | null }
+              }>
+            }
+          }
+        }
+        const { data } = await client.supabase.auth.getSession()
+        return data.session?.user.id ?? null
+      })
+      expect(restoredUser).toBe(fixture.userId)
+      await expect(page).toHaveURL(/\/join\?code=/)
+      expect(fixture.state.liveJoinRequests).toBe(0)
+      expect(fixture.restore.requests).toBe(1)
+      expect(fixture.state.anonymousSignupRequests).toBe(0)
+      expect(fixture.browserErrors).toEqual([])
+      expect(fixture.unexpectedOrigins).toEqual([])
+    } finally {
+      fixture.releaseRestore()
+    }
+  })
+
+  test('keeps the ordinary six-second deadline while a concurrent join waits for the same refresh', async ({
+    page,
+  }) => {
+    const fixture = await installSavedSessionRestore(page, { delayMs: 7_000 })
+    await page.goto('/join')
+    const results = await page.evaluate(async () => {
+      const modulePath = '/src/lib/anonymousAuth.ts'
+      const auth = (await import(/* @vite-ignore */ modulePath)) as {
+        ensureAnonymousAuthSession: (
+          captchaToken?: string,
+          options?: { purpose?: 'lecture-join' },
+        ) => Promise<string>
+      }
+      const startedAt = Date.now()
+      const capture = async (request: Promise<string>) => {
+        try {
+          return { value: await request, elapsedMs: Date.now() - startedAt }
+        } catch (error) {
+          return {
+            message: error instanceof Error ? error.message : String(error),
+            elapsedMs: Date.now() - startedAt,
+          }
+        }
+      }
+      return await Promise.all([
+        capture(auth.ensureAnonymousAuthSession()),
+        capture(
+          auth.ensureAnonymousAuthSession(undefined, {
+            purpose: 'lecture-join',
+          }),
+        ),
+      ])
+    })
+    expect(results[0].message).toContain(
+      '匿名セッションの確認に時間がかかっています',
+    )
+    expect(results[0].elapsedMs).toBeGreaterThanOrEqual(5_800)
+    expect(results[0].elapsedMs).toBeLessThan(7_000)
+    expect(results[1].value).toBe(fixture.userId)
+    expect(fixture.restore.requests).toBe(1)
+    expect(fixture.state.anonymousSignupRequests).toBe(0)
+    expect(fixture.state.liveJoinRequests).toBe(0)
+    expect(fixture.browserErrors).toEqual([])
+    expect(fixture.unexpectedOrigins).toEqual([])
+  })
+
+  test('rejects a saved non-anonymous session instead of creating a student identity', async ({
+    page,
+  }) => {
+    const fixture = await installSavedSessionRestore(page, {
+      expired: false,
+      isAnonymous: false,
+    })
+    await page.goto('/join?code=731042')
+    await expect(page.getByRole('alert')).toContainText(
+      '学生用セッションに匿名ではない認証情報が存在します',
+    )
+    expect(fixture.restore.requests).toBe(0)
+    expect(fixture.state.anonymousSignupRequests).toBe(0)
+    expect(fixture.state.liveJoinRequests).toBe(0)
+    expect(fixture.browserErrors).toEqual([])
+    expect(fixture.unexpectedOrigins).toEqual([])
+  })
 
   for (const kind of ['student', 'display'] as const) {
     for (const timing of [
