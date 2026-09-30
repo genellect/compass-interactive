@@ -1166,7 +1166,7 @@ for (const entry of ['fresh-document', 'signed-out', 'denied'] as const) {
           .getByRole('button', { name: 'Googleで続ける', exact: true })
           .click()
         await expect(page.getByRole('alert')).toContainText(
-          '教員権限を確認できません',
+          '教員登録を確認できません',
         )
         expect(state.edgeCalls.map(({ action }) => action)).toEqual(['admit'])
         expect(state.factorChallengeBodies).toEqual([])
