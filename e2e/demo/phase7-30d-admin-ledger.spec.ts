@@ -1915,6 +1915,11 @@ test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and
   ).toHaveLength(0)
 
   await lectureCost.fill('0.50')
+  await expect(lectureCost).toHaveValue('0.50')
+  // Mobile WebKit can adjust scrolling when a focused number field blurs.
+  // Finish that edit before Playwright measures the single submit click.
+  await lectureCost.blur()
+  await expect(lectureCost).not.toBeFocused()
   await expect(submit).toBeEnabled()
   await submit.click()
   await expect(
