@@ -30,6 +30,7 @@ import {
   beginAdminOAuthAttempt,
   consumeAdminOAuthAttempt,
   getAdminAuthRateLimitRemainingMs,
+  parseAdminInvitationFragment,
   persistAdminAppSessionToken,
   persistAdminAppSessionRestoreSeed,
   restoreAdminAppSessionToken,
@@ -198,6 +199,18 @@ export function AdminRoute() {
     if (invitation.kind === 'valid') {
       invitationTokenRef.current = invitation.token
     }
+    // A pasted invitation can change only the hash of an already open page.
+    // Restart the existing admission flow instead of replacing an in-flight
+    // OAuth/TOTP transaction's invitation or mixing two account identities.
+    const restartForInvitation = () => {
+      if (
+        parseAdminInvitationFragment(window.location.hash).kind !== 'absent'
+      ) {
+        window.location.reload()
+      }
+    }
+    window.addEventListener('hashchange', restartForInvitation)
+    return () => window.removeEventListener('hashchange', restartForInvitation)
   }, [])
 
   useEffect(() => {

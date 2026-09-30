@@ -931,9 +931,60 @@ assert.match(
 )
 assert.match(
   ci,
-  /name: demo-e2e-evidence-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/demo\/[\s\S]*test-results\/reports\/demo\//,
+  /name: demo-e2e-evidence-\$\{\{ matrix\.suite \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*test-results\/demo\/[\s\S]*test-results\/reports\/demo\//,
   'failed demo integration evidence must retain both raw traces and the HTML report',
 )
+const demoSuiteStart = ci.indexOf('\n  demo-e2e-suites:\n')
+const demoGateStart = ci.indexOf('\n  demo-e2e:\n')
+const localGateStart = ci.indexOf('\n  local-supabase:\n')
+assert.ok(demoSuiteStart >= 0 && demoGateStart > demoSuiteStart)
+assert.ok(localGateStart > demoGateStart)
+const demoSuites = ci.slice(demoSuiteStart, demoGateStart)
+const demoGate = ci.slice(demoGateStart, localGateStart)
+assert.match(demoSuites, /needs: \[classify, quality\]/)
+assert.match(demoSuites, /timeout-minutes: 60/)
+assert.match(demoSuites, /fail-fast: false/)
+assert.match(demoSuites, /suite: \[core-identity, journal-presenter-ledger\]/)
+assert.deepEqual(
+  [
+    ...demoSuites.matchAll(
+      /- if: \$\{\{ matrix\.suite == '([^']+)' \}\}\n\s+run: npm run ([\w:-]+)\n/g,
+    ),
+  ].map((match) => [match[1], match[2]]),
+  [
+    ['core-identity', 'test:teacher-ai-controls:browser'],
+    ['core-identity', 'test:e2e:demo:triple'],
+    ['core-identity', 'test:e2e:phase7-26'],
+    ['core-identity', 'test:e2e:phase7-26:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-27'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-27:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-29:flag-off'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-29'],
+    ['core-identity', 'test:e2e:phase7-30:flag-off'],
+    ['core-identity', 'test:e2e:phase7-30'],
+    ['core-identity', 'test:e2e:phase7-30b22b-browser'],
+    ['journal-presenter-ledger', 'test:e2e:phase7-30d-browser'],
+  ],
+  'all twelve existing Demo entries must run exactly once in the isolated suite partition, without altered arguments',
+)
+assert.match(demoGate, /name: Demo browser E2E\n/)
+assert.match(demoGate, /needs: \[classify, quality, demo-e2e-suites\]/)
+assert.match(demoGate, /if: \$\{\{ always\(\)/)
+assert.match(demoGate, /QUALITY_RESULT: \$\{\{ needs\.quality\.result \}\}/)
+assert.match(
+  demoGate,
+  /DEMO_SUITES_RESULT: \$\{\{ needs\.demo-e2e-suites\.result \}\}/,
+)
+assert.deepEqual(
+  demoGate
+    .match(/        run: \|\n((?:          [^\n]*\n)+)/)?.[1]
+    .trim()
+    .split('\n')
+    .map((line) => line.trim()),
+  ['test "$QUALITY_RESULT" = success', 'test "$DEMO_SUITES_RESULT" = success'],
+  'the protected aggregate must reject anything except success, without masking either shell failure',
+)
+assert.doesNotMatch(demoGate + demoSuites, /continue-on-error/)
 assert.match(
   ci,
   /ADMIN_AI_CHILD_GRANT_SECRET=compass-ci-only-admin-ai-child-grant-secret-at-least-32-bytes[\s\S]*ADMIN_AI_CHILD_GRANT_SECRET_VERSION=1/,

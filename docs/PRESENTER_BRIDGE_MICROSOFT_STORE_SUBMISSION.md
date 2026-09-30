@@ -277,8 +277,13 @@ fixes the result to:
 
 Create a new publisher-controlled Google test account dedicated to Store
 certification, with no mail, Drive, personal data or access to any real lecture.
-The Owner invites that address and completes only the minimum synthetic
-onboarding needed to verify the path. Enter its username and temporary password
+The Owner invites that address and verifies Google sign-in, invitation admission
+and the first-use enrollment screen without registering a publisher-owned TOTP
+factor on the account intended for the reviewer. A publisher-owned verified
+factor would prevent the reviewer from completing login independently. Use a
+separate ordinary teacher account for the full synthetic lecture/device E2E;
+reaching the review account's enrollment screen is not a completed reviewer E2E.
+Enter its username and temporary password
 directly in Partner Center's protected **Notes for certification**; never put
 them in Git, ordinary email, screenshots, logs or agent prompts. Let the
 reviewer enroll the app's normal TOTP factor on first use, so no TOTP seed,
