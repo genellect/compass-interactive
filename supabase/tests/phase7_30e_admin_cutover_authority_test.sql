@@ -649,8 +649,40 @@ SELECT throws_ok(
   'approval request ID cannot be rebound to different authority'
 );
 
+-- Only this positive fixture assertion waits out transient local-stack locks.
+-- Production NOWAIT and direct replay/denial/concurrency checks stay unchanged.
+CREATE FUNCTION pg_temp.claim_google_admin_lecture_ownership_with_bounded_retry(
+  target_approval_id uuid,
+  target_request_id uuid
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SET search_path = ''
+AS $$
+DECLARE
+  attempt_count integer := 0;
+BEGIN
+  LOOP
+    attempt_count := attempt_count + 1;
+    BEGIN
+      RETURN private.claim_approved_google_admin_lecture_ownership_v1(
+        target_approval_id,
+        target_request_id
+      );
+    EXCEPTION
+      WHEN lock_not_available THEN
+        IF attempt_count >= 20 THEN
+          RAISE;
+        END IF;
+        PERFORM pg_catalog.pg_sleep(0.05);
+    END;
+  END LOOP;
+END;
+$$;
+
 SELECT is(
-  private.claim_approved_google_admin_lecture_ownership_v1(
+  pg_temp.claim_google_admin_lecture_ownership_with_bounded_retry(
     '00000000-0000-4000-8000-00000000e120'::uuid,
     '00000000-0000-4000-8000-00000000e122'::uuid
   ) ->> 'replayed',

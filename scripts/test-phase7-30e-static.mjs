@@ -530,6 +530,50 @@ assert.match(
   /claim-cutover-waiter'[\s\S]*?not in \('P7335', '40001', '55P03'\)[\s\S]*?claim\/cutover environment serialization diverged/,
   'claim versus cutover must accept only the exact policy rejection or bounded transient serialization and lock outcomes',
 )
+const pgTapClaimRetry =
+  pgTap.match(
+    /create function pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\([\s\S]*?\n\$\$;/i,
+  )?.[0] ?? ''
+assert.match(
+  pgTapClaimRetry,
+  /return private\.claim_approved_google_admin_lecture_ownership_v1\([\s\S]*?exception[\s\S]*?when lock_not_available then[\s\S]*?attempt_count >= 20\b[\s\S]*?raise;[\s\S]*?pg_catalog\.pg_sleep\(0\.05\)/i,
+  'the claim fixture retry must preserve Production NOWAIT and remain bounded',
+)
+assert.equal(
+  (pgTapClaimRetry.match(/\bwhen\b/gi) ?? []).length,
+  1,
+  'the claim fixture must catch only lock_not_available, never authorization or serialization failures',
+)
+const pgTapOutsideClaimRetry = pgTap.replace(pgTapClaimRetry, '')
+assert.equal(
+  pgTapOutsideClaimRetry.match(
+    /pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\(/gi,
+  )?.length,
+  1,
+  'only the first positive claim assertion may use the bounded test retry',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*pg_temp\.claim_google_admin_lecture_ownership_with_bounded_retry\(\s*'00000000-0000-4000-8000-00000000e120'::uuid,\s*'00000000-0000-4000-8000-00000000e122'::uuid\s*\)\s*->> 'replayed',\s*'false',\s*'reviewed ownership claim atomically creates provenance'/i,
+  'the claim fixture must still prove the first immutable ownership mapping',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*private\.claim_approved_google_admin_lecture_ownership_v1\([\s\S]*?'true',\s*'ownership claim exact replay returns the committed mapping'/i,
+  'claim exact replay must call the Production function directly',
+)
+assert.match(
+  pgTapOutsideClaimRetry,
+  /select is\(\s*private\.claim_approved_google_admin_lecture_ownership_v1\([^;]*?'true',\s*'committed ownership replay remains available after cutover'/i,
+  'claim replay after cutover must also bypass the test-only retry',
+)
+for (const productionSource of [migration, concurrency]) {
+  assert.doesNotMatch(
+    productionSource,
+    /claim_google_admin_lecture_ownership_with_bounded_retry/i,
+    'the positive pgTAP retry must never enter Production or concurrency tests',
+  )
+}
 const pgTapCutoverRetry =
   pgTap.match(
     /create function pg_temp\.commit_google_only_admin_cutover_with_bounded_retry\([\s\S]*?\n\$\$;/i,
