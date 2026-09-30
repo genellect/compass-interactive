@@ -335,3 +335,98 @@ test('flag OFF keeps Google Admin manual PDF controls without Presenter or loopb
   ).toBeNull()
   expect(pageErrors).toEqual([])
 })
+
+test('teacher controls remain visible with a long lecture title and Display instructions', async ({
+  page,
+  context,
+  browserName,
+}, testInfo) => {
+  await installAdminState(page)
+  await installNetworkMocks(page)
+  const title = 'COMPASS 本番確認 2026-09-30 2325130'
+  await page.route('**/functions/v1/manage-lectures', (route) =>
+    fulfillJson(route, {
+      ok: true,
+      lectures: [{ ...lectureResponse(), title }],
+    }),
+  )
+  await page.route('**/functions/v1/operator-live-snapshot', (route) => {
+    const response = operatorSnapshot()
+    response.result.snapshot.changed.lecture.title = title
+    return fulfillJson(route, response)
+  })
+  await page.route('**/functions/v1/issue-display-session', (route) =>
+    fulfillJson(route, {
+      ok: true,
+      displayToken: 'synthetic-layout-only',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      lectureSessionId,
+      realtime: null,
+    }),
+  )
+  if (browserName === 'chromium') {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  }
+  await page.setViewportSize({ width: 1272, height: 554 })
+  await page.goto('/admin')
+  await page.locator('#teacher-workspace-ai-tab').click()
+  await page
+    .getByRole('button', { name: '画面共有を開始する', exact: true })
+    .click()
+  await page.getByRole('button', { name: 'URLをコピー', exact: true }).click()
+  await expect(page.locator('.display-launch-instructions')).toContainText(
+    'コピーしました。',
+  )
+  for (const viewport of [
+    { width: 1272, height: 554 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    const actions = page.locator('[aria-label="AIの一括操作"]')
+    await testInfo.attach(`layout-${viewport.width}x${viewport.height}`, {
+      contentType: 'application/json',
+      body: JSON.stringify(
+        await page
+          .locator(
+            '.page-header, .display-launch-instructions, .admin-workflow, .lecture-transport-bar, [aria-label="AIの一括操作"]',
+          )
+          .evaluateAll((elements) =>
+            elements.map((element) => ({
+              selector: element.className,
+              y: element.getBoundingClientRect().y,
+              height: element.getBoundingClientRect().height,
+            })),
+          ),
+      ),
+    })
+    await expect(actions.getByRole('button')).toHaveCount(3)
+    await expect(
+      page.getByRole('heading', { name: title, exact: true }),
+    ).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      )
+      .toBe(true)
+    if (viewport.width > 720) {
+      await expect(
+        actions.getByRole('button', { name: 'すべて停止', exact: true }),
+      ).toBeInViewport({ ratio: 1 })
+      await expect(page.getByText('AIの詳細', { exact: true })).toBeInViewport({
+        ratio: 1,
+      })
+      const bounds = await actions.boundingBox()
+      expect(bounds?.height).toBeLessThanOrEqual(70)
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `teacher-${viewport.width}x${viewport.height}.png`,
+      ),
+      fullPage: true,
+    })
+  }
+})

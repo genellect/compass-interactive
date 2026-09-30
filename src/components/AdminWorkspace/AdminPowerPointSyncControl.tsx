@@ -71,12 +71,13 @@ function PrivacyConsentDisclosure({
           PowerPoint連携のデータ利用
         </strong>
         <p className="note">
-          Presenter Bridgeは、保存済みPPTXのバイト列、ファイル名、
-          スライドID、スライドショー設定をこのPC内で読み、講義資料との一致を確認します。
+          このアプリは、このPC内でPowerPointファイルを読み取り、ファイル名、スライドの識別番号と順序、スライドショーの設定を確認します。
         </p>
         <p className="note">
-          COMPASSには、資料と順序のハッシュ、枚数、ページ遷移、教員と講義セッションの関連情報をCloudflare／Supabase経由で送信します。
-          PPTX本体、本文、文字、ノート、画像、動画は送信しません。
+          表示ページと枚数、資料とスライドの順番を照合するための値、接続する教員と講義の情報を、Cloudflare・Supabaseを通じてCOMPASSへ送信します。
+        </p>
+        <p className="note">
+          PowerPointファイル本体、スライドの本文、発表者ノート、画像、動画は、このアプリから送信しません。
         </p>
         <a
           href={PRESENTER_PRIVACY_URL}
@@ -123,7 +124,7 @@ function PrivacyConsentManagement({
         onClick={() => void sync.revokePrivacyConsent()}
         type="button"
       >
-        同意を取り消してブラウザのPresenter設定を削除
+        同意を取り消し、このブラウザの連携設定を削除
       </button>
     </details>
   )
@@ -133,8 +134,8 @@ function RecoveryCode({ code }: { code: string }) {
   return (
     <div className="admin-presenter-recovery" aria-live="polite">
       <p className="note">
-        Presenter Bridgeのトレイアイコンから「復旧コードを入力」を開き、
-        次のコードを入力してください（5分間有効）。
+        Windowsの通知領域にあるCOMPASSアイコンを右クリックし、
+        「復旧コードを入力」を選びます。開いた画面に、次のコードを入力してください（5分間有効）。
       </p>
       <strong className="admin-presenter-recovery-code">{code}</strong>
     </div>
@@ -173,7 +174,7 @@ export function AdminPowerPointSyncControl({
               rel="noopener noreferrer"
               target="_blank"
             >
-              Bridgeをインストール
+              連携アプリをインストール
             </a>
           ) : showSetup ? (
             <a
@@ -190,7 +191,7 @@ export function AdminPowerPointSyncControl({
             onClick={() => void sync.start()}
             type="button"
           >
-            Bridgeの接続を確認
+            PowerPointに接続
           </button>
         </div>
         <PrivacyConsentManagement sync={sync} />
@@ -321,7 +322,7 @@ export function AdminPowerPointSyncControl({
         onClick={sync.stop}
         type="button"
       >
-        手動操作へ切り替える
+        教員画面で操作する
       </button>
       <PrivacyConsentManagement sync={sync} />
     </div>

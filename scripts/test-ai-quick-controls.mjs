@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -78,6 +78,60 @@ try {
   const calls = (page) => page.evaluate(() => window.aiHarness.calls)
   const bulk = (page) =>
     page.getByRole('button', { name: '字幕以外を一括有効化', exact: true })
+  for (const viewport of [
+    { width: 1272, height: 554 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await run(
+      `AI controls fit ${viewport.width}x${viewport.height}`,
+      async (page) => {
+        await page.setViewportSize(viewport)
+        const actions = page.locator('[aria-label="AIの一括操作"]')
+        const buttons = actions.getByRole('button')
+        assert.equal(await buttons.count(), 3)
+        const bounds = await buttons.evaluateAll((elements) =>
+          elements.map((element) => {
+            const rect = element.getBoundingClientRect()
+            return { width: rect.width, bottom: rect.bottom, right: rect.right }
+          }),
+        )
+        const container = await actions.boundingBox()
+        assert.ok(container)
+        if (viewport.width > 720) {
+          assert.ok(
+            container.height <= 70,
+            'desktop actions must share one row',
+          )
+          assert.ok(
+            bounds[0].width < container.width / 2,
+            'bulk button must not fill the row',
+          )
+          assert.ok(Math.abs(bounds[0].bottom - bounds[2].bottom) <= 1)
+        }
+        assert.ok(bounds.every((bound) => bound.right <= viewport.width + 1))
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1,
+          ),
+        )
+        const screenshotDirectory = new URL(
+          '../test-results/teacher-ui/',
+          import.meta.url,
+        )
+        mkdirSync(screenshotDirectory, { recursive: true })
+        await page.screenshot({
+          path: fileURLToPath(
+            new URL(
+              `ai-${viewport.width}x${viewport.height}.png`,
+              screenshotDirectory,
+            ),
+          ),
+          fullPage: true,
+        })
+      },
+    )
+  }
   await run(
     'draft-to-open lecture keeps detailed settings reachable through their visible summary',
     async (page) => {

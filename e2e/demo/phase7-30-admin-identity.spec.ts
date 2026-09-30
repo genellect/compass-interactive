@@ -723,9 +723,7 @@ async function installNetworkMocks(
 
 async function reviewAccountHelp(page: Page) {
   const popup = page.waitForEvent('popup')
-  await page
-    .getByRole('link', { name: '初めて利用する方・教員アカウントの申し込み' })
-    .click()
+  await page.getByRole('link', { name: '初めて利用する方' }).click()
   const guide = await popup
   await expect(guide).toHaveURL(/\/presenter-bridge\/index\.html#account$/)
   await expect(
@@ -736,7 +734,7 @@ async function reviewAccountHelp(page: Page) {
   ).toHaveAttribute('href', /^mailto:contact@yuto-matsui\.com\?/)
   await expect(
     guide.locator('ol[aria-label="PowerPoint連携の手順"] > li'),
-  ).toHaveCount(3)
+  ).toHaveCount(5)
   await guide.setViewportSize({ width: 390, height: 844 })
   await expect
     .poll(() =>
@@ -777,15 +775,12 @@ test('exchanges only the Admin PKCE callback, requires TOTP, tracks the app sess
     card.getByRole('heading', { name: '教員ポータル', exact: true }),
   ).toBeVisible()
   await expect(
-    card.getByText(
-      '登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。',
-      {
-        exact: true,
-      },
-    ),
+    card.getByText('教員登録済みのGoogleアカウントでログインしてください。', {
+      exact: true,
+    }),
   ).toBeVisible()
   await expect(
-    card.getByText('セキュリティ保護のため、2段階認証が必要です。', {
+    card.getByText('続いて、認証アプリの6桁のコードを入力します。', {
       exact: true,
     }),
   ).toBeVisible()

@@ -578,7 +578,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
       } else if (connection.state === 'inspected' && manualReview) {
         setPhase('review')
         setMessage(
-          '復旧コードをPresenter Bridgeへ入力し、PowerPointと講義資料を確認してください。',
+          'PowerPointと講義資料の内容・順番・枚数が同じことを確認してください。',
         )
       } else {
         setPhase('recovery')
@@ -592,7 +592,9 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
         setPresentation(manualReview)
         if (connection.state === 'inspected') {
           setPhase('review')
-          setMessage('PowerPointと講義資料を確認してください。')
+          setMessage(
+            'PowerPointと講義資料の内容・順番・枚数が同じことを確認してください。',
+          )
         } else if (connection.state === 'confirmed') {
           setPhase('activating')
           setMessage('Presenter Bridgeの接続完了を待っています…')
@@ -1028,7 +1030,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
             setMessage(
               readinessIssueAttemptsRef.current < 2
                 ? 'PowerPointのスライドショーを開始すると自動で接続します。'
-                : 'PowerPointの準備を確認できませんでした。Bridgeの接続を確認してください。',
+                : 'PowerPointの状態を確認できませんでした。「PowerPointに接続」を押してください。',
             )
             return
           }
@@ -1048,7 +1050,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
           setPhase('review')
           setMessage(
             connected.presentation.eligible
-              ? 'PowerPointと講義資料を確認してください。'
+              ? 'PowerPointと講義資料の内容・順番・枚数が同じことを確認してください。'
               : 'このPowerPointは現在の講義資料と同期できません。',
           )
         } catch (bridgeError) {
@@ -1088,7 +1090,7 @@ export function useAdminPowerPointSync(input: UseAdminPowerPointSyncInput) {
             setMessage(
               readinessIssueAttemptsRef.current < 2
                 ? 'PowerPointのスライドショーを開始すると自動で接続します。'
-                : 'PowerPointの準備を確認できませんでした。Bridgeの接続を確認してください。',
+                : 'PowerPointの状態を確認できませんでした。「PowerPointに接続」を押してください。',
             )
             return
           }
