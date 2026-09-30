@@ -88,7 +88,7 @@
     "test:phase7-29-load": "node scripts/test-phase7-29-load.mjs",
     "test:phase7-29-concurrency": "node scripts/test-phase7-29-concurrency.mjs",
     "test:phase7-29-upgrade": "node scripts/test-phase7-29-upgrade.mjs",
-    "test:phase7-30-admin-identity": "node --experimental-strip-types scripts/test-phase7-30-admin-identity.ts",
+    "test:phase7-30-admin-identity": "node --experimental-strip-types scripts/test-phase7-30-admin-identity.ts && node --experimental-strip-types scripts/test-admin-auth-service-failure.ts",
     "test:phase7-30b2-static": "node scripts/test-phase7-30b2-static.mjs",
     "test:phase7-30b22a-static": "node scripts/test-phase7-30b22a-static.mjs",
     "test:phase7-30b22b-static": "node scripts/test-phase7-30b22b-static.mjs",

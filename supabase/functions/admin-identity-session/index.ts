@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { isAdminAuthServiceUnavailable } from '../_shared/adminAuthErrors.ts'
 import {
   assertAdminLoginNonce,
   createAdminLoginNonce,
@@ -510,6 +511,14 @@ async function handleRequest(request: Request) {
   })
   const { data: userData, error: userError } =
     await serviceClient.auth.getUser(bearerToken)
+  if (isAdminAuthServiceUnavailable(userError)) {
+    return errorResponse(
+      jsonResponse,
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   const claims = decodeVerifiedAdminJwtClaims(bearerToken)
   if (userError || !userData.user) {
     return errorResponse(
@@ -734,6 +743,14 @@ async function handleRequest(request: Request) {
   )
   const { data: assurance, error: assuranceError } =
     await serviceClient.auth.mfa.getAuthenticatorAssuranceLevel(bearerToken)
+  if (isAdminAuthServiceUnavailable(assuranceError)) {
+    return errorResponse(
+      jsonResponse,
+      'service_unavailable',
+      'Admin identity is temporarily unavailable.',
+      503,
+    )
+  }
   if (
     assuranceError ||
     !assurance ||
