@@ -131,56 +131,78 @@
       <a class="brand" href="/admin/">COMPASS INTERACTIVE</a>
       <header>
         <h1>PowerPoint連携</h1>
+        <p>
+          PowerPointでページを送ると、学生画面と教室の共有画面も同じページに切り替わります。両画面には、あらかじめ登録したPDFを表示します。
+        </p>
         <a class="button" href="/admin/">教員画面を開く</a>
         <p class="muted">
-          Windows版PowerPointと、COMPASSの教員アカウントが必要です。
+          Windows版PowerPoint、COMPASS Presenter
+          Bridge、教員アカウントが必要です。
         </p>
       </header>
       <section id="account" aria-labelledby="account-title">
         <h2 id="account-title">初めて利用する方</h2>
         <p>
-          教員アカウントは招待制です。所属機関のCOMPASS管理者から届いた招待リンクを開き、招待されたGoogleアカウントでログインしてください。
+          COMPASS管理者から届いた招待リンクを開き、招待先のメールアドレスと同じGoogleアカウントでログインしてください。
         </p>
         <p>
           招待画面からこの案内を開いた方は、元のタブに戻ってログインしてください。
         </p>
         <p>
-          まだ招待がない方は、所属機関の管理者、または下記の窓口に利用をお申し込みください。アプリのインストールだけでは教員アカウントは作成されません。
+          教員アカウントは招待制です。招待がない方は、COMPASS管理者または下記の窓口へお申し込みください。
         </p>
         <a
           href="mailto:contact@yuto-matsui.com?subject=COMPASS%20Interactive%20%E6%95%99%E5%93%A1%E5%88%A9%E7%94%A8%E7%94%B3%E8%AB%8B"
           >利用申請：contact@yuto-matsui.com</a
         >
         <p class="muted">
-          メールアプリが開かない場合は、このアドレス宛てに所属と利用希望をお送りください。パスワードや認証コードは送らないでください。
+          所属と「教員利用を希望」とご記入ください。パスワードや認証コードは送らないでください。
         </p>
       </section>
       <ol aria-label="PowerPoint連携の手順">
         <li>
-          <h2>講義を準備する</h2>
+          <h2>PDFを登録する</h2>
           <p>
-            教員画面でログインし、PowerPointから書き出したPDFを選びます。「講義を作成して資料を公開する」で準備ができます。投票も開始前に設定できます。
+            PowerPointの資料をPDFに書き出します。教員画面で「PDFを選択」を押し、講義タイトルを入力して「講義を作成して資料を公開する」を押します。
           </p>
         </li>
         <li>
-          <h2>講義とスライドショーを開始する</h2>
+          <h2>講義を開始する</h2>
           <p>
-            教員画面で講義を開始します。同じPCでPresenter
-            Bridgeを起動し、保存済みのPowerPointでスライドショーを開始してください。発表者ツールをオフにし、全スライドを表示します。
+            教員画面の「準備」で「開始」を押します。学生は講義のQRコードから参加できます。
           </p>
         </li>
         <li>
-          <h2>資料を確認して、PowerPointで進める</h2>
+          <h2>PowerPointを開く</h2>
           <p>
-            教員画面の「PowerPoint連携のデータ利用」から進み、PPTとPDFの組合せを確認します。「PowerPoint同期中」になったら、PowerPointでページを送ってください。学生画面とDisplayが追従します。終了時は教員画面の「講義を終了」を押します。
+            同じPCでCOMPASS Presenter
+            Bridgeを起動し、PDFの元になったPowerPointファイルを開きます。ファイルを保存し、「スライドショー」タブの「発表者ツールを使用する」をオフにして、F5キーを押します。
+          </p>
+        </li>
+        <li>
+          <h2>PowerPointに接続する</h2>
+          <p>
+            教員画面の「スライド」を開きます。初回はデータ利用の説明を読み、「同意してPowerPoint連携を開始」を押してください。接続が始まらない場合は「PowerPointに接続」を押します。
+          </p>
+          <p>
+            表示されたPowerPointとPDFの内容・順番・枚数が同じことを確認し、「この組合せで同期する」を押します。「PowerPoint同期中」と表示されたら、ページ送りはPowerPointで行えます。
+          </p>
+        </li>
+        <li>
+          <h2>講義を終了する</h2>
+          <p>
+            教員画面で「講義を終了」を押し、確認画面で「OK」を押します。PowerPointのスライドショーを閉じるだけでは、講義は終了しません。
           </p>
         </li>
       </ol>
+      <p class="muted">
+        PowerPointを編集した場合は、PDFも書き出し直して登録してください。アニメーションや動画はPDFには反映されません。
+      </p>
       <details>
         <summary>対応するPC・PowerPoint</summary>
         <p>
           Windows 11 24H2以降のx64
-          PCと、インストール済みのデスクトップ版PowerPointが必要です。PowerPointのWeb版・Mac版には対応していません。通常の全スライドを使い、発表者ツールをオフにしてください。非表示スライドや目的別スライドショーは同期できません。
+          PCと、デスクトップ版PowerPointが必要です。PowerPointのWeb版・Mac版には対応していません。非表示スライドや目的別スライドショーは使用できません。
         </p>
         <p>
           Presenter
@@ -191,20 +213,20 @@
       <details>
         <summary>アプリを開いた後は？</summary>
         <p>
-          教員画面はWindowsの既定ブラウザで開きます。すでに別のブラウザでログインしている場合は、そちらの教員画面を使えます。Presenter
-          Bridge用の別ログインはありません。
+          アプリを起動すると教員画面が開きます。すでにログインしている教員画面があれば、そのまま使ってください。アプリへの別のログインは不要です。
         </p>
         <p>
-          アプリは通知領域で待機します。アイコンをダブルクリックすると教員画面を開けます。復旧コードは通常の接続には不要です。
+          アプリはWindowsの通知領域に常駐します。アイコンをダブルクリックすると、教員画面を開けます。
         </p>
       </details>
       <details>
         <summary>接続できない・Webで進めたい</summary>
         <p>
-          教員画面の「スライド」または「準備」に表示される案内を確認し、「Bridgeの接続を確認」で再確認してください。連携中でも「手動操作へ切り替える」で教員画面からページを送れます。
+          COMPASS Presenter
+          BridgeとPowerPointのスライドショーを起動し、教員画面の「PowerPointに接続」を押してください。
         </p>
         <p>
-          未導入の場合は公開開始をお待ちください。PPTとPDFは同じ順序・枚数で作成し、PPTを変更した場合はPDFも更新して組合せを確認してください。
+          連携中に「教員画面で操作する」を押すと、PowerPointとの同期を止め、教員画面からページを送れます。
         </p>
       </details>
       <footer>

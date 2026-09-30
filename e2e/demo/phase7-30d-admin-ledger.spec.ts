@@ -1921,6 +1921,38 @@ test('keeps AI policy Owner-only and recovers exact mutation after lost TOTP and
   await lectureCost.blur()
   await expect(lectureCost).not.toBeFocused()
   await expect(submit).toBeEnabled()
+  await submit.scrollIntoViewIfNeeded()
+  // WebKit may continue the blur/scroll adjustment after its actionability
+  // check. Observe settled geometry before the one ordinary submit click.
+  await expect
+    .poll(async () => {
+      const before = await submit.boundingBox()
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            let remaining = 4
+            const advance = () => {
+              if (--remaining === 0) resolve()
+              else requestAnimationFrame(advance)
+            }
+            requestAnimationFrame(advance)
+          }),
+      )
+      const after = await submit.boundingBox()
+      const viewport = page.viewportSize()
+      if (!before || !after || !viewport) return false
+      return (
+        Math.abs(before.x - after.x) < 0.5 &&
+        Math.abs(before.y - after.y) < 0.5 &&
+        Math.abs(before.width - after.width) < 0.5 &&
+        Math.abs(before.height - after.height) < 0.5 &&
+        after.x + after.width / 2 > 0 &&
+        after.y + after.height / 2 > 0 &&
+        after.x + after.width / 2 < viewport.width &&
+        after.y + after.height / 2 < viewport.height
+      )
+    })
+    .toBe(true)
   await submit.click()
   await expect(
     policyPanel.getByRole('button', { name: '保留中の設定を取り消す' }),

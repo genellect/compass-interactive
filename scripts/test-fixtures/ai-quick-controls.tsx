@@ -1,4 +1,7 @@
 // Local-only component harness. Every repository method is replaced before mount.
+import '../../src/index.css'
+import '../../src/App.css'
+import '../../src/pages/AdminPage.css'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import type { ComponentProps } from 'react'
@@ -159,7 +162,17 @@ let props = {
   summariesEnabled: true,
 } as ComponentProps<typeof AdminAiControlPanel>
 const render = () =>
-  flushSync(() => root.render(<AdminAiControlPanel {...props} />))
+  flushSync(() =>
+    root.render(
+      <div className="app-root theme-light">
+        <main className="page-shell admin-page-shell">
+          <div className="teacher-workspace-stage">
+            <AdminAiControlPanel {...props} />
+          </div>
+        </main>
+      </div>,
+    ),
+  )
 Object.assign(window, {
   aiHarness: {
     calls,

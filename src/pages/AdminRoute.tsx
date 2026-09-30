@@ -303,7 +303,7 @@ export function AdminRoute() {
     async (skipTransitionRecovery = false) => {
       if (invitationFragmentInvalidRef.current) {
         setErrorMessage(
-          '招待リンクが正しくありません。Ownerから新しい招待リンクを受け取ってください。',
+          '招待リンクが正しくありません。COMPASS管理者に、新しい招待リンクを依頼してください。',
         )
         setPhase('denied')
         return
@@ -482,7 +482,7 @@ export function AdminRoute() {
             'membership_unavailable',
             invitationTokenRef.current
               ? 'この招待リンクは対象アカウントと一致しないか、期限切れまたは使用済みです。'
-              : '教員権限を確認できません。新規招待の場合は、Ownerが発行した最新の招待リンクからログインしてください。',
+              : '教員登録を確認できません。招待を受けた方は、最新の招待リンクからログインしてください。',
           )
         }
         throw error
@@ -1064,8 +1064,8 @@ export function AdminRoute() {
           </span>
           <p className="eyebrow">EDUCATOR PORTAL</p>
           <h1>教員ポータル</h1>
-          <p>登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。</p>
-          <p>セキュリティ保護のため、2段階認証が必要です。</p>
+          <p>教員登録済みのGoogleアカウントでログインしてください。</p>
+          <p>続いて、認証アプリの6桁のコードを入力します。</p>
           {errorMessage ? (
             <p className="error-note" role="alert">
               {errorMessage}
@@ -1088,7 +1088,7 @@ export function AdminRoute() {
             rel="noopener noreferrer"
             target="_blank"
           >
-            初めて利用する方・教員アカウントの申し込み
+            初めて利用する方
           </a>
         </section>
       </main>
@@ -1145,8 +1145,8 @@ export function AdminRoute() {
           </button>
           <p className="helper-note">
             {transitionRecoveryExpired
-              ? '回復期限が切れました。承認済み構成と現在構成が異なる場合は、復旧承認が必要な状態として安全に停止します。'
-              : '安全な取消は上流変更との競合を原子的に判定できないため、この画面では行いません。期限内に同じ変更を完了して再試行してください。'}
+              ? '手続きの期限が切れました。本人確認後もログインできない場合は、COMPASS管理者に復旧を依頼してください。'
+              : '認証アプリの変更は、この画面から取り消せません。表示された期限までに、同じ変更を完了してください。'}
           </p>
         </section>
       </main>
@@ -1159,7 +1159,10 @@ export function AdminRoute() {
           <h1>2段階認証</h1>
           {phase === 'enrollment' && enrollmentSecret ? (
             <>
-              <p>スマートフォンの認証アプリでQRコードを読み取ってください。</p>
+              <p>
+                スマートフォンの認証アプリ（Google
+                Authenticatorなど）で、このQRコードを登録してください。アプリに表示された6桁のコードを下に入力します。
+              </p>
               {enrollmentSecret.qrCode ? (
                 <img
                   alt="認証アプリ登録用QRコード"

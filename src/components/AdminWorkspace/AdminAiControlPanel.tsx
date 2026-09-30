@@ -259,7 +259,7 @@ export function AdminAiControlPanel({
       {status === 'open' ? (
         <div className="summary-control-actions" aria-label="AIの一括操作">
           <button
-            className="primary-button"
+            className="primary-button compact"
             type="button"
             disabled={
               quickStartBusy ||
@@ -271,7 +271,7 @@ export function AdminAiControlPanel({
             字幕以外を一括有効化
           </button>
           <button
-            className="primary-button"
+            className="primary-button compact"
             type="button"
             disabled={
               quickStartBusy || masterReadiness !== 'ready' || !realtimeEnabled

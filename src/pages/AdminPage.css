@@ -34,6 +34,46 @@
   margin-bottom: 4px;
 }
 
+@media (min-width: 721px) {
+  .admin-page-shell {
+    padding-top: 12px;
+  }
+
+  .admin-page-shell > .page-header,
+  .admin-page-shell .admin-workflow {
+    margin-bottom: 8px;
+  }
+
+  .admin-page-shell > .page-header h1 {
+    font-size: 1.5rem;
+    line-height: 1.25;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-page-shell .admin-workflow button {
+    gap: 4px;
+    padding: 8px 14px;
+  }
+
+  .admin-page-shell .display-launch-instructions {
+    padding-block: 8px;
+  }
+
+  .admin-page-shell .display-launch-instructions p {
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .admin-page-shell .lecture-transport-bar {
+    padding-block: 8px;
+  }
+
+  .admin-page-shell .teacher-workspace-stage > .ai-readiness-panel {
+    padding-block: 12px;
+  }
+}
+
 .admin-page-shell .admin-material-workspace .publisher-control-panel[hidden],
 .admin-page-shell .admin-current-pdf-preview[hidden] {
   display: none;
@@ -41,7 +81,9 @@
 
 .admin-page-shell .admin-pdf-publication-form {
   display: grid;
-  grid-template-columns: minmax(250px, 1.4fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  grid-template-columns:
+    minmax(250px, 1.4fr) minmax(150px, 1fr) minmax(130px, 0.7fr)
+    auto;
   gap: 12px;
 }
 
@@ -130,14 +172,20 @@
   padding-top: 8px;
 }
 
-.admin-page-shell .admin-material-workspace.is-slides .pdf-document-control .field {
+.admin-page-shell
+  .admin-material-workspace.is-slides
+  .pdf-document-control
+  .field {
   align-items: center;
   gap: 10px;
   grid-template-columns: auto minmax(0, 1fr);
   margin: 4px 0;
 }
 
-.admin-page-shell .admin-material-workspace.is-slides .pdf-document-control select {
+.admin-page-shell
+  .admin-material-workspace.is-slides
+  .pdf-document-control
+  select {
   min-height: 42px;
   padding: 8px 12px;
 }
@@ -159,7 +207,10 @@
   width: calc(100% - 36px);
 }
 
-.admin-page-shell .admin-current-pdf-preview .pdf-stage:not(:fullscreen) .pdf-canvas {
+.admin-page-shell
+  .admin-current-pdf-preview
+  .pdf-stage:not(:fullscreen)
+  .pdf-canvas {
   object-fit: contain;
 }
 
@@ -453,6 +504,36 @@
 .admin-presenter-active {
   background: color-mix(in srgb, #dff6e9 70%, var(--panel));
   border-color: color-mix(in srgb, #198754 35%, var(--border));
+}
+
+@media (min-width: 721px) {
+  .admin-page-shell .admin-presenter-active {
+    display: grid;
+    gap: 8px 12px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+  }
+
+  .admin-presenter-active > div {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    min-width: 0;
+  }
+
+  .admin-presenter-active p {
+    margin: 0;
+  }
+
+  .admin-presenter-active .error-note {
+    flex-basis: 100%;
+  }
+
+  .admin-presenter-active > .admin-presenter-privacy-management[open] {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {

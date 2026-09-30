@@ -904,6 +904,106 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
   ).toEqual([])
 }
 
+test('teacher controls remain visible with a long lecture title and Display instructions', async ({
+  page,
+  context,
+  browserName,
+}, testInfo) => {
+  await installAdminState(page)
+  await installNetworkMocks(page)
+  const title = 'COMPASS 本番確認 2026-09-30 2325130'
+  await page.route('**/functions/v1/manage-lectures', (route) =>
+    fulfillJson(route, {
+      ok: true,
+      lectures: [{ ...lectureResponse(), title }],
+    }),
+  )
+  await page.route('**/functions/v1/operator-live-snapshot', (route) => {
+    const response = operatorSnapshot()
+    response.result.snapshot.changed.lecture.title = title
+    return fulfillJson(route, response)
+  })
+  await page.route('**/functions/v1/issue-display-session', (route) =>
+    fulfillJson(route, {
+      ok: true,
+      displayToken: 'synthetic-layout-only',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      lectureSessionId,
+      realtime: null,
+    }),
+  )
+  if (browserName === 'chromium') {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  }
+  await page.setViewportSize({ width: 1272, height: 554 })
+  await page.goto('/admin')
+  await expect(page.locator('.admin-presenter-review')).toBeVisible({
+    timeout: 30_000,
+  })
+  await confirmPresenterMaterial(page)
+  await expect(page.locator('.admin-presenter-active')).toBeVisible()
+  await page.locator('#teacher-workspace-ai-tab').click()
+  await page
+    .getByRole('button', { name: '画面共有を開始する', exact: true })
+    .click()
+  await page.getByRole('button', { name: 'URLをコピー', exact: true }).click()
+  await expect(page.locator('.display-launch-instructions')).toContainText(
+    'コピーしました。',
+  )
+  for (const viewport of [
+    { width: 1272, height: 554 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    const actions = page.locator('[aria-label="AIの一括操作"]')
+    await testInfo.attach(`layout-${viewport.width}x${viewport.height}`, {
+      contentType: 'application/json',
+      body: JSON.stringify(
+        await page
+          .locator(
+            '.page-header, .display-launch-instructions, .admin-workflow, .lecture-transport-bar, [aria-label="AIの一括操作"]',
+          )
+          .evaluateAll((elements) =>
+            elements.map((element) => ({
+              selector: element.className,
+              y: element.getBoundingClientRect().y,
+              height: element.getBoundingClientRect().height,
+            })),
+          ),
+      ),
+    })
+    await expect(actions.getByRole('button')).toHaveCount(3)
+    await expect(
+      page.getByRole('heading', { name: title, exact: true }),
+    ).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      )
+      .toBe(true)
+    if (viewport.width > 720) {
+      await expect(
+        actions.getByRole('button', { name: 'すべて停止', exact: true }),
+      ).toBeInViewport({ ratio: 1 })
+      await expect(page.getByText('AIの詳細', { exact: true })).toBeInViewport({
+        ratio: 1,
+      })
+      const bounds = await actions.boundingBox()
+      expect(bounds?.height).toBeLessThanOrEqual(70)
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `teacher-${viewport.width}x${viewport.height}.png`,
+      ),
+      fullPage: true,
+    })
+  }
+})
+
 test('first use explains data handling, blocks ticket and inspect, then resumes from one keyboard action', async ({
   page,
 }) => {
@@ -921,7 +1021,7 @@ test('first use explains data handling, blocks ticket and inspect, then resumes 
   const disclosure = page.getByTestId('powerpoint-sync-control')
   await expect(disclosure).toContainText('PowerPoint連携のデータ利用')
   await expect(disclosure).toContainText(
-    'PPTX本体、本文、文字、ノート、画像、動画は送信しません',
+    'PowerPointファイル本体、スライドの本文、発表者ノート、画像、動画は、このアプリから送信しません。',
   )
   expect(state.presenterActions).toEqual([])
   expect(loopbackRequests).toEqual([])
@@ -1245,7 +1345,7 @@ test('privacy withdrawal disconnects locally and revokes a hosted replacement be
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
 
@@ -1293,7 +1393,7 @@ test('privacy withdrawal attempts the final observed hosted connection at the re
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
 
@@ -1325,7 +1425,7 @@ test('privacy withdrawal clears local state when the hosted revoke fails', async
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
 
@@ -1382,7 +1482,7 @@ test('privacy withdrawal fails closed when browser storage cannot be cleared', a
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
 
@@ -1468,7 +1568,7 @@ test('privacy withdrawal survives reload when local consent cannot be removed or
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
@@ -1553,7 +1653,7 @@ test('privacy withdrawal aborts a peer tab while its readiness check is in fligh
     await page.getByText('連携設定', { exact: true }).click()
     await page
       .getByRole('button', {
-        name: '同意を取り消してブラウザのPresenter設定を削除',
+        name: '同意を取り消し、このブラウザの連携設定を削除',
       })
       .click()
 
@@ -1590,7 +1690,7 @@ test('privacy withdrawal immediately after reload discovers and revokes an activ
   try {
     await page.getByText('連携設定', { exact: true }).click()
     const withdrawal = page.getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     await expect(withdrawal).toBeEnabled()
     await withdrawal.click()
@@ -1638,7 +1738,7 @@ test('reload withdrawal requires Bridge shutdown when hosted discovery fails dur
   try {
     await page.getByText('連携設定', { exact: true }).click()
     const withdrawal = page.getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     await expect(withdrawal).toBeEnabled()
     await withdrawal.click()
@@ -1680,7 +1780,7 @@ test('privacy withdrawal is durable before a delayed disconnect and unmount', as
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
   await disconnect.started
@@ -1799,7 +1899,7 @@ test('privacy withdrawal reports a failed local disconnect even after hosted rev
 
   await page
     .getByRole('button', {
-      name: '同意を取り消してブラウザのPresenter設定を削除',
+      name: '同意を取り消し、このブラウザの連携設定を削除',
     })
     .click()
 
@@ -1887,7 +1987,7 @@ test('keeps the PowerPoint setup action accessible on the lecture slide view whe
   await page.route('http://127.0.0.1:43124/v1/health', (route) => route.abort())
   await page.goto('/admin')
   await expect(
-    page.getByRole('button', { name: 'Bridgeの接続を確認', exact: true }),
+    page.getByRole('button', { name: 'PowerPointに接続', exact: true }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await page
@@ -1897,14 +1997,18 @@ test('keeps the PowerPoint setup action accessible on the lecture slide view whe
     .getByRole('tab', { name: 'スライド ページ操作', exact: true })
     .click()
   await expect(
-    page.getByRole('button', { name: 'Bridgeの接続を確認', exact: true }),
+    page.getByRole('button', { name: 'PowerPointに接続', exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByRole('button', { name: '同意を取り消してブラウザのPresenter設定を削除' }),
+    page.getByRole('button', {
+      name: '同意を取り消し、このブラウザの連携設定を削除',
+    }),
   ).toBeHidden()
   await page.getByText('連携設定', { exact: true }).click()
   await expect(
-    page.getByRole('button', { name: '同意を取り消してブラウザのPresenter設定を削除' }),
+    page.getByRole('button', {
+      name: '同意を取り消し、このブラウザの連携設定を削除',
+    }),
   ).toBeVisible()
 })
 
@@ -1993,7 +2097,7 @@ test('reviews, explicitly confirms, locks manual PDF controls, and hands back sa
     expect.arrayContaining(['issue', 'confirm', 'status']),
   )
 
-  await active.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await active.getByRole('button', { name: '教員画面で操作する' }).click()
   await page.getByRole('tab', { name: '準備' }).click()
   await expect(presenter).toBeVisible()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
@@ -2062,7 +2166,7 @@ test('health precedes issuance, and tab changes and reload preserve native owner
   expect(
     state.presenterActions.filter((action) => action === 'revoke'),
   ).toHaveLength(0)
-  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await page.getByRole('button', { name: '教員画面で操作する' }).click()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
 })
 
@@ -2074,7 +2178,7 @@ test('reuses one material confirmation after restart for the exact same deck and
   await startAutomaticPresenterReview(page)
   await confirmPresenterMaterial(page)
   await expect(page.locator('.admin-presenter-active')).toBeVisible()
-  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await page.getByRole('button', { name: '教員画面で操作する' }).click()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await page.reload()
   await page.getByRole('tab', { name: '準備' }).click()
@@ -2084,7 +2188,7 @@ test('reuses one material confirmation after restart for the exact same deck and
   expect(
     state.presenterActions.filter((action) => action === 'issue'),
   ).toHaveLength(1)
-  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await page.getByRole('button', { name: 'PowerPointに接続' }).click()
   await expect(page.locator('.admin-presenter-active')).toBeVisible()
   await expect(page.locator('.admin-presenter-recovery-code')).toHaveCount(0)
   expect(
@@ -2109,7 +2213,7 @@ test('requires a new material check when the deck fingerprint changes', async ({
   const review = await startAutomaticPresenterReview(page)
   await confirmPresenterMaterial(page)
   await expect(page.locator('.admin-presenter-active')).toBeVisible()
-  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await page.getByRole('button', { name: '教員画面で操作する' }).click()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await page.route('http://127.0.0.1:43124/v1/connect', async (route) => {
     const response = await route.fetch()
@@ -2120,9 +2224,9 @@ test('requires a new material check when the deck fingerprint changes', async ({
   await page.reload()
   await page.getByRole('tab', { name: '準備' }).click()
   await expect(
-    page.getByRole('button', { name: 'Bridgeの接続を確認' }),
+    page.getByRole('button', { name: 'PowerPointに接続' }),
   ).toBeEnabled()
-  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await page.getByRole('button', { name: 'PowerPointに接続' }).click()
   await expect(review).toBeVisible()
   await expect(
     review.getByRole('button', { name: 'この組合せで同期する' }),
@@ -2161,9 +2265,9 @@ test('prepares local-network access before lecture start without issuing server 
   await page.goto('/admin')
   await page.getByRole('tab', { name: '準備' }).click()
   await expect(
-    page.getByRole('link', { name: 'Bridgeをインストール' }),
+    page.getByRole('link', { name: '連携アプリをインストール' }),
   ).toHaveAttribute('href', 'https://apps.microsoft.com/detail/9TESTONLY729')
-  await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+  await page.getByRole('button', { name: 'PowerPointに接続' }).click()
   await expect(page.getByTestId('powerpoint-sync-control')).toContainText(
     'Bridgeの準備ができました',
   )
@@ -2213,7 +2317,7 @@ test('serializes simultaneous tabs and never reconnects after handover in anothe
       },
     })
   })
-  await observer.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await observer.getByRole('button', { name: '教員画面で操作する' }).click()
   await expect(controller.getByRole('button', { name: '次へ →' })).toBeEnabled()
   await page.waitForTimeout(1_500)
   expect(
@@ -2273,7 +2377,7 @@ test('hands over the server replacement connection rather than a stale local ID'
     )
     .toBeGreaterThan(count)
   await waitForAnimationFrames(page, 2)
-  await page.getByRole('button', { name: '手動操作へ切り替える' }).click()
+  await page.getByRole('button', { name: '教員画面で操作する' }).click()
   await expect(page.getByRole('button', { name: '次へ →' })).toBeEnabled()
   expect(state.revokedConnectionIds).toEqual([state.currentConnectionId])
 })
@@ -2563,7 +2667,7 @@ for (const failure of ['policy-blocked', 'empty-500'] as const) {
       await page.goto('/admin')
       await page.getByRole('tab', { name: '準備' }).click()
       if (entry === 'draft')
-        await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+        await page.getByRole('button', { name: 'PowerPointに接続' }).click()
       const presenter = page.getByTestId('powerpoint-sync-control')
       await expect(presenter).toContainText(
         failure === 'policy-blocked'
@@ -2595,7 +2699,7 @@ for (const failure of ['policy-blocked', 'empty-500'] as const) {
         ).toHaveLength(1)
       // Fixing the installation allows an explicit retry; no persisted lockout.
       repaired = true
-      await page.getByRole('button', { name: 'Bridgeの接続を確認' }).click()
+      await page.getByRole('button', { name: 'PowerPointに接続' }).click()
       if (entry === 'draft') {
         await expect(presenter).toContainText('Bridgeの準備ができました')
         expect(state.presenterActions).toEqual([])

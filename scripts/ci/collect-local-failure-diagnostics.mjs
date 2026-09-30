@@ -4,6 +4,12 @@ import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const categories = [
+  [
+    'auth-rate-limit',
+    /"status"\s*:\s*429\b|"error_code"\s*:\s*"over_request_rate_limit"/i,
+  ],
+  ['auth-service-error', /"status"\s*:\s*5\d\d\b/],
+  ['auth-rejected', /"status"\s*:\s*40[13]\b/],
   ['deadlock', /deadlock detected|\b40P01\b/i],
   ['serialization-failure', /could not serialize access|\b40001\b/i],
   ['query-canceled', /statement timeout|\b57014\b/i],
@@ -26,7 +32,12 @@ export function summarizeLocalErrors(logText) {
   let matchedLines = 0
   for (const line of logText.split(/\r?\n/)) {
     const matches = categories.filter(([, pattern]) => pattern.test(line))
-    if (matches.length === 0 && !/\b(?:ERROR|FATAL|PANIC)\b/.test(line))
+    if (
+      matches.length === 0 &&
+      !/\b(?:ERROR|FATAL|PANIC)\b|"level"\s*:\s*"(?:error|fatal|panic)"/.test(
+        line,
+      )
+    )
       continue
     matchedLines += 1
     if (events.length === 100) events.shift()
@@ -63,7 +74,7 @@ export function collectLocalFailureDiagnostics(runDocker = docker) {
     'ps',
     '--all',
     '--filter',
-    'name=^/supabase_(db|rest)_',
+    'name=^/supabase_(db|rest|auth)_',
     '--format',
     '{{.Names}}',
   ])
@@ -74,16 +85,17 @@ export function collectLocalFailureDiagnostics(runDocker = docker) {
     /^supabase_db_[A-Za-z0-9_.-]+$/.test(name),
   )
   if (
-    names.length !== 2 ||
+    names.length !== 3 ||
     database.length !== 1 ||
-    !names.includes(database[0].replace('supabase_db_', 'supabase_rest_'))
+    !names.includes(database[0].replace('supabase_db_', 'supabase_rest_')) ||
+    !names.includes(database[0].replace('supabase_db_', 'supabase_auth_'))
   ) {
     throw new Error(
-      'Expected one local database and REST pair from the same project.',
+      'Expected one local database, REST and Auth group from the same project.',
     )
   }
   return Object.fromEntries(
-    ['db', 'rest'].map((role) => {
+    ['db', 'rest', 'auth'].map((role) => {
       const name = database[0].replace('supabase_db_', `supabase_${role}_`)
       try {
         const logs = runDocker([
@@ -118,6 +130,6 @@ if (
     { flag: 'wx' },
   )
   console.log(
-    'Saved local database and REST error categories; raw logs withheld.',
+    'Saved local database, REST and Auth error categories; raw logs withheld.',
   )
 }

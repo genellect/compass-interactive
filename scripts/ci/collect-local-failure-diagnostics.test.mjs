@@ -50,6 +50,10 @@ for (const [message, category] of [
   ['55P03', 'lock-not-available'],
   ['PGRST202', 'schema-cache'],
   ['PGRST002', 'connection-unavailable'],
+  ['{"status":429,"token":"private"}', 'auth-rate-limit'],
+  ['{"status":503,"email":"private"}', 'auth-service-error'],
+  ['{"status":401,"jwt":"private"}', 'auth-rejected'],
+  ['{"level":"error","msg":"private"}', 'unclassified-error'],
   ['FATAL: unknown secret', 'unclassified-error'],
 ]) {
   test(`classifies ${category} without keeping the message`, () => {
@@ -59,18 +63,19 @@ for (const [message, category] of [
   })
 }
 
-test('only reads the discovered local pair with bounded log requests', () => {
+test('only reads the discovered local group with bounded log requests', () => {
   const calls = []
   const report = collectLocalFailureDiagnostics((args) => {
     calls.push(args)
     if (args[0] === 'ps')
-      return 'supabase_db_test-project\nsupabase_rest_test-project'
+      return 'supabase_db_test-project\nsupabase_rest_test-project\nsupabase_auth_test-project'
     if (args.at(-1) === 'supabase_rest_test-project')
       throw new Error('secret stderr')
     return 'ERROR: deadlock detected'
   })
   assert.equal(report.db.capture, 'complete')
   assert.deepEqual(report.rest, { capture: 'unavailable' })
+  assert.equal(report.auth.capture, 'complete')
   assert.deepEqual(calls.slice(1), [
     [
       'logs',
@@ -90,6 +95,15 @@ test('only reads the discovered local pair with bounded log requests', () => {
       '4000',
       'supabase_rest_test-project',
     ],
+    [
+      'logs',
+      '--timestamps',
+      '--since',
+      '30m',
+      '--tail',
+      '4000',
+      'supabase_auth_test-project',
+    ],
   ])
   assert.doesNotMatch(JSON.stringify(report), /secret stderr/)
 })
@@ -98,9 +112,10 @@ for (const names of [
   'supabase_db_test',
   'supabase_db_test\nsupabase_rest_other',
   'supabase_db_test\nsupabase_rest_test\nsupabase_db_extra',
+  'supabase_db_test\nsupabase_rest_test\nsupabase_auth_other',
   'supabase_db_bad/name\nsupabase_rest_bad/name',
 ]) {
-  test(`rejects an ambiguous or unsafe container pair: ${names.replaceAll('\n', ',')}`, () => {
+  test(`rejects an ambiguous or unsafe container group: ${names.replaceAll('\n', ',')}`, () => {
     let calls = 0
     assert.throws(
       () =>

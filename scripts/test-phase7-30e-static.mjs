@@ -773,7 +773,7 @@ assert.match(
 )
 assert.match(
   adminRoute,
-  /EDUCATOR PORTAL[\s\S]*教員ポータル[\s\S]*登録済みの教員アカウントでCOMPASS Interactiveにアクセスします。[\s\S]*セキュリティ保護のため、2段階認証が必要です。[\s\S]*Googleで続ける[\s\S]*初めて利用する方・教員アカウントの申し込み/,
+  /EDUCATOR PORTAL[\s\S]*教員ポータル[\s\S]*教員登録済みのGoogleアカウントでログインしてください。[\s\S]*続いて、認証アプリの6桁のコードを入力します。[\s\S]*Googleで続ける[\s\S]*初めて利用する方/,
   'the signed-out educator portal must preserve the production copy and the account help link',
 )
 assert.match(
