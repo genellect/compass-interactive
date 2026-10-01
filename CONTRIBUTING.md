@@ -49,6 +49,13 @@ mapping in [`docs/GATE_ROUTING.md`](docs/GATE_ROUTING.md).
 
 ## Pull-request requirements
 
+Write pull-request titles and descriptions, commit subjects and bodies, and
+review comments in English. Maintainers must also check the final squash/merge
+message before merging. Preserve exact identifiers, file paths, proper names,
+and necessary verbatim UI/error quotations, with English explanations. Product
+UI and documentation retain their intended languages; published Git history is
+not rewritten solely to translate old messages.
+
 A contribution must:
 
 - have one clear purpose and avoid unrelated refactoring;

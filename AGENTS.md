@@ -55,6 +55,8 @@ Do not run `test:phase5-openai-live`, `test:phase6-openai-live`, hosted migratio
 
 ## Git and review
 
+- Use English for all new or updated GitHub pull-request titles and descriptions, commit subjects and bodies, squash/merge messages, and agent-authored review comments or release summaries. Before publishing or merging, check the final GitHub text, including any automatically generated squash message.
+- Preserve exact code identifiers, file paths, proper names, and necessary verbatim UI/error quotations; explain them in English. This rule does not change the language of product UI or repository documentation. Do not rewrite published Git history solely to translate historical messages.
 - Do not commit directly to `main`.
 - Keep changes narrow, commit intentionally, push the branch, and open a Draft Pull Request.
 - For this Lecture Cycle Production Candidate task, the controller has standing authorization to execute **Squash merge** without another user prompt after it verifies the exact repository and PR, fixes the expected head SHA, confirms the intended scope and private boundary, observes all eight required contexts green, confirms zero unresolved review threads and a mergeable PR, and finds no head or `main` drift. Lane agents hand off and do not merge independently. A missing or failing check, changed head, unresolved thread, scope drift, or any step that would imply Hosted, Human, secret, paid-provider or Production authorization remains `HOLD`. The controller records GitHub's returned merge SHA and inspects the automatic post-merge workflows; it must not start a manual rerun merely because Squash merge created a new SHA.
