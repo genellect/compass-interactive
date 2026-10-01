@@ -1,6 +1,7 @@
 # Summary
 
 <!-- What changed and why. One paragraph. -->
+<!-- Use English for the PR title and description, commit subjects/bodies, and final squash message. Keep exact identifiers and necessary verbatim UI/error quotations unchanged, with English explanations. -->
 
 ## C0 source admission
 
@@ -134,8 +135,9 @@ External asset reuse: <!-- none, or source repository + non-secret asset + revie
 
 # Completion criteria
 
-From 完了基準 in `docs/CLOUD_DEVELOPMENT.md`.
+From the completion criteria in `docs/CLOUD_DEVELOPMENT.md`.
 
+- [ ] PR title/description and commit subjects/bodies are in English; the final squash message will also be checked before merging
 - [ ] Working on a dedicated branch from the latest `origin/main`; nothing committed directly to `main`
 - [ ] Change scope is clear, with no unnecessary effect on Hosted or Production
 - [ ] `npm run cloud:check` completed
