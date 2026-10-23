@@ -176,7 +176,7 @@
     "prettier": "^3.9.4",
     "supabase": "2.109.1",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1",
+    "vite": "^8.3.5",
     "wrangler": "4.110.0"
   },
   "overrides": {
